@@ -1,3 +1,5 @@
+# IEC 62304 §5.5 (Unit verification)
+import re
 import sqlite3
 from datetime import date, timedelta
 
@@ -64,6 +66,13 @@ def test_modular_metadata_and_hub_routes_are_available(app_client):
     localized_fields = {field["name"] for field in schema_data["schema"]["fields"]}
     assert "prior_mpmri_pirads_score" in localized_fields
     assert "adverse_histology_variant_type" in localized_fields
+    assert "frailty_status" in localized_fields
+    assert "g8_score" in localized_fields
+    assert "anesthesia_surgical_fitness" in localized_fields
+    assert "radiotherapy_feasibility" in localized_fields
+    assert "patient_priority_profile" in localized_fields
+    assert "epic26_response_packet" in localized_fields
+    assert "epic26_urinary_domain" not in localized_fields
 
     diagnostic_schema_response = client.get("/api/modules/diagnostic_workup/schema")
     assert diagnostic_schema_response.status_code == 200
@@ -81,10 +90,13 @@ def test_modular_metadata_and_hub_routes_are_available(app_client):
     classifier_fields = {field["name"]: field for field in classifier_schema_data["schema"]["fields"]}
     assert classifier_fields["prior_prostatectomy"]["label"] == "Prostatectomía radical previa por cáncer de próstata"
     assert classifier_fields["prior_radiation"]["label"] == "Radioterapia previa por cáncer de próstata"
+    assert classifier_fields["bcr_detected"]["label"] == "Recurrencia bioquímica y segunda recurrencia bioquímica sin metástasis"
     assert classifier_fields["bcr2"]["label"] == "Segunda recurrencia bioquímica tras tratamiento local"
     assert "Oligometastatic" not in classifier_fields["metastasis_site"]["options"]
 
-    hub_response = client.get("/clinical-hub")
+    # Faubot LXXXIV.b: post-LXXX `/clinical-hub` rendea v2 por default; este
+    # test legacy assertía contenido v1, opt-out con `?v=legacy` preserva intent.
+    hub_response = client.get("/clinical-hub?v=legacy")
     assert hub_response.status_code == 200
     hub_html = hub_response.get_data(as_text=True)
     assert "Centro clínico por estadio" in hub_html
@@ -102,7 +114,10 @@ def test_modular_metadata_and_hub_routes_are_available(app_client):
     assert "Survivorship y toxicidad por tratamiento" in hub_html
     assert "Prostatectomía radical previa por cáncer de próstata" in hub_html
     assert "Radioterapia previa por cáncer de próstata" in hub_html
+    assert "Recurrencia bioquímica y segunda recurrencia bioquímica sin metástasis" in hub_html
     assert "Segunda recurrencia bioquímica tras tratamiento local" in hub_html
+    assert "Sí, abrir asistente de BCR" not in hub_html
+    assert "No, abrir seguimiento post-tratamiento local" not in hub_html
     assert "Este contexto solo aplica cuando ya existe cáncer de próstata confirmado" in hub_html
     assert 'name="volume_disease"' not in hub_html
     assert 'value="Oligometastatic"' not in hub_html
@@ -111,13 +126,39 @@ def test_modular_metadata_and_hub_routes_are_available(app_client):
     assert "Esqueleto apendicular" in hub_html
     assert "md:hidden" in hub_html
 
-    patients_html = client.get("/patients").get_data(as_text=True)
+    # Faubot LXXXIV.b: post-LXXX `/patients` rendea v2 por default; opt-out
+    # con `?v=legacy` preserva contrato v1 (ui_theme.css + clinical_selects.js).
+    patients_html = client.get("/patients?v=legacy").get_data(as_text=True)
     assert "ui_theme.css" in patients_html
     assert "clinical_selects.js" in patients_html
     assert "Registro longitudinal de pacientes" in patients_html
     assert "Nuevo caso clínico" in patients_html
 
-    dashboard_html = client.get("/dashboard").get_data(as_text=True)
+
+def test_localized_wizard_embeds_occam_inputs_inside_dynamic_widget(app_client):
+    client, _ = app_client
+
+    response = client.get("/wizard/localized_initial")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+
+    assert 'data-occam-widget="1"' in html
+    assert "Entradas estructuradas del modelo OCCAM" in html
+    assert "Variantes opcionales del modelo OCCAM" in html
+    assert html.count('name="occam_diabetes"') == 1
+    assert html.count('name="occam_education"') == 1
+    assert html.count("Pronóstico de otras causas (OCCAM)") == 0
+    assert "lg:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]" not in html
+    occam_match = re.search(r'class="([^"]*md:col-span-2[^"]*)"[^>]*data-field-wrapper[^>]*data-field-name="life_expectancy_years"', html)
+    epic_match = re.search(r'class="([^"]*md:col-span-2[^"]*)"[^>]*data-field-wrapper[^>]*data-field-name="epic26_response_packet"', html)
+    assert occam_match is not None
+    assert epic_match is not None
+    assert "xl:grid-cols-[minmax(300px,0.9fr)_minmax(0,1.1fr)]" in html
+    assert "xl:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.15fr)]" in html
+
+    # Faubot LXXXIV.b: post-LXXX `/dashboard` rendea v2 por default; opt-out
+    # con `?v=legacy` preserva contrato v1 (ui_theme.css + clinical_selects.js).
+    dashboard_html = client.get("/dashboard?v=legacy").get_data(as_text=True)
     assert "ui_theme.css" in dashboard_html
     assert "clinical_selects.js" in dashboard_html
     assert "Panorama longitudinal de la cohorte" in dashboard_html
@@ -193,14 +234,71 @@ def test_state_classifier_routes_patients_to_expected_modules(app_client):
         json={"prior_prostatectomy": 1, "psa_current": 0.4, "metastasis_site": "M0"},
     )
     assert recurrence.status_code == 200
-    assert recurrence.get_json()["state"] == "recurrence_bcr"
+    recurrence_payload = recurrence.get_json()
+    assert recurrence_payload["state"] == "post_prostatectomy"
+    assert "vigilancia reforzada" in recurrence_payload["classification_reason"].lower()
+
+    confirmed_recurrence = client.post(
+        "/api/state-classifier",
+        json={"prior_prostatectomy": 1, "psa_current": 0.4, "bcr_confirmed": 1, "metastasis_site": "M0"},
+    )
+    assert confirmed_recurrence.status_code == 200
+    assert confirmed_recurrence.get_json()["state"] == "recurrence_bcr"
+
+    longitudinal_confirmed_recurrence = client.post(
+        "/api/state-classifier",
+        json={
+            "prior_prostatectomy": 1,
+            "metastasis_site": "M0",
+            "psa_history": [
+                {"value": 0.22, "date": "2026-01-01"},
+                {"value": 0.31, "date": "2026-04-15"},
+            ],
+        },
+    )
+    assert longitudinal_confirmed_recurrence.status_code == 200
+    assert longitudinal_confirmed_recurrence.get_json()["state"] == "recurrence_bcr"
+
+    bcr_post_prostatectomy = client.post(
+        "/api/state-classifier",
+        json={"prior_prostatectomy": 1, "bcr_detected": 1, "metastasis_site": "M0"},
+    )
+    assert bcr_post_prostatectomy.status_code == 200
+    assert bcr_post_prostatectomy.get_json()["state"] == "recurrence_bcr"
+
+    post_prostatectomy_followup = client.post(
+        "/api/state-classifier",
+        json={"prior_prostatectomy": 1, "bcr_detected": 0, "metastasis_site": "M0"},
+    )
+    assert post_prostatectomy_followup.status_code == 200
+    assert post_prostatectomy_followup.get_json()["state"] == "post_prostatectomy"
 
     post_rt_recurrence = client.post(
         "/api/state-classifier",
-        json={"prior_prostatectomy": 0, "prior_radiation": 1, "psa_current": 1.4, "metastasis_site": "M0"},
+        json={
+            "prior_prostatectomy": 0,
+            "prior_radiation": 1,
+            "psa_current": 1.4,
+            "phoenix_failure_confirmed": 1,
+            "metastasis_site": "M0",
+        },
     )
     assert post_rt_recurrence.status_code == 200
     assert post_rt_recurrence.get_json()["state"] == "post_radiotherapy_or_local_salvage"
+
+    bcr_post_radiation = client.post(
+        "/api/state-classifier",
+        json={"prior_prostatectomy": 0, "prior_radiation": 1, "bcr_detected": 1, "metastasis_site": "M0"},
+    )
+    assert bcr_post_radiation.status_code == 200
+    assert bcr_post_radiation.get_json()["state"] == "recurrence_bcr"
+
+    post_rt_followup = client.post(
+        "/api/state-classifier",
+        json={"prior_prostatectomy": 0, "prior_radiation": 1, "bcr_detected": 0, "metastasis_site": "M0"},
+    )
+    assert post_rt_followup.status_code == 200
+    assert post_rt_followup.get_json()["state"] == "post_radiotherapy_followup"
 
     crpc = client.post(
         "/api/state-classifier",
@@ -208,6 +306,26 @@ def test_state_classifier_routes_patients_to_expected_modules(app_client):
     )
     assert crpc.status_code == 200
     assert crpc.get_json()["state"] == "m1_crpc"
+
+    psma_only_crpc = client.post(
+        "/api/state-classifier",
+        json={
+            "known_cancer_diagnosis": 1,
+            "systemic_progression_context": "confirmed_crpc",
+            "current_adt_context": "medical_adt_continuous",
+            "castrate_testosterone_status": "confirmed_castrate",
+            "conventional_imaging_status": "M0",
+            "psma_stage_after_psma": "M1A",
+            "psma_pet_done": 1,
+            "psma_positive": 1,
+        },
+    )
+    assert psma_only_crpc.status_code == 200
+    psma_only_payload = psma_only_crpc.get_json()
+    assert psma_only_payload["state"] == "adt_progression_verification"
+    assert psma_only_payload["psma_only_upstaging"] is True
+    assert psma_only_payload["metastatic_detection_basis"] == "psma_only"
+    assert psma_only_payload["restaging_update_required"] is True
 
     adt_verification = client.post(
         "/api/state-classifier",
@@ -249,6 +367,24 @@ def test_state_classifier_routes_patients_to_expected_modules(app_client):
     assert gated_high_volume_payload["progression_gate_target"] == "adt_progression_verification"
     assert gated_high_volume_payload["systemic_progression_context_resolved"] == "progression_on_adt_verify_castration"
     assert "bloqueada" in gated_high_volume_payload["classification_reason"].lower()
+
+
+def test_m0_crpc_sparse_payload_does_not_assume_castration_or_negative_imaging(app_client):
+    client, _ = app_client
+
+    response = client.post(
+        "/api/modules/m0_crpc/evaluate",
+        json={
+            "psadt_months": 6,
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.get_json()["result"]
+
+    assert result["preferred_frontline_regimen"]["regimen_code"] == "ADT_MONO"
+    assert result["decision_quality"]["requires_human_review"] is True
+    assert any("castracion" in item.lower() for item in result["why_not_more_confident"])
 
     gated_low_volume_metach = client.post(
         "/api/state-classifier",
@@ -423,9 +559,13 @@ def test_mhspc_modules_use_mixed_metastatic_context_for_logic(app_client):
 
     assert response.status_code == 200
     result = response.get_json()["result"]
-    treatment_names = [item["name"] for item in result["eligible_treatments"]]
-    assert any("calcio + vitamina d" in name.lower() for name in treatment_names)
-    assert any("zoledr" in name.lower() or "denosumab" in name.lower() for name in treatment_names)
+    # BUG ERR-04: supportive-care bundles must NOT pollute ``eligible_treatments``
+    # anymore — they live on their own ``supportive_care_bundle`` container.
+    supportive_names = [item.get("name", "").lower() for item in (result.get("supportive_care_bundle") or [])]
+    assert any("calcio + vitamina d" in name for name in supportive_names)
+    assert any("zoledr" in name or "denosumab" in name for name in supportive_names)
+    treatment_names = [item["name"].lower() for item in result["eligible_treatments"]]
+    assert not any("calcio + vitamina d" in name for name in treatment_names)
     assert result["report_sections"]["bone_health_bundle"]["dxa_baseline_done"] is False
     assert "mixta" in result["report_sections"]["summary"].lower()
     assert "bundle óseo" in result["report_sections"]["summary"].lower()
@@ -710,6 +850,47 @@ def test_adt_progression_verification_requires_castration_before_crpc_redirectio
     assert not_castrate_result["decision_quality"]["state_classification"] == "Fracaso de supresión androgénica o castración inadecuada"
     assert "optimizar" in not_castrate_result["eligible_treatments"][0]["name"].lower()
 
+
+def test_localized_initial_uses_spanish_copy_for_recommended_trajectory(app_client):
+    client, _ = app_client
+
+    response = client.post(
+        "/api/modules/localized_initial/evaluate",
+        json={
+            "age": 70,
+            "life_expectancy_years": 14,
+            "psa": 18,
+            "clinical_tstage": "T2c",
+            "gleason_primary": 4,
+            "gleason_secondary": 4,
+            "isup_grade": 4,
+            "num_cores_positive": 5,
+            "total_cores": 12,
+            "nodal_status": "N0",
+            "metastasis_site": "M0",
+            "ecog_score": "0",
+            "charlson_score": 1,
+            "frailty_status": "Fit",
+            "g8_score": 15,
+            "anesthesia_surgical_fitness": "Fit",
+            "radiotherapy_feasibility": "feasible",
+            "brachy_feasibility": "conditional",
+            "baseline_obstruction": "none",
+            "patient_priority_profile": "maximize_cancer_control,avoid_surgery",
+        },
+    )
+    assert response.status_code == 200
+    result = response.get_json()["result"]
+    trajectory = result["nccn_primary"]["trayectoria_recomendada"]
+    summary = result["nccn_primary"]["resumen_del_caso"]
+
+    assert "plus short-course" not in trajectory
+    assert "EBRT plus" not in trajectory
+    assert "Consider definitive RT" not in trajectory
+    assert "Radioterapia" in trajectory
+    assert "terapia de privación androgénica" in trajectory
+    assert " High." not in summary
+
     nmcrpc = client.post(
         "/api/modules/adt_progression_verification/evaluate",
         json={
@@ -898,8 +1079,18 @@ def test_recurrence_module_exposes_bcr2_pathway(app_client):
     result = response.get_json()["result"]
     assert "segunda recurrencia bioquímica" in result["nccn_primary"]["label"].lower()
     treatment_names = {item["name"] for item in result["eligible_treatments"]}
+    # EMBARK-like enzalutamida sigue siendo la opción preferida (categoría 1).
     assert "Enzalutamida con o sin leuprorelina" in treatment_names
-    assert not any(name.startswith("Apalutamida + terapia de privación androgénica") for name in treatment_names)
+    # PRESTO/AFT-19 (Aggarwal JCO 2023;41:3253): BCR2 N0M0 post-RP+SRT con
+    # PSADT ≤9 m y PSA ≥0.5 ng/mL soporta apalutamida ± abiraterona como
+    # intensificación experimental (categoría 2B). La auditoría de pacientes
+    # insignia (2026-04-21) exige surface para cerrar la brecha clínica
+    # silenciosa identificada.
+    assert any(
+        "apalutamida" in name.lower() and "presto" in name.lower()
+        for name in treatment_names
+    ), f"Se esperaba opción PRESTO apalutamida experimental; obtuvo {sorted(treatment_names)}"
+    # Conservamos la advertencia contra uso rutinario (PRESTO no es estándar NCCN v5.2026).
     assert any("apalutam" in item.lower() for item in result["not_recommended"])
 
 
@@ -958,6 +1149,43 @@ def test_recurrence_bcr_builds_comparative_salvage_bundle_with_preferred_option(
     assert result["eligible_treatments"][0]["regimen_code"] == "SALVAGE_RT_ALONE"
     assert "Radioterapia externa" in result["eligible_treatments"][0]["route"]
     assert result["comparative_eligibility_matrix"]["salvage_rt_family"]["variant_ranking"]["preferred_regimen_code"] == "SALVAGE_RT_ALONE"
+
+
+def test_recurrence_bcr_high_risk_post_rp_prefers_srt_plus_adt_over_rt_alone(app_client):
+    client, _ = app_client
+    response = client.post(
+        "/api/modules/recurrence_bcr/evaluate",
+        json={
+            "prior_prostatectomy": 1,
+            "psa_current": 1.1,
+            "psa": 1.1,
+            "psadt_months": 3.5,
+            "time_to_recurrence_months": 3,
+            "salvage_local_feasible": 1,
+            "eligible_pelvic_therapy": 1,
+            "conventional_imaging_status": "M0",
+            "psma_pet_done": 0,
+            "pathologic_stage": "pT3b",
+            "seminal_vesicle_invasion": 1,
+            "surgical_margin": 1,
+        },
+    )
+    assert response.status_code == 200
+    result = response.get_json()["result"]
+    assert result["preferred_frontline_regimen"]["family_code"] == "salvage_rt_family"
+    assert result["preferred_frontline_regimen"]["regimen_code"] != "SALVAGE_RT_ALONE"
+    assert result["preferred_frontline_regimen"]["regimen_code"] in {
+        "SALVAGE_RT_SHORT_HORMONE",
+        "SALVAGE_RT_PELVIC_SHORT_HORMONE",
+        "SALVAGE_RT_LONG_HORMONE",
+    }
+    assert result["high_risk_post_rp_salvage"] is True
+    assert result["psma_restaging_role"] == "urgent_companion"
+    assert "SPPORT" in {item["trial"] for item in result["trial_matches"]}
+    assert any(
+        "PSMA PET/CT urgente" in item
+        for item in result["companion_actions_required_for_preferred_regimen"]
+    )
 
 
 def test_post_rt_requires_phoenix_or_local_confirmation_before_salvage(app_client):
@@ -1386,6 +1614,30 @@ def test_post_prostatectomy_surfaces_surveillance_vs_salvage_in_comparative_bund
     assert result["active_regimen_monitoring_package"]["family_code"] == result["preferred_frontline_regimen"]["family_code"]
 
 
+def test_post_prostatectomy_module_promotes_decisive_persistent_psa_to_recurrence_bcr(app_client):
+    client, _ = app_client
+    postop_response = client.post(
+        "/api/modules/post_prostatectomy/evaluate",
+        json={
+            "psa": 0.31,
+            "psa_postop": 0.31,
+            "surgical_margin": 0,
+            "ece_status": 0,
+            "svi_status": 0,
+            "lni_status": 0,
+            "pathologic_stage": "pT2",
+            "psadt_months": 8.0,
+            "salvage_local_feasible": 1,
+        },
+    )
+    assert postop_response.status_code == 200
+    result = postop_response.get_json()["result"]
+
+    assert result["state"] == "recurrence_bcr"
+    assert result["preferred_frontline_regimen"]["family_code"] == "salvage_rt_family"
+    assert result["sequence_transition_bundle"]["trigger_status"] in {"redirect_local", "confirm"}
+
+
 def test_localized_initial_surfaces_preferred_family_and_metadata(app_client):
     client, _ = app_client
     response = client.post(
@@ -1414,6 +1666,152 @@ def test_localized_initial_surfaces_preferred_family_and_metadata(app_client):
     assert result["comparative_eligibility_matrix"]["active_surveillance_family"]["variant_ranking"]["preferred_regimen_code"] == "ACTIVE_SURVEILLANCE"
 
 
+def test_localized_initial_modality_bundle_restricts_active_surveillance_when_pirads5_lacks_targeted_confirmation(app_client):
+    client, _ = app_client
+    response = client.post(
+        "/api/modules/localized_initial/evaluate",
+        json={
+            "age": 63,
+            "psa": 6.4,
+            "clinical_tstage": "T1c",
+            "gleason_primary": 3,
+            "gleason_secondary": 3,
+            "isup_grade": 1,
+            "num_cores_positive": 2,
+            "total_cores": 12,
+            "life_expectancy_years": 15,
+            "clinical_risk_group": "LOW",
+            "prior_mpmri": 1,
+            "prior_mpmri_pirads_score": 5,
+            "prior_mpmri_targeted_biopsy_status": "no",
+            "psad": 0.11,
+            "prostate_volume_ml": 42,
+            "radiotherapy_feasibility": "feasible",
+            "anesthesia_surgical_fitness": "Fit",
+            "frailty_status": "Fit",
+            "g8_score": 16,
+        },
+    )
+    assert response.status_code == 200
+    result = response.get_json()["result"]
+    modality_bundle = result["localized_modality_fitness_bundle"]
+    assert modality_bundle["active_surveillance_status"] == "provisional"
+    assert result["preferred_frontline_regimen"]["family_code"] != "active_surveillance_family"
+    assert "pi-rads" in " ".join(modality_bundle["why_not_active_surveillance"]).lower()
+
+
+def test_localized_initial_prefers_radiotherapy_when_surgery_fitness_is_poor(app_client):
+    client, _ = app_client
+    response = client.post(
+        "/api/modules/localized_initial/evaluate",
+        json={
+            "age": 74,
+            "psa": 12.8,
+            "clinical_tstage": "T2b",
+            "gleason_primary": 3,
+            "gleason_secondary": 4,
+            "isup_grade": 2,
+            "num_cores_positive": 4,
+            "total_cores": 12,
+            "life_expectancy_years": 11,
+            "clinical_risk_group": "FAVORABLE INTERMEDIATE",
+            "prior_mpmri": 1,
+            "prior_mpmri_pirads_score": 3,
+            "nodal_status": "N0",
+            "metastasis_site": "M0",
+            "prostate_volume_ml": 48,
+            "ecog_score": 3,
+            "charlson_score": 5,
+            "anesthesia_surgical_fitness": "No apto",
+            "radiotherapy_feasibility": "feasible",
+            "frailty_status": "Frail",
+            "g8_score": 12,
+            "ipss_score": 10,
+            "iief5_score": 17,
+            "patient_priority_profile": "preserve_sexual_function,avoid_surgery",
+        },
+    )
+    assert response.status_code == 200
+    result = response.get_json()["result"]
+    modality_bundle = result["localized_modality_fitness_bundle"]
+    assert result["radical_prostatectomy_candidacy_profile"]["candidate_status"] == "not_candidate"
+    assert modality_bundle["surgery_status"] == "blocked"
+    assert modality_bundle["dominant_modality"] == "radiotherapy"
+    assert result["preferred_frontline_regimen"]["family_code"] == "radiotherapy_family"
+
+
+def test_localized_initial_stays_provisional_when_local_tradeoff_is_real_but_patient_priorities_are_missing(app_client):
+    client, _ = app_client
+    response = client.post(
+        "/api/modules/localized_initial/evaluate",
+        json={
+            "age": 66,
+            "psa": 9.7,
+            "clinical_tstage": "T2a",
+            "gleason_primary": 3,
+            "gleason_secondary": 4,
+            "isup_grade": 2,
+            "num_cores_positive": 3,
+            "total_cores": 12,
+            "life_expectancy_years": 14,
+            "clinical_risk_group": "FAVORABLE INTERMEDIATE",
+            "prior_mpmri": 1,
+            "prior_mpmri_pirads_score": 3,
+            "nodal_status": "N0",
+            "metastasis_site": "M0",
+            "prostate_volume_ml": 38,
+            "ecog_score": 1,
+            "charlson_score": 1,
+            "anesthesia_surgical_fitness": "Fit",
+            "radiotherapy_feasibility": "feasible",
+            "frailty_status": "Fit",
+            "g8_score": 15,
+            "ipss_score": 6,
+            "iief5_score": 20,
+        },
+    )
+    assert response.status_code == 200
+    result = response.get_json()["result"]
+    modality_bundle = result["localized_modality_fitness_bundle"]
+    assert modality_bundle["shared_decision_required"] == "yes"
+    assert modality_bundle["modality_fitness_status"] == "provisional"
+    assert result["patient_priority_profile"]["available"] is False
+
+
+def test_localized_initial_keeps_rp_candidacy_open_with_objective_fitness_even_if_pros_are_missing(app_client):
+    client, _ = app_client
+    response = client.post(
+        "/api/modules/localized_initial/evaluate",
+        json={
+            "age": 64,
+            "psa": 8.9,
+            "clinical_tstage": "T2a",
+            "gleason_primary": 3,
+            "gleason_secondary": 4,
+            "isup_grade": 2,
+            "num_cores_positive": 3,
+            "total_cores": 12,
+            "clinical_risk_group": "FAVORABLE INTERMEDIATE",
+            "prior_mpmri": 1,
+            "prior_mpmri_pirads_score": 3,
+            "nodal_status": "N0",
+            "metastasis_site": "M0",
+            "ecog_score": 1,
+            "charlson_score": 1,
+            "frailty_status": "Fit",
+            "g8_score": 15,
+            "anesthesia_surgical_fitness": "Fit",
+            "radiotherapy_feasibility": "feasible",
+        },
+    )
+    assert response.status_code == 200
+    result = response.get_json()["result"]
+    rp_profile = result["radical_prostatectomy_candidacy_profile"]
+    assert rp_profile["candidate_status"] == "candidate"
+    assert "iief5_score" not in rp_profile["missing_candidate_fields"]
+    assert "epic26_bowel_domain" not in rp_profile["missing_candidate_fields"]
+
+
 def test_m0_crpc_prefers_observation_or_darolutamide_by_risk_and_seizure_profile(app_client):
     client, _ = app_client
 
@@ -1423,6 +1821,8 @@ def test_m0_crpc_prefers_observation_or_darolutamide_by_risk_and_seizure_profile
     )
     assert observe_response.status_code == 200
     observe_result = observe_response.get_json()["result"]
+    assert observe_result["systemic_regimen_scope"] == "nmcrpc_arpi"
+    assert observe_result["systemic_regimen_scope_contract"]["scope"] == "nmcrpc_arpi"
     assert "monitorización" in observe_result["eligible_treatments"][0]["name"].lower()
     assert "privación androgénica" in observe_result["eligible_treatments"][0]["name"].lower()
     assert any("tiempo de duplicación del antígeno prostático específico" in item.lower() for item in observe_result["not_recommended"])
@@ -1433,6 +1833,7 @@ def test_m0_crpc_prefers_observation_or_darolutamide_by_risk_and_seizure_profile
     )
     assert daro_response.status_code == 200
     daro_result = daro_response.get_json()["result"]
+    assert daro_result["systemic_regimen_scope"] == "nmcrpc_arpi"
     treatment_names = {item["name"] for item in daro_result["eligible_treatments"]}
     assert "Darolutamida + terapia de privación androgénica" in treatment_names
     daro_tx = next(item for item in daro_result["eligible_treatments"] if item["name"] == "Darolutamida + terapia de privación androgénica")
@@ -1637,8 +2038,8 @@ def test_advanced_modules_surface_sequence_specific_options(app_client):
             "ast": 22,
             "alp": 90,
             "bilirubin": 0.8,
-            "cbc_date": "2026-03-25",
-            "liver_panel_date": "2026-03-25",
+            "cbc_date": (date.today() - timedelta(days=3)).isoformat(),
+            "liver_panel_date": (date.today() - timedelta(days=3)).isoformat(),
             "peripheral_neuropathy_grade": 0,
             "drug_interaction_reviewed": 1,
             "performance_status_driver": "cancer_related",
@@ -1684,6 +2085,8 @@ def test_advanced_modules_surface_sequence_specific_options(app_client):
     assert "Pembrolizumab" in m1_names
     assert "Lutecio-177 dirigido al antígeno prostático específico de membrana" in m1_names
     assert "Cabazitaxel" in m1_names
+    assert m1_result["systemic_regimen_scope"] == "mcrpc_sequence"
+    assert m1_result["systemic_regimen_scope_contract"]["scope"] == "mcrpc_sequence"
     assert "Oral" in m1_by_code["OLAPARIB"]["route"]
     assert "300 mg cada 12 horas" in m1_by_code["OLAPARIB"]["dose"]
     assert "Intravenosa" in m1_by_code["CABAZITAXEL"]["route"]
@@ -2147,14 +2550,14 @@ def test_m1_crpc_structured_taxane_bundle_overrides_legacy_docetaxel_boolean(app
             "frailty_status": "Fit",
             "child_pugh_score": "A",
             "peripheral_neuropathy_grade": 0,
-            "cbc_date": "2026-03-20",
-            "anc": 900,
-            "platelets": 180000,
-            "liver_panel_date": "2026-03-20",
-            "bilirubin": 0.8,
-            "ast": 32,
-            "alt": 28,
-            "alp": 110,
+            **_recent_docetaxel_labs(
+                anc=900,
+                platelets=180000,
+                bilirubin=0.8,
+                ast=32,
+                alt=28,
+                alp=110,
+            ),
         },
     )
 
@@ -2234,7 +2637,9 @@ def test_diagnostic_registration_avoids_false_treatment_history_and_hides_advanc
     assert patient_data["mri_facts"]
     assert patient_data["biopsy_triggers"]
 
-    profile_html = client.get("/patient_profile/44444444444").get_data(as_text=True)
+    # Faubot LXXXIV.b: post-LXXX `/patient_profile/<nss>` rendea v2 por default;
+    # opt-out con `?v=legacy` preserva contrato v1 ("Última evaluación clínica modular").
+    profile_html = client.get("/patient_profile/44444444444?v=legacy").get_data(as_text=True)
     assert "Última evaluación clínica modular" in profile_html
     assert "Plan diagnóstico actual" in profile_html
     assert "Historial de biopsias" not in profile_html
@@ -2277,6 +2682,11 @@ def test_validated_algorithms_and_decision_quality_surface_in_localized_module(a
             "confirmatory_biopsy_planned": 1,
             "nodal_status": "N0",
             "metastasis_site": "M0",
+            "ecog_score": 0,
+            "charlson_score": 1,
+            "frailty_status": "Fit",
+            "g8_score": 16,
+            "anesthesia_surgical_fitness": "Fit",
         },
     )
     assert response.status_code == 200
@@ -2359,7 +2769,8 @@ def test_rich_longitudinal_tables_persist_from_integrated_registration(app_clien
     cursor.execute("SELECT COUNT(*) FROM active_surveillance")
     assert cursor.fetchone()[0] == 0
     conn.close()
-    profile_html = client.get("/patient_profile/55555555555").get_data(as_text=True)
+    # Faubot LXXXIV.b: opt-out v=legacy para preservar contrato v1 templates.
+    profile_html = client.get("/patient_profile/55555555555?v=legacy").get_data(as_text=True)
     assert "Benchmarking operativo del estado actual" in profile_html
     assert "Torre de control del antígeno prostático específico" in profile_html
     assert "psaTreatmentTimelineChart" in profile_html
@@ -2469,7 +2880,8 @@ def test_clinical_assessment_draft_and_patient_registration_flow(app_client):
     recompute_data = recompute_response.get_json()
     assert recompute_data["assessment"]["display_result"]["monitoring_plan"]["cadence"]
 
-    profile_html = client.get("/patient_profile/11111111111").get_data(as_text=True)
+    # Faubot LXXXIV.b: opt-out v=legacy para preservar contrato v1 templates.
+    profile_html = client.get("/patient_profile/11111111111?v=legacy").get_data(as_text=True)
     assert "Última evaluación clínica modular" in profile_html
     assert "Línea de estados clínicos persistidos" not in profile_html
     assert "Plan maestro de seguimiento protocolizado" in profile_html

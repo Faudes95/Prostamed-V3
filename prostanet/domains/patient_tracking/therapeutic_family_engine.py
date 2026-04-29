@@ -20,6 +20,8 @@ FAMILY_LABELS = {
     "parp_family": "PARP",
     "radium223_family": "Radio-223",
     "immunotherapy_family": "Inmunoterapia",
+    "platinum_family": "Quimioterapia platino (NEPC / rechallenge HRR)",
+    "clinical_trial_family": "Ensayo clínico dirigido",
     "salvage_rt_family": "Salvage / RT",
     "local_mdt_family": "Control local / MDT",
     "active_surveillance_family": "Vigilancia activa",
@@ -51,8 +53,16 @@ def regimen_family_code(regimen_code: Any, *, fallback: str = "observation_famil
         return "parp_family"
     if normalized in {"RADIUM223"}:
         return "radium223_family"
-    if normalized in {"PEMBROLIZUMAB"}:
+    # Auditoría Pacientes Insignia 2026-04-21 (§A.4) — IMPACT (Sipuleucel-T,
+    # inmunoterapia celular autóloga) y CONTACT-02 (cabozantinib+atezolizumab)
+    # se agrupan en immunotherapy_family para recibir family_profile y llegar
+    # a `eligible_treatments` vía comparative_bundle.
+    if normalized in {"PEMBROLIZUMAB", "SIPULEUCEL_T", "CABOZANTINIB_ATEZOLIZUMAB"}:
         return "immunotherapy_family"
+    if normalized in {"CARBOPLATIN_ETOPOSIDE_NEPC", "CISPLATIN_DOCETAXEL_NEPC", "CARBOPLATIN_ETOPOSIDE"}:
+        return "platinum_family"
+    if normalized in {"CLINICAL_TRIAL_POST_PARP"}:
+        return "clinical_trial_family"
     if normalized in {"ADT_MONO", "OBSERVATION", "RESTAGING", "PSMA_RESTAGING", "SYSTEMIC_RESTAGING"}:
         return "observation_family"
     if normalized in {"ACTIVE_SURVEILLANCE"}:
@@ -65,7 +75,12 @@ def regimen_family_code(regimen_code: Any, *, fallback: str = "observation_famil
         return "radiotherapy_family"
     if normalized in {"RT_ADT_ABIRATERONE", "REGIONAL_RT_ADT_ABIRATERONE"}:
         return "multimodal_local_family"
-    if normalized in {"SALVAGE_RT_ALONE", "SALVAGE_RT_SHORT_HORMONE", "SALVAGE_RT_LONG_HORMONE"}:
+    if normalized in {
+        "SALVAGE_RT_ALONE",
+        "SALVAGE_RT_SHORT_HORMONE",
+        "SALVAGE_RT_PELVIC_SHORT_HORMONE",
+        "SALVAGE_RT_LONG_HORMONE",
+    }:
         return "salvage_rt_family"
     if normalized in {"LOCAL_MDT", "PSMA_GUIDED_MDT", "PRIMARY_RT_MDT", "SALVAGE_CRYOTHERAPY", "SALVAGE_HIFU", "SALVAGE_BRACHYTHERAPY"}:
         return "local_mdt_family"
@@ -179,11 +194,29 @@ def build_family_profile(
     preferred = next((item for item in eligible if str(item.get("eligibility_status") or "") == "preferred"), {})
     if not preferred and eligible:
         fallback = dict(eligible[0])
+        fallback["family_default_eligibility_status"] = str(eligible[0].get("eligibility_status") or "")
+        fallback["family_default_priority"] = str(eligible[0].get("priority") or "")
         fallback["eligibility_status"] = "preferred"
         fallback["priority"] = "preferred"
         fallback["is_preferred"] = True
         eligible[0] = fallback
         preferred = fallback
+    elif preferred:
+        preferred_code = str(preferred.get("regimen_code") or "")
+        preferred_name = str(preferred.get("name") or "")
+        reordered: list[dict[str, Any]] = [preferred]
+        consumed_preferred = False
+        for item in eligible:
+            same_item = (
+                not consumed_preferred
+                and str(item.get("regimen_code") or "") == preferred_code
+                and str(item.get("name") or "") == preferred_name
+            )
+            if same_item:
+                consumed_preferred = True
+                continue
+            reordered.append(item)
+        eligible = reordered
     family_status = str(context.get("eligibility_status") or ("eligible" if eligible else "contraindicated" if nonpreferred_or_ineligible else "not_assessable"))
     missing_inputs = list(dict.fromkeys(context.get("missing_inputs") or []))
     stale_inputs = list(dict.fromkeys(context.get("stale_inputs") or []))
@@ -236,10 +269,12 @@ def build_global_ranking(
             enriched["rank"] = len(ordered_options) + 1
             if ordered_options:
                 prior_status = str(enriched.get("eligibility_status") or "")
+                family_default_status = str(enriched.get("family_default_eligibility_status") or "")
+                family_default_priority = str(enriched.get("family_default_priority") or "")
                 if prior_status == "preferred":
-                    enriched["eligibility_status"] = "eligible_nonpreferred"
+                    enriched["eligibility_status"] = family_default_status or "eligible_nonpreferred"
                 if str(enriched.get("priority") or "") == "preferred":
-                    enriched["priority"] = "eligible"
+                    enriched["priority"] = family_default_priority or "eligible"
                 enriched["is_preferred"] = False
             else:
                 enriched["eligibility_status"] = "preferred"
@@ -324,7 +359,7 @@ MONITORING_TEMPLATES = {
         "safety_metrics": ["blood_pressure", "falls", "cognition", "rash", "ddi_review"],
         "hold_rules": ["grade_3_neurotoxicity", "recurrent_falls", "uncontrolled_hypertension"],
         "switch_rules": ["radiographic_progression", "symptomatic_progression", "intolerable_cns_toxicity"],
-        "required_visit_fields": ["psa", "testosterone", "systolic_bp", "fatigue_score", "mini_cog_score", "drug_interaction_reviewed", "dermatitis_history"],
+        "required_visit_fields": ["psa", "testosterone", "systolic_bp", "fatigue_score", "mini_cog_score", "ddi_review_status", "dermatitis_history"],
         "monitoring_focus": "ARPI activa: respuesta bioquimica, seguridad neurologica, DDI y tolerabilidad.",
         "recommended_cadence": "Cada 4-6 semanas al inicio y luego cada 8-12 semanas si permanece estable.",
     },
@@ -496,7 +531,7 @@ def _field_value_present(field_name: str, field_values: dict[str, Any]) -> bool:
         return True
     aliases = {
         "blood_pressure": ["systolic_bp"],
-        "ddi_review": ["drug_interaction_reviewed"],
+        "ddi_review": ["ddi_review_status", "drug_interaction_reviewed"],
         "cognition": ["mini_cog_score"],
         "rash": ["dermatitis_history", "rash_grade"],
         "cbc": ["hemoglobin", "anc", "platelets"],

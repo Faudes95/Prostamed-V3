@@ -73,6 +73,7 @@
 {% endblock %}
 
 {% block page_scripts %}
+    <script src="{{ url_for('static', filename='js/longitudinal_capture_helpers.js') }}"></script>
     <script src="{{ url_for('static', filename='js/registration_context_ui.js') }}"></script>
     <script src="{{ url_for('static', filename='js/consent_flow.js') }}"></script>
     <script>

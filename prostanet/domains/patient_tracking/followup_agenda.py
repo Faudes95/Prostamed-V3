@@ -13,6 +13,14 @@ from prostanet.domains.patient_tracking.encounter_planner import (
 from prostanet.domains.patient_tracking.capture_flows import (
     prepend_capture_block_to_visit_sections,
 )
+from prostanet.domains.patient_tracking.capture_surface import (
+    build_capture_surface_metadata,
+    expand_visible_capture_surface,
+    visible_required_inputs,
+)
+from prostanet.domains.patient_tracking.post_rp_salvage_intensification_builder import (
+    build_post_rp_salvage_intensification_profile,
+)
 from prostanet.domains.patient_tracking.palliative_longitudinal import (
     PALLIATIVE_ALIAS_TRACKS,
     build_palliative_monitoring_package,
@@ -32,6 +40,11 @@ from prostanet.domains.patient_tracking.therapeutic_family_engine import (
     regimen_family_code,
 )
 from prostanet.domains.patient_tracking.therapy_catalog import therapy_select_options
+from prostanet.shared.advanced_support_catalog import (
+    DDI_REVIEW_STATUS_OPTIONS,
+    MINI_COG_OPTIONS,
+    MINI_COG_OPTION_LABELS,
+)
 from prostanet.shared.contracts import (
     AgendaItem,
     FieldSpec,
@@ -542,6 +555,15 @@ def _build_visit_sections(state: str, management_track: str, patient: dict[str, 
         management_track=management_track,
         include_empty=True,
     )
+    mini_cog_display_options = [
+        {"value": option, "label": MINI_COG_OPTION_LABELS.get(option, option)}
+        for option in MINI_COG_OPTIONS
+    ]
+    weak_grip_options = [
+        {"value": "", "label": "--"},
+        {"value": "0", "label": "Ausente"},
+        {"value": "1", "label": "Presente"},
+    ]
     sections = [
         {
             "title": "Contexto de la visita",
@@ -758,7 +780,19 @@ def _build_visit_sections(state: str, management_track: str, patient: dict[str, 
                 "subtitle": "Laboratorio, seguridad y carga tumoral por modalidad activa.",
                 "fields": [
                     _field("psa", "PSA actual", "number", unit="ng/mL"),
+                    _field(
+                        "psa_history",
+                        "Serie longitudinal de PSA / APE",
+                        "psa_history",
+                        help_text="Agregue todas las mediciones relevantes de APE/PSA para alimentar la torre de vigilancia y el monitoreo por línea.",
+                    ),
                     _field("testosterone", "Testosterona", "number", unit="ng/dL"),
+                    _field(
+                        "testosterone_history",
+                        "Serie longitudinal de testosterona",
+                        "testosterone_history",
+                        help_text="Registre múltiples mediciones con fecha, unidad, contexto y línea terapéutica para resolver castración con prioridad sobre el valor aislado.",
+                    ),
                     _field(
                         "line_of_therapy_number",
                         "Número de línea terapéutica",
@@ -829,15 +863,20 @@ def _build_visit_sections(state: str, management_track: str, patient: dict[str, 
                     _field("hba1c", "HbA1c", "number", unit="%"),
                     _field("waist_circumference_cm", "Cintura abdominal", "number", unit="cm"),
                     _field("cv_risk_documented", "Riesgo CV documentado", "checkbox"),
-                    _field("drug_interaction_reviewed", "Revisión de interacciones", "checkbox"),
-                    _field("hepatic_risk_factors", "Riesgo hepático", "text"),
+                    _field("ddi_review_status", "Estado de revisión DDI", "select", options=DDI_REVIEW_STATUS_OPTIONS),
+                    _field("active_liver_disease", "Hepatopatía activa", "checkbox"),
+                    _field("cirrhosis_or_portal_hypertension", "Cirrosis / hipertensión portal", "checkbox"),
+                    _field("active_hepatitis_b_or_c", "Hepatitis B/C activa", "checkbox"),
+                    _field("prior_drug_induced_liver_injury", "Hepatotoxicidad previa por fármacos", "checkbox"),
+                    _field("liver_panel_date", "Fecha PFH", "date"),
                     _field("weight_kg", "Peso", "number", unit="kg"),
-                    _field("bmi_current", "BMI", "number"),
-                    _field("weight_loss_6m_pct", "Pérdida ponderal 6 meses", "number", unit="%"),
+                    _field("height_cm", "Estatura", "number", unit="cm"),
+                    _field("bmi_current", "BMI", "number", help_text="Se calcula automáticamente a partir de peso y estatura."),
+                    _field("weight_loss_6m_kg", "Pérdida ponderal 6 meses", "number", unit="kg"),
                     _field("exercise_status", "Actividad física", "select", options=["", "No realiza", "Ligera", "Moderada", "Intensa"]),
                     _field("nutrition_status", "Estado nutricional", "select", options=["", "Adecuado", "Sobrepeso", "Desnutrición", "Riesgo"]),
                     _field("protein_supplements", "Suplementos proteicos", "checkbox"),
-                    _field("mini_cog_score", "Mini-Cog", "number"),
+                    _field("mini_cog_score", "Mini-Cog", "select", options=mini_cog_display_options),
                     _field("fatigue_score", "Brief Fatigue Inventory", "number"),
                     _field("seizure_history", "Antecedente convulsivo", "checkbox"),
                     _field("peripheral_neuropathy_grade", "Neuropatía periférica", "select", options=["", "0", "1", "2", "3", "4"]),
@@ -868,7 +907,13 @@ def _build_visit_sections(state: str, management_track: str, patient: dict[str, 
                     _field("g8_self_health", "G8: percepción de salud", "select", options=["", "0", "0.5", "1", "2"]),
                     _field("low_activity", "Actividad física reducida", "checkbox"),
                     _field("slow_gait", "Marcha lenta", "checkbox"),
-                    _field("weak_grip", "Fuerza de prensión baja", "checkbox"),
+                    _field(
+                        "weak_grip",
+                        "Fuerza de prensión baja",
+                        "select",
+                        options=weak_grip_options,
+                        help_text="Alimenta el fenotipo de Fried y la aptitud terapéutica global.",
+                    ),
                 ],
             }
         )
@@ -998,7 +1043,6 @@ def _build_visit_sections(state: str, management_track: str, patient: dict[str, 
 
 def _clone_field(field: dict[str, Any]) -> dict[str, Any]:
     return deepcopy(field)
-
 
 def _filter_fields(sections: list[dict[str, Any]], field_names: list[str], required_inputs: list[str]) -> list[dict[str, Any]]:
     wanted = {name for name in field_names if name and not str(name).startswith("source_document:")}
@@ -1174,18 +1218,36 @@ def build_visit_schema(
         inline_task = presentation == "inline_task"
         capture_fields = contract.get("capture_fields", [])
         required_inputs = contract.get("required_inputs", [])
-        scoped_fields = list(capture_fields)
+        surface = build_capture_surface_metadata(capture_fields, required_inputs=required_inputs)
+        visible_capture_fields = list(surface.get("visible_fields") or [])
+        visible_required = list(surface.get("visible_required_inputs") or [])
+        # Auditoría #21 (cierre OOS-8): en modo `inline_task` el contrato de UI
+        # requiere que el schema refleje EXACTAMENTE los `required_inputs` de
+        # la subtarea (sin expansiones como `fatigue_score_band`). Las
+        # expansiones (`STRUCTURED_VISIBLE_FIELD_EXPANSIONS`) son útiles en
+        # presentación standard/capture_block donde la banda visible asiste la
+        # captura, pero rompen el contrato item-scoped donde se valida que
+        # `schema.fields == arpi_item.required_inputs`.
+        inline_scoped_fields = list(dict.fromkeys(capture_fields))
+        scoped_fields = inline_scoped_fields if inline_task else list(visible_capture_fields)
         sections = _append_dynamic_capture_fields(sections, scoped_fields)
         sections = _filter_fields(
             sections,
             scoped_fields if inline_task else ["visit_date", *scoped_fields],
-            scoped_fields,
+            visible_required,
         )
         agenda_item_context = _build_agenda_item_form_context(agenda_item)
+        agenda_item_context["visible_fields"] = (
+            inline_scoped_fields if inline_task else visible_capture_fields
+        )
+        agenda_item_context["visible_required_inputs"] = (
+            list(dict.fromkeys(required_inputs)) if inline_task else visible_required
+        )
+        agenda_item_context["display_fields_summary"] = list(surface.get("display_fields_summary") or [])
         if inline_task:
             agenda_item_context["mode"] = "inline_task"
             presentation_mode = "inline_task"
-            focus_fields = list(dict.fromkeys(capture_fields))
+            focus_fields = list(dict.fromkeys(inline_scoped_fields))
             fixed_context = {
                 "title": agenda_item_context.get("title", ""),
                 "summary": agenda_item_context.get("summary", ""),
@@ -1196,18 +1258,23 @@ def build_visit_schema(
             auto_visit_date = date.today().isoformat()
             allow_visit_date_override = True
         else:
-            focus_fields = list(dict.fromkeys(capture_fields))
+            focus_fields = list(dict.fromkeys(visible_capture_fields))
         schema_scope = "exact_item"
     elif field_scope:
         alert_capture = bool(capture_context and capture_context.get("alert_key"))
         capture_fields = list(dict.fromkeys(field_scope or []))
         required_inputs = list(capture_fields)
-        scoped_fields = capture_fields if alert_capture else ["visit_date", *capture_fields]
+        surface = build_capture_surface_metadata(capture_fields, required_inputs=required_inputs)
+        visible_capture_fields = list(surface.get("visible_fields") or [])
+        visible_required = list(surface.get("visible_required_inputs") or [])
+        scoped_fields = visible_capture_fields if alert_capture else ["visit_date", *visible_capture_fields]
         sections = _append_dynamic_capture_fields(sections, scoped_fields)
-        sections = _filter_fields(sections, scoped_fields, capture_fields)
+        sections = _filter_fields(sections, scoped_fields, visible_required)
         capture_block = dict((capture_context or {}).get("form_scope") or {})
         if capture_block:
             capture_block.setdefault("fields", capture_fields)
+            capture_block.setdefault("visible_fields", visible_capture_fields)
+            capture_block.setdefault("display_fields_summary", list(surface.get("display_fields_summary") or []))
             capture_block.setdefault("title", (capture_context or {}).get("title") or "Completar datos críticos")
             capture_block.setdefault("summary", (capture_context or {}).get("rationale") or "")
             capture_block.setdefault("capture_target", capture_block.get("focus") or "clinical_completion")
@@ -1231,9 +1298,12 @@ def build_visit_schema(
             "alert_key": capture_context.get("alert_key") if capture_context else "",
             "action_type": capture_context.get("action_type") if capture_context else "capture",
             "expected_document_type": capture_context.get("expected_document_type") if capture_context else "auto",
+            "visible_fields": visible_capture_fields,
+            "visible_required_inputs": visible_required,
+            "display_fields_summary": list(surface.get("display_fields_summary") or []),
         }
         presentation_mode = "mini_capture" if alert_capture else "standard"
-        focus_fields = list(dict.fromkeys(capture_fields))
+        focus_fields = list(dict.fromkeys(visible_capture_fields))
         fixed_context = {
             "title": agenda_item_context.get("title", ""),
             "summary": agenda_item_context.get("summary", ""),
@@ -1272,6 +1342,9 @@ def build_visit_schema(
         "schema_scope": schema_scope,
         "capture_fields": capture_fields,
         "required_inputs": required_inputs,
+        "visible_fields": list((agenda_item_context or {}).get("visible_fields") or []),
+        "visible_required_inputs": list((agenda_item_context or {}).get("visible_required_inputs") or []),
+        "display_fields_summary": list((agenda_item_context or {}).get("display_fields_summary") or []),
         "decision_targets": list((agenda_item_context or {}).get("decision_targets") or []),
         "write_targets": list((agenda_item_context or {}).get("write_targets") or []),
         "submission_mode": (
@@ -1925,6 +1998,10 @@ def _postlocal_agenda(patient: dict[str, Any], state: str, track: str) -> list[d
         result_snapshot = dict(latest_assessment.get("result_snapshot") or {})
         salvage_monitoring = dict(result_snapshot.get("active_regimen_monitoring_package") or {})
         salvage_sequence = dict(result_snapshot.get("sequence_transition_bundle") or {})
+        intensification_profile = dict(
+            result_snapshot.get("post_rp_salvage_intensification_profile")
+            or build_post_rp_salvage_intensification_profile(latest_assessment.get("input_snapshot") or {})
+        )
         salvage_fields = list(salvage_monitoring.get("required_visit_fields") or ["psa", "psadt_months", "salvage_local_feasible"])
         imaging_fields = [field for field in salvage_fields if field in {"restaging_imaging_type", "restaging_imaging_date", "psma_pet_date", "psma_pet_done", "conventional_imaging_status"}] or ["imaging_modality"]
         items.extend(
@@ -1968,6 +2045,59 @@ def _postlocal_agenda(patient: dict[str, Any], state: str, track: str) -> list[d
                 ),
             ]
         )
+        if bool(intensification_profile.get("high_risk_post_rp_salvage")):
+            items.extend(
+                [
+                    _agenda_item(
+                        f"{state}:{track}:salvage_intensification",
+                        "treatment_plan",
+                        "Cerrar intensificación del salvage post-RP",
+                        state,
+                        track,
+                        base_date,
+                        21,
+                        priority="high",
+                        summary="El caso post-RP ya tiene rasgos de alto riesgo; la agenda debe cerrar SRT + ADT en vez de dejar RT sola como salida implícita.",
+                        required_inputs=["psa", "psadt_months", "salvage_local_feasible"],
+                        capture_fields=["psa", "psadt_months", "salvage_local_feasible"],
+                        completion_rule={"any_of": ["psa", "psadt_months"]},
+                        evidence_basis=["AUA/ASTRO/SUO 2024", "GETUG-AFU 16", "RTOG 9601", "RADICALS-HD"],
+                        generated_from_event="recommendation_generated",
+                    ),
+                    _agenda_item(
+                        f"{state}:{track}:psma_companion",
+                        "imaging",
+                        "PSMA PET/CT urgente como companion de salvage",
+                        state,
+                        track,
+                        base_date,
+                        14,
+                        priority="high",
+                        summary="La PSMA debe definir lecho versus lecho + pelvis y descartar redirección sistémica, sin retrasar la SRT si sale negativa.",
+                        required_inputs=["psma_pet_done"],
+                        capture_fields=["psma_pet_done", "psma_pet_date", "psma_stage_after_psma"],
+                        completion_rule={"any_of": ["psma_pet_done"]},
+                        evidence_basis=["EAU 2026 recurrencia", "AUA/ASTRO/SUO 2024"],
+                        generated_from_event="recommendation_generated",
+                    ),
+                    _agenda_item(
+                        f"{state}:{track}:pelvic_field_duration",
+                        "treatment_plan",
+                        "Definir pelvis electiva y duración de ADT",
+                        state,
+                        track,
+                        base_date,
+                        28,
+                        priority="medium",
+                        summary="Cerrar si corresponde irradiación pélvica electiva y si la ADT será corta o prolongada según riesgo.",
+                        required_inputs=["pathologic_stage", "surgical_margin", "psadt_months"],
+                        capture_fields=["pathologic_stage", "surgical_margin", "psadt_months", "svi_status", "lni_status"],
+                        completion_rule={"any_of": ["pathologic_stage", "psadt_months"]},
+                        evidence_basis=["SPPORT", "RTOG 9601", "RADICALS-HD"],
+                        generated_from_event="recommendation_generated",
+                    ),
+                ]
+            )
     else:
         items.extend(
             [
@@ -2134,8 +2264,8 @@ def _advanced_agenda(patient: dict[str, Any], state: str, track: str) -> list[di
         therapy_fields = list(palliative_monitoring_package.get("required_visit_fields") or therapy_fields)
         lab_fields = _subset(
             therapy_fields,
-            {"albumin", "weight_loss_6m_pct", "opioid_use", "breakthrough_pain", "bowel_regimen_started"},
-            ["albumin", "weight_loss_6m_pct", "opioid_use"],
+            {"albumin", "weight_loss_6m_kg", "opioid_use", "breakthrough_pain", "bowel_regimen_started"},
+            ["albumin", "weight_loss_6m_kg", "opioid_use"],
         )
         imaging_fields = _subset(
             therapy_fields,
@@ -2228,7 +2358,7 @@ def _advanced_agenda(patient: dict[str, Any], state: str, track: str) -> list[di
                     "mini_cog_score",
                     "fatigue_score",
                     "cv_risk_documented",
-                    "drug_interaction_reviewed",
+                    "ddi_review_status",
                     "systolic_bp",
                     "dermatitis_history",
                 ]
@@ -2236,8 +2366,8 @@ def _advanced_agenda(patient: dict[str, Any], state: str, track: str) -> list[di
         )
         arpi_safety_fields = _subset(
             arpi_safety_source_fields,
-            {"mini_cog_score", "fatigue_score", "cv_risk_documented", "drug_interaction_reviewed", "systolic_bp", "dermatitis_history"},
-            ["mini_cog_score", "fatigue_score", "cv_risk_documented", "drug_interaction_reviewed"],
+            {"mini_cog_score", "fatigue_score", "cv_risk_documented", "ddi_review_status", "systolic_bp", "dermatitis_history"},
+            ["mini_cog_score", "fatigue_score", "cv_risk_documented", "ddi_review_status"],
         )
         items.append(
             _agenda_item(
@@ -2301,13 +2431,13 @@ def _advanced_agenda(patient: dict[str, Any], state: str, track: str) -> list[di
                 "g8_bmi",
                 "g8_medications",
                 "g8_self_health",
-                "weight_loss_6m_pct",
+                "weight_loss_6m_kg",
                 "fatigue_score",
                 "low_activity",
                 "slow_gait",
                 "weak_grip",
             ],
-            completion_rule={"any_of": ["g8_food_intake", "g8_weight_loss", "weight_loss_6m_pct", "fatigue_score", "low_activity", "slow_gait", "weak_grip"]},
+            completion_rule={"any_of": ["g8_food_intake", "g8_weight_loss", "weight_loss_6m_kg", "fatigue_score", "low_activity", "slow_gait", "weak_grip"]},
             evidence_basis=["EAU 2026 avanzada", "NCCN 2026 survivorship"],
             generated_from_event="missing_critical_inputs",
             decision_targets=["frailty", "treatment_fitness", "treatment_intensity"],
@@ -2455,8 +2585,8 @@ def _advanced_agenda(patient: dict[str, Any], state: str, track: str) -> list[di
         )
         hospice_fields = _subset(
             palliative_required_fields,
-            {"ecog", "weight_loss_6m_pct", "albumin", "patient_prefers_comfort", "prior_systemic_lines", "advance_directive_documented"},
-            ["ecog", "weight_loss_6m_pct", "albumin", "patient_prefers_comfort", "prior_systemic_lines"],
+            {"ecog", "weight_loss_6m_kg", "albumin", "patient_prefers_comfort", "prior_systemic_lines", "advance_directive_documented"},
+            ["ecog", "weight_loss_6m_kg", "albumin", "patient_prefers_comfort", "prior_systemic_lines"],
         )
         rt_bone_fields = _subset(
             palliative_required_fields,
@@ -3015,7 +3145,7 @@ def build_therapy_checkpoints(
         psma_ready = any("psma" in str(item.get("study_type", "")).lower() for item in (patient.get("imaging") or []))
         arpi_safety_ready = all(
             _is_present(followup.get(key))
-            for key in ("ecog_current",)
+            for key in ("mini_cog_score", "fatigue_score", "cv_risk_documented", "ddi_review_status")
         )
         checkpoints.extend(
             [
@@ -3058,7 +3188,7 @@ def build_therapy_checkpoints(
                     evidence_basis=["NCCN 2026", "EAU 2026 avanzada", "37.pdf", "40.pdf", "41.pdf"],
                     decision_supported="Selección o continuación segura de ARPI.",
                     why_it_matters_now="La toxicidad prevenible puede obligar suspensión o selección equivocada del agente.",
-                    inputs_required=["mini_cog_score", "fatigue_score", "cv_risk_documented", "drug_interaction_reviewed"],
+                    inputs_required=["mini_cog_score", "fatigue_score", "cv_risk_documented", "ddi_review_status"],
                     blocking_if_missing=management_track == "on_arpi",
                     last_input_source="follow_up_visits" if arpi_safety_ready else "",
                     last_input_date=followup.get("visit_date", ""),

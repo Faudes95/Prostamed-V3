@@ -39,6 +39,8 @@ from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from prostanet.shared.phoenix import evaluate_phoenix
+
 logger = logging.getLogger(__name__)
 
 
@@ -590,10 +592,16 @@ class PopulationWatchdog:
                     threshold="PSA50 a 3 meses",
                 ))
 
-        # Progression: PSA >25% above nadir (PCWG3)
+        # Progression: PSA >25% above nadir (PCWG3). EPIC 1 FIX-PCWG3-1:
+        # delegar el gate nadir+2 al helper canónico evaluate_phoenix para
+        # uniformidad con el motor de alertas y reducir duplicación.
         if psa_nadir < psa_current and psa_nadir > 0:
             pct_rise = (psa_current - psa_nadir) / psa_nadir
-            if pct_rise >= 0.25 and psa_current >= psa_nadir + 2.0:
+            phoenix_evaluation = evaluate_phoenix({
+                "psa_nadir": psa_nadir,
+                "psa_current": psa_current,
+            })
+            if pct_rise >= 0.25 and phoenix_evaluation.threshold_reached:
                 alerts.append(PatientAlert(
                     patient_id=pid,
                     alert_type="psa_progression_pcwg3",
@@ -668,9 +676,9 @@ class PopulationWatchdog:
             if not resolve_feature_flags().get("ENABLE_AI_STATE_PREDICTION"):
                 return alerts
 
-            from prostanet.ai.inference.model_registry import ModelRegistry
-            from pathlib import Path
-            reg = ModelRegistry(models_dir=Path("output/models"))
+            from prostanet.ai.inference.runtime_registry import get_runtime_model_registry
+
+            reg = get_runtime_model_registry()
             model = reg.get("state_transition")
             if not model:
                 return alerts

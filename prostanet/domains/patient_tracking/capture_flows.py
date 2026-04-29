@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from prostanet.domains.patient_tracking.capture_surface import (
+    build_capture_surface_metadata,
+    enrich_capture_block,
+)
 from prostanet.shared.ui_value_normalizer import (
     normalize_capture_target_cta,
     normalize_capture_target_label,
     normalize_decision_domain_label,
-    normalize_field_list,
 )
 
 
@@ -29,19 +32,31 @@ FOLLOWUP_PREFERRED_FIELDS = {
     "current_adt_context",
     "castrate_testosterone_status",
     "psa",
+    "psa_history",
     "testosterone",
+    "testosterone_history",
     "alp",
     "ldh",
     "hemoglobin",
     "fatigue_score",
+    "eq5d_vas_band",
+    "fact_p_total_band",
+    "bpi_worst_pain_band",
+    "fatigue_score_band",
     "mini_cog_score",
     "peripheral_neuropathy_grade",
     "cv_risk_documented",
-    "drug_interaction_reviewed",
+    "ddi_review_status",
+    "active_liver_disease",
+    "cirrhosis_or_portal_hypertension",
+    "active_hepatitis_b_or_c",
+    "prior_drug_induced_liver_injury",
     "dxa_baseline_done",
     "calcium_vitd_started",
     "bone_protection_started",
     "vitamin_d_level",
+    "height_cm",
+    "weight_loss_6m_kg",
 }
 
 FIELD_GROUP_HINTS = {
@@ -52,7 +67,9 @@ FIELD_GROUP_HINTS = {
     "current_adt_context": ("advanced_sequencing", "castration_status"),
     "castrate_testosterone_status": ("advanced_sequencing", "castration_status"),
     "psa": ("psa_monitoring", "disease_control"),
+    "psa_history": ("psa_monitoring", "disease_control"),
     "testosterone": ("psa_monitoring", "castration_status"),
+    "testosterone_history": ("psa_monitoring", "castration_status"),
     "hrr_status": ("biomarker_eligibility", "parp_eligibility"),
     "hrr_gene": ("biomarker_eligibility", "parp_eligibility"),
     "brca2_status": ("biomarker_eligibility", "parp_eligibility"),
@@ -67,12 +84,22 @@ FIELD_GROUP_HINTS = {
     "bone_protection_started": ("bone_support", "bone_safety"),
     "vitamin_d_level": ("bone_support", "bone_safety"),
     "cv_risk_documented": ("adt_safety", "cv_safety"),
-    "drug_interaction_reviewed": ("adt_safety", "arpi_safety"),
+    "ddi_review_status": ("adt_safety", "arpi_safety"),
+    "active_liver_disease": ("adt_safety", "arpi_safety"),
+    "cirrhosis_or_portal_hypertension": ("adt_safety", "arpi_safety"),
+    "active_hepatitis_b_or_c": ("adt_safety", "arpi_safety"),
+    "prior_drug_induced_liver_injury": ("adt_safety", "arpi_safety"),
     "mini_cog_score": ("frailty_fitness", "treatment_fitness"),
     "fatigue_score": ("frailty_fitness", "treatment_fitness"),
+    "eq5d_vas_band": ("frailty_fitness", "treatment_fitness"),
+    "fact_p_total_band": ("frailty_fitness", "treatment_fitness"),
+    "bpi_worst_pain_band": ("frailty_fitness", "treatment_fitness"),
+    "fatigue_score_band": ("frailty_fitness", "treatment_fitness"),
     "peripheral_neuropathy_grade": ("frailty_fitness", "treatment_fitness"),
     "weight_kg": ("frailty_fitness", "treatment_fitness"),
+    "height_cm": ("frailty_fitness", "treatment_fitness"),
     "bmi_current": ("frailty_fitness", "treatment_fitness"),
+    "weight_loss_6m_kg": ("frailty_fitness", "treatment_fitness"),
     "weight_loss_6m_pct": ("frailty_fitness", "treatment_fitness"),
     "g8_food_intake": ("frailty_fitness", "treatment_fitness"),
     "g8_weight_loss": ("frailty_fitness", "treatment_fitness"),
@@ -272,6 +299,7 @@ def build_missing_input_capture_bundle(
             if has_followup_flow or any(field in FOLLOWUP_PREFERRED_FIELDS for field in fields)
             else "intake"
         )
+        surface = build_capture_surface_metadata(fields, required_inputs=fields)
         tasks.append(
             {
                 "key": key,
@@ -284,7 +312,14 @@ def build_missing_input_capture_bundle(
                 "preferred_entrypoint": capture_target,
                 "agenda_id": agenda_match.get("id"),
                 "raw_fields": fields,
-                "form_scope": {"mode": "capture_block", "focus": group_key, "fields": fields},
+                "visible_fields": list(surface.get("visible_fields") or []),
+                "visible_required_inputs": list(surface.get("visible_required_inputs") or []),
+                "form_scope": {
+                    "mode": "capture_block",
+                    "focus": group_key,
+                    "fields": fields,
+                    "visible_fields": list(surface.get("visible_fields") or []),
+                },
                 "action_label": "Completar en visita" if capture_target == "followup" else "Completar ingreso",
                 "task_kind": "recapture" if always_show and not fields else "missing",
                 "display_label": title or meta.get("title") or "Completar inputs críticos",
@@ -295,7 +330,7 @@ def build_missing_input_capture_bundle(
                     f"Si se completa hoy, puede recalcular {normalize_decision_domain_label(decision_affected or meta.get('decision_affected') or field_decision)}."
                 ),
                 "display_why_now": rationale or meta.get("rationale") or "Faltan datos estructurados para sostener una decisión clínica.",
-                "display_fields_summary": normalize_field_list(fields, limit=8),
+                "display_fields_summary": list(surface.get("display_fields_summary") or []),
             }
         )
 
@@ -389,7 +424,7 @@ def build_missing_input_capture_bundle(
             )
             add_task(
                 key="hospice_readiness",
-                raw_fields=[field for field in palliative_missing if field in {"patient_prefers_comfort", "prior_systemic_lines", "albumin", "weight_loss_6m_pct", "ecog"}],
+                raw_fields=[field for field in palliative_missing if field in {"patient_prefers_comfort", "prior_systemic_lines", "albumin", "weight_loss_6m_kg", "ecog"}],
                 input_group="hospice_readiness",
                 force_target="followup",
             )
@@ -413,13 +448,13 @@ def build_missing_input_capture_bundle(
     def build_block(target: str) -> dict[str, Any]:
         block_tasks = [task for task in deduped_tasks if task.get("capture_target") == target]
         block_fields = _dedupe([field for task in block_tasks for field in (task.get("raw_fields") or [])])
-        return {
+        return enrich_capture_block({
             "capture_target": target,
             "title": "Completar datos críticos del ingreso" if target == "intake" else "Completar datos críticos de la visita",
             "summary": "Solicita los inputs faltantes o variables dinámicas que deben reconfirmarse para sostener decisión clínica real.",
             "tasks": block_tasks,
             "fields": block_fields,
-        } if block_tasks else {}
+        }) if block_tasks else {}
 
     return {
         "tasks": deduped_tasks[:8],
@@ -437,7 +472,7 @@ def prepend_capture_block_to_visit_sections(
     if not capture_block or not (capture_block.get("fields") or []):
         return sections
 
-    requested_fields = set(capture_block.get("fields") or [])
+    requested_fields = set(capture_block.get("visible_fields") or capture_block.get("fields") or [])
     extracted_fields: list[dict[str, Any]] = []
     remaining_sections: list[dict[str, Any]] = []
 

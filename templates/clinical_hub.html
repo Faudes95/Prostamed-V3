@@ -13,7 +13,7 @@
             'id': 'localizado-postlocal',
             'title': 'Localizado y postlocal',
             'subtitle': 'Agrupa el trayecto inicial localizado, la vigilancia posterior a tratamiento local y la recurrencia bioquímica documentada.',
-            'modules': ['localized_initial', 'post_prostatectomy', 'recurrence_bcr', 'post_radiotherapy_or_local_salvage'],
+            'modules': ['localized_initial', 'post_prostatectomy', 'post_radiotherapy_followup', 'recurrence_bcr', 'post_radiotherapy_or_local_salvage'],
         },
         {
             'id': 'sistemico-sensible',
@@ -120,6 +120,14 @@
                                     <option value="0">No</option>
                                     <option value="1">Sí</option>
                                 </select>
+                            </div>
+                            <div id="bcrDetectedWrapper" class="hidden text-sm md:col-span-2">
+                                <span class="pm-field-label">Recurrencia bioquímica y segunda recurrencia bioquímica sin metástasis</span>
+                                <select name="bcr_detected" class="pn-input w-full px-3 py-2">
+                                    <option value="0">No</option>
+                                    <option value="1">Sí</option>
+                                </select>
+                                <p class="pm-muted-copy mt-2">Úselo cuando ya exista recurrencia bioquímica documentada sin metástasis a distancia. Si permanece en No, el hub conserva la ruta de seguimiento post-tratamiento local correspondiente.</p>
                             </div>
                             <div id="bcr2Wrapper" class="hidden text-sm md:col-span-2">
                                 <span class="pm-field-label">Segunda recurrencia bioquímica tras tratamiento local</span>
@@ -422,6 +430,7 @@
         const metachronousField = stateForm.querySelector('[name="metachronous_metastasis"]');
         const priorProstatectomyField = stateForm.querySelector('[name="prior_prostatectomy"]');
         const priorRadiationField = stateForm.querySelector('[name="prior_radiation"]');
+        const bcrDetectedField = stateForm.querySelector('[name="bcr_detected"]');
         const metastaticKnownWrapper = document.getElementById('metastaticKnownWrapper');
         const metastaticComponentsWrapper = document.getElementById('metastaticComponentsWrapper');
         const metastaticComponentToggles = Array.from(stateForm.querySelectorAll('[data-role="met-component"]'));
@@ -460,6 +469,7 @@
             localRecurrenceStageHeader: document.getElementById('localRecurrenceStageHeader'),
             priorProstatectomyWrapper: document.getElementById('priorProstatectomyWrapper'),
             priorRadiationWrapper: document.getElementById('priorRadiationWrapper'),
+            bcrDetectedWrapper: document.getElementById('bcrDetectedWrapper'),
             bcr2Wrapper: document.getElementById('bcr2Wrapper'),
             metastaticStageHeader: document.getElementById('metastaticStageHeader'),
             metastaticKnownWrapper,
@@ -520,6 +530,7 @@
             resetFields('local_recurrence_not_applicable', {
                 prior_prostatectomy: '0',
                 prior_radiation: '0',
+                bcr_detected: '0',
                 bcr2: '0',
             });
         }
@@ -852,6 +863,13 @@
             }
             const hasPriorLocalTherapy = diagnosisConfirmed && (priorProstatectomyField.value === '1' || priorRadiationField.value === '1');
             if (!hasPriorLocalTherapy) {
+                resetFields('bcr_not_applicable', {
+                    bcr_detected: '0',
+                    bcr2: '0',
+                });
+            }
+            const hasBcrShortcutSignal = hasPriorLocalTherapy && bcrDetectedField?.value === '1';
+            if (!hasBcrShortcutSignal) {
                 resetFields('bcr2_not_applicable', { bcr2: '0' });
             }
             const metastaticKnown = diagnosisConfirmed && metastaticDiseaseKnownField.value === '1';
@@ -882,7 +900,8 @@
             toggleElement(wrapperIds.localRecurrenceStageHeader, diagnosisConfirmed);
             toggleElement(wrapperIds.priorProstatectomyWrapper, diagnosisConfirmed);
             toggleElement(wrapperIds.priorRadiationWrapper, diagnosisConfirmed);
-            toggleElement(wrapperIds.bcr2Wrapper, hasPriorLocalTherapy);
+            toggleElement(wrapperIds.bcrDetectedWrapper, hasPriorLocalTherapy);
+            toggleElement(wrapperIds.bcr2Wrapper, hasBcrShortcutSignal);
             toggleElement(wrapperIds.metastaticStageHeader, diagnosisConfirmed);
             toggleElement(wrapperIds.metastaticKnownWrapper, diagnosisConfirmed);
             toggleElement(wrapperIds.metastaticComponentsWrapper, metastaticKnown);
@@ -912,6 +931,7 @@
             metastaticDiseaseKnownField,
             priorProstatectomyField,
             priorRadiationField,
+            bcrDetectedField,
             metachronousField,
         ].forEach((control) => control.addEventListener('change', updateClassifierStages));
         metastaticComponentToggles.forEach((toggle) => toggle.addEventListener('change', updateClassifierStages));

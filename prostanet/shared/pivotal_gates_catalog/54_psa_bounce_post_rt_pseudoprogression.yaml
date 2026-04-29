@@ -1,0 +1,227 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 54: psa_bounce_post_rt_pseudoprogression
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXIV) — Auditoría #63A — Gate YAML-NATIVE.
+#
+# 🆕 SEGUNDO gate informacional/anti-misinterpretation del catálogo
+# (post #62 gate 47 PSA flare ARPI). Reusa pattern soft_warning.
+# Cubre la 2da causa más común de mal interpretación PSA: PSA bounce
+# post-RT confundido con BCR Phoenix.
+#
+# Razón clínica:
+#   Post-RT externa (EBRT) o braquiterapia, ~30% pacientes presentan
+#   PSA bounce — elevación transitoria 0.4-2.0 ng/mL sobre el nadir,
+#   típicamente entre 12-30 meses post-RT, sin progresión real.
+#   Mecanismo no completamente caracterizado (postulan: muerte celular
+#   tardía radiation-induced + inflammation transitoria + remodeling
+#   prostático).
+#
+#   Confundir bounce con BCR Phoenix lleva a salvage prematuro
+#   innecesario (mortalidad procedural sin beneficio + impacto QoL +
+#   costos sin ganancia oncológica).
+#
+#   Datos prevalencia (Crook IJROBP 2010 + Pickles IJROBP 2011 +
+#   Kuban IJROBP 2003):
+#     - **PSA bounce post-EBRT**: 12-30% pacientes
+#     - **PSA bounce post-braquiterapia**: 30-40% (mayor que EBRT)
+#     - **Tiempo medio bounce**: 18 meses post-RT (rango 12-36)
+#     - **Magnitud media bounce**: 0.4-1.0 ng/mL above nadir
+#       (típicamente <2.0 ng/mL)
+#     - **Pacientes con bounce: mejor pronóstico** que sin bounce
+#       (paradójicamente — sugiere mejor respuesta inmune local)
+#
+#   Definición criterios Phoenix (Roach RTOG-ASTRO 2006):
+#     - BCR REAL post-RT: PSA elevation ≥2 ng/mL sobre el nadir
+#       (criterio estándar BCR post-RT)
+#     - Si elevation <2 ng/mL above nadir + ventana 12-30 meses +
+#       sintomáticamente bien + sin progresión imagen: **probable
+#       bounce, NO BCR** — esperar 2da medición ≥3 meses para
+#       confirmar (PCWG3)
+#
+#   Threshold canónico (Crook IJROBP 2010 + Phoenix 2006 + PCWG3):
+#     - Path A compound: PSA rise ≤2.0 above nadir + tiempo post-RT
+#       12-30 meses + sin progresión imagen documentada (probable bounce)
+#     - Path B: psa_bounce_documented_post_rt flag (interpretación
+#       clínica especialista urology/radonc)
+#     - Path C: PSA elevation NO confirmada por 2da medición ≥3 meses
+#       (PCWG3 — necesita confirmación)
+#
+#   ⚠️ DECISIÓN ARQUITECTÓNICA: severity=soft_warning (mismo patrón
+#   que gate 47 PSA flare ARPI). Gate INFORMACIONAL — alerta clínico
+#   contra salvage prematuro. NO bloquea ARPI ni quimio (decisión
+#   clínica). Sienta categoría anti-misinterpretation expandida.
+#
+#   NO override (gate informacional puro — clínico debe esperar 2da
+#   medición confirmatoria ≥3 meses per PCWG3).
+#
+#   Coexistencia con gate 53 (BCR aggressive post-RP) — escenarios
+#   distintos: gate 53 post-RP, gate 54 post-RT. Mutuamente excluyentes.
+#
+#   Bloquea: ningún régimen (severity=soft_warning + scope=
+#   REGIMEN_CODES_OBSERVATION_ONLY — alerta CONTRA cambiar a
+#   tratamiento activo prematuramente).
+# ──────────────────────────────────────────────────────────────────────
+
+code: psa_bounce_post_rt_pseudoprogression
+title: "PSA bounce post-RT (12-30 meses, ≤2 ng/mL above nadir) ≠ BCR Phoenix — esperar confirmación ≥3 meses (Crook IJROBP 2010 + RTOG-ASTRO Phoenix 2006)"
+faubot_added_in: "2026-04-25 LXIV"
+faubot_yaml_native: true
+severity: soft_warning  # Informacional/anti-misinterpretation: alerta contra salvage prematuro
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A compound: PSA rise ≤2 above nadir + 12-30m post-RT + sin imagen progresión
+    - type: all_of
+      triggers:
+        - type: numeric_below
+          field: psa_rise_above_nadir_ng_ml
+          alias_fields:
+            - psa_above_nadir
+            - elevacion_psa_sobre_nadir
+            - psa_change_above_nadir
+          threshold: 2.0
+        - type: numeric_above
+          field: months_post_rt
+          alias_fields:
+            - meses_post_rt
+            - time_since_rt_months
+            - tiempo_desde_rt_meses
+          threshold: 12
+        - type: numeric_below
+          field: months_post_rt
+          alias_fields:
+            - meses_post_rt
+            - time_since_rt_months
+            - tiempo_desde_rt_meses
+          threshold: 31  # window 12-30 meses (numeric_below 31 = ≤30)
+        - type: truthy_flag
+          field: no_image_progression_documented
+          alias_fields:
+            - no_imaging_progression
+            - sin_progresion_imagen
+            - imaging_stable_post_rt
+    # Path B: flag clínico documentado por urology/radonc
+    - type: truthy_flag
+      field: psa_bounce_documented_post_rt
+      alias_fields:
+        - psa_bounce_post_rt_documented
+        - rebote_psa_post_rt
+        - pseudoprogression_psa_post_rt
+        - benign_psa_bounce_post_rt
+    # Path C: PSA elevation NO confirmada por 2da medición ≥3 meses (PCWG3)
+    - type: truthy_flag
+      field: psa_elevation_unconfirmed_post_rt
+      alias_fields:
+        - psa_unconfirmed_second_measurement
+        - sin_confirmacion_segunda_medicion
+        - elevation_pending_confirmation_pcwg3
+
+# NO override (gate informacional puro — clínico debe esperar confirmación)
+# Pattern consistente con gate 47 PSA flare ARPI
+
+regimen_codes:
+  - REGIMEN_CODES_OBSERVATION_ONLY
+
+keywords:
+  - KEYWORDS_OBSERVATION_ONLY
+
+message: |
+  ⚠️ ALERTA CLÍNICA: posible PSA BOUNCE post-RT — NO confundir con
+  BCR Phoenix. NO iniciar salvage prematuramente.
+
+  📊 CONTEXTO DETECTADO:
+  - PSA elevation ≤2 ng/mL above nadir (NO criterio Phoenix)
+  - Tiempo post-RT 12-30 meses (ventana típica bounce)
+  - Sin progresión imagen documentada (RECIST 1.1 estable)
+  - O documentación clínica explícita PSA bounce
+  - O elevation NO confirmada por 2da medición ≥3 meses
+
+  🔬 MECANISMO PSA BOUNCE (no completamente caracterizado):
+    - Muerte celular tardía radiation-induced (apoptosis tardía
+      hasta 24-36 meses post-RT)
+    - Inflamación local transitoria + remodeling prostático
+    - Posible respuesta inmune anti-tumoral (paradójicamente
+      pacientes con bounce tienen mejor pronóstico)
+
+  📈 PREVALENCIA DOCUMENTADA:
+    - **PSA bounce post-EBRT**: 12-30% pacientes
+    - **PSA bounce post-braquiterapia**: 30-40% (mayor)
+    - **Tiempo medio**: 18 meses post-RT (rango 12-36)
+    - **Magnitud media**: 0.4-1.0 ng/mL above nadir
+    - **Pacientes con bounce → MEJOR pronóstico** que sin bounce
+      (Crook IJROBP 2010 subset analysis)
+
+  📋 CRITERIOS PHOENIX (Roach RTOG-ASTRO 2006) — Cuando SÍ es BCR:
+  Para confirmar BCR REAL post-RT requiere:
+    1. **PSA elevation ≥2 ng/mL ABOVE el nadir** (criterio estándar)
+    2. **Confirmación con 2da medición** ≥3 meses post-primera
+       elevación (per PCWG3 — Scher JCO 2016)
+    3. + opcional: nuevas lesiones imagen RECIST 1.1 / nuevos
+       síntomas atribuibles
+
+  🎯 CONDUCTA CLÍNICA RECOMENDADA:
+  1. **NO iniciar salvage** (RT/cirugía/ADT) basado solo en bounce
+  2. **Repetir PSA en 3 meses** — si baja, era bounce (resolución
+     espontánea típica)
+  3. **NO solicitar imagen** automáticamente solo por bounce —
+     paciente sintomáticamente bien + sin RECIST changes = continuar
+     vigilancia
+  4. **Educar al paciente**: explicar fenómeno bounce (~30% post-RT,
+     mejor pronóstico que sin bounce), reducir ansiedad
+  5. **Documentar en HC** para evitar mal interpretación visitas
+     subsecuentes
+  6. **Re-evaluar a 6 meses** desde bounce inicial con PSA + imagen
+     completa (CT/PSMA PET si elevation persiste)
+
+  ❌ ERRORES COMUNES A EVITAR:
+    - Cambiar a ADT basado solo en bounce <2 ng/mL
+    - Solicitar PSMA PET por bounce aislado (false positive
+      potencial alto en periodo bounce)
+    - Salvage cirugía o RT por bounce — exposición a toxicidad
+      sin beneficio (paciente mejor pronóstico que sin bounce)
+    - Desmoralizar paciente con "tu cáncer está progresando" sin
+      confirmación Phoenix + 2da medición
+
+  ⚠️ EXCEPCIONES — SÍ considerar BCR (gate NO aplica) si:
+    - PSA elevation >2 ng/mL above nadir (criterio Phoenix cumplido)
+    - Tiempo post-RT >36 meses (fuera de ventana bounce típica)
+    - Síntomas progresión severa (dolor óseo nuevo, fractura, etc.)
+    - Nuevas lesiones imagen documentadas (RECIST 1.1)
+    - Compromiso visceral nuevo
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+    - `psa_rise_above_nadir_ng_ml`: PSA actual menos PSA nadir documentado
+    - `months_post_rt`: meses desde fin de radioterapia
+    - `no_image_progression_documented`: flag CT/MRI/bone scan estable
+    - O `psa_bounce_documented_post_rt`: flag interpretación clínica
+
+  Este gate es **INFORMACIONAL / ANTI-MISINTERPRETATION** — NO bloquea
+  ningún tratamiento sino que ALERTA contra salvage prematuro por
+  mal interpretación de PSA bounce como BCR Phoenix.
+
+evidence_tag: crook_ijrobp_2010_pickles_ijrobp_2011_phoenix_2006_pcwg3_kuban_ijrobp_2003
+trial_refs:
+  - "Crook IJROBP 2010"
+  - "Pickles IJROBP 2011"
+  - "Kuban IJROBP 2003"
+  - "RTOG-ASTRO Phoenix 2006"
+  - "PCWG3 Scher JCO 2016"
+  - "EAU 2026 §6.4.2"
+  - "NCCN PROS-G v5.2026"
+
+references:
+  - "Crook JM et al. PSA bounce after EBRT for prostate cancer. IJROBP 2010;77:1051 — foundational bounce post-EBRT."
+  - "Pickles T et al. PSA bounce post-RT prevalence + predictors. IJROBP 2011;79:1036."
+  - "Kuban DA et al. PSA bounce after definitive RT for prostate cancer. IJROBP 2003;55:1289."
+  - "Roach M et al. RTOG-ASTRO Phoenix Consensus on PSA failure post-RT. IJROBP 2006;65:965 — definition BCR post-RT."
+  - "Scher HI et al. PCWG3 Trial Endpoints. JCO 2016;34:1402 — confirmation requirement."
+  - "Nguyen PL et al. PSA bounce post-RT + outcome correlation. IJROBP 2007."
+  - "EAU Guidelines 2026 §6.4.2 — PSA monitoring post-RT."
+  - "NCCN Guidelines Prostate Cancer v5.2026 — Therapy response assessment post-RT."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Post-RT PSA monitoring + Phoenix criteria + bounce interpretation"
+  eau_section: "EAU 2026 §6.4.2 — Post-RT BCR definition + bounce vs progression"
+  rtog_astro_section: "Roach RTOG-ASTRO Phoenix Consensus 2006 — BCR definition post-RT (nadir + 2 ng/mL)"
+  pcwg3_section: "Scher JCO 2016 — PCWG3 confirmation requirement for PSA elevation"

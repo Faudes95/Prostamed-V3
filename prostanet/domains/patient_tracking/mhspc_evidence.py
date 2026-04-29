@@ -20,10 +20,14 @@ MHSPC_STATES = {
 }
 
 VISIBLE_TRIALS_BY_STATE = {
-    "mcspc_low_volume_sync_oligo": {"ARANOTE", "ARCHES", "TITAN", "ENZAMET", "STAMPEDE"},
-    "mcspc_oligo_metachronous": {"ARANOTE", "ARCHES", "TITAN", "ENZAMET"},
-    "mcspc_high_volume_sync": {"ARANOTE", "ARASENS", "PEACE-1", "CHAARTED", "LATITUDE"},
-    "mcspc_high_volume_metachronous": {"ARANOTE", "ARASENS", "CHAARTED"},
+    # EPIC 9 Group C (GAP-5) — TALAPRO-3 visible en los 4 fenotipos mHSPC
+    # cuando el paciente es HRR+; la gate por biomarcador se aplica en
+    # `build_visible_mhspc_trial_matches` para mantener la visibilidad pero
+    # marcar `match=False` si el estatus HRR es negativo o desconocido.
+    "mcspc_low_volume_sync_oligo": {"ARANOTE", "ARCHES", "TITAN", "ENZAMET", "STAMPEDE", "TALAPRO-3"},
+    "mcspc_oligo_metachronous": {"ARANOTE", "ARCHES", "TITAN", "ENZAMET", "TALAPRO-3"},
+    "mcspc_high_volume_sync": {"ARANOTE", "ARASENS", "PEACE-1", "CHAARTED", "LATITUDE", "TALAPRO-3"},
+    "mcspc_high_volume_metachronous": {"ARANOTE", "ARASENS", "CHAARTED", "TALAPRO-3"},
 }
 DOCETAXEL_TRIPLETS = {"ADT_DOCETAXEL_DAROLUTAMIDE", "ADT_DOCETAXEL_ABIRATERONE"}
 
@@ -32,6 +36,16 @@ HIDDEN_TRIALS_BY_STATE = {
     "mcspc_oligo_metachronous": {"ARASENS", "PEACE-1", "CHAARTED", "LATITUDE", "STAMPEDE"},
     "mcspc_high_volume_sync": set(),
     "mcspc_high_volume_metachronous": {"PEACE-1", "STAMPEDE"},
+}
+
+# EPIC 9 Group C (GAP-5) — mismo conjunto HRR canónico usado por
+# `mhspc_regimen_selector.TALAPRO3_HRR_POSITIVE_GENES`. Re-declarado aquí
+# para evitar import circular cuando `mhspc_evidence` carga antes que el
+# selector durante el bootstrap.
+TALAPRO3_HRR_POSITIVE_TOKENS = {
+    "brca1", "brca2", "atm", "palb2", "cdk12", "chek2",
+    "fanca", "mlh1", "mre11a", "nbn", "rad51b", "rad51c",
+    "hrr_other", "other_hrr", "positive", "1", "true", "si", "sí", "yes",
 }
 
 
@@ -76,8 +90,13 @@ def _state_label(state: str) -> str:
     return labels.get(state, "mHSPC")
 
 
-def _preferred_non_triplet_label(state: str, payload: dict[str, Any] | None = None) -> str:
-    return preferred_non_triplet_regimen_label(state, payload or {})
+def _preferred_non_triplet_label(
+    state: str,
+    payload: dict[str, Any] | None = None,
+    *,
+    selector_bundle: dict[str, Any] | None = None,
+) -> str:
+    return preferred_non_triplet_regimen_label(state, payload or {}, selector_bundle=selector_bundle)
 
 
 def build_triplet_decision(
@@ -125,6 +144,9 @@ def build_triplet_decision(
         item for item in (selection_bundle.get("frontline_regimen_rankings") or [])
         if str(item.get("regimen_code") or "") in DOCETAXEL_TRIPLETS
     ]
+    overall_preferred = dict(selection_bundle.get("preferred_regimen") or {})
+    overall_preferred_code = str(overall_preferred.get("regimen_code") or "")
+    overall_preferred_label = str(overall_preferred.get("regimen_label") or "")
     if triplet_rankings:
         preferred_triplet = str(triplet_rankings[0].get("regimen_label") or "")
         preferred_triplet_code = str(triplet_rankings[0].get("regimen_code") or "")
@@ -265,6 +287,33 @@ def build_triplet_decision(
     elif "PEACE-1" in supported_triplets:
         preferred_backbone_key = "PEACE-1"
     preferred_backbone_bundle = trial_backbone(preferred_backbone_key)
+    triplet_candidate_status = "none"
+    triplet_candidate_only_if_reopened = False
+    cross_scope_alignment = "aligned"
+    cross_scope_explanation = ""
+    triplet_vs_global_preference_note = ""
+    if preferred_triplet_code:
+        if status in {"recommended", "eligible", "conditional", "pending_validation"}:
+            triplet_candidate_status = "active_candidate"
+        else:
+            triplet_candidate_status = "candidate_only_if_reopened"
+            triplet_candidate_only_if_reopened = True
+        if overall_preferred_code and overall_preferred_code != preferred_triplet_code:
+            cross_scope_alignment = (
+                "contradictory_semantics"
+                if triplet_candidate_only_if_reopened
+                else "subset_divergent"
+            )
+            cross_scope_explanation = (
+                f"El mejor triplete posible sería {preferred_triplet}, pero el tratamiento global preferente hoy es {overall_preferred_label or overall_preferred_code}."
+            )
+            triplet_vs_global_preference_note = (
+                f"Hoy el triplete no lidera globalmente; {preferred_triplet} solo reabre liderazgo si mejora la elegibilidad a triplete o cambia el balance de seguridad."
+                if triplet_candidate_only_if_reopened
+                else f"El subranking de tripletes favorece {preferred_triplet}, pero el ranking global favorece {overall_preferred_label or overall_preferred_code} por mejor balance clínico."
+            )
+        elif overall_preferred_code == preferred_triplet_code:
+            triplet_vs_global_preference_note = "El mejor triplete coincide con el tratamiento global preferente."
 
     return {
         "show": True,
@@ -293,10 +342,21 @@ def build_triplet_decision(
         "stale_inputs": stale_inputs,
         "docetaxel_lab_snapshot": lab_snapshot,
         "preferred_triplet_regimen_code": preferred_triplet_code,
+        "preferred_triplet_candidate_regimen_code": preferred_triplet_code,
+        "preferred_triplet_candidate_label": preferred_triplet or "",
         "preferred_triplet_backbone": preferred_backbone_bundle.get("recommended_trial_backbone", "") if preferred_triplet else "",
         "preferred_triplet_backbone_label": preferred_triplet or "",
         "supported_triplet_backbones": supported_triplets,
-        "preferred_non_triplet_backbone_label": _preferred_non_triplet_label(exact_state, payload),
+        "preferred_non_triplet_backbone_label": _preferred_non_triplet_label(exact_state, payload, selector_bundle=selection_bundle),
+        "overall_preferred_frontline_regimen": overall_preferred,
+        "overall_preferred_frontline_regimen_code": overall_preferred_code,
+        "overall_preferred_frontline_regimen_label": overall_preferred_label,
+        "ranking_scope": "triplet_subset",
+        "triplet_candidate_status": triplet_candidate_status,
+        "triplet_candidate_only_if_reopened": triplet_candidate_only_if_reopened,
+        "cross_scope_alignment": cross_scope_alignment,
+        "cross_scope_explanation": cross_scope_explanation,
+        "triplet_vs_global_preference_note": triplet_vs_global_preference_note,
         "evidence_basis": evidence_basis,
         "ranking_trace": ranking_trace,
         "why_not_triplet": ranking_trace.get("why_not_triplet", ""),
@@ -370,6 +430,28 @@ def build_visible_mhspc_trial_matches(
                 "LATITUDE es concordante con mHSPC de novo de alto riesgo."
                 if match
                 else "LATITUDE no se prioriza porque este caso no reproduce el marco de alto riesgo de novo del ensayo."
+            )
+        elif trial == "TALAPRO-3":
+            # EPIC 9 Group C (GAP-5) — gate estricto por biomarcador HRR.
+            # Acepta tokens canónicos de `hrr_status`, `hrr_gene`, o flags
+            # específicos BRCA1/2/ATM/PALB2. Cualquier otro valor (incluido
+            # "not_tested", "negative", "unknown", o vacío) resulta en
+            # match=False con razón explícita.
+            hrr_tokens = {
+                str(payload.get("hrr_status", "") or "").strip().lower(),
+                str(payload.get("hrr_gene", "") or "").strip().lower(),
+                str(payload.get("brca1_status", "") or "").strip().lower(),
+                str(payload.get("brca2_status", "") or "").strip().lower(),
+                str(payload.get("atm_status", "") or "").strip().lower(),
+                str(payload.get("palb2_status", "") or "").strip().lower(),
+                str(payload.get("cdk12_status", "") or "").strip().lower(),
+            }
+            hrr_positive = any(token in TALAPRO3_HRR_POSITIVE_TOKENS for token in hrr_tokens if token)
+            match = hrr_positive
+            reason = (
+                "TALAPRO-3 respalda el doblete de precisión talazoparib + enzalutamida + ADT en mHSPC HRR-mutado (rPFS HR≈0.67, pivotal abstract ASCO GU 2025)."
+                if match
+                else "TALAPRO-3 no aplica: requiere alteración HRR (BRCA1/2, ATM, PALB2, CDK12, CHEK2, FANCA, MLH1, MRE11A, NBN, RAD51B, RAD51C) documentada; sin HRR+ el régimen queda bloqueado."
             )
         backbone_bundle = trial_backbone(trial)
         matches.append(

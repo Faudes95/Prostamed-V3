@@ -1,5 +1,7 @@
+# IEC 62304 §5.5 (Unit verification)
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 
@@ -55,6 +57,11 @@ def test_ai_models_endpoint_reports_runtime_mode_and_model_maturity(app_client):
     assert payload["success"] is True
     assert payload["rule_based_source_of_truth"] is True
     assert payload["runtime_mode"] in {"shadow", "advisory"}
+    assert payload["bootstrap_completed"] is True
+    assert payload["loaded_model_count"] == 0
+    assert payload["runtime_readiness"] == "not_ready"
+    assert "state_transition" in payload["missing_model_ids"]
+    assert payload["last_bootstrap_at"]
     assert "state_transition" in payload["models"]
 
     state_model = payload["models"]["state_transition"]
@@ -104,6 +111,99 @@ def test_state_prediction_endpoint_returns_model_status_when_unavailable(app_cli
     assert body["advisory_api"] is True
     assert body["rule_based_source_of_truth"] is True
     assert body["model_status"]["model_id"] == "state_transition"
+    assert body["model_status"]["bootstrap_completed"] is True
+    assert body["model_status"]["runtime_readiness"] == "not_ready"
+
+
+def test_model_registry_missing_artifact_warns_only_once(tmp_path, caplog):
+    from prostanet.ai.inference.model_registry import ModelRegistry
+
+    ModelRegistry.reset_process_log_state()
+    caplog.set_level(logging.DEBUG, logger="prostanet.ai.inference.model_registry")
+
+    registry = ModelRegistry(models_dir=tmp_path)
+    assert registry.load_model("state_transition") is False
+    assert registry.load_model("state_transition") is False
+
+    warnings = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING and "Model artifact not found" in record.message
+    ]
+    assert len(warnings) == 1
+
+
+def test_runtime_model_registry_bootstraps_once_per_process(tmp_path, monkeypatch):
+    from prostanet.ai.inference.model_registry import ModelRegistry
+    from prostanet.ai.inference.runtime_registry import (
+        get_runtime_model_registry,
+        get_runtime_registry_health,
+        reset_runtime_model_registry,
+    )
+
+    reset_runtime_model_registry()
+    calls: list[str] = []
+    original = ModelRegistry.load_all_available
+
+    def tracked(self, device=None):
+        calls.append(str(self.models_dir))
+        return original(self, device=device)
+
+    monkeypatch.setattr(ModelRegistry, "load_all_available", tracked)
+
+    registry_a = get_runtime_model_registry(models_dir=tmp_path)
+    registry_b = get_runtime_model_registry(models_dir=tmp_path)
+    health = get_runtime_registry_health(registry=registry_b)
+
+    assert registry_a is registry_b
+    assert len(calls) == 1
+    assert health["bootstrap_completed"] is True
+    assert health["bootstrap_generation"] == 1
+    assert health["loaded_model_count"] == 0
+
+
+def test_runtime_model_registry_rebootstraps_when_artifact_appears(tmp_path, monkeypatch):
+    from prostanet.ai.inference.model_registry import ModelRegistry
+    from prostanet.ai.inference.runtime_registry import (
+        get_runtime_model_registry,
+        get_runtime_registry_health,
+        reset_runtime_model_registry,
+    )
+
+    class FakeModel:
+        def load(self, artifact_path, device=None):
+            self.artifact_path = artifact_path
+            self.device = device
+
+        def eval(self):
+            return None
+
+    reset_runtime_model_registry()
+    monkeypatch.setattr(
+        ModelRegistry,
+        "_instantiate_model",
+        staticmethod(lambda _model_id: FakeModel()),
+    )
+
+    registry = get_runtime_model_registry(models_dir=tmp_path)
+    initial_health = get_runtime_registry_health(registry=registry)
+    assert initial_health["loaded_model_count"] == 0
+    assert initial_health["runtime_readiness"] == "not_ready"
+
+    artifact = tmp_path / "state_transition" / "best.pt"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_bytes(b"fake-model")
+
+    registry_after = get_runtime_model_registry(models_dir=tmp_path)
+    health_after = get_runtime_registry_health(registry=registry_after)
+    state_model = registry_after.get_metadata("state_transition")
+
+    assert registry_after is registry
+    assert health_after["bootstrap_generation"] == 2
+    assert health_after["loaded_model_count"] >= 1
+    assert health_after["runtime_readiness"] == "advisory_ready"
+    assert state_model["artifact_exists"] is True
+    assert state_model["loaded"] is True
 
 
 def test_full_assessment_exposes_rule_based_and_ai_overlay_layers(app_client):

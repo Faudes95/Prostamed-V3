@@ -1,0 +1,173 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 60: svi_risk_high_rp_efficiency_warning
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXV) — Auditoría #67A — RP vs RT subspecialty.
+#
+# Razón clínica:
+#   Seminal Vesicle Invasion (SVI) hace RP monoterapia INEFICIENTE:
+#     - Positive surgical margins en SVI: 30-45% (vs 5-10% no-SVI)
+#     - ADT post-op casi obligatorio (≥70% pacientes SVI requerirán)
+#     - Salvage RT post-RP necesario en 40-60% (RADICALS-RT)
+#     - 5-year BCR-FS RP+RT+ADT: 60-70% vs RT+ADT primario: 65-75%
+#     - 10-year OS multimodal RP equivalente a RT+ADT primario
+#
+#   Conclusión clínica: si SVI risk >30% predicho por nomograma →
+#   RT primaria + ADT 18-36 meses logra mismo control oncológico con
+#   menor morbilidad combinada (no double-modality toxicity).
+#
+#   Nomograma MSKCC SVI risk (Stephenson JCO 2006):
+#     SVI_risk(%) = -3.1 + 0.045*PSA + 0.84*Gleason + 1.2*cT_stage_factor +
+#                   0.02*percent_positive_cores
+#
+#     Threshold accionable:
+#     - SVI risk <15%: RP segura (probable confinada)
+#     - SVI risk 15-30%: zona gris, decisión multidisciplinaria
+#     - SVI risk >30%: RP+ADT vs RT+ADT equivalent → preferir menos
+#       morbilidad combinada
+#
+#   Severity: soft_warning — alerta clínico para considerar RT+ADT
+#   primaria si SVI risk alto (no bloquea RP que sigue siendo opción
+#   válida con counseling apropiado).
+#
+#   Override: rp_with_planned_adjuvant_documented (paciente acepta RP
+#   sabiendo necesitará multimodal post-op).
+# ──────────────────────────────────────────────────────────────────────
+
+code: svi_risk_high_rp_efficiency_warning
+title: "SVI risk >30% (nomograma MSKCC) → considerar RT+ADT primario vs RP+multimodal"
+faubot_added_in: "2026-04-25 LXXV"
+faubot_yaml_native: true
+severity: soft_warning  # Alerta + downgrade RP score (no bloquea totalmente)
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: SVI risk calculado por nomograma >30%
+    - type: numeric_above
+      field: svi_risk_nomogram_percent
+      alias_fields:
+        - svi_risk_mskcc
+        - seminal_vesicle_invasion_risk
+        - riesgo_invasion_vesicular_seminal
+      threshold: 30  # >30% = numeric_above 30
+    # Path B: features clínicos que predicen SVI alto (proxy si nomograma
+    # no calculado): Gleason ≥8 + PSA ≥20 + cT2c-cT3
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: gleason_score
+          alias_fields:
+            - gleason_total
+            - gleason_combined
+            - score_gleason
+          threshold: 7  # ≥8 = numeric_above 7
+        - type: numeric_above
+          field: psa_value
+          alias_fields:
+            - psa
+            - psa_baseline
+            - baseline_psa
+          threshold: 19  # ≥20 = numeric_above 19
+        - type: string_contains_any
+          field: clinical_t_stage
+          alias_fields:
+            - clinical_stage_t
+            - cT_stage
+            - estadio_clinico_t
+          patterns:
+            - cT2c
+            - cT3
+            - cT3a
+            - cT3b
+    # Path C: clinical flag explicit
+    - type: truthy_flag
+      field: svi_risk_high_documented
+      alias_fields:
+        - svi_alto_riesgo_documentado
+        - high_svi_risk_clinically_documented
+
+# Override: paciente prefiere RP sabiendo plan multimodal
+override:
+  type: truthy_flag
+  field: rp_with_planned_adjuvant_documented
+  alias_fields:
+    - rp_multimodal_planned
+    - rp_acepta_multimodal_post_op
+    - patient_accepts_rp_with_adjuvant_plan
+
+regimen_codes:
+  - REGIMEN_CODES_RADICAL_PROSTATECTOMY
+
+keywords:
+  - prostatectomía radical
+  - radical prostatectomy
+  - cirugía prostática radical
+
+message: |
+  ⚠️ ALERTA: SVI risk alto (>30% nomograma MSKCC) → RP monoterapia
+  ineficiente, considerar RT+ADT primario (multimodal equivalente con
+  menor morbilidad combinada).
+
+  📊 EVIDENCIA SVI + RP outcomes:
+  - Positive surgical margins en SVI: 30-45% (vs 5-10% no-SVI)
+  - ADT post-op casi obligatorio: ≥70% pacientes con SVI
+  - Salvage RT post-RP necesario: 40-60% (RADICALS-RT)
+  - Combined toxicity RP+RT+ADT > RT+ADT primario sole
+  - 10-year OS RP+multimodal ≈ RT+ADT primario (equivalente)
+
+  🎯 CONDUCTA RECOMENDADA:
+  1. **Confirmar SVI risk con MSKCC nomograma** (calculate_svi_risk_nomogram):
+     - Inputs: PSA, Gleason score, clinical T stage, % positive cores
+     - Output: % probability SVI
+  2. **Si SVI risk >30%**: discutir 2 options con paciente:
+     a) **RT primaria + ADT 18-36m** (Stampede / EORTC-22961)
+        - Single modality intensive
+        - Sin morbilidad quirúrgica
+        - 10-yr OS comparable a RP+multimodal
+     b) **RP + planned adjuvant ADT/RT** (multimodal)
+        - Counseling explícito que requerirá adjuvant
+        - Combined toxicity quirúrgica + RT + ADT
+        - Solo si paciente prefiere extirpar primario
+  3. **Multidisciplinaria** urology + radonc + oncology
+  4. **Si paciente elige RP sabiendo multimodal** → activar override
+     `rp_with_planned_adjuvant_documented`
+
+  📈 ALTERNATIVAS A RP MONOTERAPIA:
+  - **RT-IMRT 78-80 Gy + ADT 18-36m**: estándar high-risk locally advanced
+  - **Brachy boost + EBRT + ADT** (ASCENDE-RT): mejor control local que
+    EBRT solo, requires brachy candidacy (gate 59 verifica)
+  - **SBRT + ADT**: option emergente para selected patients
+
+  🔬 EVIDENCIA:
+  - **MSKCC SVI Nomogram** (Stephenson JCO 2006;24:3973)
+  - **Grubbs IJROBP 2016**: SVI hace RP monoterapia ineficiente
+  - **Kibel JCO 2009**: positive margins SVI 35-45%
+  - **RADICALS-RT** (Parker Lancet 2020): salvage RT post-RP common
+  - **EORTC 22961**: RT+ADT 36m vs ADT alone high-risk
+  - **NCCN Prostate v5.2026 PROS-3**: high/very-high → multimodal
+
+  🎯 INTERPRETACIÓN NOMOGRAMA:
+  - SVI risk <15%: RP confidence alta (probable confinada)
+  - SVI risk 15-30%: zona gris, decisión multidisciplinaria
+  - SVI risk >30%: prefer multimodal o RT primario
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `svi_risk_nomogram_percent`: % calculado por MSKCC
+  - `gleason_score`: 6-10
+  - `psa_value`: ng/mL baseline
+  - `clinical_t_stage`: cT1c / cT2a-c / cT3a-b / cT4
+  - `percent_positive_cores`: % cores positivos en biopsia
+  - `rp_with_planned_adjuvant_documented`: override flag
+
+  Este gate es **INFORMACIONAL** — alerta para optimizar selección
+  modalidad terapéutica primaria. NO bloquea RP si paciente entiende
+  necesidad multimodal post-op.
+
+evidence_tag: mskcc_svi_nomogram_grubbs_2016_radicals_rt_eortc_22961
+trial_refs:
+  - "MSKCC SVI Nomogram Stephenson JCO 2006;24:3973"
+  - "Grubbs IJROBP 2016 (SVI RP efficiency)"
+  - "Kibel JCO 2009 (SVI positive margins)"
+  - "RADICALS-RT Parker Lancet 2020"
+  - "EORTC 22961 (RT+ADT 36m high-risk)"
+  - "NCCN Prostate v5.2026 PROS-3"

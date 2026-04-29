@@ -1,0 +1,190 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 77: iodine_131_mibg_nepc_eligibility
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXIX) — Auditoría #67E — I-131 MIBG NEPC.
+#
+# Razón clínica:
+#   **Iodine-131-MIBG (metaiodobenzylguanidine)** es radiofármaco
+#   beta-emisor para tumores neuroendocrinos MIBG-avid:
+#
+#   1. **Indicación tradicional**: feocromocitoma + paraganglioma + neuroblastoma
+#   2. **Indicación NEPC**: subset rare con MIBG-avidity (~10-20% NEPC)
+#   3. **Pre-requisito**: MIBG scan diagnostic positive
+#      (I-123-MIBG o I-131-MIBG diagnostic dose)
+#   4. **Dosis terapéutica**: 100-200 mCi IV
+#   5. **Bloqueo tiroideo**: SSKI (potassium iodide) 130 mg/d × 2-3 sem
+#      pre-Rx + 4-6 sem post-Rx (proteger tiroides)
+#
+#   Severity: informational — gate alerta opción radiofármaco para NEPC
+#   subset MIBG-avid (rare disease, evidence limitada).
+#
+#   Coexistencia: gate 77 + gate 67 (NEPC confirmed) prerequisito.
+# ──────────────────────────────────────────────────────────────────────
+
+code: iodine_131_mibg_nepc_eligibility
+title: "I-131 MIBG eligibility → NEPC MIBG-avid subset (rare, trial enrollment priority)"
+faubot_added_in: "2026-04-26 LXXIX"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: all_of
+  triggers:
+    # Path A: NEPC histology confirmada
+    - type: any_of
+      triggers:
+        - type: truthy_flag
+          field: nepc_confirmed_histology
+          alias_fields:
+            - nepc_confirmed
+            - neuroendocrine_prostate_cancer_documented
+        - type: string_match
+          field: histology_subtype
+          alias_fields:
+            - histologia_subtipo
+          patterns:
+            - neuroendocrine
+            - small_cell
+            - small_cell_neuroendocrine
+            - NEPC
+            - mixed_adeno_neuroendocrine
+    # Path B: MIBG scan positive (diagnostic prerequisite)
+    - type: any_of
+      triggers:
+        - type: truthy_flag
+          field: mibg_scan_positive_diagnostic
+          alias_fields:
+            - mibg_scan_positivo
+            - mibg_uptake_documented
+        - type: truthy_flag
+          field: i131_mibg_candidate_clinical
+          alias_fields:
+            - candidato_i131_mibg
+
+regimen_codes: []  # Gate informativo — radiofármaco rare
+
+keywords:
+  - I-131 MIBG
+  - iodine-131 MIBG
+  - metaiodobenzylguanidine
+  - MIBG scan
+  - neuroendocrine prostate cancer
+  - NEPC
+
+message: |
+  📊 INFORMATIVO: Paciente NEPC MIBG-avid subset → considerar **I-131
+  MIBG therapy** (rare disease, trial enrollment priority).
+
+  🔬 I-131 MIBG CARACTERÍSTICAS:
+
+  **Mecanismo**: análogo guanetidine concentrado por neurosecretory
+  granules tumores neuroendocrinos via norepinephrine transporter (NET).
+  Beta-emisor (T½ 8.0 días) localizado en MIBG-avid tumors.
+
+  **Indicaciones tradicionales** (FDA-approved):
+  - Feocromocitoma maligno
+  - Paraganglioma (PGL)
+  - Neuroblastoma pediátrico (high-risk relapsed)
+
+  **Indicación NEPC** (off-label, trial-based):
+  - Subset NEPC MIBG-avid (~10-20% NEPC tested)
+  - Tumores rare: small cell + carcinoid features
+  - Evidence limitada — solo case series + expert consensus
+  - Trial enrollment crítico (rare disease)
+
+  🎯 PRE-REQUISITOS I-131 MIBG (NEPC):
+
+  **Diagnóstico**:
+  - NEPC histology confirmada (gate 67)
+  - Chromogranin A + synaptophysin + NSE positive
+  - AR signaling loss documented
+  - **MIBG scan diagnostic positive** (I-123-MIBG o I-131-MIBG low-dose)
+  - Quantification uptake adecuada (Curie/Modified Curie scoring)
+
+  **Pre-treatment**:
+  - Bloqueo tiroideo: SSKI 130 mg/d × 2-3 sem pre-Rx
+  - Continuar SSKI 4-6 sem post-Rx
+  - Suspender drogas que bloquean MIBG uptake:
+    * Antidepresivos tricíclicos (TCA)
+    * Cocaína, anfetaminas
+    * Reserpine, labetalol
+    * Calcium channel blockers (algunos)
+
+  **Hematológicos**:
+  - ANC ≥1500/µL
+  - Plaquetas ≥100,000/µL
+  - Hemoglobin ≥10 g/dL
+  - Reserva médula adecuada (sin chemo previa intensa)
+
+  🎯 DOSIS + ADMINISTRACIÓN:
+  - **100-200 mCi (3.7-7.4 GBq) IV**
+  - Infusión lenta 1-4 horas
+  - Aislamiento radiation precautions 3-7 días
+  - Hospitalización inpatient required (high-dose radiation)
+  - Repetir cada 3 meses si respuesta + counts adecuados
+  - Cumulative dose limit: 500-1000 mCi lifetime
+
+  🎯 EFICACIA NEPC (case series):
+  - Response rate: 30-50% (selected MIBG-avid)
+  - Disease control: 60-70%
+  - Symptom palliation: 70-80%
+  - Survival benefit: no data formal trial PCa
+
+  ⚠️ TOXICIDAD:
+  - Myelosuppression severa (4-6 semanas)
+  - Hipotiroidismo crónico (sin SSKI adequate)
+  - Náusea/vómito severo (premedicar agresivo)
+  - Sialoadenitis (xerostomía)
+  - Riesgo MDS/AML secundario (5-10 años)
+
+  🎯 CONDUCTA CLÍNICA:
+
+  **1. Confirmar NEPC + MIBG-avidity**:
+  - Gate 67 NEPC confirmation prerequisite
+  - MIBG scan diagnostic (I-123 preferred, I-131 alternativo)
+  - Quantification uptake (Modified Curie score)
+
+  **2. Trial enrollment priority** (rare disease):
+  - Buscar trials I-131 MIBG NEPC activos
+  - Considerar collaboration cancer centers expertise
+  - Pediatric oncology experience (neuroblastoma I-131 MIBG largo)
+
+  **3. Multidisciplinaria**:
+  - Medical oncology (NEPC) + nuclear medicine + radiation safety
+  - Endocrinology (thyroid blockade + monitoring)
+  - Hematology (myelosuppression management)
+
+  **4. Premedicación**:
+  - SSKI 130 mg/d pre-Rx 2-3 sem + post 4-6 sem
+  - Antiemetic agresivo (ondansetron + dexametasona)
+  - Hidratación 2-3 L/día pre-infusion
+
+  **5. Alternativa NEPC sin MIBG-avidity**:
+  - Platinum-based EP regimen (carboplatin + etoposide) — gate 67 default
+  - Topotecan, irinotecan (segunda línea)
+  - Trial enrollment immunotherapy (PD-L1 alto en NEPC)
+  - Considerar Lu-177 si SSTR-positive (somatostatin receptor)
+
+  🔬 EVIDENCIA:
+  - **Bombardieri Eur J Nucl Med 2010;37:2436**: MIBG therapy guidelines
+  - **NETTER-1 (Strosberg NEJM 2017)**: Lu-177-DOTATATE en NET (analogue)
+  - **Aparicio Eur Urol 2024**: NEPC management review
+  - **NCCN Neuroendocrine v3.2025**: I-131 MIBG NET pathways
+  - **Peptide Receptor Radionuclide Therapy (PRRT) consensus**
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `mibg_scan_positive_diagnostic`: flag MIBG scan positive
+  - `mibg_curie_score`: quantification uptake
+  - `i131_mibg_candidate_clinical`: flag candidate
+  - `i131_mibg_dose_planned_mci`: 100-200 default
+  - `i131_mibg_administration_date`: fecha planeada
+  - `sski_thyroid_blockade_initiated`: flag SSKI iniciado
+  - `i131_mibg_prior_administrations_count`: lifetime count
+
+evidence_tag: i131_mibg_bombardieri_2010_aparicio_2024_nepc_rare_radiopharm
+trial_refs:
+  - "Bombardieri Eur J Nucl Med 2010;37:2436"
+  - "NETTER-1 Strosberg NEJM 2017 (Lu-177-DOTATATE NET)"
+  - "Aparicio Eur Urol 2024 (NEPC review)"
+  - "NCCN Neuroendocrine v3.2025"
+  - "PRRT consensus guidelines"

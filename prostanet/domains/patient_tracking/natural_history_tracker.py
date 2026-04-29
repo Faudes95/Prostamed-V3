@@ -683,9 +683,9 @@ class NaturalHistoryTracker:
         try:
             from prostanet.shared.feature_flags import resolve_feature_flags
             if resolve_feature_flags().get("ENABLE_AI_STATE_PREDICTION"):
-                from prostanet.ai.inference.model_registry import ModelRegistry
-                from pathlib import Path
-                reg = ModelRegistry(models_dir=Path("output/models"))
+                from prostanet.ai.inference.runtime_registry import get_runtime_model_registry
+
+                reg = get_runtime_model_registry()
                 model = reg.get("state_transition")
                 if model:
                     result = model.predict(patient)

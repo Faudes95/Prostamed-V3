@@ -5,9 +5,11 @@ from copy import deepcopy
 from prostanet.domains.adt_progression_verification.service import AdtProgressionVerificationService
 from prostanet.domains.evidence_registry.service import EvidenceRegistryService
 from prostanet.domains.diagnostic_workup.service import DiagnosticWorkupService
+from prostanet.domains.focal_therapy.service import FocalTherapyService
 from prostanet.domains.localized_initial.service import LocalizedInitialService
 from prostanet.domains.m0_crpc.service import M0CrpcService
 from prostanet.domains.m1_crpc.service import M1CrpcService
+from prostanet.domains.screening.service import ScreeningService
 from prostanet.domains.mcspc_high_volume.service import (
     McspcHighVolumeMetachronousService,
     McspcHighVolumeService,
@@ -17,6 +19,7 @@ from prostanet.domains.mcspc_low_volume_sync_oligo.service import McspcLowVolume
 from prostanet.domains.mcspc_oligo_metachronous.service import McspcOligoMetachronousService
 from prostanet.domains.post_negative_biopsy_followup.service import PostNegativeBiopsyFollowupService
 from prostanet.domains.post_prostatectomy.service import PostProstatectomyService
+from prostanet.domains.post_radiotherapy_followup.service import PostRadiotherapyFollowupService
 from prostanet.domains.post_radiotherapy_or_local_salvage.service import PostRadiotherapyOrLocalSalvageService
 from prostanet.domains.recurrence_bcr.service import RecurrenceBCRService
 from prostanet.domains.state_classifier.service import StateClassifierService
@@ -25,6 +28,8 @@ from prostanet.domains.survivorship_and_toxicity_followup.service import (
     SurvivorshipAndToxicityFollowupService,
 )
 from prostanet.shared.decision_quality import build_decision_quality
+from prostanet.shared.advanced_support_normalizer import normalize_advanced_support_payload
+from prostanet.shared.epic26 import normalize_epic26_payload
 from prostanet.shared.gleason_profile import apply_gleason_profile
 from prostanet.shared.module_support import apply_support_bundle, support_bundle_for_module
 from prostanet.shared.validated_algorithms import build_validated_algorithms
@@ -35,10 +40,13 @@ class ModuleRegistry:
         self.evidence_registry = EvidenceRegistryService()
         self.state_classifier = StateClassifierService()
         self.services = {
+            "screening": ScreeningService(),
             "diagnostic_workup": DiagnosticWorkupService(),
             "post_negative_biopsy_followup": PostNegativeBiopsyFollowupService(),
             "localized_initial": LocalizedInitialService(),
+            "focal_therapy": FocalTherapyService(),
             "post_prostatectomy": PostProstatectomyService(),
+            "post_radiotherapy_followup": PostRadiotherapyFollowupService(),
             "recurrence_bcr": RecurrenceBCRService(),
             "post_radiotherapy_or_local_salvage": PostRadiotherapyOrLocalSalvageService(),
             "adt_progression_verification": AdtProgressionVerificationService(),
@@ -62,7 +70,10 @@ class ModuleRegistry:
         return deepcopy(STATE_CLASSIFIER_SCHEMA)
 
     def evaluate_module(self, module_id: str, payload: dict) -> dict:
-        normalized_payload = apply_gleason_profile(payload)
+        normalized_payload = normalize_advanced_support_payload(
+            apply_gleason_profile(normalize_epic26_payload(payload)),
+            state=module_id,
+        )
         result = self.services[module_id].evaluate(normalized_payload)
         evidence = self.get_module_evidence(module_id)
         bundle = support_bundle_for_module(module_id, normalized_payload, result, evidence)
@@ -88,7 +99,12 @@ class ModuleRegistry:
         return enriched
 
     def classify_state(self, payload: dict) -> dict:
-        return self.state_classifier.classify(apply_gleason_profile(payload))
+        return self.state_classifier.classify(
+            normalize_advanced_support_payload(
+                apply_gleason_profile(normalize_epic26_payload(payload)),
+                state=str(payload.get("state") or ""),
+            )
+        )
 
     def get_module_evidence(self, module_id: str) -> dict:
         return self.evidence_registry.get_module_evidence(module_id)

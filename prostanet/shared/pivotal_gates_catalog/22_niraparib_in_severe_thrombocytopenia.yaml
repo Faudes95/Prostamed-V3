@@ -1,0 +1,122 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 22: niraparib_in_severe_thrombocytopenia
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XXVI) — Gate YAML-NATIVE (Tier 2/3 F-1).
+#
+# Razón clínica:
+#   Niraparib (Akeega/Zejula) es MÁS MIELOTÓXICO que olaparib específicamente
+#   en plaquetas. Datos de MAGNITUDE (Chi NEJM 2023) + Akeega FDA prescribing
+#   information §5.1:
+#     - Trombocitopenia grado ≥3: 28% niraparib vs 8% olaparib
+#     - Sangrado mayor: 3.5% niraparib vs 1.2% olaparib
+#     - Discontinuación por trombocitopenia: 4.2% niraparib
+#
+#   Threshold canónico Akeega §5.1:
+#     - Plaquetas <150 000/µL antes de iniciar = NO recomendado
+#     - <100 000/µL = suspensión obligatoria
+#     - <50 000/µL = grado 4 (transfusión + suspensión definitiva)
+#
+#   Coexiste con Gate 15 (PARPi + citopenias <100K plaq que cubre TODOS
+#   los PARPi). Gate 22 es MÁS ESTRICTO para niraparib específicamente
+#   (<150K) por su perfil mielotóxico distintivo.
+#
+#   Override: platelet_count_recovered_for_niraparib=Sí (tras transfusión
+#   o recuperación espontánea con plaquetas ≥150K documentadas + ningún
+#   sangrado activo).
+# ──────────────────────────────────────────────────────────────────────
+
+code: niraparib_in_severe_thrombocytopenia
+title: "Niraparib × trombocitopenia grado ≥3 (Akeega label <150K plaq + MAGNITUDE)"
+faubot_added_in: "2026-04-25 XXVI"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1. Plaquetas < 150 000/µL (más estricto que Gate 15 PARPi general que usa 100K)
+    - type: numeric_below
+      field: platelets
+      alias_fields:
+        - platelets_baseline
+        - platelet_count
+        - thrombocytes
+      threshold: 150000
+    # 2. CTCAE v5 grado ≥3 trombocitopenia documentada
+    - type: numeric_threshold
+      field: thrombocytopenia_ctcae_grade
+      threshold: 3
+    # 3. Flag explícito documentado
+    - type: truthy_flag
+      field: thrombocytopenia_grade3_for_niraparib
+      alias_fields:
+        - severe_thrombocytopenia_for_niraparib
+        - active_bleeding_thrombocytopenia
+    # 4. Sangrado activo grado ≥3 (CTCAE v5 hemorrhage)
+    - type: numeric_threshold
+      field: hemorrhage_ctcae_grade
+      threshold: 3
+
+# Override: tras recuperación de plaquetas + sin sangrado activo
+override:
+  type: truthy_flag
+  field: platelet_count_recovered_for_niraparib
+
+regimen_codes:
+  - REGIMEN_CODES_NIRAPARIB
+
+keywords:
+  - KEYWORDS_NIRAPARIB
+
+message: |
+  Niraparib (Akeega, Zejula) NO debe iniciarse o continuarse con
+  trombocitopenia grado ≥3 (CTCAE v5: plaquetas <150 000/µL para
+  inicio, <100 000/µL para mantenimiento, <50 000/µL para
+  transfusión inmediata). Niraparib es MÁS mielotóxico que olaparib
+  en plaquetas específicamente (28% trombocitopenia grado ≥3 vs 8%
+  olaparib en MAGNITUDE).
+
+  Akeega FDA prescribing information §5.1 establece threshold de
+  inicio en plaquetas ≥150 000/µL — más estricto que Gate 15
+  (PARPi clase general que usa 100K) por el perfil mielotóxico
+  distintivo del niraparib.
+
+  Evidencia regulatoria:
+    - Akeega FDA §5.1 — Plaquetas ≥150K antes de iniciar.
+    - Zejula FDA §5.1 — Misma threshold.
+    - MAGNITUDE (Chi NEJM 2023) — Trombocitopenia grado ≥3 en 28%;
+      sangrado mayor 3.5%; discontinuación 4.2%.
+
+  Conducta clínica:
+  1. Suspender niraparib inmediatamente.
+  2. Transfusión plaquetaria si <50K o sangrado activo.
+  3. Descartar causas alternativas (ITP, TTP, DIC, drug-induced
+     thrombocytopenia por heparina/quinidina/sulfas).
+  4. CBC con diferencial cada 48h hasta plaquetas ≥150K.
+  5. Reintroducción solo con `platelet_count_recovered_for_niraparib=Sí`
+     tras plaquetas ≥150K confirmadas + sin sangrado activo
+     ≥7 días.
+  6. Considerar reducción de dosis 200mg → 100mg si recuperación
+     incompleta (per Akeega label dose modification).
+  7. Considerar terapia alternativa NO-niraparib:
+     - Olaparib (menor toxicidad plaquetaria; trombocitopenia
+       grado ≥3 ~8%)
+     - Talazoparib si HRR+ apropiado
+     - Quimioterapia docetaxel si fitness permite
+
+evidence_tag: akeega_zejula_label_magnitude_ctcae_v5
+trial_refs:
+  - MAGNITUDE
+  - "Akeega label §5.1"
+  - "Zejula label §5.1"
+  - "CTCAE v5"
+
+references:
+  - "Akeega (niraparib + abiraterone) FDA prescribing information §5.1."
+  - "Zejula (niraparib) FDA prescribing information §5.1 (Hematologic AEs)."
+  - "Chi KN et al. MAGNITUDE. NEJM 2023."
+  - "CTCAE v5.0 — Thrombocytopenia + hemorrhage grading."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Niraparib hematologic monitoring"
+  eau_section: "EAU 2026 §6.5.8 — PARPi hematologic precautions"

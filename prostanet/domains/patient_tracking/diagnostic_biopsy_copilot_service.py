@@ -42,11 +42,19 @@ def _concordance_label(rule_action: str, overlay_action: str) -> str:
         return "rule_only"
     if rule_text == overlay_text:
         return "concordant"
-    if "biops" in rule_text and "biops" in overlay_text:
+    # Guard M-1 (FAUBOT): la detección de "adjacent" debe soportar recomendaciones
+    # en inglés y español (rule-based y overlay pueden emitir en cualquier idioma).
+    biopsy_tokens = ("biops",)  # "biopsy" y "biopsia" comparten raíz
+    mri_tokens = ("mri", "resonancia", "mpmri")
+    followup_tokens = ("seguimiento", "follow-up", "follow up", "followup", "vigilanc")
+    rebiopsy_tokens = ("rebiops", "re-biops", "re biops", "reabr")  # "rebiopsy"/"rebiopsia"/"reabrir"
+    if any(tok in rule_text for tok in biopsy_tokens) and any(tok in overlay_text for tok in biopsy_tokens):
         return "adjacent"
-    if "mri" in rule_text and "mri" in overlay_text:
+    if any(tok in rule_text for tok in mri_tokens) and any(tok in overlay_text for tok in mri_tokens):
         return "adjacent"
-    if "seguimiento" in rule_text and "seguimiento" in overlay_text:
+    if any(tok in rule_text for tok in followup_tokens) and any(tok in overlay_text for tok in followup_tokens):
+        return "adjacent"
+    if any(tok in rule_text for tok in rebiopsy_tokens) and any(tok in overlay_text for tok in rebiopsy_tokens):
         return "adjacent"
     return "discordant"
 

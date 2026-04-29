@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from clinical_scores import calculate_capra_s
 
 from prostanet.domains.evidence_registry.service import EvidenceRegistryService
@@ -15,7 +17,39 @@ from prostanet.domains.post_prostatectomy.rules_eau import classify_post_rp_eau
 from prostanet.domains.post_prostatectomy.rules_nccn import classify_post_rp
 from prostanet.domains.post_prostatectomy.schemas import POST_PROSTATECTOMY_SCHEMA
 from prostanet.shared.contracts import evaluation_result
+from prostanet.shared.epic26 import normalize_epic26_payload
+from prostanet.shared.phase7_decision_bundles import build_post_rp_phase7_bundle
 from prostanet.shared.recommendation_enrichment import enrich_evaluation_result
+
+
+def _flag_truthy(value: Any) -> bool:
+    """Auditoría Pacientes Insignia 2026-04-21 — normaliza flags booleans
+    ES-médica / legacy a bool real (Sí/Si/1/yes/true)."""
+    return str(value or "").strip().lower() in {"sí", "si", "1", "yes", "true"}
+
+
+def _late_rt_tier(text: Any) -> int:
+    """Auditoría Pacientes Insignia 2026-04-21 (§C.2) — traduce el FieldSpec
+    CTCAE v5 late_rt_toxicity_gu/gi a tier 0-5. Alias boolean legacy →
+    tier 2 por compatibilidad con perfiles insignia RADICALS-RT."""
+    t = str(text or "").strip().lower()
+    if not t:
+        return 0
+    if "grado 5" in t or "muerte" in t:
+        return 5
+    if "grado 4" in t:
+        return 4
+    if "grado 3" in t:
+        return 3
+    if "grado 2" in t:
+        return 2
+    if "grado 1" in t:
+        return 1
+    if t in {"sin toxicidad", "no", "0", "false"}:
+        return 0
+    if t in {"sí", "si", "1", "yes", "true"}:
+        return 2
+    return 0
 
 
 class PostProstatectomyService:
@@ -29,12 +63,22 @@ class PostProstatectomyService:
         return POST_PROSTATECTOMY_SCHEMA
 
     def evaluate(self, payload: dict) -> dict:
+        # EPIC 9 Group F (GAP-17) — Normalización EPIC-26 post-captura. Si el
+        # payload trae `epic26_response_packet`, se derivan los 5 dominios + la
+        # molestia urinaria global y se inyectan en `payload` antes de las
+        # reglas NCCN/EAU. Si no hay packet, la función devuelve el payload
+        # intacto (seguro cuando la visita no capturó QoL estructurado).
+        payload = normalize_epic26_payload(payload)
         missing = [field for field in ["psa", "psa_postop"] if str(payload.get(field, "")).strip() == ""]
         nccn = classify_post_rp(payload)
         eau = classify_post_rp_eau(payload)
         capra_s = calculate_capra_s(payload)
         comparison = self.comparison.compare(nccn, eau)
         label = nccn["label"]
+        is_bcr_or_persistent = label in {
+            "PSA persistence/recurrence",
+            "BCR / recurrencia bioquímica pos-RP",
+        }
         eligible = []
         not_recommended = []
         durations = []
@@ -43,7 +87,7 @@ class PostProstatectomyService:
         surveillance_variants: list[dict] = []
         salvage_variants: list[dict] = []
 
-        if label == "PSA persistence/recurrence":
+        if is_bcr_or_persistent:
             surveillance_variants.append(
                 build_ranked_option(
                     name="Vigilancia posoperatoria intensificada",
@@ -63,7 +107,7 @@ class PostProstatectomyService:
             )
             salvage_variants.append(
                 build_ranked_option(
-                    name="Planificación temprana de salvage",
+                    name="Activar salvage y reestadificación dirigida",
                     regimen_code="SALVAGE_RT_ALONE",
                     rank=1,
                     priority="preferred",
@@ -144,6 +188,41 @@ class PostProstatectomyService:
         if imaging_modality == "PSMA-PET":
             durations.append("La imagen PSMA-PET en el contexto posoperatorio debe cambiar una decisión real de rescate y no sustituir la cronología del PSA ultrasensible.")
 
+        # Auditoría Pacientes Insignia 2026-04-21 (§D.4/§C.3) — gates para
+        # salvage RT en post-prostatectomía:
+        #   1) Enfermedad inflamatoria intestinal activa (colitis ulcerosa /
+        #      Crohn): contraindica radioterapia pélvica por riesgo severo de
+        #      exacerbación. Filtramos salvage_variants y emitimos el mensaje.
+        #   2) Toxicidad tardía GU/GI CTCAE v5 grado ≥3 (RADICALS-RT): bloquea
+        #      re-irradiación y cualquier nuevo ciclo de salvage RT.
+        active_ibd = _flag_truthy(payload.get("active_inflammatory_bowel_disease"))
+        late_gu_tier = _late_rt_tier(payload.get("late_rt_toxicity_gu"))
+        late_gi_tier = _late_rt_tier(payload.get("late_rt_toxicity_gi"))
+        late_rt_block = late_gu_tier >= 3 or late_gi_tier >= 3
+        contraindications_list: list[str] = []
+        if salvage_variants and (active_ibd or late_rt_block):
+            salvage_variants = []
+            if active_ibd:
+                not_recommended.append(
+                    "Radioterapia de salvage pélvica contraindicada por enfermedad "
+                    "inflamatoria intestinal activa (Crohn/colitis ulcerosa) — riesgo "
+                    "de exacerbación severa y proctitis actínica. Priorizar control "
+                    "sistémico y evaluar ruta quirúrgica o vigilancia estrecha."
+                )
+                contraindications_list.append(
+                    "RT pélvica contraindicada: enfermedad inflamatoria intestinal activa."
+                )
+            if late_rt_block:
+                _sys = "GU" if late_gu_tier >= 3 else "GI"
+                not_recommended.append(
+                    "Salvage RT / re-irradiación contraindicada por toxicidad tardía "
+                    f"{_sys} grado ≥3 (CTCAE v5). Priorizar manejo sintomático "
+                    "multidisciplinar y terapias sistémicas alternativas."
+                )
+                contraindications_list.append(
+                    f"Re-irradiación contraindicada: toxicidad tardía {_sys} grado ≥3."
+                )
+
         family_profiles: dict[str, dict] = {}
         family_order: list[str] = []
         if salvage_variants:
@@ -152,7 +231,7 @@ class PostProstatectomyService:
                 ordered_regimens=salvage_variants,
                 context={
                     "eligibility_status": "eligible",
-                    "preference_drivers": ["PSA persistente/recidivante" if label == "PSA persistence/recurrence" else "Patología adversa / Decipher"],
+                    "preference_drivers": ["PSA persistente/recidivante" if is_bcr_or_persistent else "Patología adversa / Decipher"],
                     "winner_reason": "La planificación de salvage sube cuando el PSA ya es persistente o la anatomía patológica adversa adelanta el riesgo clínico.",
                 },
             )
@@ -165,7 +244,7 @@ class PostProstatectomyService:
                     "winner_reason": "La vigilancia posoperatoria sigue dominante cuando no hay persistencia franca ni urgencia temprana de salvage.",
                 },
             )
-        family_order = ["salvage_rt_family", "surveillance_family"] if label == "PSA persistence/recurrence" or nccn.get("early_salvage_emphasis") else ["surveillance_family", "salvage_rt_family"]
+        family_order = ["salvage_rt_family", "surveillance_family"] if is_bcr_or_persistent or nccn.get("early_salvage_emphasis") else ["surveillance_family", "salvage_rt_family"]
         comparative_bundle = build_comparative_bundle(
             family_profiles=family_profiles,
             family_order=family_order,
@@ -176,8 +255,9 @@ class PostProstatectomyService:
             family_code=preferred_regimen.get("family_code") or "surveillance_family",
             field_values=payload,
         )
+        result_state = "recurrence_bcr" if is_bcr_or_persistent else self.module_id
         sequence_transition_bundle = build_sequence_transition_bundle(
-            state=self.module_id,
+            state=result_state,
             preferred_regimen=preferred_regimen,
             eligible_treatments=comparative_bundle.get("eligible_treatments") or [],
             current_treatment=payload.get("current_treatment") or "",
@@ -209,20 +289,20 @@ class PostProstatectomyService:
         }
 
         result = evaluation_result(
-            state=self.module_id,
+            state=result_state,
             nccn_primary={"guideline": "NCCN", "version": "5.2026", "label": nccn["label"], "recommendation": nccn["recommendation"]},
             eau_comparison={"guideline": "EAU", "version": "2026", "label": eau["label"], "recommendation": eau["recommendation"], "comparison": comparison},
             eligible_treatments=eligible,
             not_recommended=not_recommended,
             missing_critical_inputs=missing,
-            contraindications=[],
+            contraindications=contraindications_list,
             durations_and_conditions=durations,
             evidence_trace=[self.registry.get_module_evidence(self.module_id)],
             trial_matches=[{"trial": "RADICALS-RT", "match": nccn["adverse_features"]}, {"trial": "SWOG-8794", "match": nccn["adverse_features"]}],
             applicability_badge="guideline-consistent",
             report_sections=report_sections,
             decision_quality={
-                "recommendation_family": preferred_regimen.get("family_label") or "Vigilancia",
+                "recommendation_family": preferred_regimen.get("family_label") or ("Salvage" if is_bcr_or_persistent else "Vigilancia"),
                 "confidence_category": "vigilada" if missing else "alta",
                 "requires_human_review": False,
             },
@@ -239,6 +319,7 @@ class PostProstatectomyService:
         }
         result["sequence_transition_bundle"] = sequence_transition_bundle
         result["active_regimen_monitoring_package"] = active_monitoring_package
+        result["phase7_advanced_bundle"] = build_post_rp_phase7_bundle(payload)
         return enrich_evaluation_result(
             result,
             clinical_title="Ruta priorizada después de prostatectomía radical",

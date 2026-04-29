@@ -1,0 +1,173 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 29: olaparib_renal_dysfunction_grade3
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XLI) — Auditoría #44 — Gate YAML-NATIVE.
+#
+# Razón clínica:
+#   Olaparib (Lynparza) tiene depuración renal significativa (~44% urinaria
+#   sin cambios). PROfound trial excluyó pacientes con creatinine clearance
+#   <30 mL/min por riesgo de toxicidad acumulativa hematológica + GI severa
+#   sin perfil farmacocinético validado en CKD stage 4-5.
+#
+#   Datos de Lynparza FDA prescribing information §2.3 (Renal Impairment):
+#     - CrCl ≥51 mL/min:    sin ajuste de dosis (300 mg BID estándar)
+#     - CrCl 31-50 mL/min:  reducir a 200 mg BID (dose reduction 33%)
+#     - CrCl <30 mL/min:    NO recomendado (sin estudios ni datos PK)
+#     - End-stage renal disease (ESRD) on dialysis: NO recomendado
+#
+#   Threshold canónico:
+#     - Hard-block: creatinine_clearance (mL/min, Cockcroft-Gault o
+#       CKD-EPI 2021) <30 → contraindica olaparib
+#     - Concomitante CTCAE renal grade 3+ (creatinine 4-6× baseline)
+#       activa también el gate
+#
+#   Coexistencia con Gate 10 (creatinine_clearance_lt_30 para rucaparib):
+#   gates 10 + 29 cubren los DOS PARPi con threshold renal duro pero
+#   bloquean regímenes diferentes (rucaparib vs olaparib +
+#   abiraterona+olaparib combo PROpel). Trial refs y evidence_tag
+#   diferentes preservan trazabilidad regulatoria por fármaco.
+#
+#   Override: renal_function_corrected_for_olaparib=Sí
+#   (post-corrección de causas reversibles: deshidratación, AINE,
+#   contrastes nefrotóxicos suspendidos; CrCl ≥30 mL/min documented
+#   en 2 mediciones separadas ≥7d + nefrología endorsement).
+#
+#   Bloquea: REGIMEN_CODES_OLAPARIB específicamente (mono PROfound +
+#   combo abiraterone+olaparib PROpel).
+#
+#   NO bloquea: rucaparib (gate 10 separado), niraparib (no incluido en
+#   este gate, label de niraparib MAGNITUDE permite CrCl ≥30 con
+#   monitoring), talazoparib (TALAPRO label permite CrCl ≥30 con
+#   reducción 75%).
+# ──────────────────────────────────────────────────────────────────────
+
+code: olaparib_renal_dysfunction_grade3
+title: "Olaparib × disfunción renal G3 (Lynparza §2.3 + PROfound)"
+faubot_added_in: "2026-04-25 XLI"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1. Creatinine clearance <30 mL/min (hard-block per Lynparza §2.3)
+    - type: numeric_below
+      field: creatinine_clearance
+      alias_fields:
+        - egfr_ml_min
+        - egfr
+        - crcl_ml_min
+        - cockcroft_gault_crcl
+      threshold: 30
+    # 2. CTCAE creatinine grade ≥3 (creatinine 4-6× baseline) explicitly
+    - type: numeric_threshold
+      field: creatinine_ctcae_grade
+      alias_fields:
+        - aki_ctcae_grade
+        - acute_kidney_injury_grade
+      threshold: 3
+    # 3. Flag explícito ESRD on dialysis (incluso si CrCl >30 efímero)
+    - type: truthy_flag
+      field: end_stage_renal_disease_dialysis
+      alias_fields:
+        - esrd_on_dialysis
+        - on_hemodialysis
+        - on_peritoneal_dialysis
+
+# Override: corrección renal documentada + nefrología endorsement
+override:
+  type: truthy_flag
+  field: renal_function_corrected_for_olaparib
+  alias_fields:
+    - olaparib_renal_override
+    - crcl_corrected_for_olaparib
+
+regimen_codes:
+  - REGIMEN_CODES_OLAPARIB
+
+keywords:
+  - KEYWORDS_OLAPARIB
+
+message: |
+  Olaparib (Lynparza) NO recomendado con creatinine clearance <30 mL/min,
+  CTCAE creatinine grade ≥3 (creatinine 4-6× baseline) o end-stage renal
+  disease on dialysis (Lynparza FDA §2.3 + PROfound trial excluyó CrCl
+  <30 por toxicidad hematológica + GI acumulativa sin perfil PK validado
+  en CKD stage 4-5).
+
+  Rangos de dosis Lynparza por CrCl:
+    - CrCl ≥51 mL/min:    300 mg BID estándar (sin ajuste)
+    - CrCl 31-50 mL/min:  200 mg BID (reducir 33%, monitoring estricto)
+    - CrCl <30 mL/min:    CONTRAINDICADO (gate 29 activo — sin datos PK)
+    - ESRD on dialysis:   CONTRAINDICADO (no removido por hemodiálisis)
+
+  Evidencia regulatoria:
+    - Lynparza (olaparib) FDA prescribing information §2.3 (Renal
+      Impairment) — sin recomendación de dosificación para CrCl <30.
+    - de Bono J et al. PROfound. NEJM 2020;382:2091-2102 — trial excluyó
+      eGFR <30 mL/min/1.73m² (criterio de exclusión §3.2).
+    - Clarke NW et al. PROpel. NEJM 2022;387:1339-1351 — trial PROpel
+      (abiraterona+olaparib) preservó mismo threshold renal.
+    - NCCN PROS-G v5.2026 §HRRm-1 — PARPi en mCRPC requiere CrCl ≥30.
+    - EAU 2026 §6.5.6.4 — Olaparib dosing per renal function.
+
+  Coexistencia con Gate 10 (creatinine_clearance_lt_30 para rucaparib):
+  gates 10 + 29 cubren los 2 PARPi con threshold renal duro (<30 mL/min)
+  pero bloquean regímenes y trials DIFERENTES:
+    - Gate 10 → REGIMEN_CODES_RUCAPARIB (TRITON-3)
+    - Gate 29 → REGIMEN_CODES_OLAPARIB (PROfound + PROpel)
+  Trial refs y evidence_tag separados preservan trazabilidad por fármaco
+  para auditorías regulatorias (FDA labels diferentes).
+
+  NO afecta: niraparib (MAGNITUDE permite CrCl ≥30 con monitoring;
+  cubierto en gates 22-23 con thresholds más conservadores), talazoparib
+  (TALAPRO permite CrCl ≥30 con reducción 75% per protocol).
+
+  Conducta clínica:
+  1. Medir CrCl basal (Cockcroft-Gault o CKD-EPI 2021) ANTES de iniciar:
+     - Cockcroft-Gault: ((140-edad) × peso × [0.85 si mujer]) / (72 × Cr)
+     - CKD-EPI 2021: estimación más precisa (online calculators)
+     - Documentar en 2 mediciones separadas ≥7d si limítrofe (28-32)
+  2. Investigar causas reversibles si CrCl <30:
+     - Deshidratación (rehidratar; re-medir 48-72h)
+     - AINE concomitantes (suspender si posible; re-medir 7d)
+     - Contrastes IV recientes (esperar 7-14d para washout renal)
+     - Inhibidores RAAS (IECA/ARA-II) excesivos (ajustar dosis)
+     - Obstrucción urinaria (eco renal + uroflujometría)
+  3. Si CrCl <30 confirmado y no reversible:
+     - Considerar TERAPIA ALTERNATIVA NO-olaparib:
+       * Niraparib MAGNITUDE (CrCl ≥30 OK, gates 22-23 monitor)
+       * Talazoparib TALAPRO (reducir 75%, monitor cuidadoso)
+       * Lu-177-PSMA-617 si PSMA-positive (gates 13-14 monitor)
+       * Cabazitaxel si fitness adecuado
+       * Docetaxel si naive a quimio
+     - Documentar discusión multidisciplinar urología + oncología +
+       nefrología en historia clínica
+  4. Si CrCl 31-50 mL/min y olaparib es opción óptima:
+     - Reducir dosis 200 mg BID estándar (NO usar 300 mg BID)
+     - Monitor CBC semanal × 4 sem, luego mensual
+     - Re-medir CrCl mensual × 3 m, luego trimestral
+     - Suspender si CrCl cae a <30 mL/min sostenido
+  5. Override gate 29 (renal_function_corrected_for_olaparib=Sí):
+     - Tras corrección de causa reversible documentada
+     - CrCl ≥30 mL/min en 2 mediciones separadas ≥7d
+     - Nefrología endorsement explícito en HC
+     - Plan de monitoring renal mensual primer trimestre
+
+evidence_tag: lynparza_label_profound_propel_nccn_v5_2026
+trial_refs:
+  - PROfound
+  - PROpel
+  - "Lynparza label §2.3"
+
+references:
+  - "Lynparza (olaparib) FDA prescribing information §2.3 (Renal Impairment)."
+  - "de Bono J et al. PROfound. NEJM 2020;382:2091-2102."
+  - "Clarke NW et al. PROpel. NEJM 2022;387:1339-1351."
+  - "NCCN Guidelines Prostate Cancer v5.2026 §HRRm-1 (PARPi renal dosing)."
+  - "EAU Guidelines on Prostate Cancer 2026 §6.5.6.4."
+  - "Bruin MAC et al. PARPi pharmacokinetics in renal impairment. Cancer Chemother Pharmacol 2019."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 §HRRm-1 — PARPi renal function thresholds"
+  eau_section: "EAU 2026 §6.5.6.4 — Olaparib dosing per renal function"

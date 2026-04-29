@@ -13,31 +13,31 @@ def classify_eau(payload: dict[str, Any]) -> dict[str, Any]:
 
     if metastasis_site not in {"M0", "", "NONE"}:
         return {
-            "label": "Metastatic",
+            "label": "Metastásico",
             "risk_group": "METASTATIC",
             "treatment_intent": "Ruta de tratamiento sistémico.",
         }
     if nodal_status == "N1" or tstage in {"T3A", "T3B", "T4"}:
         return {
-            "label": "Locally Advanced",
+            "label": "Localmente avanzado",
             "risk_group": "LOCALLY ADVANCED",
             "treatment_intent": "Ruta de tratamiento multimodal.",
         }
     if psa > 20 or isup >= 4 or tstage == "T2C":
         return {
-            "label": "High",
+            "label": "Alto",
             "risk_group": "HIGH",
-            "treatment_intent": "Definitive local therapy with long-course systemic intensification when indicated.",
+            "treatment_intent": "Terapia local definitiva con intensificación sistémica prolongada cuando esté indicada.",
         }
     if 10 <= psa <= 20 or isup in {2, 3} or tstage == "T2B":
         subgroup = "Unfavorable" if isup == 3 or pct >= 0.5 else "Favorable"
         return {
-            "label": f"Intermediate ({subgroup})",
+            "label": "Intermedio desfavorable" if subgroup == "Unfavorable" else "Intermedio favorable",
             "risk_group": f"INTERMEDIATE ({subgroup.upper()})",
             "treatment_intent": "Decisión compartida entre prostatectomía radical y radioterapia; los casos desfavorables requieren intensificación.",
         }
     return {
-        "label": "Low",
+        "label": "Bajo",
         "risk_group": "LOW",
         "treatment_intent": "La vigilancia activa es preferente cuando la esperanza de vida lo respalda.",
     }

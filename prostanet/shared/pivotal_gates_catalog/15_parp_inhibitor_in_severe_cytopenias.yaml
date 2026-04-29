@@ -1,0 +1,73 @@
+# Faubot 2026-04-25 (XVIII) — Gate 15 migrado de Python a YAML.
+# Originalmente en `pivotal_contraindication_gates.detect_parp_inhibitor_in_severe_cytopenias`.
+# Activo en Faubot 2026-04-24 VI (gates 15-16 PARP × hematología).
+#
+# Threshold rationale: usamos el umbral PARPi consolidado (más estricto que
+# Lu-177 gate 14 que usa 75 000 plaq):
+#   - ANC <1500/µL (1.5 × 10⁹/L)
+#   - Plaquetas <100 000/µL (100 × 10⁹/L)
+#   - Hemoglobina <9 g/dL
+#
+# Override: `cytopenias_corrected_for_parp_inhibitor=Sí` (separado del
+# override de Lu-177 porque los thresholds son distintos — ver decisión
+# arquitectónica en gate 14 docstring).
+
+code: parp_inhibitor_in_severe_cytopenias
+title: "PARP inhibitors con citopenias basales severas"
+faubot_added_in: "2026-04-24 VI"
+faubot_migrated_to_yaml_in: "2026-04-25 XVIII"
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1) Flag explícito específico para PARPi
+    - type: truthy_flag
+      field: severe_cytopenia_for_parp_inhibitor
+    # 2) ANC < 1500 /µL (con alias)
+    - type: numeric_below
+      field: anc
+      alias_fields:
+        - anc_baseline
+      threshold: 1500
+    # 3) Plaquetas < 100 000 /µL (más estricto que Lu-177 que usa 75 000)
+    - type: numeric_below
+      field: platelets
+      threshold: 100000
+    # 4) Hemoglobina < 9 g/dL (con alias)
+    - type: numeric_below
+      field: hemoglobin_g_dl
+      alias_fields:
+        - hemoglobin
+        - hb
+      threshold: 9.0
+
+override:
+  type: truthy_flag
+  field: cytopenias_corrected_for_parp_inhibitor
+
+regimen_codes:
+  - REGIMEN_CODES_PARP_INHIBITORS
+keywords:
+  - KEYWORDS_PARP_INHIBITORS
+
+message: |
+  PARP inhibitors (olaparib, niraparib, talazoparib, rucaparib) NO deben iniciarse con citopenias basales severas (ANC <1500/µL, plaquetas <100 000/µL, o hemoglobina <9 g/dL). Lynparza (olaparib) FDA prescribing information 2024 + Akeega/Zejula (niraparib) 2023 + Talzenna (talazoparib) 2024 + Rubraca (rucaparib) 2024 requieren ANC ≥1.5×10⁹/L, plaquetas ≥100×10⁹/L, hemoglobina ≥9 g/dL antes de cada ciclo. PROfound (de Bono NEJM 2020;382:2091), MAGNITUDE (Chi NEJM 2023), TALAPRO-2 (Agarwal Lancet 2023;402:291) y TRITON-3 (Fizazi NEJM 2023;388:719) excluyeron valores menores. La mielosupresión por PARPi es acumulativa (anemia 30-50%, trombocitopenia 30-40%, neutropenia 15-25%); iniciar con citopenias basales severas implica riesgo elevado de falla medular o sangrado/infección graves. Optimizar con transfusión, EPO, G-CSF según indicación; reevaluar (`cytopenias_corrected_for_parp_inhibitor=Sí`) tras recuperación laboratorial.
+
+evidence_tag: profound_magnitude_talapro_triton3_labels
+trial_refs:
+  - PROfound
+  - MAGNITUDE
+  - TALAPRO-2
+  - TALAPRO-3
+  - PROpel
+  - TRITON-3
+references:
+  - Lynparza (olaparib) FDA prescribing information 2024.
+  - Akeega/Zejula (niraparib) FDA prescribing information 2023.
+  - Talzenna (talazoparib) FDA prescribing information 2024.
+  - Rubraca (rucaparib) FDA prescribing information 2024.
+  - de Bono J et al. PROfound. NEJM 2020;382:2091.
+  - Chi KN et al. MAGNITUDE. NEJM 2023.
+  - Agarwal N et al. TALAPRO-2. Lancet 2023;402:291.
+  - Fizazi K et al. TRITON-3. NEJM 2023;388:719.

@@ -2,6 +2,83 @@ from __future__ import annotations
 
 from typing import Any
 
+from prostanet.shared.genomic_classifier_scores import classify_genomic_score
+from prostanet.shared.life_expectancy import classify_localized_life_expectancy_band
+
+
+def _resolve_genomic_band(payload: dict[str, Any]) -> tuple[str, str, str]:
+    """EPIC 2 FIX-LOCALIZED-GENOMIC: resuelve la banda genómica consumiendo
+    el score numérico cuando está disponible, en lugar de depender del
+    campo categórico ``genomic_classifier_result``.
+
+    Retorna ``(band, classifier_name, narrative)``. ``band`` ∈
+    ``{"low", "intermediate", "high", ""}`` (cadena vacía si no hay datos).
+    Si el numérico diverge del categórico, prevalece el numérico (documentado
+    en Spratt 2018: HR 1.24 por cada 0.1 punto de Decipher).
+    """
+    categorical = str(payload.get("genomic_classifier_result") or "").strip().lower()
+    mapping = {
+        "alto": "high",
+        "high": "high",
+        "desfavorable": "high",
+        "unfavorable": "high",
+        "intermedio": "intermediate",
+        "intermediate": "intermediate",
+        "bajo": "low",
+        "low": "low",
+        "favorable": "low",
+    }
+    fallback_band = mapping.get(categorical, "")
+
+    # Determinar qué clasificador tiene score numérico disponible.
+    score_candidates = (
+        ("decipher", payload.get("decipher_score_numeric") or payload.get("decipher_score")),
+        ("prolaris", payload.get("prolaris_ccp_score")),
+        ("oncotype", payload.get("oncotype_gps")),
+    )
+    for classifier, score in score_candidates:
+        if score in (None, ""):
+            continue
+        verdict = classify_genomic_score(
+            classifier=classifier,
+            score=score,
+            categorical_band=categorical or None,
+        )
+        band = str(verdict.get("band") or "").lower()
+        narrative = str(verdict.get("narrative") or "")
+        if band:
+            return band, classifier, narrative
+    return fallback_band, "", ""
+
+
+def _attach_protocol_ranking(
+    payload: dict[str, Any],
+    position: dict[str, Any],
+    nccn_group: str,
+) -> dict[str, Any]:
+    """Agrega `recommended_protocol` + `protocol_ranking` al dict de posición.
+
+    Idempotente: si el paciente no es elegible a AS, devuelve position sin tocar.
+    Importación perezosa para evitar ciclo con patient_tracking.
+    """
+    if not position.get("eligible"):
+        return position
+    try:
+        from prostanet.domains.patient_tracking.active_surveillance import (
+            rank_recommended_protocols,
+            recommended_protocol,
+        )
+    except ImportError:
+        return position
+
+    ranking = rank_recommended_protocols(payload, nccn_group)
+    primary = recommended_protocol(payload, nccn_group)
+    if ranking:
+        position["protocol_ranking"] = ranking
+    if primary:
+        position["recommended_protocol"] = primary
+    return position
+
 
 def classify_nccn(payload: dict[str, Any]) -> dict[str, Any]:
     tstage = str(payload.get("clinical_tstage") or "T2a").upper()
@@ -20,7 +97,7 @@ def classify_nccn(payload: dict[str, Any]) -> dict[str, Any]:
             "label": "Regional N1M0",
             "risk_group": "REGIONAL N1M0",
             "reasons": ["Regional node-positive non-metastatic disease."],
-            "recommendation": "Consider definitive RT plus long-course ADT and systemic intensification in eligible patients.",
+            "recommendation": "Considerar radioterapia definitiva más terapia de privación androgénica prolongada e intensificación sistémica en pacientes elegibles.",
         }
 
     high_risk_features = 0
@@ -40,18 +117,18 @@ def classify_nccn(payload: dict[str, Any]) -> dict[str, Any]:
         very_high_features += 1
     if very_high_features >= 2:
         return {
-            "label": "Very High",
+            "label": "Muy alto",
             "risk_group": "VERY HIGH",
             "reasons": ["At least two very-high-risk features by NCCN 5.2026."],
-            "recommendation": "EBRT plus long-course ADT with systemic intensification for eligible patients, or RP in selected candidates.",
+            "recommendation": "Radioterapia externa más terapia de privación androgénica prolongada con intensificación sistémica en pacientes elegibles, o prostatectomía radical en candidatos seleccionados.",
         }
 
     if high_risk_features >= 1:
         return {
-            "label": "High",
+            "label": "Alto",
             "risk_group": "HIGH",
             "reasons": ["At least one high-risk feature by NCCN 5.2026."],
-            "recommendation": "EBRT plus long-course ADT, or RP with pelvic nodal dissection in selected patients.",
+            "recommendation": "Radioterapia externa más terapia de privación androgénica prolongada, o prostatectomía radical con disección ganglionar pélvica en pacientes seleccionados.",
         }
 
     ir_factors = 0
@@ -64,29 +141,51 @@ def classify_nccn(payload: dict[str, Any]) -> dict[str, Any]:
 
     if gg == 3 or ir_factors >= 2 or pct >= 0.5:
         return {
-            "label": "Unfavorable Intermediate",
+            "label": "Intermedio desfavorable",
             "risk_group": "UNFAVORABLE INTERMEDIATE",
             "reasons": ["GG3, multiple intermediate-risk factors, or >=50% positive cores."],
-            "recommendation": "RT plus short-course ADT or RP in eligible patients.",
+            "recommendation": "Radioterapia más terapia de privación androgénica de corta duración, o prostatectomía radical en pacientes elegibles.",
         }
 
     if ir_factors == 1:
+        life_band = classify_localized_life_expectancy_band(payload.get("life_expectancy_years"))
+        recommendation = "Observación o terapia local definitiva; la vigilancia activa solo debe plantearse en pacientes cuidadosamente seleccionados con esperanza de vida mayor de 10 años."
+        if life_band["band"] == "between_5_and_10_years":
+            recommendation = "En pacientes asintomáticos con esperanza de vida entre 5 y 10 años, la observación clínica es preferente; radioterapia o prostatectomía radical quedan como alternativas individualizadas."
+        elif life_band["band"] == "le_5_years":
+            recommendation = "Con esperanza de vida menor o igual a 5 años, la observación clínica suele desplazar una terapia local definitiva automática en enfermedad intermedia favorable."
         return {
-            "label": "Favorable Intermediate",
+            "label": "Intermedio favorable",
             "risk_group": "FAVORABLE INTERMEDIATE",
             "reasons": ["Single intermediate-risk factor, GG1-2, and <50% positive cores."],
-            "recommendation": "Observación o terapia local definitiva; la vigilancia activa solo debe plantearse en pacientes cuidadosamente seleccionados con esperanza de vida mayor de 10 años.",
+            "recommendation": recommendation,
         }
 
+    life_band = classify_localized_life_expectancy_band(payload.get("life_expectancy_years"))
+    low_risk_recommendation = "La vigilancia activa es preferente para la mayoría de los pacientes con esperanza de vida mayor o igual a 10 años; observación si es menor."
+    if life_band["band"] == "between_5_and_10_years":
+        low_risk_recommendation = "En enfermedad de bajo riesgo y expectativa de vida entre 5 y 10 años, la observación clínica suele ser preferente frente a terapia local definitiva."
+    elif life_band["band"] == "le_5_years":
+        low_risk_recommendation = "En enfermedad de bajo riesgo y expectativa de vida menor o igual a 5 años, la observación clínica domina claramente sobre una terapia local definitiva automática."
     return {
-        "label": "Low",
+        "label": "Bajo",
         "risk_group": "LOW",
         "reasons": ["cT1-T2a, GG1, PSA <10 without higher-risk features."],
-        "recommendation": "La vigilancia activa es preferente para la mayoría de los pacientes con esperanza de vida mayor o igual a 10 años; observación si es menor.",
+        "recommendation": low_risk_recommendation,
     }
 
 
 def active_surveillance_position(payload: dict[str, Any], nccn_group: str) -> dict[str, Any]:
+    """Posición de VA + ranking de protocolos recomendados (EPIC 5).
+
+    Wrapper: delega al core NCCN y luego cablea `recommended_protocol` y
+    `protocol_ranking` cuando el paciente es elegible a AS.
+    """
+    position = _active_surveillance_position_core(payload, nccn_group)
+    return _attach_protocol_ranking(payload, position, nccn_group)
+
+
+def _active_surveillance_position_core(payload: dict[str, Any], nccn_group: str) -> dict[str, Any]:
     gg = int(payload.get("isup_grade") or 1)
     psad = float(payload.get("psad") or 0)
     pct = float(payload.get("pct_cores_positive") or 0)
@@ -100,11 +199,14 @@ def active_surveillance_position(payload: dict[str, Any], nccn_group: str) -> di
     pirads_score = _normalize_pirads(payload.get("prior_mpmri_pirads_score"))
     targeted_biopsy_status = str(payload.get("prior_mpmri_targeted_biopsy_status", "desconocido") or "desconocido")
     genomic_result = str(payload.get("genomic_classifier_result", "No aplica"))
+    # EPIC 2 FIX-LOCALIZED-GENOMIC: el numérico prevalece sobre el categórico.
+    genomic_band, genomic_source_classifier, genomic_narrative = _resolve_genomic_band(payload)
     brca2_family_risk = str(payload.get("brca2_family_risk", "0")) == "1"
     micro_us_available = str(payload.get("micro_us_available", "0")) == "1"
     adverse_variant_type = _normalized_adverse_variant(payload)
     neuroendocrine_features = str(payload.get("neuroendocrine_features", "0")) == "1"
     risk_pathway = str(payload.get("risk_calculator_pathway", "No usado"))
+    life_band = classify_localized_life_expectancy_band(life_expectancy)
     severe_variant = adverse_variant_type in {"small_cell_neuroendocrine", "sarcomatoid", "signet_ring", "mixed_multiple", "other_aggressive", "other_aggressive_unspecified"}
     any_adverse_variant = adverse_variant_type not in {"", "none"}
 
@@ -132,13 +234,27 @@ def active_surveillance_position(payload: dict[str, Any], nccn_group: str) -> di
             "requires_escalation": False,
             "adverse_variant_type": adverse_variant_type,
         }
-    if genomic_result == "Alto":
+    if genomic_band == "high":
+        # EPIC 2 FIX-LOCALIZED-GENOMIC: resuelto por score numérico > categórico.
+        source_label = (
+            f"Clasificador {genomic_source_classifier} con score numérico"
+            if genomic_source_classifier
+            else "Clasificador genómico categórico"
+        )
+        summary = (
+            "La vigilancia activa pierde prioridad cuando el clasificador genómico sugiere alto riesgo biológico. "
+            f"{source_label} ubica al paciente en banda alta."
+        )
+        if genomic_narrative:
+            summary = f"{summary} {genomic_narrative}"
         return {
             "eligible": False,
             "status": "not_preferred",
-            "summary": "La vigilancia activa pierde prioridad cuando el clasificador genómico sugiere alto riesgo biológico.",
+            "summary": summary,
             "requires_escalation": False,
             "adverse_variant_type": adverse_variant_type,
+            "genomic_band": genomic_band,
+            "genomic_source_classifier": genomic_source_classifier,
         }
     if prior_mpmri and pirads_score is None:
         return {
@@ -194,10 +310,15 @@ def active_surveillance_position(payload: dict[str, Any], nccn_group: str) -> di
                 "requires_escalation": False,
                 "adverse_variant_type": adverse_variant_type,
             }
+        observation_summary = "La observación suele ser preferente cuando la esperanza de vida es menor de 10 años."
+        if life_band["band"] == "between_5_and_10_years":
+            observation_summary = "Entre 5 y 10 años de expectativa de vida, la observación clínica suele ser preferente frente a vigilancia activa protocolizada en enfermedad de bajo riesgo."
+        elif life_band["band"] == "le_5_years":
+            observation_summary = "Con expectativa de vida menor o igual a 5 años, la observación clínica desplaza con más fuerza la utilidad de vigilancia activa protocolizada en enfermedad de bajo riesgo."
         return {
             "eligible": True,
             "status": "observation_preferred",
-            "summary": "La observación suele ser preferente cuando la esperanza de vida es menor de 10 años.",
+            "summary": observation_summary,
             "requires_escalation": False,
             "adverse_variant_type": adverse_variant_type,
         }
@@ -212,20 +333,25 @@ def active_surveillance_position(payload: dict[str, Any], nccn_group: str) -> di
             and life_expectancy > 10
             and prior_mpmri
             and confirmatory_biopsy_planned
-            and genomic_result in {"No aplica", "Bajo", "Intermedio"}
+            and genomic_band != "high"  # EPIC 2 FIX-LOCALIZED-GENOMIC: respeta score numérico
             and pirads_score in {None, 2, 3}
             and not (pirads_score and pirads_score >= 4)
             and targeted_biopsy_status in {"si", "desconocido"}
         )
         if pirads_score is not None and pirads_score >= 4 and targeted_biopsy_status != "si":
             selected = False
+        summary = "En este contexto se favorece la terapia local definitiva por encima de la vigilancia activa."
+        if life_band["band"] == "between_5_and_10_years":
+            summary = "En intermedio favorable con expectativa de vida entre 5 y 10 años, la observación clínica suele pesar más que una vigilancia activa protocolizada; la terapia local definitiva se individualiza."
+        elif life_band["band"] == "le_5_years":
+            summary = "En intermedio favorable con expectativa de vida menor o igual a 5 años, la observación clínica pesa claramente más que una vigilancia activa protocolizada o una terapia local automática."
         return {
             "eligible": selected,
             "status": "selected_candidate" if selected else "not_preferred",
             "summary": (
                 "La vigilancia activa solo puede considerarse en casos intermedios favorables seleccionados, con resonancia magnética previa, plan de biopsia confirmatoria y sin histología adversa."
                 if selected
-                else "En este contexto se favorece la terapia local definitiva por encima de la vigilancia activa."
+                else summary
             ),
             "requires_escalation": False,
             "adverse_variant_type": adverse_variant_type,
@@ -257,3 +383,75 @@ def _normalized_adverse_variant(payload: dict[str, Any]) -> str:
     if str(payload.get("rare_histology_variant", "0")) == "1":
         return "other_aggressive_unspecified"
     return "none"
+
+
+def focal_therapy_eligibility(payload: dict[str, Any], nccn_group: str = "") -> dict[str, Any]:
+    """EPIC 8 — Evalúa candidatura a terapia focal selectiva (NCCN PROS-C 2B).
+
+    Consume el payload localized y mapea los campos disponibles hacia el
+    dominio ``focal_therapy`` (importación perezosa para evitar ciclos).
+    Devuelve el mismo dict que ``classify_focal_therapy_nccn`` más campos
+    ``offered`` y ``offer_reasons`` que indican si debe mostrarse el bundle
+    focal al paciente en la UI del carril localized_initial.
+
+    ``nccn_group`` es opcional; cuando se proporciona permite acelerar la
+    decisión sin re-ejecutar ``classify_nccn``.
+    """
+    try:
+        from prostanet.domains.focal_therapy.rules_nccn import (
+            classify_focal_therapy_nccn,
+        )
+    except Exception:
+        return {
+            "eligible": False,
+            "label": "Terapia focal no disponible (módulo no cargado)",
+            "offered": False,
+            "offer_reasons": [],
+        }
+
+    risk_group = (nccn_group or str(payload.get("nccn_risk_group") or "")).strip().upper()
+    if not risk_group:
+        try:
+            risk_group = str(classify_nccn(payload).get("risk_group") or "").upper()
+        except Exception:
+            risk_group = ""
+
+    # Mapeo localized → focal: homologar nombres y valores.
+    focal_payload = {
+        "age": payload.get("age"),
+        "life_expectancy_years": payload.get("life_expectancy_years"),
+        "psa": payload.get("psa"),
+        "gleason_primary": payload.get("gleason_primary"),
+        "gleason_secondary": payload.get("gleason_secondary"),
+        "isup_grade": payload.get("isup_grade"),
+        "nccn_risk_group": risk_group.replace(" ", "_").lower() if risk_group else "",
+        "lesion_unilateral": payload.get("lesion_unilateral"),
+        "lesion_maxdim_mm": payload.get("lesion_maxdim_mm"),
+        "mri_psa_density": payload.get("mri_psa_density"),
+        "prostate_volume_ml": payload.get("prostate_volume_ml"),
+        "lesion_location_apical": payload.get("lesion_location_apical"),
+        "urinary_obstructive_symptoms": payload.get("urinary_obstructive_symptoms"),
+        "focal_modality_preferred": payload.get("focal_modality_preferred"),
+        "patient_priority_profile": payload.get("patient_priority_profile"),
+    }
+    verdict = classify_focal_therapy_nccn(focal_payload)
+
+    # "offered" = mostrar el bundle focal en UI: aplica sólo a riesgos
+    # compatibles con PROS-C cat 2B (favorable intermediate / low).
+    offered = risk_group in {
+        "FAVORABLE INTERMEDIATE",
+        "LOW",
+        "VERY LOW",
+    }
+    reasons: list[str] = []
+    if offered:
+        reasons.append(
+            f"Grupo NCCN {risk_group.title()} admite discutir terapia focal selectiva como alternativa a AS / RP / RT."
+        )
+        if verdict.get("eligible"):
+            reasons.append("Criterios PROS-C cat 2B cumplidos: lesión unilateral + volumen adecuado + sin apical anterior.")
+        else:
+            reasons.extend(list(verdict.get("exclusion_reasons") or []))
+    verdict["offered"] = bool(offered)
+    verdict["offer_reasons"] = reasons
+    return verdict

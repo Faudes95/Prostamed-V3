@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from prostanet.domains.clinical_validation.oracle_contracts import (
+    build_action_oracle_contract,
+    match_action_contract,
+)
+
 
 def _text(value: Any) -> str:
     return str(value or "")
@@ -68,26 +73,6 @@ def _data_accumulation_complete(snapshot: dict[str, Any]) -> bool:
     )
 
 
-ACTION_ALIASES = {
-    "active surveillance": ["active surveillance", "vigilancia activa"],
-    "surveillance": ["surveillance", "vigilancia"],
-    "rt": ["rt", "radioterapia"],
-    "adt": ["adt", "hormonal", "androgénica"],
-    "biopsia": ["biopsia", "rebiopsia", "confirmatoria"],
-    "tratamiento": ["tratamiento", "definitivo", "cirugía", "radioterapia", "salir de vigilancia"],
-    "salvage": ["salvage", "rescate"],
-    "rescate": ["rescate", "salvage"],
-    "review": ["review", "revisión", "uropatológica", "multidisciplinaria"],
-    "estudio": ["estudio", "seguimiento diagnóstico", "mri seriados", "biopsia dirigida"],
-    "reabrir": ["reabrir", "biopsia dirigida", "confirmación histológica"],
-    "sist": ["sistém", "sistemic", "olaparib", "docetaxel", "cabazitaxel", "darolutamida", "niraparib", "abirater", "lu-177", "pembrolizumab", "intensificación"],
-    "crpc": ["crpc", "resistente a la castración", "darolutam", "apalut", "enzalut", "abirater", "olapar", "cabazitax", "docetax"],
-    "parp": ["parp", "olaparib", "talazoparib", "niraparib"],
-    "metastasis-directed therapy": ["metastasis-directed therapy", "mdt", "sbrt"],
-    "rt al primario": ["rt al primario", "radioterapia al primario"],
-}
-
-
 def _snapshot_field_values(snapshot: dict[str, Any]) -> dict[str, Any]:
     patient = dict(snapshot.get("patient_record") or {})
     truth = dict((patient.get("longitudinal_truth_snapshot") or {}).get("field_values") or {})
@@ -111,11 +96,21 @@ def _snapshot_field_values(snapshot: dict[str, Any]) -> dict[str, Any]:
     return values
 
 
-def _action_matches(actual_action: str, expected_action: str) -> bool:
-    if _contains(actual_action, expected_action):
-        return True
-    alias_needles = ACTION_ALIASES.get(str(expected_action or "").lower(), [])
-    return any(_contains(actual_action, needle) for needle in alias_needles)
+def _supporting_action_texts(snapshot: dict[str, Any]) -> list[str]:
+    texts = _schedule_titles(snapshot) + _alert_titles(snapshot)
+    signals = dict(snapshot.get("signals") or {})
+    mhspc_bundle = dict(signals.get("mhspc_copilot_bundle") or {})
+    if bool(mhspc_bundle.get("rt_primary_candidate")):
+        texts.append("RT al primario")
+    if bool(mhspc_bundle.get("mdt_candidate")):
+        texts.append("MDT")
+    for bundle_key in ("post_rp_salvage_bundle", "post_rt_salvage_bundle"):
+        bundle = dict(signals.get(bundle_key) or {})
+        local_pathway = dict(bundle.get("local_salvage_pathway") or {})
+        if bool(local_pathway.get("visible")):
+            texts.append(str(local_pathway.get("recommended_path") or ""))
+            texts.append(str(local_pathway.get("rationale") or ""))
+    return [item for item in texts if str(item or "").strip()]
 
 
 def _assertion(key: str, passed: bool, expected: Any, actual: Any, severity: str = "normal") -> dict[str, Any]:
@@ -155,16 +150,32 @@ def evaluate_snapshot_against_oracle(snapshot: dict[str, Any], oracle: dict[str,
             )
         )
 
-    expected_action_contains = str(oracle.get("expected_action_contains") or "")
-    if expected_action_contains:
+    action_contract = build_action_oracle_contract(
+        oracle,
+        fallback_label=str(oracle.get("expected_action_contains") or ""),
+    )
+    if action_contract.get("display_label"):
         next_best_action = dict(snapshot.get("next_best_action") or {})
-        actual_action = _text(next_best_action.get("title") or next_best_action.get("headline") or next_best_action.get("recommended_action"))
+        headline_texts = [
+            _text(next_best_action.get("title") or next_best_action.get("headline") or next_best_action.get("recommended_action")),
+        ]
+        supporting_texts = _supporting_action_texts(snapshot)
+        action_match = match_action_contract(
+            headline_texts=headline_texts,
+            supporting_texts=supporting_texts,
+            contract=action_contract,
+        )
         assertions.append(
             _assertion(
                 "next_best_action",
-                _action_matches(actual_action, expected_action_contains),
-                expected_action_contains,
-                actual_action,
+                bool(action_match.get("matched")),
+                action_contract.get("display_label"),
+                {
+                    "headline": headline_texts[0],
+                    "supporting": supporting_texts[:5],
+                    "matched_alias": action_match.get("matched_alias"),
+                    "matched_visibility_layer": action_match.get("matched_visibility_layer"),
+                },
                 severity="critical" if oracle.get("hard_critical") else "normal",
             )
         )

@@ -85,12 +85,10 @@ def enrich_evaluation_result(
         [*missing, *contraindications]
     )
     nccn_primary["mensaje_para_toma_de_decisiones_compartida"] = shared_decision_message.strip()
-    nccn_primary["tratamiento_principal"] = (
-        _treatment_name(preferred_regimen)
-        or _treatment_name(eligible_treatments[0])
-        if eligible_treatments or preferred_regimen
-        else ""
-    )
+    primary_treatment = _treatment_name(preferred_regimen)
+    if not primary_treatment and eligible_treatments:
+        primary_treatment = _treatment_name(eligible_treatments[0])
+    nccn_primary["tratamiento_principal"] = primary_treatment
 
     eau_comparison = enriched.setdefault("eau_comparison", {})
     eau_comparison["explicacion_breve"] = (

@@ -193,3 +193,164 @@ def severity_summary(events: list[ToxicityEvent]) -> dict[str, Any]:
         "requires_dose_modification": any(e.action_taken in dose_mod_actions for e in events),
         "active_events": sum(1 for e in events if not e.resolution_date),
     }
+
+
+# ── EPIC 6: record_adverse_event + aggregate_toxicity_burden ─────────────
+
+
+def record_adverse_event(
+    existing_events: list[dict[str, Any] | ToxicityEvent] | None,
+    new_event: dict[str, Any],
+) -> tuple[list[ToxicityEvent], ToxicityEvent]:
+    """Registra un nuevo evento adverso validado y lo anexa a la lista.
+
+    Acepta ``existing_events`` como lista de dicts o ``ToxicityEvent``.
+    Devuelve una tupla ``(full_list, new_event)`` donde ``full_list`` es la
+    lista completa validada (normalizada a ``ToxicityEvent``) y ``new_event``
+    es el evento recién agregado.
+
+    Uso típico desde ``ctcae_capture_engine``:
+        events, new = record_adverse_event(patient.get("ctcae_events"),
+                                           {"term": "neutropenia", "grade": 3,
+                                            "agent_suspected": "docetaxel",
+                                            "action_taken": "dose_reduction"})
+
+    Raises:
+        CTCAEValidationError si ``new_event`` no es válido.
+    """
+    normalized: list[ToxicityEvent] = []
+    for ev in existing_events or []:
+        if isinstance(ev, ToxicityEvent):
+            normalized.append(ev)
+        elif isinstance(ev, dict):
+            try:
+                normalized.append(validate_toxicity_event(ev))
+            except CTCAEValidationError:
+                # tolerante con eventos heredados mal formados; se omiten
+                continue
+    fresh = validate_toxicity_event(new_event)
+    normalized.append(fresh)
+    return normalized, fresh
+
+
+def aggregate_toxicity_burden(
+    events: list[ToxicityEvent] | list[dict[str, Any]] | None,
+    *,
+    dose_modification_threshold_grade: int = 3,
+    critical_threshold_grade: int = 4,
+) -> dict[str, Any]:
+    """Agrega la carga total de toxicidad de un paciente.
+
+    Entrega una vista de "toxicity burden" usable directamente en
+    ``profile_compass`` y en ``alert_engine``. Reutiliza ``severity_summary``
+    como base y añade:
+
+      * ``burden_tone``: "success" | "info" | "warning" | "danger" basado en
+        el grado máximo y el número de categorías con grado ≥3.
+      * ``agents_suspected``: dict agente → número de eventos asociados.
+      * ``categories_with_severe``: lista de categorías con grado ≥3 activas.
+      * ``events_requiring_action``: eventos grado ≥``dose_modification_threshold_grade``
+        aún sin ``action_taken`` modificado.
+      * ``critical_events``: eventos grado ≥``critical_threshold_grade``.
+      * ``narrative``: resumen en español para inserción en
+        profile_compass / decision_refiner.
+
+    Args:
+        events: lista de ``ToxicityEvent`` o dicts serializables.
+        dose_modification_threshold_grade: umbral para requerir modificación.
+        critical_threshold_grade: umbral para marcar evento crítico.
+    """
+    normalized: list[ToxicityEvent] = []
+    for ev in events or []:
+        if isinstance(ev, ToxicityEvent):
+            normalized.append(ev)
+        elif isinstance(ev, dict):
+            try:
+                normalized.append(validate_toxicity_event(ev))
+            except CTCAEValidationError:
+                continue
+
+    base = severity_summary(normalized)
+
+    agents: dict[str, int] = {}
+    for ev in normalized:
+        if ev.agent_suspected:
+            agents[ev.agent_suspected] = agents.get(ev.agent_suspected, 0) + 1
+
+    categories_severe = sorted(
+        {ev.category for ev in normalized if ev.grade >= dose_modification_threshold_grade}
+    )
+
+    dose_actions = {"dose_reduction", "dose_delay", "drug_interruption", "drug_discontinuation"}
+    events_requiring_action = [
+        ev.to_dict()
+        for ev in normalized
+        if ev.grade >= dose_modification_threshold_grade and ev.action_taken not in dose_actions
+    ]
+
+    critical_events = [
+        ev.to_dict() for ev in normalized if ev.grade >= critical_threshold_grade
+    ]
+
+    max_grade = base["max_grade"]
+    if max_grade >= critical_threshold_grade:
+        burden_tone = "danger"
+    elif max_grade >= dose_modification_threshold_grade and len(categories_severe) >= 2:
+        burden_tone = "danger"
+    elif max_grade >= dose_modification_threshold_grade:
+        burden_tone = "warning"
+    elif max_grade == 2 and base["active_events"] >= 3:
+        burden_tone = "warning"
+    elif max_grade >= 1:
+        burden_tone = "info"
+    else:
+        burden_tone = "success"
+
+    narrative_parts: list[str] = []
+    if normalized:
+        narrative_parts.append(
+            f"Total eventos: {len(normalized)} (grado máximo {max_grade}, "
+            f"{base['grade_3_plus_count']} grado ≥3, {base['active_events']} activos)"
+        )
+        if categories_severe:
+            narrative_parts.append(
+                f"Categorías comprometidas con grado ≥{dose_modification_threshold_grade}: "
+                + ", ".join(categories_severe)
+            )
+        if agents:
+            top_agent = sorted(agents.items(), key=lambda x: -x[1])[0]
+            narrative_parts.append(
+                f"Agente más implicado: {top_agent[0]} ({top_agent[1]} evento(s))"
+            )
+        if events_requiring_action:
+            narrative_parts.append(
+                f"{len(events_requiring_action)} evento(s) grado ≥"
+                f"{dose_modification_threshold_grade} sin modificación de dosis registrada"
+            )
+    narrative = ". ".join(narrative_parts) if narrative_parts else "Sin eventos de toxicidad registrados"
+
+    return {
+        **base,
+        "total_events": len(normalized),
+        "burden_tone": burden_tone,
+        "agents_suspected": agents,
+        "categories_with_severe": categories_severe,
+        "events_requiring_action": events_requiring_action,
+        "critical_events": critical_events,
+        "narrative": narrative,
+    }
+
+
+__all__ = [
+    "CTCAEValidationError",
+    "PROSTATE_CTCAE_TERMS",
+    "ToxicityEvent",
+    "VALID_ACTIONS",
+    "VALID_ATTRIBUTIONS",
+    "VALID_CATEGORIES",
+    "aggregate_toxicity_burden",
+    "record_adverse_event",
+    "severity_summary",
+    "validate_toxicity_event",
+    "validate_toxicity_list",
+]

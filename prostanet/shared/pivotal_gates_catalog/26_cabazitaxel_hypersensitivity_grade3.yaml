@@ -1,0 +1,153 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 26: cabazitaxel_hypersensitivity_grade3
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XXXIV) — Auditoría #42 — Gate YAML-NATIVE.
+#
+# Razón clínica:
+#   Cabazitaxel (Jevtana) tiene WARNING regulatorio CRÍTICO sobre
+#   reacciones de hipersensibilidad histamine-mediated. Mecanismo:
+#   diluyente polysorbate-80 + estructura taxane → activación complemento +
+#   liberación histamine masiva. TROPIC + CARD requirieron premedication
+#   obligatoria con esteroides + H1/H2 antihistamínicos.
+#
+#   Datos de TROPIC (de Bono Lancet 2010;376:1147) + CARD (de Wit NEJM
+#   2019;381:2506) + Jevtana FDA prescribing information §4 (Contraindications):
+#     - Reacciones G≥3 hipersensibilidad: 2-5% pacientes sin premedication
+#     - Anaphylaxis fatal: casos aislados (~0.1%) pero documentados
+#     - Discontinuación por hipersensibilidad: 1.5%
+#     - Cross-reactivity con docetaxel hypersensitivity history: ~30%
+#
+#   Threshold canónico (Jevtana label §4 + CTCAE v5):
+#     - Historia previa hipersensibilidad SEVERA cabazitaxel = CONTRAINDICACIÓN
+#       ABSOLUTA (no override)
+#     - Historia hipersensibilidad polysorbate-80 = CONTRAINDICACIÓN ABSOLUTA
+#     - Hipersensibilidad CTCAE G3+ documentada (broncoespasmo + hipotensión +
+#       angioedema) = hard-block
+#     - Hipersensibilidad G1-G2 mild a docetaxel previo = relative
+#       contraindication (override solo con premedication completa documentada
+#       + hospital observation primer ciclo)
+#
+#   Override: hypersensitivity_grade1_only_premedicated=Sí (SOLO si reacción
+#   previa fue G1 mild + premedication completa + hospital observation
+#   primer ciclo + sin anaphylaxis history). NO override para G≥3 history
+#   o polysorbate-80 anaphylaxis (contraindicaciones absolutas).
+#
+#   Coexistencia con Gate 2 (severe_neuropathy_grade3) + Gate 24
+#   (docetaxel_neuropathy_longitudinal): gates 2/24 cubren neuropatía
+#   taxane; gate 26 cubre hipersensibilidad taxane (mecanismo distinto).
+#
+#   Bloquea: REGIMEN_CODES_CABAZITAXEL específicamente.
+# ──────────────────────────────────────────────────────────────────────
+
+code: cabazitaxel_hypersensitivity_grade3
+title: "Cabazitaxel × hipersensibilidad histamine-mediated G≥3 (Jevtana §4 + TROPIC/CARD)"
+faubot_added_in: "2026-04-25 XXXIV"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1. Flag explícito historia hipersensibilidad cabazitaxel
+    - type: truthy_flag
+      field: cabazitaxel_hypersensitivity_history
+      alias_fields:
+        - cabazitaxel_hypersensitivity_documented
+        - prior_cabazitaxel_anaphylaxis
+        - cabazitaxel_severe_reaction_history
+    # 2. Flag explícito hipersensibilidad polysorbate-80 (CONTRAINDICACIÓN ABSOLUTA)
+    - type: truthy_flag
+      field: polysorbate_hypersensitivity_history
+      alias_fields:
+        - polysorbate80_anaphylaxis
+        - prior_polysorbate_anaphylaxis
+        - tween80_hypersensitivity
+    # 3. CTCAE v5 grado ≥3 hipersensibilidad documentada
+    - type: numeric_threshold
+      field: hypersensitivity_ctcae_grade
+      threshold: 3
+    # 4. Historia anaphylaxis a taxane previo (cross-reactivity ~30%)
+    - type: truthy_flag
+      field: prior_taxane_anaphylaxis_documented
+      alias_fields:
+        - severe_taxane_hypersensitivity_history
+        - docetaxel_anaphylaxis_history
+
+# Override: SOLO para reacciones G1 mild + premedication completa.
+# NO override para G≥3 history o polysorbate-80 anaphylaxis (contraindicaciones absolutas
+# per Jevtana label §4).
+override:
+  type: truthy_flag
+  field: hypersensitivity_grade1_only_premedicated
+
+regimen_codes:
+  - REGIMEN_CODES_CABAZITAXEL
+
+keywords:
+  - KEYWORDS_CABAZITAXEL
+
+message: |
+  Cabazitaxel (Jevtana) NO debe iniciarse o continuarse con historia previa
+  de hipersensibilidad severa (CTCAE v5 G≥3: broncoespasmo + hipotensión +
+  angioedema + anaphylaxis) o hipersensibilidad documentada al diluyente
+  polysorbate-80.
+
+  Mecanismo distintivo: diluyente polysorbate-80 (Tween-80) + estructura
+  taxane semi-sintética activan cascada complemento (C3a/C5a) + liberación
+  histamine masiva. Cross-reactivity con docetaxel hypersensitivity history
+  ~30% (mismo diluyente).
+
+  Evidencia regulatoria:
+    - Jevtana FDA prescribing information §4 — CONTRAINDICACIONES:
+      historia hipersensibilidad severa a cabazitaxel o polysorbate-80.
+      §5.2 — Premedication OBLIGATORIA: dexametasona 8 mg + ranitidina
+      50 mg IV + difenhidramina 25 mg IV ≥30 min antes (G1-G2 history).
+    - TROPIC (de Bono Lancet 2010;376:1147) — Reacciones G≥3
+      hipersensibilidad 2-5%; anaphylaxis fatal ~0.1%.
+    - CARD (de Wit NEJM 2019;381:2506) — Cross-reactivity docetaxel
+      ~30%; discontinuación 1.5%.
+
+  Conducta clínica:
+  1. Suspender cabazitaxel inmediatamente si síntomas aparecen
+     intra-infusión (segundos-minutos): rash + prurito + flushing
+     (G1), broncoespasmo + hipotensión (G2-G3), shock + paro
+     cardiorrespiratorio (G4).
+  2. Manejo agudo:
+     - Adrenalina 0.3-0.5 mg IM si anaphylaxis (preferida sobre IV)
+     - Difenhidramina 25-50 mg IV
+     - Hidrocortisona 100-200 mg IV
+     - O2 suplementario + soporte ventilatorio si broncoespasmo
+     - Vasoconstrictores + IV fluidos si shock
+  3. Documentar grado CTCAE v5 + síntomas + tiempo evolución.
+  4. NO re-rechallenge si G≥3 anaphylaxis o polysorbate-80
+     hypersensitivity (contraindicación absoluta Jevtana §4).
+  5. Override (`hypersensitivity_grade1_only_premedicated=Sí`)
+     SOLO si:
+     - Reacción previa fue G1 mild (rash + flushing sin compromiso
+       cardio-respiratorio)
+     - Premedication completa pre-infusión documentada
+     - Hospital observation primer ciclo
+     - Sin polysorbate-80 anaphylaxis history
+  6. Considerar terapia alternativa NO-taxane:
+     - ARPI (enzalutamida, abiraterona, darolutamida) si gates 17-21 OK
+     - PARPi si HRR mutation + gates 15-16 OK
+     - Lu-177-PSMA-617 si PSMA-positive
+     - Re-challenge docetaxel CONTRAINDICADO (cross-reactivity)
+
+evidence_tag: jevtana_label_tropic_card_ctcae_v5
+trial_refs:
+  - TROPIC
+  - CARD
+  - "Jevtana label §4"
+  - "CTCAE v5"
+
+references:
+  - "Jevtana (cabazitaxel) FDA prescribing information §4 + §5.2."
+  - "de Bono JS et al. TROPIC. Lancet 2010;376:1147-1154."
+  - "de Wit R et al. CARD. NEJM 2019;381:2506-2518."
+  - "ASCO Guidelines on chemotherapy-induced hypersensitivity reactions 2021."
+  - "CTCAE v5.0 — Hypersensitivity reaction grading."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Cabazitaxel premedication + contraindications"
+  eau_section: "EAU 2026 §6.5.3 — Taxane hypersensitivity precautions"

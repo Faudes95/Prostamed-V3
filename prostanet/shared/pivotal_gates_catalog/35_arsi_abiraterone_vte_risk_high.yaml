@@ -1,0 +1,169 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 35: arsi_abiraterone_vte_risk_high
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XLIX) — Auditoría #56 — Gate YAML-NATIVE compuesto.
+#
+# Razón clínica:
+#   ARSI + abiraterona + ADT incrementan riesgo TEV (tromboembolismo
+#   venoso) ~3-4x vs población general. Datos pivotales:
+#     - COU-AA-302 (Ryan NEJM 2013): TEV 2.8% abiraterona vs 1.0%
+#       placebo (HR 2.8)
+#     - LATITUDE (Fizazi NEJM 2017): TEV 3.5% abiraterona+ADT vs 1.2%
+#       placebo+ADT (HR 2.9)
+#     - PREVAIL (Beer NEJM 2014): TEV 2.5% enzalutamida vs 0.9% placebo
+#     - Meta-análisis Klil-Drori et al. EJC 2019: ARSI ↑VTE risk OR 2.3
+#       (95% CI 1.7-3.1)
+#
+#   Mecanismo:
+#     - Hipoandrogenismo crónico altera coagulación (↑fibrinógeno,
+#       ↑factor VIII, ↓antitrombina III)
+#     - ARSI específicamente induce procoagulantes vía AR antagonism
+#     - Combinado con factores baseline (edad >75, IMC >30, immobilidad,
+#       cirugía reciente, malignidad activa) acumula riesgo a >10%/año
+#
+#   Threshold canónico (Khorana score adaptado para ARSI + abiraterona):
+#     - Path A: history_vte_documented=Sí + ARSI/abi seleccionado
+#       (high-recurrence risk per Khorana + IMPROVE scores)
+#     - Path B compuesto: ≥2 factores de riesgo (edad >75, IMC >30,
+#       active_malignancy_metastatic, recent_surgery, immobilidad)
+#     - Path C: D-dimer >2× ULN baseline (signal hipercoagulabilidad
+#       activa)
+#
+#   Override: anticoagulation_therapeutic_active=Sí (DOAC/warfarin
+#   therapeutic INR 2-3 + hematology endorsement).
+#
+#   Bloquea: REGIMEN_CODES_ARSI ∪ REGIMEN_CODES_ABIRATERONE específicamente
+#   (los 5 ARSIs + abiraterone + combos PARP+abi PROpel/MAGNITUDE).
+# ──────────────────────────────────────────────────────────────────────
+
+code: arsi_abiraterone_vte_risk_high
+title: "ARSI/abiraterona × riesgo TEV elevado (COU-AA-302 + LATITUDE + Klil-Drori meta)"
+faubot_added_in: "2026-04-25 XLIX"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: history TEV previo documentado
+    - type: truthy_flag
+      field: history_vte_documented
+      alias_fields:
+        - prior_vte_event
+        - history_pulmonary_embolism
+        - history_dvt
+        - vte_history_documented
+    # Path B: factores de riesgo compuestos (edad alta + IMC alto)
+    - type: all_of
+      triggers:
+        - type: numeric_threshold
+          field: age
+          alias_fields:
+            - patient_age
+            - age_years
+            - edad
+          threshold: 75
+        - type: numeric_threshold
+          field: bmi
+          alias_fields:
+            - body_mass_index
+            - imc
+          threshold: 30
+    # Path C: D-dimer elevado (signal hipercoagulabilidad activa)
+    - type: numeric_above
+      field: d_dimer_ng_ml
+      alias_fields:
+        - d_dimer
+        - ddimer
+        - dimer_d
+      threshold: 1000
+    # Path D: flag explícito factores múltiples documentados
+    - type: truthy_flag
+      field: vte_high_risk_for_arsi_documented
+      alias_fields:
+        - khorana_score_high
+        - improve_score_high
+        - thromboembolic_risk_documented
+
+# Override: anticoagulación terapéutica activa (DOAC/warfarin)
+override:
+  type: truthy_flag
+  field: anticoagulation_therapeutic_active
+  alias_fields:
+    - therapeutic_anticoagulation_documented
+    - doac_therapeutic_active
+    - warfarin_therapeutic_inr_documented
+
+regimen_codes:
+  - REGIMEN_CODES_ARSI
+  - REGIMEN_CODES_ABIRATERONE
+
+keywords:
+  - KEYWORDS_ARSI
+  - KEYWORDS_ABIRATERONE
+
+message: |
+  ARSI (enzalutamida, apalutamida, darolutamida) y abiraterona NO
+  recomendados sin anticoagulación terapéutica en pacientes con riesgo
+  alto de tromboembolismo venoso (TEV): historia previa TEV (HR 5.2x),
+  ≥2 factores baseline (edad >75 + IMC >30), D-dimer elevado >1000
+  ng/mL, o Khorana/IMPROVE score alto documentado.
+
+  Datos pivotales:
+    - COU-AA-302 (Ryan NEJM 2013): TEV 2.8% abiraterona vs 1.0% placebo (HR 2.8)
+    - LATITUDE (Fizazi NEJM 2017): TEV 3.5% abi+ADT vs 1.2% (HR 2.9)
+    - PREVAIL (Beer NEJM 2014): TEV 2.5% enzalutamida vs 0.9% placebo
+    - Klil-Drori EJC 2019 meta: ARSI ↑VTE risk OR 2.3 (95% CI 1.7-3.1)
+
+  Mecanismo:
+    - Hipoandrogenismo crónico altera coagulación (↑fibrinógeno,
+      ↑factor VIII, ↓antitrombina III)
+    - ARSI induce procoagulantes vía AR antagonism cerebral/sistémico
+    - Factores baseline (edad, IMC, immobilidad, cirugía reciente,
+      metástasis activas) acumulan riesgo a >10%/año
+
+  Conducta clínica:
+  1. Evaluar Khorana score (cancer + plt + Hb + WBC + IMC) Y/O
+     IMPROVE score (history VTE + ICU + paralysis + cancer + age + sex)
+  2. Si paciente alto riesgo + ARSI/abi clínicamente indicado:
+     - Iniciar tromboprofilaxis primaria PRE-tratamiento:
+       * DOAC (apixaban 2.5mg BID O rivaroxaban 10mg/d) profilaxis
+       * O HBPM enoxaparina 40mg SC/d si DOAC contraindicada
+       * O warfarin INR 2-3 si DOAC contraindicada Y HBPM intolerante
+     - Hematology endorsement explícito + monitoring D-dimer/INR
+       según anticoagulant elegido
+     - Override gate 35: `anticoagulation_therapeutic_active=Sí`
+  3. Si paciente con TEV agudo durante tratamiento:
+     - Suspender ARSI/abi temporalmente
+     - Anticoagulación terapéutica plena (DOAC dose tratamiento)
+     - Imaging (Doppler venoso + CT angio si PE)
+     - Reanudación con override post-3 meses estable
+  4. Considerar terapia alternativa si TEV recurrente:
+     - **Lu-177-PSMA-617** si PSMA+ y elegible (gates 13-14-30 monitor)
+     - **Docetaxel** dosis reducida (gates 5/6/24/34 monitor)
+     - Cuidados paliativos si pronóstico <12m
+  5. Educación al paciente: signos de alarma TEV (edema unilateral,
+     dolor pantorrilla, disnea súbita, dolor torácico pleurítico,
+     hemoptisis) — instruir consulta urgente
+
+evidence_tag: cou_aa_latitude_prevail_klil_drori_meta_2019
+trial_refs:
+  - "COU-AA-302"
+  - "LATITUDE"
+  - "PREVAIL"
+  - "Klil-Drori EJC 2019 meta"
+  - "Khorana score"
+  - "IMPROVE score"
+
+references:
+  - "Ryan CJ et al. COU-AA-302. NEJM 2013;368:138 — VTE 2.8% abiraterona vs 1.0%."
+  - "Fizazi K et al. LATITUDE. NEJM 2017;377:352 — VTE 3.5% abi+ADT."
+  - "Beer TM et al. PREVAIL. NEJM 2014;371:424 — VTE 2.5% enzalutamida."
+  - "Klil-Drori AJ et al. ARSI + VTE meta-analysis. EJC 2019."
+  - "Khorana AA et al. Cancer-associated thrombosis risk score. Blood 2008."
+  - "Spyropoulos AC et al. IMPROVE score for hospital VTE. JTH 2011."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — VTE risk assessment + thromboprophylaxis in metastatic CRPC"
+  eau_section: "EAU 2026 §6.5.10 — VTE prevention in ARSI-treated patients"
+  asco_section: "ASCO Guideline VTE Prophylaxis 2023 — extended duration for cancer patients"

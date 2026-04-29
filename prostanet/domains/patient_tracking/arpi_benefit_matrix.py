@@ -140,6 +140,29 @@ ARPI_BENEFIT_MATRIX = {
             "doublet_fit": "exact",
             "benefit_score": 16.8,
         },
+        # EPIC 9 Group C (GAP-5) — TALAPRO-3 (Agarwal ASCO GU 2025 LBA18).
+        # Celda HRR-condicional: benefit_score alto solo cuando HRR
+        # positiva es trazable (el selector bloquea la propuesta si no
+        # cumple gate). regulatory_pending=True porque la aprobación
+        # FDA/EMA está pendiente. La UI debe surface badge
+        # "precision_hrr_pending_regulatory".
+        "ADT_TALAZO_ENZA_HRR": {
+            "scenario_match": "exact_hrr_positive",
+            "regulatory_support": "TALAPRO-3 ASCO GU 2025 LBA18 (regulatory pending)",
+            "primary_benefit_endpoint": "rPFS",
+            "os_benefit_strength": "immature",
+            "mfs_benefit_strength": "not_applicable",
+            "rpfs_benefit_strength": "high",
+            "evidence_maturity": "pivotal_abstract",
+            "trial_basis": "TALAPRO-3: talazoparib + enzalutamida + ADT vs placebo + enzalutamida + ADT en HRR-mutados (rPFS HR≈0.67).",
+            "volume_fit": "exact",
+            "temporality_fit": "exact",
+            "triplet_fit": "not_applicable",
+            "doublet_fit": "exact_hrr",
+            "biomarker_gate": "hrr_positive_required",
+            "regulatory_pending": True,
+            "benefit_score": 19.0,
+        },
     },
     "mcspc_high_volume_metachronous": {
         "ADT_DOCETAXEL_DAROLUTAMIDE": {
@@ -157,20 +180,26 @@ ARPI_BENEFIT_MATRIX = {
             "doublet_fit": "not_applicable",
             "benefit_score": 18.5,
         },
+        # EPIC 9 Group B (GAP-4) — PEACE-1 enroló ÚNICAMENTE mHSPC de novo /
+        # sincrónico (Fizazi *Lancet* 2022;399:1695). No hay evidencia
+        # prospectiva para el triplete PEACE-1 (ADT + docetaxel + abiraterona)
+        # en metacrónico; marcar `triplet_fit="not_applicable"` y degradar
+        # `scenario_match` + `trial_basis` para evitar que el motor proponga
+        # el triplete PEACE-1 como backbone en alto volumen metacrónico.
         "ADT_DOCETAXEL_ABIRATERONE": {
-            "scenario_match": "weak_extrapolation",
+            "scenario_match": "not_applicable",
             "regulatory_support": "PEACE-1",
             "primary_benefit_endpoint": "OS",
             "os_benefit_strength": "high",
             "mfs_benefit_strength": "low",
             "rpfs_benefit_strength": "high",
             "evidence_maturity": "intermediate",
-            "trial_basis": "PEACE-1 con extrapolación fuera del de novo/sincrónico",
+            "trial_basis": "PEACE-1 validado solo en mHSPC de novo/sincrónico (Fizazi Lancet 2022); sin datos prospectivos en metacrónico.",
             "volume_fit": "exact",
-            "temporality_fit": "weak_extrapolation",
-            "triplet_fit": "supported_extrapolation",
+            "temporality_fit": "not_applicable",
+            "triplet_fit": "not_applicable",
             "doublet_fit": "not_applicable",
-            "benefit_score": 15.2,
+            "benefit_score": 8.0,
         },
         "ADT_ABIRATERONE": {
             "scenario_match": "supported_extrapolation",
@@ -231,6 +260,29 @@ ARPI_BENEFIT_MATRIX = {
             "triplet_fit": "not_applicable",
             "doublet_fit": "exact",
             "benefit_score": 16.5,
+        },
+        # EPIC 9 Group C (GAP-5) — TALAPRO-3 seleccionó pacientes por HRR y NO
+        # estratificó por volumen ni temporalidad (metacrónico/sincrónico).
+        # Las HRs por subgrupo reportadas en ASCO GU 2025 LBA18 permanecen
+        # homogéneas entre de novo y metacrónico. Se marca como
+        # "exact_hrr_positive" con leve degradación de score (18.8) por menor
+        # representación relativa del subgrupo metacrónico HRR+.
+        "ADT_TALAZO_ENZA_HRR": {
+            "scenario_match": "exact_hrr_positive",
+            "regulatory_support": "TALAPRO-3 ASCO GU 2025 LBA18 (regulatory pending)",
+            "primary_benefit_endpoint": "rPFS",
+            "os_benefit_strength": "immature",
+            "mfs_benefit_strength": "not_applicable",
+            "rpfs_benefit_strength": "high",
+            "evidence_maturity": "pivotal_abstract",
+            "trial_basis": "TALAPRO-3: talazoparib + enzalutamida + ADT vs placebo + enzalutamida + ADT en HRR-mutados (rPFS HR≈0.67); subgrupo metacrónico coherente.",
+            "volume_fit": "exact",
+            "temporality_fit": "exact",
+            "triplet_fit": "not_applicable",
+            "doublet_fit": "exact_hrr",
+            "biomarker_gate": "hrr_positive_required",
+            "regulatory_pending": True,
+            "benefit_score": 18.8,
         },
     },
     "mcspc_low_volume_sync_oligo": {
@@ -294,6 +346,27 @@ ARPI_BENEFIT_MATRIX = {
             "doublet_fit": "exact",
             "benefit_score": 14.6,
         },
+        # EPIC 9 Group C (GAP-5) — TALAPRO-3 HRR-precision doublet en
+        # mHSPC low-volume sincrónico/oligometastásico; biomarker gate
+        # estricto. Score 18.5 refleja concordancia de volumen y
+        # temporalidad con la población de referencia del pivotal.
+        "ADT_TALAZO_ENZA_HRR": {
+            "scenario_match": "exact_hrr_positive",
+            "regulatory_support": "TALAPRO-3 ASCO GU 2025 LBA18 (regulatory pending)",
+            "primary_benefit_endpoint": "rPFS",
+            "os_benefit_strength": "immature",
+            "mfs_benefit_strength": "not_applicable",
+            "rpfs_benefit_strength": "high",
+            "evidence_maturity": "pivotal_abstract",
+            "trial_basis": "TALAPRO-3: talazoparib + enzalutamida + ADT vs placebo + enzalutamida + ADT en HRR-mutados (rPFS HR≈0.67).",
+            "volume_fit": "exact",
+            "temporality_fit": "exact",
+            "triplet_fit": "not_applicable",
+            "doublet_fit": "exact_hrr",
+            "biomarker_gate": "hrr_positive_required",
+            "regulatory_pending": True,
+            "benefit_score": 18.5,
+        },
     },
     "mcspc_oligo_metachronous": {
         "ADT_DAROLUTAMIDE": {
@@ -356,6 +429,27 @@ ARPI_BENEFIT_MATRIX = {
             "doublet_fit": "exact",
             "benefit_score": 14.1,
         },
+        # EPIC 9 Group C (GAP-5) — TALAPRO-3 HRR-precision doublet en
+        # oligometastásico metacrónico HRR+. Score 18.2 refleja la menor
+        # representación relativa del subgrupo (metacrónico + oligo) en el
+        # pivotal sin comprometer el biomarker gate.
+        "ADT_TALAZO_ENZA_HRR": {
+            "scenario_match": "exact_hrr_positive",
+            "regulatory_support": "TALAPRO-3 ASCO GU 2025 LBA18 (regulatory pending)",
+            "primary_benefit_endpoint": "rPFS",
+            "os_benefit_strength": "immature",
+            "mfs_benefit_strength": "not_applicable",
+            "rpfs_benefit_strength": "high",
+            "evidence_maturity": "pivotal_abstract",
+            "trial_basis": "TALAPRO-3: talazoparib + enzalutamida + ADT vs placebo + enzalutamida + ADT en HRR-mutados (rPFS HR≈0.67); subgrupo oligometastásico metacrónico coherente.",
+            "volume_fit": "exact",
+            "temporality_fit": "exact",
+            "triplet_fit": "not_applicable",
+            "doublet_fit": "exact_hrr",
+            "biomarker_gate": "hrr_positive_required",
+            "regulatory_pending": True,
+            "benefit_score": 18.2,
+        },
     },
     "m1_crpc": {
         "ADT_ENZALUTAMIDE": {
@@ -411,3 +505,60 @@ ARPI_BENEFIT_MATRIX = {
 
 def benefit_profile_for_state(state: str, regimen_code: str) -> dict[str, object]:
     return dict(ARPI_BENEFIT_MATRIX.get(str(state or "").strip(), {}).get(str(regimen_code or "").strip(), {}))
+
+
+# ── Auditoría #14 — Mapeo (state, regimen_code) → códigos de ensayo pivotal ──
+#
+# Hace machine-readable la trazabilidad estado×régimen → ensayo. Cada entrada
+# referencia los `trial_code` registrados en
+# `prostanet/domains/research_intelligence/trial_matching_engine.py:TRIAL_CATALOG`
+# para que `TreatmentSequencer` y la UI consuman la evidencia sin parsear texto.
+PIVOTAL_TRIAL_CODES_BY_REGIMEN: dict[tuple[str, str], tuple[str, ...]] = {
+    # M0CRPC PSADT ≤10m
+    ("m0_crpc", "ADT_DAROLUTAMIDE"): ("ARAMIS",),
+    ("m0_crpc", "ADT_ENZALUTAMIDE"): ("PROSPER",),
+    ("m0_crpc", "ADT_APALUTAMIDE"): ("SPARTAN",),
+    # mHSPC alto volumen sincrónico
+    ("mcspc_high_volume_sync", "ADT_DOCETAXEL_DAROLUTAMIDE"): ("ARASENS",),
+    ("mcspc_high_volume_sync", "ADT_DOCETAXEL_ABIRATERONE"): ("PEACE-1", "CHAARTED"),
+    ("mcspc_high_volume_sync", "ADT_ABIRATERONE"): ("LATITUDE", "STAMPEDE"),
+    ("mcspc_high_volume_sync", "ADT_DAROLUTAMIDE"): ("ARANOTE",),
+    ("mcspc_high_volume_sync", "ADT_ENZALUTAMIDE"): ("ARCHES", "ENZAMET"),
+    ("mcspc_high_volume_sync", "ADT_APALUTAMIDE"): ("TITAN",),
+    ("mcspc_high_volume_sync", "ADT_TALAZO_ENZA_HRR"): ("TALAPRO-3",),
+    # mHSPC alto volumen metacrónico
+    ("mcspc_high_volume_metachronous", "ADT_DOCETAXEL_DAROLUTAMIDE"): ("ARASENS",),
+    ("mcspc_high_volume_metachronous", "ADT_ABIRATERONE"): ("LATITUDE", "STAMPEDE"),
+    ("mcspc_high_volume_metachronous", "ADT_DAROLUTAMIDE"): ("ARANOTE",),
+    ("mcspc_high_volume_metachronous", "ADT_ENZALUTAMIDE"): ("ARCHES", "ENZAMET"),
+    ("mcspc_high_volume_metachronous", "ADT_APALUTAMIDE"): ("TITAN",),
+    ("mcspc_high_volume_metachronous", "ADT_TALAZO_ENZA_HRR"): ("TALAPRO-3",),
+    # mHSPC bajo volumen / oligo sincrónico
+    ("mcspc_low_volume_sync_oligo", "ADT_DAROLUTAMIDE"): ("ARANOTE",),
+    ("mcspc_low_volume_sync_oligo", "ADT_ENZALUTAMIDE"): ("ARCHES", "ENZAMET"),
+    ("mcspc_low_volume_sync_oligo", "ADT_APALUTAMIDE"): ("TITAN",),
+    ("mcspc_low_volume_sync_oligo", "ADT_ABIRATERONE"): ("STAMPEDE",),
+    ("mcspc_low_volume_sync_oligo", "ADT_TALAZO_ENZA_HRR"): ("TALAPRO-3",),
+    # mHSPC oligo metacrónico
+    ("mcspc_oligo_metachronous", "ADT_DAROLUTAMIDE"): ("ARANOTE",),
+    ("mcspc_oligo_metachronous", "ADT_ENZALUTAMIDE"): ("ARCHES", "ENZAMET"),
+    ("mcspc_oligo_metachronous", "ADT_APALUTAMIDE"): ("TITAN",),
+    ("mcspc_oligo_metachronous", "ADT_ABIRATERONE"): ("STAMPEDE",),
+    ("mcspc_oligo_metachronous", "ADT_TALAZO_ENZA_HRR"): ("TALAPRO-3",),
+    # mCRPC
+    ("m1_crpc", "ADT_ENZALUTAMIDE"): ("PREVAIL", "AFFIRM"),
+    ("m1_crpc", "ADT_ABIRATERONE"): ("COU-AA-302", "COU-AA-301"),
+    # BCR
+    ("recurrence_bcr", "ADT_ENZALUTAMIDE"): ("EMBARK",),
+}
+
+
+def pivotal_trials_for_regimen(state: str, regimen_code: str) -> tuple[str, ...]:
+    """Devuelve códigos de ensayo pivotal asociados a la combinación estado×régimen.
+
+    Auditoría #14: integra el catálogo de ensayos
+    (``trial_matching_engine.TRIAL_CATALOG``) con la matriz de beneficio ARPI.
+    Vacío si no hay correspondencia documentada.
+    """
+    key = (str(state or "").strip(), str(regimen_code or "").strip())
+    return PIVOTAL_TRIAL_CODES_BY_REGIMEN.get(key, ())

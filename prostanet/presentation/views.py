@@ -12,6 +12,8 @@ from prostanet.shared.metastatic_profile import (
     VISCERAL_SITE_LABELS,
 )
 from prostanet.shared.presentation_text import humanize_evidence, humanize_module_listing, humanize_schema
+# Faubot 2026-04-25 (XXXII) — Tier 7 G5: auth gateway HTML
+from prostanet.shared.security_helpers import require_clinical_session
 
 
 modular_views = Blueprint("modular_views", __name__)
@@ -45,13 +47,20 @@ def _quick_classifier_config() -> dict:
 
 
 @modular_views.route("/clinical-hub", methods=["GET"])
+@require_clinical_session(scope="phi:read", redirect_to_login=True)
 def clinical_hub():
+    from flask import request as _req
     modules = [humanize_module_listing(module) for module in registry.list_modules()]
     page_chrome = build_page_chrome(
         "clinical_hub",
         "Centro clínico por estadio",
         "Clasificación clínica guiada por la Red Nacional Integral del Cáncer (NCCN) 5.2026 con comparación paralela de la Asociación Europea de Urología (EAU) 2026.",
     )
+    # Faubot LXXX #67E — v2 es DEFAULT. Legacy disponible vía ?v=legacy.
+    if _req.args.get("v") != "legacy":
+        from prostanet.presentation.v2_adapters import stage_center_to_v2
+        v2_data = stage_center_to_v2()
+        return render_template("demos/stage_clinical_center_v2_demo.html", **v2_data)
     return render_template(
         "clinical_hub.html",
         modules=modules,
@@ -61,19 +70,50 @@ def clinical_hub():
 
 
 @modular_views.route("/wizard/<module_id>", methods=["GET"])
+@require_clinical_session(scope="phi:write", redirect_to_login=True)
 def wizard(module_id: str):
+    from flask import request as _req
     schema = humanize_schema(registry.get_module_schema(module_id))
     evidence = humanize_evidence(registry.get_module_evidence(module_id))
+
+    # Faubot LXXXV.b — v2 chrome es DEFAULT (mismo patrón LXXX para hub/dashboard/profile).
+    # Legacy disponible vía ?v=legacy. v2 envuelve con pm2_sidebar + actionbar moderno
+    # preservando 100% del form internal legacy (widgets + draft + consent + JS).
+    chrome_mode = "legacy" if _req.args.get("v") == "legacy" else "v2"
+
+    # En v2 mode: full-width layout (sidebar ocupa columna izquierda).
+    # En legacy mode: ancho legacy max-w-7xl.
+    width_class = "max-w-none px-0 py-0 sm:px-0 lg:px-0" if chrome_mode == "v2" else "max-w-7xl"
+
     page_chrome = build_page_chrome(
         "clinical_hub",
         schema["title"],
         schema["description"],
-        content_width_class="max-w-7xl",
+        content_width_class=width_class,
+        uses_v2_shell=(chrome_mode == "v2"),
     )
+
+    # Hidratar audit_dims para sidebar v2 (FAUBOT_RELEASE + gates_count)
+    audit_dims_v2 = None
+    if chrome_mode == "v2":
+        try:
+            from prostanet.shared.algorithm_version import get_algorithm_version
+            v = get_algorithm_version()
+            audit_dims_v2 = {
+                "version": {
+                    "faubot_release": v.get("faubot_release", "LXXXV.b"),
+                    "gates_active_count": v.get("gates_active_count", 89),
+                }
+            }
+        except Exception:
+            audit_dims_v2 = {"version": {"faubot_release": "LXXXV.b", "gates_active_count": 89}}
+
     return render_template(
         "clinical_wizard.html",
         schema=schema,
         evidence=evidence,
         page_chrome=page_chrome,
         metastatic_capture_config=_quick_classifier_config(),
+        chrome_mode=chrome_mode,
+        audit_dims_v2=audit_dims_v2,
     )

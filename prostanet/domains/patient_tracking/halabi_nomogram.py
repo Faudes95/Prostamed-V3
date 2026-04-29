@@ -59,7 +59,17 @@ _CLINICAL_COEFFICIENTS = {
     "hemoglobin":      -0.1238,   # g/dL (protective)
     "ecog_ge1":         0.4066,   # ECOG ≥1 vs 0
     "opioid_use":       0.3756,   # opioid at baseline
-    "visceral_mets":    0.4462,   # liver/lung/adrenal
+    # EPIC 2 FIX-HALABI-VISCERAL: coeficientes diferenciados por órgano.
+    # Cuando los flags discriminados (visceral_liver/lung/adrenal) están
+    # presentes, se suman individualmente en lugar del agregado 0.4462.
+    # Referencias HR: Halabi 2014 Table 2 — liver HR 2.09 (ln=0.737),
+    # lung HR 1.41 (ln=0.344), adrenal extrapolado de cohorte pequeña HR 1.55
+    # (ln=0.438). El agregado 0.4462 se conserva como fallback cuando no se
+    # documenta el sitio.
+    "visceral_mets":    0.4462,   # fallback agregado liver/lung/adrenal
+    "visceral_liver":   0.737,    # HR 2.09 (Halabi 2014)
+    "visceral_lung":    0.344,    # HR 1.41 (Halabi 2014)
+    "visceral_adrenal": 0.438,    # HR 1.55 (CHAARTED/STAMPEDE ad-hoc)
     "bone_mets_1_4":    0.2981,   # 1–4 bone lesions (ref: 0)
     "bone_mets_ge5":    0.5756,   # ≥5 bone lesions
 }
@@ -74,6 +84,9 @@ _CLINICAL_REFERENCE = {
     "ecog_ge1":     0.54,
     "opioid_use":   0.35,
     "visceral_mets":0.16,
+    "visceral_liver":  0.04,   # ~4% en Halabi 2014
+    "visceral_lung":   0.11,   # ~11% en Halabi 2014
+    "visceral_adrenal":0.02,   # <2% referencia
     "bone_mets_1_4":0.28,
     "bone_mets_ge5":0.53,
 }
@@ -229,6 +242,29 @@ class MCRPCIntegratedPrognosticScore:
                 patient, biomarker_findings
             )
 
+            # EPIC 2 — Flags explícitos de labs Halabi ausentes (governance).
+            # Permite que el engine de decisiones distinga "IPS con datos
+            # completos" vs "IPS con imputación" sin parsear missing_clinical.
+            labs_missing_flags = {
+                "albumin_missing": "albumin" in missing_clinical,
+                "ldh_missing": "ldh" in missing_clinical,
+                "alp_missing": "alp" in missing_clinical,
+                "hemoglobin_missing": "hemoglobin" in missing_clinical,
+                "psa_missing": "psa" in missing_clinical,
+            }
+            labs_missing_flags["any_halabi_lab_missing"] = any(
+                labs_missing_flags[key]
+                for key in ("albumin_missing", "ldh_missing", "alp_missing", "hemoglobin_missing")
+            )
+            labs_missing_flags["halabi_lab_completeness"] = round(
+                1.0 - sum(
+                    1 for key in (
+                        "albumin_missing", "ldh_missing", "alp_missing", "hemoglobin_missing"
+                    ) if labs_missing_flags[key]
+                ) / 4.0,
+                2,
+            )
+
             # 7. Confidence
             total_missing = missing_clinical + missing_biomarkers + missing_imaging
             # Biomarkers are optional (not penalized as harshly)
@@ -268,6 +304,7 @@ class MCRPCIntegratedPrognosticScore:
                 "treatment_modifying_factors": treatment_factors,
                 "input_values": clinical_features,
                 "missing_fields": total_missing,
+                "labs_missing_flags": labs_missing_flags,
                 "confidence": round(confidence, 2),
                 "estimated_c_index": 0.77,
                 "clinical_interpretation": interpretation,
@@ -344,17 +381,88 @@ class MCRPCIntegratedPrognosticScore:
         visceral = _get(visceral, 0.0, "visceral_metastases") if visceral is None else float(visceral)
         features["visceral_mets"] = visceral
 
+        # EPIC 2 FIX-HALABI-VISCERAL: extraer flags discriminados por órgano.
+        # Si cualquiera está presente, se consumen coeficientes dedicados y
+        # se suspende el uso del coef agregado para evitar doble contabilidad.
+        liver, lung, adrenal, cns, discriminated = cls._get_visceral_sites(patient)
+        features["visceral_liver"] = 1.0 if liver else 0.0
+        features["visceral_lung"] = 1.0 if lung else 0.0
+        features["visceral_adrenal"] = 1.0 if adrenal else 0.0
+        # CNS no tiene coef Halabi directo, pero se devuelve para scoring posterior.
+        features["visceral_cns"] = 1.0 if cns else 0.0
+        features["_visceral_discriminated"] = 1.0 if discriminated else 0.0
+
         return features, missing
 
     @classmethod
     def _compute_clinical_pi(cls, features: dict[str, float]) -> float:
-        """Centered Cox PI from Halabi clinical backbone."""
+        """Centered Cox PI from Halabi clinical backbone.
+
+        EPIC 2 FIX-HALABI-VISCERAL: si el paciente trae sitios viscerales
+        discriminados (liver/lung/adrenal), se consumen coeficientes
+        dedicados (HR 2.09 / 1.41 / 1.55) en lugar del agregado 0.4462.
+        Si no hay discriminación, se preserva el comportamiento original
+        (coef agregado) para retrocompatibilidad.
+        """
+        discriminated = bool(features.get("_visceral_discriminated"))
         pi = 0.0
         for var, coeff in _CLINICAL_COEFFICIENTS.items():
+            if discriminated and var == "visceral_mets":
+                # Suprimir el agregado para evitar doble contabilización.
+                continue
+            if not discriminated and var in {"visceral_liver", "visceral_lung", "visceral_adrenal"}:
+                continue
             value = features.get(var, _CLINICAL_REFERENCE.get(var, 0.0))
             ref = _CLINICAL_REFERENCE.get(var, 0.0)
             pi += coeff * (value - ref)
         return pi
+
+    @staticmethod
+    def _get_visceral_sites(
+        patient: dict[str, Any],
+    ) -> tuple[bool, bool, bool, bool, bool]:
+        """Extrae flags viscerales discriminados (liver/lung/adrenal/cns).
+
+        Retorna ``(liver, lung, adrenal, cns, discriminated)``. El cuarto
+        valor indica si alguna fuente discriminada fue hallada; cuando es
+        True, el nomograma consume los coeficientes dedicados.
+        """
+        def _boolish(val: Any) -> bool:
+            if val is None:
+                return False
+            if isinstance(val, bool):
+                return val
+            if isinstance(val, (int, float)):
+                return val != 0
+            return str(val).strip().lower() in {
+                "1", "true", "yes", "si", "sí", "positive", "positivo", "present", "detected",
+            }
+
+        liver = _boolish(patient.get("visceral_liver")) or _boolish(
+            patient.get("liver_mets")
+        )
+        lung = _boolish(patient.get("visceral_lung")) or _boolish(patient.get("lung_mets"))
+        adrenal = _boolish(patient.get("visceral_adrenal")) or _boolish(
+            patient.get("adrenal_mets")
+        )
+        cns = _boolish(patient.get("visceral_cns")) or _boolish(patient.get("cns_mets"))
+        # Inspeccionar listas estructuradas de sitios viscerales para casos
+        # en que el formulario usa entradas por lesión (EPIC 2 schemas).
+        entries = patient.get("visceral_site_entries") or []
+        for entry in entries:
+            site = str((entry or {}).get("site") or (entry or {}).get("organ") or "").strip().lower()
+            if not site:
+                continue
+            if any(token in site for token in ("hep", "liver", "hígado", "higado")):
+                liver = True
+            if any(token in site for token in ("pulm", "lung")):
+                lung = True
+            if any(token in site for token in ("adren", "suprarrenal")):
+                adrenal = True
+            if any(token in site for token in ("brain", "cns", "cerebr", "snc", "cerebral")):
+                cns = True
+        discriminated = any((liver, lung, adrenal, cns))
+        return liver, lung, adrenal, cns, discriminated
 
     # ── LAYER 2: Biomarker HRs ───────────────────────────────────────────────
 
@@ -747,11 +855,18 @@ class MCRPCIntegratedPrognosticScore:
 
     @staticmethod
     def _get_lab(patient: dict[str, Any], lab_name: str) -> float | None:
+        # EPIC 2 — Campos canónicos capturados en la suite clínica
+        # (advanced_laboratory_baseline_fields) se incluyen junto a legacy.
         aliases = {
-            "ldh": ["ldh", "lactate_dehydrogenase"],
-            "alp": ["alp", "alkaline_phosphatase", "fosfatasa_alcalina"],
-            "albumin": ["albumin", "albumina"],
-            "hemoglobin": ["hemoglobin", "hgb", "hemoglobina"],
+            "ldh": ["ldh_u_l", "ldh", "lactate_dehydrogenase"],
+            "alp": [
+                "alkaline_phosphatase_u_l",
+                "alp",
+                "alkaline_phosphatase",
+                "fosfatasa_alcalina",
+            ],
+            "albumin": ["albumin_g_dl", "albumin", "albumina", "serum_albumin"],
+            "hemoglobin": ["hemoglobin_g_dl", "hemoglobin", "hgb", "hemoglobina"],
         }
         for alias in aliases.get(lab_name, [lab_name]):
             for source in [patient, patient.get("latest_labs") or {}]:

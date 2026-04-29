@@ -30,6 +30,17 @@
                         {{ item.label }}
                     </a>
                 {% endfor %}
+                {# Faubot 2026-04-25 (LII) — Tier 7 G11: link condicional al
+                   audit log dashboard (/audit-log) para roles con scope
+                   audit:read (admin/auditor/clinician/viewer per ABAC default).
+                   Cierra el ciclo Tier 7 G9 (API) + G10 (UI) + G11 (nav). #}
+                {% if has_scope('audit:read') %}
+                    <a href="/audit-log"
+                       class="pm-nav-link pm-nav-audit-link rounded-full px-3 py-2 text-sm font-medium transition-colors {{ 'bg-cyan-500 text-slate-950' if request.path == '/audit-log' else 'text-slate-400 hover:bg-slate-800 hover:text-white' }}"
+                       title="Audit Log Compliance Dashboard — HIPAA §164.312(b)">
+                        Audit Log
+                    </a>
+                {% endif %}
             </nav>
             {% if page_chrome.primary_action and page_chrome.primary_action.href %}
                 <a href="{{ page_chrome.primary_action.href }}"
@@ -49,6 +60,13 @@
                         {{ item.label }}
                     </a>
                 {% endfor %}
+                {# Faubot 2026-04-25 (LII) — Tier 7 G11: mobile audit-log link #}
+                {% if has_scope('audit:read') %}
+                    <a href="/audit-log"
+                       class="pm-nav-audit-link inline-flex items-center justify-center rounded-2xl px-3 py-2 text-xs font-semibold transition-colors {{ 'bg-cyan-500 text-slate-950' if request.path == '/audit-log' else 'border border-slate-700 bg-slate-900/80 text-slate-300 hover:border-slate-600 hover:text-white' }}">
+                        Audit Log
+                    </a>
+                {% endif %}
             </nav>
             {% if page_chrome.primary_action and page_chrome.primary_action.href %}
                 <a href="{{ page_chrome.primary_action.href }}"

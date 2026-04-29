@@ -1,5 +1,30 @@
 {% extends "layouts/base_clinical.html" %}
 {% from "components/clinical_ui.html" import badge, surface_card %}
+{# Faubot LXXXV.b — Chrome-aware wizard. `chrome_mode` = 'v2' (default) | 'legacy'.
+   v2 envuelve form con pm2_sidebar + actionbar moderno preservando 100%
+   form internals (widgets + draft + consent + JS). Legacy intacto. #}
+{% if chrome_mode == 'v2' %}
+    {% from "components/pm2_sidebar.html" import pm2_sidebar %}
+{% endif %}
+
+{% block head_extra %}
+{{ super() if super }}
+{% if chrome_mode == 'v2' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+<style>
+/* Faubot LXXXV.b — v2 wizard chrome. Sidebar + actionbar wrapping. */
+.pm2-wizard-shell{display:grid;grid-template-columns:280px 1fr;min-height:100vh;background:#0a0e1a;}
+@media (max-width:768px){.pm2-wizard-shell{grid-template-columns:1fr;}}
+.pm2-wizard-main{padding:1.5rem 2rem;overflow-x:auto;}
+.pm2-wizard-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;padding:1rem 1.25rem;border-radius:1rem;background:linear-gradient(135deg,rgba(15,23,42,0.6),rgba(15,23,42,0.3));border:1px solid rgba(148,163,184,0.15);}
+.pm2-wizard-title{color:#e2e8f0;font-size:1.5rem;font-weight:600;margin:0;line-height:1.3;}
+.pm2-wizard-subtitle{color:#94a3b8;font-size:0.875rem;margin:0.25rem 0 0;max-width:48rem;}
+.pm2-wizard-breadcrumb{display:inline-flex;align-items:center;gap:0.5rem;color:#94a3b8;font-size:0.8125rem;text-decoration:none;margin-bottom:0.5rem;transition:color 0.15s;}
+.pm2-wizard-breadcrumb:hover{color:#67e8f9;}
+.pm2-wizard-actionbar{display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;}
+</style>
+{% endif %}
+{% endblock %}
 
 {% block content %}
     {% set role_tones = {
@@ -8,8 +33,40 @@
         'monitoring': 'warning',
         'optional': 'muted',
     } %}
-    <div class="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+    {% if chrome_mode == 'v2' %}
+    {# ── v2 chrome shell con sidebar + actionbar moderno ─────────── #}
+    <div class="pm2-wizard-shell">
+        {{ pm2_sidebar(
+             active='hub',
+             identity_nss=None,
+             faubot_release=audit_dims_v2.version.faubot_release if audit_dims_v2 and audit_dims_v2.version else 'LXXXV.b',
+             gates_count=audit_dims_v2.version.gates_active_count if audit_dims_v2 and audit_dims_v2.version else 89,
+             kpi_total=0,
+             cohort_count=11,
+             therapy_count=27
+        ) }}
+        <div class="pm2-wizard-main">
+            <header class="pm2-wizard-header">
+                <div>
+                    <a href="/clinical-hub" class="pm2-wizard-breadcrumb">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                        Centro clínico por estadio
+                    </a>
+                    <h1 class="pm2-wizard-title">{{ schema.title }}</h1>
+                    <p class="pm2-wizard-subtitle">{{ schema.description }}</p>
+                </div>
+                <div class="pm2-wizard-actionbar">
+                    {{ badge(schema.module, "muted", "font-mono normal-case") }}
+                    {{ badge("NCCN + EAU", "info") }}
+                    <a href="?v=legacy" class="pn-btn pn-btn-ghost" title="Ver versión legacy v1">Ver legacy</a>
+                    <button type="button" id="submitWizardTop" class="pn-btn pn-btn-primary">Evaluar módulo</button>
+                </div>
+            </header>
+    {% endif %}
+    <div class="space-y-6">
         {% call surface_card("Datos clínicos", "Asistente clínico por estadio", "Capture las variables mínimas del módulo para producir una recomendación clínica trazable y compatible con el flujo longitudinal.") %}
+            {% if chrome_mode != 'v2' %}
+            {# ── Legacy actionbar (solo se muestra en chrome v1) ────── #}
             <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div class="flex flex-wrap items-center gap-2">
                     {{ badge(schema.module, "muted", "font-mono normal-case") }}
@@ -20,6 +77,10 @@
                     <button type="button" id="submitWizard" class="pn-btn pn-btn-primary">Evaluar módulo</button>
                 </div>
             </div>
+            {% else %}
+            {# v2: hidden submit button para wire del top button (preserva JS legacy) #}
+            <button type="button" id="submitWizard" class="hidden" aria-hidden="true">Evaluar módulo</button>
+            {% endif %}
             <div class="mb-5 grid gap-3 md:grid-cols-3">
                 <div class="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
                     <p class="text-xs uppercase tracking-[0.2em] text-emerald-300">Mínimo para decidir</p>
@@ -37,28 +98,30 @@
             <form id="wizardForm" class="space-y-5">
                 {% set ns = namespace(current_group='') %}
                 {% for field in schema.fields %}
-                    {% if field.group != ns.current_group %}
-                        {% if not loop.first %}
+                    {% set skip_standalone_occam_field = field.name.startswith('occam_') %}
+                    {% if not skip_standalone_occam_field %}
+                        {% if field.group != ns.current_group %}
+                            {% if ns.current_group %}
+                                    </div>
+                                </section>
+                            {% endif %}
+                            <section class="rounded-3xl border border-slate-800 bg-slate-950/40 p-5" data-field-section="1">
+                                <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">{{ field.group or 'Datos clínicos' }}</p>
+                                        <p class="mt-1 text-sm text-slate-400">Complete primero los campos marcados como mínimos para decidir.</p>
+                                    </div>
                                 </div>
-                            </section>
+                                <div class="grid gap-4 md:grid-cols-2">
+                            {% set ns.current_group = field.group %}
                         {% endif %}
-                        <section class="rounded-3xl border border-slate-800 bg-slate-950/40 p-5" data-field-section="1">
-                            <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">{{ field.group or 'Datos clínicos' }}</p>
-                                    <p class="mt-1 text-sm text-slate-400">Complete primero los campos marcados como mínimos para decidir.</p>
-                                </div>
-                            </div>
-                            <div class="grid gap-4 md:grid-cols-2">
-                        {% set ns.current_group = field.group %}
-                    {% endif %}
-                    {% set is_complex_widget = field.field_type in ['metastatic_components', 'gleason_profile'] %}
-                    <div
-                        class="text-sm"
-                        data-field-wrapper
-                        data-field-name="{{ field.name }}"
-                        {% if field.conditional_visibility %}data-conditions='{{ field.conditional_visibility | tojson }}'{% endif %}
-                    >
+                        {% set full_width_widget = field.field_type in ['epic26_questionnaire', 'occam_life_expectancy'] %}
+                        <div
+                            class="text-sm {{ 'md:col-span-2' if full_width_widget else '' }}"
+                            data-field-wrapper
+                            data-field-name="{{ field.name }}"
+                            {% if field.conditional_visibility %}data-conditions='{{ field.conditional_visibility | tojson }}'{% endif %}
+                        >
                         {% if field.field_type == 'metastatic_components' %}
                             <div class="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4" data-metastatic-widget="1" data-field-name="{{ field.name }}">
                                 <div class="flex flex-wrap items-start justify-between gap-3">
@@ -154,6 +217,159 @@
                                 <input type="hidden" name="nonregional_nodal_count" value="0">
                                 <input type="hidden" name="nonregional_nodal_site_entries" value="[]">
                             </div>
+                        {% elif field.field_type == 'epic26_questionnaire' %}
+                            <div
+                                class="rounded-2xl border border-fuchsia-500/20 bg-fuchsia-500/5 p-5"
+                                data-epic26-widget="1"
+                                data-field-name="{{ field.name }}"
+                                data-widget-config='{{ field.widget_config | tojson }}'
+                            >
+                                <div class="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <p class="pm-field-label">{{ field.label }}{% if field.required %} *{% endif %}</p>
+                                        {% if field.help_text %}
+                                            <p class="mt-2 text-xs text-slate-400">{{ field.help_text }}</p>
+                                        {% endif %}
+                                        {% if field.benchmark_note %}
+                                            <p class="mt-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-200">{{ field.benchmark_note }}</p>
+                                        {% endif %}
+                                    </div>
+                                    {{ badge(field.clinical_role_label, role_tones.get(field.clinical_role, 'muted')) }}
+                                </div>
+                                <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.15fr)] xl:items-start">
+                                    <div class="rounded-2xl border border-slate-700/70 bg-slate-950/50 p-4">
+                                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Cuestionario compuesto</p>
+                                        <p class="mt-2 text-sm text-slate-300">Responda los ítems en español. El sistema deriva automáticamente los 5 dominios oficiales y conserva la molestia urinaria global como dato visible no puntuado.</p>
+                                        <p class="mt-3 text-xs text-slate-500">Use esta línea basal para comparar toxicidad esperable, apoyar decisión compartida y seguir recuperación funcional sin desplazar la lógica clínica principal.</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Dominios derivados en tiempo real</p>
+                                        <div class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-role="epic26-score-cards"></div>
+                                    </div>
+                                </div>
+                                <div class="mt-4 grid gap-4 2xl:grid-cols-2" data-role="epic26-groups"></div>
+                                <input type="hidden" name="{{ field.name }}" value="">
+                                <input type="hidden" name="epic26_urinary_incontinence_domain" value="">
+                                <input type="hidden" name="epic26_urinary_irritative_domain" value="">
+                                <input type="hidden" name="epic26_bowel_domain" value="">
+                                <input type="hidden" name="epic26_sexual_domain" value="">
+                                <input type="hidden" name="epic26_hormonal_domain" value="">
+                                <input type="hidden" name="epic26_overall_urinary_bother" value="">
+                                <input type="hidden" name="epic26_urinary_domain" value="">
+                            </div>
+                        {% elif field.field_type == 'occam_life_expectancy' %}
+                            <div
+                                class="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-5"
+                                data-occam-widget="1"
+                                data-field-name="{{ field.name }}"
+                                data-widget-config='{{ field.widget_config | tojson }}'
+                            >
+                                <div class="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <p class="pm-field-label">{{ field.label }}{% if field.required %} *{% endif %}</p>
+                                        {% if field.help_text %}
+                                            <p class="mt-2 text-xs text-slate-400">{{ field.help_text }}</p>
+                                        {% endif %}
+                                        {% if field.benchmark_note %}
+                                            <p class="mt-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-200">{{ field.benchmark_note }}</p>
+                                        {% endif %}
+                                    </div>
+                                    {{ badge(field.clinical_role_label, role_tones.get(field.clinical_role, 'muted')) }}
+                                </div>
+                                <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(300px,0.9fr)_minmax(0,1.1fr)] xl:items-start">
+                                    <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Resumen derivado</p>
+                                        <p class="mt-2 text-sm text-slate-200" data-role="occam-summary">Capture talla, peso, diabetes, hipertensión, evento vascular cerebral previo y tabaquismo para derivar automáticamente la expectativa de vida. La escolaridad y el estado civil son opcionales y activan las variantes públicas ampliadas de OCCAM.</p>
+                                        <p class="mt-3 text-xs text-slate-500" data-role="occam-missing">Si faltan entradas estructuradas, la expectativa de vida queda pendiente de cálculo.</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Salida pronóstica OCCAM</p>
+                                        <div class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-role="occam-score-cards"></div>
+                                    </div>
+                                </div>
+                                {% set occam_required_names = ['occam_height_cm', 'occam_weight_kg', 'occam_diabetes', 'occam_hypertension', 'occam_stroke', 'occam_smoking_status'] %}
+                                {% set occam_optional_names = ['occam_education', 'occam_marital_status'] %}
+                                <div class="mt-4 rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Entradas estructuradas del modelo OCCAM</p>
+                                            <p class="mt-1 text-sm text-slate-400">Aquí se concentran todas las variables clínicas del modelo público Other-Cause Comorbidity-Adjusted Mortality para evitar que queden dispersas en la interfaz.</p>
+                                        </div>
+                                        {{ badge('Mínimo para decidir', 'success') }}
+                                    </div>
+                                    <div class="mt-4 grid gap-4 xl:grid-cols-3">
+                                        {% for occam_name in occam_required_names %}
+                                            {% for occam_field in schema.fields if occam_field.name == occam_name %}
+                                                <label class="text-sm">
+                                                    <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+                                                        <span class="block text-slate-300">{{ occam_field.label }}</span>
+                                                        {{ badge(occam_field.clinical_role_label, role_tones.get(occam_field.clinical_role, 'muted')) }}
+                                                    </div>
+                                                    {% if occam_field.field_type == 'select' %}
+                                                        <select name="{{ occam_field.name }}" class="pn-input w-full px-3 py-2">
+                                                            {% for option in occam_field.display_options %}
+                                                                <option value="{{ option.value }}" {% if option.value == occam_field.default %}selected{% endif %}>{{ option.label }}</option>
+                                                            {% endfor %}
+                                                        </select>
+                                                    {% else %}
+                                                        <input
+                                                            type="number"
+                                                            name="{{ occam_field.name }}"
+                                                            value="{{ occam_field.default if occam_field.default is not none else '' }}"
+                                                            class="pn-input w-full px-3 py-2"
+                                                        >
+                                                    {% endif %}
+                                                    <div class="mt-1 space-y-1">
+                                                        {% if occam_field.unit %}
+                                                            <span class="block text-[11px] uppercase tracking-[0.2em] text-slate-500">Unidad: {{ occam_field.unit }}</span>
+                                                        {% endif %}
+                                                        {% if occam_field.help_text %}
+                                                            <span class="block text-xs text-slate-500">{{ occam_field.help_text }}</span>
+                                                        {% endif %}
+                                                    </div>
+                                                </label>
+                                            {% endfor %}
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                <div class="mt-4 rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Variantes opcionales del modelo OCCAM</p>
+                                            <p class="mt-1 text-sm text-slate-400">Estas variables refinan la variante pública usada por OCCAM. Si no se documentan, el sistema conserva la versión reducida sin romper el cálculo.</p>
+                                        </div>
+                                        {{ badge('Afina la recomendación', 'info') }}
+                                    </div>
+                                    <div class="mt-4 grid gap-4 xl:grid-cols-2">
+                                        {% for occam_name in occam_optional_names %}
+                                            {% for occam_field in schema.fields if occam_field.name == occam_name %}
+                                                <label class="text-sm">
+                                                    <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+                                                        <span class="block text-slate-300">{{ occam_field.label }}</span>
+                                                        {{ badge(occam_field.clinical_role_label, role_tones.get(occam_field.clinical_role, 'muted')) }}
+                                                    </div>
+                                                    <select name="{{ occam_field.name }}" class="pn-input w-full px-3 py-2">
+                                                        {% for option in occam_field.display_options %}
+                                                            <option value="{{ option.value }}" {% if option.value == occam_field.default %}selected{% endif %}>{{ option.label }}</option>
+                                                        {% endfor %}
+                                                    </select>
+                                                    <div class="mt-1 space-y-1">
+                                                        {% if occam_field.help_text %}
+                                                            <span class="block text-xs text-slate-500">{{ occam_field.help_text }}</span>
+                                                        {% endif %}
+                                                    </div>
+                                                </label>
+                                            {% endfor %}
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                <input type="hidden" name="{{ field.name }}" value="{{ field.default }}">
+                                <input type="hidden" name="occam_base_life_expectancy_years" value="">
+                                <input type="hidden" name="occam_5yr_other_cause_mortality" value="">
+                                <input type="hidden" name="occam_10yr_other_cause_mortality" value="">
+                                <input type="hidden" name="occam_model_variant" value="">
+                                <input type="hidden" name="occam_truncated_15_plus" value="0">
+                            </div>
                         {% elif field.field_type == 'gleason_profile' %}
                             {% set gleason_default = field.default if field.default is mapping else {} %}
                             {% set gleason_primary = gleason_default.get('gleason_primary', '') %}
@@ -248,12 +464,13 @@
                                 </div>
                             </label>
                         {% endif %}
-                    </div>
-                    {% if loop.last %}
-                            </div>
-                        </section>
+                        </div>
                     {% endif %}
                 {% endfor %}
+                {% if ns.current_group %}
+                        </div>
+                    </section>
+                {% endif %}
             </form>
         {% endcall %}
 
@@ -363,6 +580,23 @@
         {% endcall %}
     </section>
     {% include "components/consent_modal.html" %}
+    {% if chrome_mode == 'v2' %}
+        </div>{# /pm2-wizard-main #}
+    </div>{# /pm2-wizard-shell #}
+    {# Wire del botón superior al submit del form legacy (preserva flow draft+register+consent) #}
+    <script>
+    (function(){
+      const topBtn = document.getElementById('submitWizardTop');
+      const legacyBtn = document.getElementById('submitWizard');
+      if (topBtn && legacyBtn) {
+        topBtn.addEventListener('click', function(e){
+          e.preventDefault();
+          legacyBtn.click();
+        });
+      }
+    })();
+    </script>
+    {% endif %}
 {% endblock %}
 
 {% block page_scripts %}
@@ -600,9 +834,10 @@
                     </div>
                     <div class="mt-4 grid gap-4 md:grid-cols-2">
                         <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-3">
-                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Backbone trial-like preferido</p>
-                            <p class="mt-2 text-sm font-medium text-cyan-200">${humanizeClinicalText(card.preferred_triplet_backbone_label || 'No corresponde backbone de triplete en este escenario.')}</p>
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">${humanizeClinicalText(card.triplet_candidate_only_if_reopened ? 'Si hoy se reabriera triplete' : 'Mejor triplete si compite hoy')}</p>
+                            <p class="mt-2 text-sm font-medium text-cyan-200">${humanizeClinicalText(card.preferred_triplet_candidate_label || card.preferred_triplet_backbone_label || 'No corresponde backbone de triplete en este escenario.')}</p>
                             ${supported}
+                            ${card.cross_scope_explanation ? `<p class="mt-2 text-xs text-slate-400">${humanizeClinicalText(card.cross_scope_explanation)}</p>` : ''}
                         </div>
                         <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-3">
                             <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Alternativa si no va triplete</p>
@@ -759,6 +994,74 @@
                     ${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer" class="mt-3 inline-flex text-xs text-cyan-300 hover:text-cyan-200">${escapeHtml(item.source_label || item.source_url)}</a>` : ''}
                 </div>
             `).join('');
+        }
+
+        function epic26DomainScoresFromResult(result) {
+            const explicitScores = Array.isArray(result?.epic26_domain_scores) ? result.epic26_domain_scores.filter(Boolean) : [];
+            if (explicitScores.length) {
+                return explicitScores;
+            }
+            const snapshot = result?.score_interpretation_catalog_snapshot || {};
+            const orderedKeys = [
+                'epic26_urinary_incontinence_domain',
+                'epic26_urinary_irritative_domain',
+                'epic26_bowel_domain',
+                'epic26_sexual_domain',
+                'epic26_hormonal_domain',
+                'epic26_overall_urinary_bother',
+            ];
+            return orderedKeys.map((key) => snapshot[key]).filter(Boolean);
+        }
+
+        function renderEpic26DomainCards(scores) {
+            if (!scores || !scores.length) {
+                return '';
+            }
+            return `
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">EPIC-26 basal interpretado</p>
+                    <div class="mt-2 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        ${scores.map((score) => `
+                            <div class="rounded-2xl border border-fuchsia-500/20 bg-fuchsia-500/5 p-4">
+                                <div class="text-xs uppercase tracking-[0.2em] text-slate-500">${escapeHtml(score.score_label_es || score.score_key || 'EPIC-26')}</div>
+                                <div class="mt-2 flex items-end justify-between gap-3">
+                                    <div class="text-2xl font-bold text-white">${escapeHtml(score.score_value ?? 'N/D')}</div>
+                                    <span class="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-fuchsia-200">${escapeHtml(score.score_grade_es || 'No disponible')}</span>
+                                </div>
+                                ${score.band_range ? `<div class="mt-2 text-xs text-slate-500">Equivale a ${escapeHtml(score.band_range)}</div>` : ''}
+                                <p class="mt-2 text-sm text-slate-300">${escapeHtml(score.clinical_equivalence_es || '')}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderEpic26DecisionImpact(result) {
+            const scores = epic26DomainScoresFromResult(result);
+            if (!scores.length) {
+                return '';
+            }
+            const modalityBundle = result.localized_modality_fitness_bundle || {};
+            const tradeoffBundle = result.localized_tradeoff_bundle || {};
+            const bullets = [];
+            if (tradeoffBundle.tradeoff_summary) {
+                bullets.push(tradeoffBundle.tradeoff_summary);
+            }
+            if (modalityBundle.epic26_role_summary) {
+                bullets.push(modalityBundle.epic26_role_summary);
+            }
+            if (modalityBundle.epic26_governance_contract?.governance_guardrail) {
+                bullets.push(modalityBundle.epic26_governance_contract.governance_guardrail);
+            }
+            (modalityBundle.epic26_shared_decision_signals || []).slice(0, 4).forEach((item) => bullets.push(item));
+            return `
+                ${renderEpic26DomainCards(scores)}
+                <div class="mt-4 rounded-2xl border border-slate-700 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Cómo EPIC-26 se usa hoy</p>
+                    <ul class="mt-2 space-y-2 text-sm text-slate-300">${renderTextList(bullets, 'Sin señales funcionales estructuradas adicionales.')}</ul>
+                </div>
+            `;
         }
 
         function renderBoneOptionsForWidget(selectedValue = '') {
@@ -936,6 +1239,495 @@
             document.querySelectorAll('[data-gleason-profile-widget="1"]').forEach((container) => {
                 container.addEventListener('change', () => syncGleasonProfileWidget(container));
                 syncGleasonProfileWidget(container);
+            });
+        }
+
+        function epic26ConfigForWidget(container) {
+            if (container._epic26Config) {
+                return container._epic26Config;
+            }
+            try {
+                container._epic26Config = JSON.parse(container.dataset.widgetConfig || '{}');
+            } catch (error) {
+                container._epic26Config = {};
+            }
+            return container._epic26Config;
+        }
+
+        function epic26GroupTitle(config, groupId) {
+            return (config.groups || []).find((group) => group.id === groupId) || {};
+        }
+
+        function epic26ItemsForGroup(config, groupId) {
+            return (config.items || []).filter((item) => item.group === groupId);
+        }
+
+        function epic26SelectedResponsesFromContainer(container) {
+            const responses = {};
+            container.querySelectorAll('[data-role="epic26-item"]').forEach((node) => {
+                const itemId = String(node.dataset.itemId || '');
+                const value = String(node.value || '').trim();
+                if (itemId && value) {
+                    responses[itemId] = value;
+                }
+            });
+            return responses;
+        }
+
+        function epic26ResponseScore(item, value) {
+            const option = (item.options || []).find((candidate) => String(candidate.value) === String(value));
+            if (!option) {
+                return null;
+            }
+            const score = Number(option.standardized_score);
+            return Number.isFinite(score) ? score : null;
+        }
+
+        function epic26BandLabel(score) {
+            if (score === null || score === undefined || Number.isNaN(score)) {
+                return 'No calculable';
+            }
+            if (score >= 80) {
+                return 'Preservada';
+            }
+            if (score >= 60) {
+                return 'Levemente afectada';
+            }
+            if (score >= 40) {
+                return 'Moderadamente afectada';
+            }
+            return 'Severamente afectada';
+        }
+
+        function epic26FormattedScore(score) {
+            if (score === null || score === undefined || Number.isNaN(score)) {
+                return 'Incompleto';
+            }
+            return Number(score).toFixed(1);
+        }
+
+        function buildEpic26Packet(config, responses) {
+            return {
+                instrument_id: config.instrument_id || 'epic26',
+                instrument_locale: config.instrument_locale || 'es',
+                instrument_version: config.instrument_version || 'EPIC-26-short-form',
+                license_version: config.license_version || 'es-licensed-centralized-v1',
+                responses,
+            };
+        }
+
+        function computeEpic26Scores(config, responses) {
+            const threshold = Number(config.missingness_threshold ?? 0.2);
+            const derived = {};
+            const completion = {};
+            const missingItems = {};
+
+            (config.groups || []).filter((group) => !group.standalone).forEach((group) => {
+                const items = epic26ItemsForGroup(config, group.id);
+                const missing = [];
+                const scores = [];
+                items.forEach((item) => {
+                    const score = epic26ResponseScore(item, responses[item.id]);
+                    if (score === null) {
+                        missing.push(item.id);
+                        return;
+                    }
+                    scores.push(score);
+                });
+                missingItems[group.id] = missing;
+                const fieldName = (config.domain_field_map || {})[group.id];
+                const missingRatio = items.length ? missing.length / items.length : 1;
+                if (!fieldName) {
+                    return;
+                }
+                if (!scores.length || missingRatio > threshold) {
+                    derived[fieldName] = null;
+                    completion[group.id] = 'not_calculable';
+                    return;
+                }
+                const average = scores.reduce((sum, value) => sum + value, 0) / scores.length;
+                derived[fieldName] = Number(average.toFixed(1));
+                completion[group.id] = missing.length ? 'partial' : 'complete';
+            });
+
+            (config.groups || []).filter((group) => group.standalone).forEach((group) => {
+                const item = epic26ItemsForGroup(config, group.id)[0];
+                const fieldName = (config.standalone_field_map || {})[group.id];
+                if (!item || !fieldName) {
+                    return;
+                }
+                derived[fieldName] = epic26ResponseScore(item, responses[item.id]);
+            });
+
+            const urinaryFields = [
+                derived.epic26_urinary_incontinence_domain,
+                derived.epic26_urinary_irritative_domain,
+            ].filter((score) => score !== null && score !== undefined && !Number.isNaN(score));
+            derived[(config.legacy_alias_field || 'epic26_urinary_domain')] = urinaryFields.length
+                ? Number((urinaryFields.reduce((sum, value) => sum + value, 0) / urinaryFields.length).toFixed(1))
+                : null;
+
+            return { derived, completion, missingItems };
+        }
+
+        function renderEpic26Groups(container) {
+            const config = epic26ConfigForWidget(container);
+            const groupsNode = container.querySelector('[data-role="epic26-groups"]');
+            const hiddenPacket = container.querySelector(`[name="${container.dataset.fieldName}"]`);
+            let prefilledResponses = {};
+            try {
+                const packet = hiddenPacket?.value ? JSON.parse(hiddenPacket.value) : {};
+                prefilledResponses = packet?.responses && typeof packet.responses === 'object' ? packet.responses : {};
+            } catch (error) {
+                prefilledResponses = {};
+            }
+            groupsNode.innerHTML = (config.groups || []).map((group) => {
+                const items = epic26ItemsForGroup(config, group.id);
+                const itemsHtml = items.map((item) => {
+                    const options = (item.options || []).map((option) => {
+                        const selected = String(prefilledResponses[item.id] || '') === String(option.value) ? 'selected' : '';
+                        return `<option value="${escapeHtml(option.value)}" ${selected}>${escapeHtml(option.label)}</option>`;
+                    }).join('');
+                    return `
+                        <label class="block rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4 text-sm">
+                            <div class="flex flex-wrap items-start justify-between gap-3">
+                                <span class="block text-slate-200">${escapeHtml(item.prompt || item.id)}</span>
+                                <span class="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300">${escapeHtml(item.what_it_evaluates || 'Ítem clínico')}</span>
+                            </div>
+                            <select class="pn-input mt-3 w-full px-3 py-2" data-role="epic26-item" data-item-id="${escapeHtml(item.id)}">
+                                <option value="">Seleccione una respuesta</option>
+                                ${options}
+                            </select>
+                        </label>
+                    `;
+                }).join('');
+                return `
+                    <section class="rounded-2xl border border-slate-700/70 bg-slate-950/40 p-4">
+                        <div class="mb-4">
+                            <p class="text-xs uppercase tracking-[0.2em] text-fuchsia-300">${escapeHtml(group.label || group.id)}</p>
+                            <p class="mt-2 text-sm text-slate-400">${escapeHtml(group.description || '')}</p>
+                        </div>
+                        <div class="space-y-3">${itemsHtml}</div>
+                    </section>
+                `;
+            }).join('');
+        }
+
+        function renderEpic26ScoreCards(container, config, scoreData) {
+            const cardNode = container.querySelector('[data-role="epic26-score-cards"]');
+            cardNode.innerHTML = (config.groups || []).map((group) => {
+                const isStandalone = Boolean(group.standalone);
+                const fieldName = isStandalone
+                    ? (config.standalone_field_map || {})[group.id]
+                    : (config.domain_field_map || {})[group.id];
+                const score = fieldName ? scoreData.derived[fieldName] : null;
+                const band = epic26BandLabel(score);
+                const completionLabel = isStandalone
+                    ? (score === null || score === undefined ? 'No capturada' : 'Capturada')
+                    : ({
+                        complete: 'Completo',
+                        partial: 'Parcial',
+                        not_calculable: 'No calculable',
+                    }[scoreData.completion[group.id]] || 'Pendiente');
+                return `
+                    <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">${escapeHtml(group.label || group.id)}</p>
+                        <p class="mt-2 text-xl font-semibold text-white">${escapeHtml(epic26FormattedScore(score))}</p>
+                        <p class="mt-1 text-sm text-slate-300">${escapeHtml(band)}</p>
+                        <p class="mt-2 text-xs text-slate-500">${escapeHtml(completionLabel)}</p>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function syncEpic26Widget(container) {
+            const config = epic26ConfigForWidget(container);
+            const responses = epic26SelectedResponsesFromContainer(container);
+            const packet = buildEpic26Packet(config, responses);
+            const scoreData = computeEpic26Scores(config, responses);
+            container.querySelector(`[name="${container.dataset.fieldName}"]`).value = Object.keys(responses).length
+                ? JSON.stringify(packet)
+                : '';
+            [
+                'epic26_urinary_incontinence_domain',
+                'epic26_urinary_irritative_domain',
+                'epic26_bowel_domain',
+                'epic26_sexual_domain',
+                'epic26_hormonal_domain',
+                'epic26_overall_urinary_bother',
+                'epic26_urinary_domain',
+            ].forEach((fieldName) => {
+                const target = container.querySelector(`[name="${fieldName}"]`);
+                if (!target) {
+                    return;
+                }
+                const score = scoreData.derived[fieldName];
+                target.value = score === null || score === undefined || Number.isNaN(score) ? '' : String(score);
+            });
+            renderEpic26ScoreCards(container, config, scoreData);
+        }
+
+        function initializeEpic26Widgets() {
+            document.querySelectorAll('[data-epic26-widget="1"]').forEach((container) => {
+                renderEpic26Groups(container);
+                container.addEventListener('change', (event) => {
+                    if (event.target.matches('[data-role="epic26-item"]')) {
+                        syncEpic26Widget(container);
+                    }
+                });
+                syncEpic26Widget(container);
+            });
+        }
+
+        function occamParseNumber(value) {
+            const parsed = Number.parseFloat(value);
+            return Number.isFinite(parsed) ? parsed : null;
+        }
+
+        function occamFieldValue(name) {
+            return document.querySelector(`[name="${name}"]`)?.value || '';
+        }
+
+        function occamCharlsonFactor(charlson) {
+            if (charlson === null || charlson === undefined || Number.isNaN(charlson)) return 1;
+            if (charlson >= 7) return 0.65;
+            if (charlson >= 5) return 0.78;
+            if (charlson >= 3) return 0.9;
+            return 1;
+        }
+
+        function occamVariantForPayload(payload) {
+            const hasEducation = Boolean(payload.occam_education && payload.occam_education !== 'not_used');
+            const hasMarital = Boolean(payload.occam_marital_status && payload.occam_marital_status !== 'not_used');
+            if (hasEducation && hasMarital) return 'full';
+            if (hasEducation) return 'no_marital';
+            if (hasMarital) return 'no_education';
+            return 'reduced';
+        }
+
+        function occamBuildFeatures(config, payload, variant) {
+            const age = occamParseNumber(payload.age);
+            const heightCm = occamParseNumber(payload.occam_height_cm);
+            const weightKg = occamParseNumber(payload.occam_weight_kg);
+            if (age === null || heightCm === null || weightKg === null || heightCm <= 0) {
+                return null;
+            }
+            const smoking = String(payload.occam_smoking_status || '').trim().toLowerCase();
+            if (!['never', 'current', 'former'].includes(smoking)) {
+                return null;
+            }
+            const diabetes = String(payload.occam_diabetes || '') === '1';
+            const hypertension = String(payload.occam_hypertension || '') === '1';
+            const stroke = String(payload.occam_stroke || '') === '1';
+            const bmi = weightKg / Math.pow(heightCm / 100, 2);
+            const ageCtr = age - Number(config.age_center || 0);
+            const features = {
+                age_ctr_40: ageCtr,
+                diabetic_yes: diabetes ? 1 : 0,
+                hypertension_yes: hypertension ? 1 : 0,
+                stroke_yes: stroke ? 1 : 0,
+                pc_yes: 1,
+                underweight_yes: bmi < 18.5 ? 1 : 0,
+                overweight2_yes: bmi >= 25 && bmi < 40 ? 1 : 0,
+                obese2_yes: bmi >= 40 ? 1 : 0,
+                smoker_current: smoking === 'current' ? 1 : 0,
+                smoker_former: smoking === 'former' ? 1 : 0,
+                age_x_diabetic: ageCtr * (diabetes ? 1 : 0),
+                age_x_hypertension: ageCtr * (hypertension ? 1 : 0),
+                age_x_stroke: ageCtr * (stroke ? 1 : 0),
+                bmi,
+            };
+            if (variant === 'full' || variant === 'no_marital') {
+                const education = String(payload.occam_education || '').trim().toLowerCase();
+                features.educ_9_11 = education === '9th_11th' ? 1 : 0;
+                features.educ_hs = education === 'hs_graduate' ? 1 : 0;
+                features.educ_some = education === 'some_college' ? 1 : 0;
+                features.educ_college = education === 'college_graduate' ? 1 : 0;
+                features.age_x_educ_9_11 = ageCtr * features.educ_9_11;
+                features.age_x_educ_hs = ageCtr * features.educ_hs;
+                features.age_x_educ_some = ageCtr * features.educ_some;
+                features.age_x_educ_college = ageCtr * features.educ_college;
+            }
+            if (variant === 'full' || variant === 'no_education') {
+                const marital = String(payload.occam_marital_status || '').trim().toLowerCase();
+                features.marital_separated = marital === 'separated' ? 1 : 0;
+                features.marital_single = marital === 'single' ? 1 : 0;
+            }
+            return features;
+        }
+
+        function occamSurvivalAt(curve, exponent, months) {
+            let baseline = Array.isArray(curve) && curve.length ? Number(curve[0][1]) : 1;
+            for (const entry of (curve || [])) {
+                const timePoint = Number(entry[0]);
+                if (timePoint > months) break;
+                baseline = Number(entry[1]);
+            }
+            return Math.pow(baseline, exponent);
+        }
+
+        function occamMedianMonths(curve, exponent, maxDisplayYears) {
+            for (const entry of (curve || [])) {
+                const timePoint = Number(entry[0]);
+                const baseline = Number(entry[1]);
+                if (Math.pow(baseline, exponent) <= 0.5) {
+                    return { months: timePoint, truncated: false };
+                }
+            }
+            return { months: Number(maxDisplayYears || 15) * 12, truncated: true };
+        }
+
+        function computeOccamPrediction(config, payload) {
+            const requiredFields = ['age', 'occam_height_cm', 'occam_weight_kg', 'occam_diabetes', 'occam_hypertension', 'occam_stroke', 'occam_smoking_status'];
+            const missingFields = requiredFields.filter((fieldName) => {
+                const value = occamFieldValue(fieldName);
+                return value === '' || value === null || value === undefined;
+            });
+            if (missingFields.length) {
+                return {
+                    available: false,
+                    missingFields,
+                    summary: 'Faltan variables estructuradas para calcular la expectativa de vida con OCCAM.',
+                };
+            }
+
+            const variant = occamVariantForPayload(payload);
+            const features = occamBuildFeatures(config, payload, variant);
+            if (!features) {
+                return {
+                    available: false,
+                    missingFields,
+                    summary: 'No fue posible derivar el cálculo OCCAM con las entradas actuales.',
+                };
+            }
+
+            const model = (config.models || {})[variant];
+            if (!model) {
+                return {
+                    available: false,
+                    missingFields,
+                    summary: 'El modelo OCCAM no está disponible en esta surface.',
+                };
+            }
+
+            let linearPredictor = 0;
+            Object.entries(model.coefficients || {}).forEach(([featureName, coefficient]) => {
+                linearPredictor += Number(coefficient) * Number(features[featureName] || 0);
+            });
+            const exponent = Math.exp(linearPredictor);
+            const baseCurve = model.baseline_survival || [];
+            const risk5 = 1 - occamSurvivalAt(baseCurve, exponent, 60);
+            const risk10 = 1 - occamSurvivalAt(baseCurve, exponent, 120);
+            const median = occamMedianMonths(baseCurve, exponent, Number(config.max_display_years || 15));
+            const baseYears = Number((median.months / 12).toFixed(1));
+            const ecog = occamParseNumber(payload.ecog_score);
+            const charlson = occamParseNumber(payload.charlson_score);
+            const ecogFactor = Number((config.ecog_factors || {})[String(ecog ?? '')] || 1);
+            const adjustedYears = Number(Math.max(0.5, baseYears * ecogFactor * occamCharlsonFactor(charlson)).toFixed(1));
+            return {
+                available: true,
+                variant,
+                variantLabel: (config.variant_labels_es || {})[variant] || variant,
+                baseYears,
+                adjustedYears,
+                risk5,
+                risk10,
+                truncated15Plus: Boolean(median.truncated),
+                bmi: Number(features.bmi.toFixed(1)),
+            };
+        }
+
+        function renderOccamCards(container, prediction) {
+            const cardNode = container.querySelector('[data-role="occam-score-cards"]');
+            if (!prediction.available) {
+                cardNode.innerHTML = `
+                    <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4 md:col-span-2 xl:col-span-4">
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Estado del cálculo</p>
+                        <p class="mt-2 text-sm text-slate-300">Pendiente de cálculo</p>
+                    </div>
+                `;
+                return;
+            }
+            cardNode.innerHTML = `
+                <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Modelo OCCAM</p>
+                    <p class="mt-2 text-sm font-semibold text-white">${escapeHtml(prediction.variantLabel || 'modelo')}</p>
+                </div>
+                <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Base OCCAM</p>
+                    <p class="mt-2 text-xl font-semibold text-white">${escapeHtml(prediction.truncated15Plus ? `${prediction.baseYears}+` : prediction.baseYears)}</p>
+                    <p class="mt-1 text-xs text-slate-400">años</p>
+                </div>
+                <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Ajustada por ECOG/Charlson</p>
+                    <p class="mt-2 text-xl font-semibold text-white">${escapeHtml(prediction.adjustedYears)}</p>
+                    <p class="mt-1 text-xs text-slate-400">años</p>
+                </div>
+                <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Mortalidad otras causas</p>
+                    <p class="mt-2 text-sm font-semibold text-white">5 años ${escapeHtml(`${Math.round(Number(prediction.risk5 || 0) * 100)}%`)} / 10 años ${escapeHtml(`${Math.round(Number(prediction.risk10 || 0) * 100)}%`)}</p>
+                    <p class="mt-1 text-xs text-slate-400">BMI derivado ${escapeHtml(prediction.bmi)}</p>
+                </div>
+            `;
+        }
+
+        function syncOccamWidget(container) {
+            const config = JSON.parse(container.dataset.widgetConfig || '{}');
+            const payload = {
+                age: occamFieldValue('age'),
+                occam_height_cm: occamFieldValue('occam_height_cm'),
+                occam_weight_kg: occamFieldValue('occam_weight_kg'),
+                occam_diabetes: occamFieldValue('occam_diabetes'),
+                occam_hypertension: occamFieldValue('occam_hypertension'),
+                occam_stroke: occamFieldValue('occam_stroke'),
+                occam_smoking_status: occamFieldValue('occam_smoking_status'),
+                occam_education: occamFieldValue('occam_education'),
+                occam_marital_status: occamFieldValue('occam_marital_status'),
+                ecog_score: occamFieldValue('ecog_score'),
+                charlson_score: occamFieldValue('charlson_score'),
+            };
+            const prediction = computeOccamPrediction(config, payload);
+            const lifeExpectancyField = container.querySelector(`[name="${container.dataset.fieldName}"]`);
+            const baseField = container.querySelector('[name="occam_base_life_expectancy_years"]');
+            const risk5Field = container.querySelector('[name="occam_5yr_other_cause_mortality"]');
+            const risk10Field = container.querySelector('[name="occam_10yr_other_cause_mortality"]');
+            const variantField = container.querySelector('[name="occam_model_variant"]');
+            const truncatedField = container.querySelector('[name="occam_truncated_15_plus"]');
+            const summaryNode = container.querySelector('[data-role="occam-summary"]');
+            const missingNode = container.querySelector('[data-role="occam-missing"]');
+
+            if (!prediction.available) {
+                lifeExpectancyField.value = '';
+                baseField.value = '';
+                risk5Field.value = '';
+                risk10Field.value = '';
+                variantField.value = '';
+                truncatedField.value = '0';
+                const labels = config.missing_field_labels_es || {};
+                const readableMissing = (prediction.missingFields || []).map((fieldName) => labels[fieldName] || fieldName);
+                summaryNode.textContent = prediction.summary || 'Faltan entradas estructuradas para calcular la expectativa de vida con OCCAM.';
+                missingNode.textContent = readableMissing.length
+                    ? `Faltan: ${readableMissing.join(', ')}.`
+                    : 'Complete las entradas estructuradas del modelo.';
+                renderOccamCards(container, prediction);
+                return;
+            }
+
+            lifeExpectancyField.value = String(prediction.adjustedYears);
+            baseField.value = String(prediction.baseYears);
+            risk5Field.value = String(Number(prediction.risk5).toFixed(4));
+            risk10Field.value = String(Number(prediction.risk10).toFixed(4));
+            variantField.value = String(prediction.variant || '');
+            truncatedField.value = prediction.truncated15Plus ? '1' : '0';
+            summaryNode.textContent = `OCCAM público (${prediction.variantLabel}) estima ${prediction.truncated15Plus ? `${prediction.baseYears}+` : prediction.baseYears} años de expectativa de vida basal y ${prediction.adjustedYears} años tras ajustar por ECOG e índice de Charlson.`;
+            missingNode.textContent = `Mortalidad por otras causas: ${Math.round(Number(prediction.risk5 || 0) * 100)}% a 5 años y ${Math.round(Number(prediction.risk10 || 0) * 100)}% a 10 años.`;
+            renderOccamCards(container, prediction);
+        }
+
+        function initializeOccamWidgets() {
+            document.querySelectorAll('[data-occam-widget="1"]').forEach((container) => {
+                document.getElementById('wizardForm')?.addEventListener('change', () => syncOccamWidget(container));
+                syncOccamWidget(container);
             });
         }
 
@@ -1381,8 +2173,14 @@
             document.querySelectorAll('[data-metastatic-widget="1"]').forEach((container) => {
                 resetMetastaticWidget(container);
             });
+            document.querySelectorAll('[data-epic26-widget="1"]').forEach((container) => {
+                syncEpic26Widget(container);
+            });
             document.querySelectorAll('[data-gleason-profile-widget="1"]').forEach((container) => {
                 syncGleasonProfileWidget(container);
+            });
+            document.querySelectorAll('[data-occam-widget="1"]').forEach((container) => {
+                syncOccamWidget(container);
             });
             document.getElementById('resultCard').classList.add('hidden');
             document.getElementById('resultBody').innerHTML = '';
@@ -1404,36 +2202,53 @@
             resetRegistrationPhase();
             const metastaticWidgets = Array.from(document.querySelectorAll('[data-metastatic-widget="1"]'));
             metastaticWidgets.forEach((container) => syncMetastaticWidget(container));
+            const epic26Widgets = Array.from(document.querySelectorAll('[data-epic26-widget="1"]'));
+            epic26Widgets.forEach((container) => syncEpic26Widget(container));
             const invalidWidget = metastaticWidgets.find((container) => container.dataset.valid !== '1');
             if (invalidWidget) {
                 const card = document.getElementById('resultCard');
                 const body = document.getElementById('resultBody');
                 card.classList.remove('hidden');
                 body.innerHTML = `<p class="text-sm text-rose-300">Complete la composición metastásica documentada antes de evaluar el módulo. Si selecciona ganglios no regionales, hueso o víscera, debe especificar la localización anatómica y el número de lesiones.</p>`;
+                invalidWidget.classList.add('widget-invalid-flash');
+                setTimeout(() => invalidWidget.classList.remove('widget-invalid-flash'), 2400);
+                invalidWidget.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 return;
             }
             const gleasonWidgets = Array.from(document.querySelectorAll('[data-gleason-profile-widget="1"]'));
             gleasonWidgets.forEach((container) => syncGleasonProfileWidget(container));
+            const occamWidgets = Array.from(document.querySelectorAll('[data-occam-widget="1"]'));
+            occamWidgets.forEach((container) => syncOccamWidget(container));
             const invalidGleasonWidget = gleasonWidgets.find((container) => container.dataset.valid !== '1');
             if (invalidGleasonWidget) {
                 const card = document.getElementById('resultCard');
                 const body = document.getElementById('resultBody');
                 card.classList.remove('hidden');
                 body.innerHTML = `<p class="text-sm text-rose-300">Complete Gleason primario y secundario para derivar automáticamente el Gleason total y el ISUP antes de evaluar el módulo.</p>`;
+                invalidGleasonWidget.classList.add('widget-invalid-flash');
+                setTimeout(() => invalidGleasonWidget.classList.remove('widget-invalid-flash'), 2400);
+                invalidGleasonWidget.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 return;
             }
             const payload = Object.fromEntries(new FormData(document.getElementById('wizardForm')).entries());
             latestPayload = payload;
+            const originalButtonText = button.textContent;
             button.disabled = true;
-            button.textContent = 'Evaluando...';
-            const response = await fetch('/api/modules/{{ schema.module }}/evaluate', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(payload),
-            });
-            const data = await response.json();
-            button.disabled = false;
-            button.textContent = 'Evaluar módulo';
+            button.setAttribute('aria-busy', 'true');
+            button.innerHTML = '<span class="pn-spinner-inline" aria-hidden="true"></span> Evaluando…';
+            let data;
+            try {
+                const response = await fetch('/api/modules/{{ schema.module }}/evaluate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload),
+                });
+                data = await response.json();
+            } finally {
+                button.disabled = false;
+                button.removeAttribute('aria-busy');
+                button.textContent = originalButtonText || 'Evaluar módulo';
+            }
             const card = document.getElementById('resultCard');
             const body = document.getElementById('resultBody');
             card.classList.remove('hidden');
@@ -1450,7 +2265,9 @@
             const notRecommended = renderTextList(primary.tratamientos_no_priorizados || result.not_recommended || [], 'Sin advertencias adicionales.');
             const durations = renderTextList(primary.condiciones_y_duracion || result.durations_and_conditions || [], 'Sin duraciones adicionales.');
             const missing = renderTextList(primary.advertencias_y_datos_faltantes || result.missing_critical_inputs || [], 'Ninguno.');
-            const tripletDecision = renderTripletDecision(result.triplet_decision || result.triplet_decision_card || {});
+            const tripletDecision = (result.systemic_regimen_scope || '') === 'mhspc_doublet_triplet'
+                ? renderTripletDecision(result.triplet_decision || result.triplet_decision_card || {})
+                : '';
             const liveBenchmark = renderLiveBenchmarkCard(result.live_benchmark || {});
             const psaForecast = renderPsaForecastCard(result.psa_forecast || {});
             const trials = (result.visible_trial_matches || result.trial_matches || []).map(item => `<li><span class="font-medium text-white">${humanizeClinicalText(item.trial || item.study_name)}</span>: ${item.match ? 'aplica' : 'no aplica'}${item.reason ? `<br><span class="text-slate-400">${humanizeClinicalText(item.reason)}</span>` : ''}</li>`).join('');
@@ -1476,6 +2293,7 @@
             const supportiveContext = renderTextList(result.supportive_evidence_context || [], 'Sin contexto supportive adicional.');
             const benchmarkFlags = renderBenchmarkFlags(result.benchmarking_flags || [], 'Sin indicadores de benchmarking estructurados.');
             const algorithmCards = renderAlgorithmCards(result.validated_algorithms || [], 'Sin algoritmos estructurados para este escenario.');
+            const epic26DecisionImpact = renderEpic26DecisionImpact(result);
             const decisionQuality = result.decision_quality || {};
             const whyNotMoreConfident = renderTextList(result.why_not_more_confident || decisionQuality.why_not_more_confident || [], 'Sin limitaciones estructuradas adicionales.');
             const badgeClass = badgeColors[result.applicability_badge_key] || 'border-slate-700 bg-slate-800 text-slate-200';
@@ -1546,6 +2364,7 @@
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Nivel de aplicabilidad</p>
                     <p class="mt-2 text-sm text-slate-200">${result.applicability_badge}</p>
                 </div>
+                ${epic26DecisionImpact}
                 <div class="grid gap-4 md:grid-cols-2">
                     <div class="rounded-2xl border border-slate-700 p-4">
                         <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Calidad de decision</p>
@@ -1683,7 +2502,9 @@
         });
 
         initializeMetastaticWidgets();
+        initializeEpic26Widgets();
         initializeGleasonProfileWidgets();
+        initializeOccamWidgets();
         updateConditionalFields();
     </script>
 {% endblock %}

@@ -1,0 +1,227 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 42: apalutamide_severe_rash_sjs_ten
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LVI) — Auditoría #57 — Gate YAML-NATIVE.
+#
+# Razón clínica (PRIMER GATE DERMATOLÓGICO DEL CATÁLOGO):
+#   Apalutamida (Erleada, Janssen) tiene WARNING regulatorio CRÍTICO sobre
+#   reacciones cutáneas graves incluyendo Stevens-Johnson Syndrome (SJS)
+#   y Toxic Epidermal Necrolysis (TEN). Mecanismo no completamente
+#   caracterizado pero se postulan: (1) mecanismo IDIOSINCRÁSICO mediado
+#   por células T citotóxicas anti-queratinocitos vía HLA específicos
+#   (similar a abacavir/HLA-B*5701, allopurinol/HLA-B*5801); (2) cascada
+#   inmunológica con activación FasL + perforina/granzima; (3) factor de
+#   riesgo HLA aún no validado para apalutamida específicamente.
+#
+#   Datos de SPARTAN (Smith NEJM 2018;378:1408) + TITAN (Chi NEJM
+#   2019;381:13) + Erleada FDA prescribing information §5.2:
+#     - Rash ANY GRADE: 23-29% (SPARTAN 23.8%, TITAN 27.1%)
+#     - Rash G≥3 (severe rash, ulcerative, blistering, mucositis): 5.2%
+#       SPARTAN, 6.3% TITAN (vs 0.3% placebo)
+#     - SJS/TEN documented: cases reported post-marketing en Erleada
+#       label §5.2 (prevalencia ~0.1-0.3% pero MORTALIDAD 25-50%)
+#     - Discontinuación PERMANENTE por rash G≥3: 4.8% SPARTAN,
+#       3.7% TITAN
+#     - Tiempo medio aparición: 81 días (rango 1-309) post-inicio;
+#       primer trimestre = ventana mayor riesgo
+#
+#   Threshold canónico (Erleada §5.2 + CTCAE v5):
+#     - Path A: rash CTCAE G≥3 (mucocutaneous severe + ulcerative +
+#       affecting >30% BSA + interfering daily activities)
+#     - Path B: skin blistering documented (vesículas/ampollas =
+#       fenotipo PRECURSOR SJS/TEN — ZERO TOLERANCE)
+#     - Path C: mucosal involvement documented (≥1 sitio mucoso —
+#       oral, conjuntival, urogenital — patognomónico SJS-spectrum)
+#     - Path D: erythema multiforme documented (target lesions =
+#       fenotipo INTERMEDIO EM-major / SJS overlap)
+#     - Path E: SJS/TEN explicit diagnosis flag (cualquier nivel
+#       sospecha clínica)
+#
+#   ⚠️ DISTINTIVO ARQUITECTÓNICO: PRIMER gate del catálogo SIN OVERRIDE
+#   por contraindicación absoluta IRREVERSIBLE per Erleada label §5.2:
+#   "Permanently discontinue Erleada in patients who develop a severe
+#   skin reaction." Esto SIENTA PRECEDENTE arquitectónico para gates
+#   futuros con DISCONTINUACIÓN PERMANENTE absoluta (e.g., interstitial
+#   pneumonitis, hepatic failure G4, anaphylaxis fatal).
+#
+#   Coexistencia con Gates 17-19 ARSI (cardiotox + cognitive):
+#     - Gate 17: enzalutamida QTc (mismo class ARSI, scope distinto)
+#     - Gate 18: apalutamida LVEF (mismo fármaco, AE distinto)
+#     - Gate 19: ARSI cognitive G2+ (clase completa)
+#     - **Gate 42 (este): apalutamida-specific SJS/TEN dermatológico**
+#   Apalutamida ahora tiene perfil safety TRIPLE (gates 18+19+42):
+#   cardiac (LVEF) + cognitive (clase) + dermatológico (SJS/TEN).
+#
+#   Bloquea: REGIMEN_CODES_APALUTAMIDE específicamente (NO incluye
+#   enzalutamida ni darolutamida — perfil dermatológico SJS/TEN
+#   distintivo de apalutamida per FDA label señales post-marketing).
+# ──────────────────────────────────────────────────────────────────────
+
+code: apalutamide_severe_rash_sjs_ten
+title: "Apalutamida × Severe rash / SJS-TEN (Erleada §5.2 + SPARTAN/TITAN)"
+faubot_added_in: "2026-04-25 LVI"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: rash CTCAE G≥3 (severe ulcerative/blistering/BSA >30%)
+    - type: numeric_threshold
+      field: rash_ctcae_grade
+      alias_fields:
+        - rash_grade
+        - cutaneous_rash_ctcae
+        - skin_rash_ctcae_grade
+        - rash_severity_ctcae
+      threshold: 3
+    # Path B: skin blistering documented (precursor SJS/TEN — zero tolerance)
+    - type: truthy_flag
+      field: skin_blistering_documented
+      alias_fields:
+        - skin_vesicles_documented
+        - vesiculobullous_lesions_documented
+        - blistering_skin_reaction_for_apalutamide
+        - cutaneous_blistering_for_apalutamide
+    # Path C: mucosal involvement documented (oral/conjuntival/urogenital)
+    - type: truthy_flag
+      field: mucosal_involvement_documented
+      alias_fields:
+        - mucositis_documented_for_apalutamide
+        - oral_mucosal_lesions_documented
+        - conjunctival_involvement_documented
+        - urogenital_mucosal_involvement_documented
+    # Path D: erythema multiforme documented (target lesions / EM-major)
+    - type: truthy_flag
+      field: erythema_multiforme_documented
+      alias_fields:
+        - erythema_multiforme_for_apalutamide
+        - em_major_documented
+        - target_lesions_documented
+    # Path E: SJS/TEN explicit clinical suspicion or diagnosis
+    - type: truthy_flag
+      field: sjs_ten_suspected_or_diagnosed
+      alias_fields:
+        - stevens_johnson_syndrome_documented
+        - toxic_epidermal_necrolysis_documented
+        - sjs_ten_for_apalutamide
+        - severe_cutaneous_adverse_reaction_for_apalutamide
+        - scar_documented_for_apalutamide
+
+# ⚠️ NO OVERRIDE — DISCONTINUACIÓN PERMANENTE per Erleada label §5.2.
+# Esto es DISTINTIVO ARQUITECTÓNICO: primer gate del catálogo SIN override
+# por contraindicación absoluta IRREVERSIBLE (vs gates 26 cabazitaxel
+# hypersensitivity que tienen override condicional para G1 mild).
+# Sienta precedente para gates futuros con discontinuación permanente
+# (interstitial pneumonitis, anaphylaxis fatal, hepatic failure G4).
+
+regimen_codes:
+  - REGIMEN_CODES_APALUTAMIDE
+
+keywords:
+  - KEYWORDS_APALUTAMIDE
+
+message: |
+  Apalutamida (Erleada) DEBE DISCONTINUARSE PERMANENTEMENTE en pacientes
+  con reacciones cutáneas graves (rash CTCAE G≥3) o cualquier signo
+  sugestivo de Stevens-Johnson Syndrome (SJS) / Toxic Epidermal
+  Necrolysis (TEN): blistering cutáneo, involvement mucosal (oral,
+  conjuntival, urogenital), erythema multiforme con target lesions.
+
+  ⚠️ ALERTA REGULATORIA — Erleada FDA prescribing information §5.2:
+    "Permanently discontinue Erleada in patients who develop a severe
+     skin reaction. Severe cutaneous adverse reactions (SCARs), including
+     Stevens-Johnson syndrome (SJS) and toxic epidermal necrolysis (TEN),
+     have been reported in patients receiving Erleada. Some cases have
+     been associated with hospitalization and discontinuation of therapy."
+
+  Evidencia clínica:
+    - SPARTAN (Smith NEJM 2018;378:1408) — Rash any grade 23.8%;
+      G≥3 5.2%; discontinuación 4.8%
+    - TITAN (Chi NEJM 2019;381:13) — Rash any grade 27.1%; G≥3 6.3%;
+      discontinuación 3.7%
+    - SJS/TEN post-marketing reports (Erleada label) — prevalencia
+      ~0.1-0.3% pero MORTALIDAD 25-50% (alto riesgo letalidad)
+    - Tiempo medio aparición rash: 81 días (rango 1-309); primer
+      trimestre = ventana mayor riesgo
+
+  Mecanismo (parcialmente caracterizado):
+    - Reacción IDIOSINCRÁSICA mediada por células T citotóxicas
+      anti-queratinocitos (similar abacavir/HLA-B*5701, allopurinol/
+      HLA-B*5801, carbamazepina/HLA-B*1502)
+    - Cascada inmunológica: activación FasL + perforina/granzima
+      → apoptosis epitelial extensa
+    - Factor riesgo HLA aún no validado para apalutamida específicamente
+      (investigación activa)
+    - NO hay test predictivo pre-tratamiento disponible
+
+  Conducta clínica obligatoria:
+  1. Suspender apalutamida INMEDIATAMENTE ante cualquier signo
+     sugestivo (NO esperar evaluación dermatológica si hay blistering
+     o mucositis — riesgo progresión rápida en horas).
+  2. Evaluación dermatológica URGENTE (referral expedited):
+     - Examinar BSA afectada (>10% = sospecha SJS, >30% = TEN)
+     - Inspeccionar TODAS las mucosas (oral, ocular, genital,
+       perianal, esofágica si síntomas)
+     - Buscar target lesions concéntricas (erythema multiforme)
+     - Documentar Nikolsky sign (positive en SJS/TEN)
+  3. Hospitalización si signos SJS/TEN sospechados:
+     - Manejo en unidad cuidados intensivos / quemados (BSA >30%)
+     - Soporte hidroelectrolítico (pérdidas como gran quemado)
+     - Profilaxis antibiótica (riesgo sepsis por barrier loss)
+     - Cuidado oftalmológico urgente (prevenir cicatrices conjuntivales)
+     - NO corticoides sistémicos rutinarios (controversia eficacia
+       vs riesgo sepsis); IVIG considerar caso a caso
+  4. ⚠️ DISCONTINUACIÓN PERMANENTE apalutamida — NO re-rechallenge
+     en NINGUNA circunstancia per Erleada §5.2.
+  5. Evaluar terapia alternativa NO-apalutamida:
+     - **Enzalutamida** (Xtandi) — perfil dermatológico DISTINTO,
+       rash G≥3 <1% en AFFIRM/PREVAIL/ENZAMET (gate 17 QTc + gate
+       19 cognitive monitor; gate 31 si edad >75)
+     - **Darolutamida** (Nubeqa) — perfil dermatológico MUY BAJO,
+       rash G≥3 0.4% en ARAMIS/ARASENS (preferida si edad >75 por
+       menor penetración SNC; gate 32 hepatotox monitor)
+     - **Abiraterona + ADT** — NO ARSI, sin riesgo SJS/TEN documentado
+       (gate 3 HTA + gate 21+28+39 hepatic axis monitor)
+     - **NO docetaxel** si historia hipersensibilidad polysorbate
+       previa (gate 26 monitor)
+  6. Notificación regulatoria obligatoria:
+     - FDA MedWatch (eventos serios SJS/TEN reportables)
+     - Janssen Pharmaceutical Affairs (post-marketing surveillance)
+
+  ALERTA CLÍNICA: Incluso si rash se resuelve después de suspensión,
+  re-exposición está CONTRAINDICADA per Erleada §5.2 — recurrencia
+  típicamente más severa y rápida (memoria inmunológica T-cell).
+
+  CAMPOS REQUERIDOS:
+    - `rash_ctcae_grade`: severidad CTCAE v5 (0-5)
+    - `skin_blistering_documented`: flag presencia ampollas/vesículas
+    - `mucosal_involvement_documented`: flag involvement ≥1 mucosa
+    - `erythema_multiforme_documented`: flag target lesions
+    - `sjs_ten_suspected_or_diagnosed`: flag sospecha/diagnóstico
+      explícito SJS/TEN
+
+evidence_tag: erleada_label_section_5_2_spartan_titan_sjs_ten_ctcae_v5
+trial_refs:
+  - "SPARTAN"
+  - "TITAN"
+  - "Erleada label §5.2"
+  - "Smith NEJM 2018;378:1408"
+  - "Chi NEJM 2019;381:13"
+  - "FDA post-marketing SJS/TEN reports"
+  - "CTCAE v5"
+
+references:
+  - "Smith MR et al. SPARTAN. NEJM 2018;378:1408-1418."
+  - "Chi KN et al. TITAN. NEJM 2019;381:13-24."
+  - "Erleada (apalutamide) FDA prescribing information §5.2 — Severe Cutaneous Adverse Reactions (SCARs) including SJS/TEN."
+  - "Mockenhaupt M. SCARs (SJS/TEN) — Diagnosis + Management. Lancet Oncol 2017."
+  - "Bastuji-Garin S et al. SCORTEN severity score for TEN. J Invest Dermatol 2000;115:149."
+  - "CTCAE v5.0 — Rash maculo-papular grading."
+  - "NCCN Guidelines Prostate Cancer v5.2026 — Apalutamide cutaneous monitoring."
+  - "EAU 2026 §6.5.7 — ARSI safety profile (apalutamide-specific dermatologic warnings)."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Apalutamide rash monitoring (baseline + monthly × 3 + quarterly thereafter); SCARs require permanent discontinuation"
+  eau_section: "EAU 2026 §6.5.7 — Apalutamide safety: severe rash and SJS/TEN warnings"
+  asco_section: "ASCO Cutaneous Adverse Reactions to Cancer Therapy 2024"

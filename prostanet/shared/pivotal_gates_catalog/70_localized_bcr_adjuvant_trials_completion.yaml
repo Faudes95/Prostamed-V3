@@ -1,0 +1,246 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 70: localized_bcr_adjuvant_trials_completion
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXVII) — Auditoría #67C — 10 trials missing.
+#
+# Razón clínica:
+#   ProstaMed reconoce 37 trials sistémicos pivotales (mHSPC, mCRPC,
+#   nmCRPC) pero **carece de cobertura formal de 10 trials clave en
+#   localized + adjuvant + BCR + early salvage**:
+#
+#   1. **PROTECT** (Hamdy NEJM 2023) — Active surveillance landmark
+#      → 1643 men, AS vs RP vs RT 15-yr outcomes
+#      → AS conversion 27% a 5yr, 44% a 10yr
+#      → Cancer-specific mortality similar 3 grupos
+#
+#   2. **SPCG-4** (Bill-Axelson NEJM 2014) — RP vs watchful waiting
+#      → 695 men localized, RP improves CSS
+#      → Especially benefit en <65 años
+#
+#   3. **PIVOT** (Wilt NEJM 2017) — RP vs observation
+#      → 731 men, 19-yr follow-up
+#      → No survival benefit overall
+#      → Subgroup intermediate-risk benefit
+#
+#   4. **SWOG-8794** (Thompson J Urol 2009) — Adyuvant RT post-RP
+#      → pT3, positive margins
+#      → Adjuvant RT improves BCR-FS, no clear OS
+#
+#   5. **ARO 96-02** (Wiegel JCO 2014) — Adjuvant RT post-RP
+#      → pT3, R0/R1
+#      → BCR-FS benefit similar SWOG-8794
+#
+#   6. **RAVES** (Kneebone Lancet Oncol 2020) — Adjuvant vs salvage RT
+#      → 333 men, non-inferiority salvage RT
+#      → Avoid 50% adjuvant RT
+#
+#   7. **ARTISTIC** (Vale Lancet Oncol 2020) — Same as RAVES
+#      → 1024 men UK + Australia
+#      → Confirms salvage RT non-inferior to adjuvant
+#
+#   8. **RTOG 9601** (Shipley NEJM 2017) — Salvage RT + ADT
+#      → 760 men, salvage RT + bicalutamide 24m vs salvage RT alone
+#      → ADT improves OS, especially pT3 + GS 7+ + PSA >0.7
+#
+#   9. **SPPORT** (Pollack Lancet 2022) — Salvage RT + ADT + PORT
+#      → 1716 men, 3 arms (RT + RT+ADT + RT+ADT+PORT-pelvis)
+#      → ADT + pelvic nodal RT improves PFS
+#
+#   10. **GETUG-AFU 16** (Carrie Lancet Oncol 2016) — Salvage RT + ADT
+#       → 743 men, salvage RT + 6m goserelin
+#       → Improves PFS + 5-yr metastasis-free survival
+#
+#   Severity: informational — gate documenta cobertura completa de
+#   trials para que evidence drill-down (#65A) auto-resuelva URLs
+#   PubMed/NCT/DOI cuando sean citados.
+#
+#   Override: ninguno — gate informacional always relevant.
+#
+#   Coexistencia: gate complementa trial_matching_engine + cobertura
+#   total trials reconocidos pasa de 37 → 47.
+# ──────────────────────────────────────────────────────────────────────
+
+code: localized_bcr_adjuvant_trials_completion
+title: "10 trials missing reconocidos: PROTECT, SPCG-4, PIVOT, SWOG-8794, ARO 96-02, RAVES, ARTISTIC, RTOG 9601, SPPORT, GETUG-AFU 16"
+faubot_added_in: "2026-04-25 LXXVII"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: localized cancer + decision modality (RP vs RT vs AS)
+    - type: all_of
+      triggers:
+        - type: string_match
+          field: clinical_state
+          alias_fields: [estado_clinico, state, reconciled_state]
+          patterns:
+            - localized_initial
+            - very_low_risk
+            - low_risk
+            - intermediate_favorable
+            - intermediate_unfavorable
+            - high_risk
+            - very_high_risk
+        - type: any_of
+          triggers:
+            - type: truthy_flag
+              field: decision_rp_vs_rt_active
+              alias_fields:
+                - decision_modalidad_localized
+            - type: truthy_flag
+              field: active_surveillance_eligibility_evaluation
+              alias_fields:
+                - evaluacion_vigilancia_activa
+    # Path B: post-RP + BCR scenario (gates RAVES/ARTISTIC/RTOG/SPPORT/GETUG)
+    - type: all_of
+      triggers:
+        - type: string_match
+          field: clinical_state
+          alias_fields: [estado_clinico, state]
+          patterns:
+            - post_prostatectomy
+            - recurrence_bcr
+            - bcr_post_rp
+        - type: truthy_flag
+          field: salvage_rt_consideration_active
+          alias_fields:
+            - consideracion_rt_salvataje
+    # Path C: explicit flag for trial coverage check
+    - type: truthy_flag
+      field: trial_coverage_completion_check
+      alias_fields:
+        - cobertura_trials_completion
+
+regimen_codes: []  # Gate informacional — abre cobertura trials
+
+keywords:
+  - PROTECT
+  - SPCG-4
+  - PIVOT
+  - SWOG-8794
+  - ARO 96-02
+  - RAVES
+  - ARTISTIC
+  - RTOG 9601
+  - SPPORT
+  - GETUG-AFU 16
+
+message: |
+  📊 INFORMATIVO: 10 trials pivotales adicionales reconocidos en
+  localized + adjuvant + BCR + salvage. Cobertura total ProstaMed:
+  **47 trials pivotales** (vs 37 anteriores).
+
+  🔬 NUEVOS TRIALS DOCUMENTADOS:
+
+  **LOCALIZED (3 trials)**:
+
+  1. **PROTECT** (Hamdy NEJM 2023;388:1547):
+     - 1643 men localized PCa (PSA-screened UK)
+     - AS vs RP vs RT 15-yr outcomes
+     - AS conversion: 27% a 5yr, 44% a 10yr
+     - Cancer-specific mortality SIMILAR 3 grupos
+     - Treatment metástasis: 10/367 AS, 5/553 RP, 6/545 RT
+     - **Implication**: AS válida en low/favorable intermediate risk
+
+  2. **SPCG-4** (Bill-Axelson NEJM 2014;370:932):
+     - 695 men localized, RP vs watchful waiting
+     - 18-yr follow-up
+     - RP improves CSS (HR 0.56)
+     - Especially benefit en <65 años (HR 0.45)
+     - **Implication**: RP beneficio en pacientes jóvenes localized
+
+  3. **PIVOT** (Wilt NEJM 2017;377:132):
+     - 731 men US (PSA-screened)
+     - 19-yr follow-up
+     - RP vs observation
+     - **No overall survival benefit**
+     - Subgroup intermediate-risk: RP benefit
+     - **Implication**: observation acceptable low-risk + elderly
+
+  **ADJUVANT POST-RP (2 trials)**:
+
+  4. **SWOG-8794** (Thompson J Urol 2009;181:956):
+     - pT3 + positive margins
+     - Adjuvant RT improves BCR-FS
+     - Long-term OS benefit (10-yr update)
+
+  5. **ARO 96-02** (Wiegel JCO 2014;32:3924):
+     - pT3, R0/R1
+     - Adjuvant RT vs observation
+     - BCR-FS benefit confirmed
+     - Similar SWOG-8794 results
+
+  **ADJUVANT vs SALVAGE TIMING (2 trials)**:
+
+  6. **RAVES** (Kneebone Lancet Oncol 2020;21:1331):
+     - 333 men, adjuvant vs early salvage RT
+     - Non-inferiority salvage RT
+     - Avoid 50% adjuvant RT
+     - **Implication**: salvage RT preferred (less morbidity)
+
+  7. **ARTISTIC** (Vale Lancet Oncol 2020;21:1341):
+     - 1024 men UK + Australia, adjuvant vs salvage RT
+     - Confirms salvage RT non-inferior
+     - **Implication**: cambio practice → salvage approach
+
+  **SALVAGE RT + ADT (3 trials)**:
+
+  8. **RTOG 9601** (Shipley NEJM 2017;376:417):
+     - 760 men, salvage RT + bicalutamide 24m vs salvage RT alone
+     - ADT improves OS (HR 0.77)
+     - Especially benefit pT3 + GS 7+ + PSA >0.7
+     - **Implication**: agregar ADT a salvage RT en pacientes high-risk
+
+  9. **SPPORT** (Pollack Lancet 2022;399:1886):
+     - 1716 men, 3 arms (RT vs RT+ADT vs RT+ADT+PORT-pelvis)
+     - ADT + pelvic nodal RT improves PFS (HR 0.42)
+     - **Implication**: pelvic nodal RT beneficios en salvage
+
+  10. **GETUG-AFU 16** (Carrie Lancet Oncol 2016;17:747):
+      - 743 men salvage RT + 6m goserelin vs salvage RT alone
+      - Improves PFS (HR 0.50) + 5-yr metastasis-free survival
+      - **Implication**: short-course ADT mejora salvage RT
+
+  📈 IMPACTO CLÍNICO:
+
+  **Decisión RP vs RT vs AS**:
+  - PROTECT: AS válida + RP/RT outcomes similar 15yr → counsel patient
+  - SPCG-4: RP benefit en <65 años localized
+  - PIVOT: observation OK low-risk + elderly
+
+  **Decisión adjuvant RT post-RP**:
+  - SWOG-8794 + ARO 96-02: adjuvant improves BCR-FS pT3
+  - RAVES + ARTISTIC: salvage approach preferred (less morbidity)
+
+  **Decisión salvage RT + ADT post-BCR**:
+  - RTOG 9601: ADT 24m bicalutamide improves OS high-risk
+  - SPPORT: pelvic nodal RT + ADT improves PFS
+  - GETUG-AFU 16: 6m goserelin improves PFS
+
+  🎯 CONDUCTA CLÍNICA:
+  1. **Counseling localized PCa**: usar PROTECT/SPCG-4/PIVOT data
+     según subgroup risk
+  2. **Decisión adjuvant vs salvage RT post-RP**: prefer salvage
+     (RAVES/ARTISTIC) salvo positive margins masivas
+  3. **Salvage RT + ADT BCR**: integrar RTOG 9601 + GETUG-AFU 16
+     evidence para ADT decision
+  4. **Salvage + pelvic nodal RT**: SPPORT subset benefit
+
+  💡 INFRAESTRUCTURA AGREGADA:
+  - 10 trial_refs reconocidos para auto-URL resolution (#65A backend)
+  - Cobertura total: **47 trials pivotales** (37 sistémicos + 10 localized/BCR)
+
+evidence_tag: 10_trials_localized_bcr_adjuvant_protect_spcg4_pivot_raves_rtog9601
+trial_refs:
+  - "PROTECT (Hamdy NEJM 2023;388:1547)"
+  - "SPCG-4 (Bill-Axelson NEJM 2014;370:932)"
+  - "PIVOT (Wilt NEJM 2017;377:132)"
+  - "SWOG-8794 (Thompson J Urol 2009;181:956)"
+  - "ARO 96-02 (Wiegel JCO 2014;32:3924)"
+  - "RAVES (Kneebone Lancet Oncol 2020;21:1331)"
+  - "ARTISTIC (Vale Lancet Oncol 2020;21:1341)"
+  - "RTOG 9601 (Shipley NEJM 2017;376:417)"
+  - "SPPORT (Pollack Lancet 2022;399:1886)"
+  - "GETUG-AFU 16 (Carrie Lancet Oncol 2016;17:747)"

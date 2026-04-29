@@ -1,0 +1,138 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 23: niraparib_hypertension_grade3_magnitude
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XXVI) — Gate YAML-NATIVE (Tier 2/3 F-2).
+#
+# Razón clínica:
+#   Niraparib (Akeega) tiene WARNING distintivo en HTA tratamiento-emergente
+#   por mecanismo de inhibición de transportador DAT (dopamine reuptake
+#   inhibitor secundario). Datos de MAGNITUDE (Chi NEJM 2023):
+#     - HTA tratamiento-emergente grado ≥3: 18% niraparib vs 8% control
+#     - Crisis hipertensiva (PA >180/120): 1.2% niraparib
+#     - Encefalopatía hipertensiva: casos aislados pero documentados
+#     - Discontinuación por HTA: 1.8% niraparib
+#
+#   Threshold canónico Akeega §5.2:
+#     - PA basal ≥160/100 = NO recomendado (control previo necesario)
+#     - PA tratamiento-emergente ≥180/120 = suspensión inmediata
+#     - PA ≥200/120 = grado 4 (crisis hipertensiva)
+#
+#   CTCAE v5 grado 3 HTA = sintomática ± medidas urgentes.
+#
+#   Coexiste con Gate 3 (HTA no controlada general que cubre abiraterona
+#   + cabozantinib). Gate 23 es ESPECÍFICO para niraparib por el
+#   mecanismo distintivo de DAT inhibition que NO comparte con otros
+#   PARPi (olaparib/talazoparib/rucaparib NO tienen warning HTA).
+#
+#   Override: hypertension_controlled_for_niraparib=Sí (tras optimización
+#   antihipertensiva con PA <140/90 sostenida ≥4 semanas documentada).
+# ──────────────────────────────────────────────────────────────────────
+
+code: niraparib_hypertension_grade3_magnitude
+title: "Niraparib × HTA grado ≥3 (Akeega label §5.2 + MAGNITUDE 18% AE)"
+faubot_added_in: "2026-04-25 XXVI"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1. PA sistólica ≥180 mmHg (grado 3 CTCAE v5)
+    - type: numeric_above
+      field: systolic_blood_pressure
+      alias_fields:
+        - sbp
+        - systolic_bp
+        - blood_pressure_systolic
+      threshold: 179
+    # 2. PA diastólica ≥120 mmHg (grado 3 CTCAE v5)
+    - type: numeric_above
+      field: diastolic_blood_pressure
+      alias_fields:
+        - dbp
+        - diastolic_bp
+        - blood_pressure_diastolic
+      threshold: 119
+    # 3. CTCAE v5 grado ≥3 HTA documentado
+    - type: numeric_threshold
+      field: hypertension_ctcae_grade
+      threshold: 3
+    # 4. Flag explícito específico niraparib
+    - type: truthy_flag
+      field: hypertension_grade3_for_niraparib
+      alias_fields:
+        - severe_hypertension_for_niraparib
+        - hypertensive_crisis_active
+
+# Override: tras optimización antihipertensiva sostenida
+override:
+  type: truthy_flag
+  field: hypertension_controlled_for_niraparib
+
+regimen_codes:
+  - REGIMEN_CODES_NIRAPARIB
+
+keywords:
+  - KEYWORDS_NIRAPARIB
+
+message: |
+  Niraparib (Akeega, Zejula) NO debe iniciarse o continuarse con
+  hipertensión grado ≥3 (CTCAE v5: PA sistólica ≥180 mmHg o diastólica
+  ≥120 mmHg, sintomática o con medidas urgentes). Niraparib tiene WARNING
+  distintivo por inhibición secundaria de transportador DAT (dopamine
+  reuptake inhibitor) que NO comparten otros PARPi.
+
+  Akeega FDA prescribing information §5.2 establece que pacientes con PA
+  basal ≥160/100 NO deben iniciar tratamiento sin control previo;
+  PA tratamiento-emergente ≥180/120 requiere suspensión inmediata.
+
+  Evidencia regulatoria:
+    - Akeega FDA §5.2 — HTA tratamiento-emergente warning distintivo.
+    - Zejula FDA §5.3 — Misma advertencia.
+    - MAGNITUDE (Chi NEJM 2023) — HTA grado ≥3 en 18% niraparib vs
+      8% control; crisis hipertensiva 1.2%; encefalopatía
+      hipertensiva en casos aislados.
+
+  Conducta clínica:
+  1. Suspender niraparib inmediatamente.
+  2. Manejo agudo de HTA grado 3:
+     - Captopril 25mg SL si PA >220/120
+     - Labetalol IV o nicardipina IV en crisis
+     - Evaluar daño órgano blanco (fondoscopía, troponina,
+       creatinina, ECG, EEG si síntomas neurológicos)
+  3. Optimización crónica:
+     - IECA/ARA2 primera línea (lisinopril, losartan)
+     - Diurético tiazídico si volumen-expansión
+     - Calcio antagonista (amlodipino) si refractario
+     - Beta-bloqueador si comorbilidad cardíaca
+  4. PA target sostenido <140/90 mmHg ≥4 semanas antes de
+     reintroducir niraparib.
+  5. Reintroducción con `hypertension_controlled_for_niraparib=Sí`
+     + monitorización semanal × 8 semanas.
+  6. Considerar terapia alternativa NO-niraparib:
+     - Olaparib (sin warning HTA distintivo)
+     - Talazoparib (sin warning HTA distintivo)
+     - Quimioterapia docetaxel si fitness permite
+
+  Notar: si paciente recibe combo NIRAPARIB_ABIRATERONE/Akeega, la HTA
+  tiene componente dual (mineralocorticoide abiraterona + DAT inhibition
+  niraparib) → riesgo SUPERIOR a monoterapia. Considerar también Gate 3
+  (HTA no controlada general que cubre abiraterona).
+
+evidence_tag: akeega_zejula_label_magnitude_dat_inhibition
+trial_refs:
+  - MAGNITUDE
+  - "Akeega label §5.2"
+  - "Zejula label §5.3"
+  - "CTCAE v5"
+
+references:
+  - "Akeega (niraparib + abiraterone) FDA prescribing information §5.2."
+  - "Zejula (niraparib) FDA prescribing information §5.3 (Cardiovascular AEs)."
+  - "Chi KN et al. MAGNITUDE. NEJM 2023 — HTA AE analysis."
+  - "Plana JC et al. — Hypertension grading in cancer therapy. JACC 2014."
+  - "CTCAE v5.0 — Hypertension grading."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Niraparib cardiovascular monitoring"
+  eau_section: "EAU 2026 §6.5.9 — PARPi cardiovascular precautions"

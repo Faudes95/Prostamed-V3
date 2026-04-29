@@ -22,6 +22,7 @@ class FieldSpec:
     evidence_tags: list[str] = field(default_factory=list)
     benchmark_note: str = ""
     display_options: list[dict[str, Any]] = field(default_factory=list)
+    widget_config: dict[str, Any] = field(default_factory=dict)
     scale_descriptor: str = ""
     score_interpretation: str = ""
     reuse_key: str = ""
@@ -32,9 +33,62 @@ class FieldSpec:
     reference_range_unit: str = ""
     reference_range_label: str = ""
     reference_range_source: str = ""
+    min_value: Any = None
+    max_value: Any = None
+    allow_negative: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data["display_options"] = _build_display_options(
+            self.name,
+            data.get("options") or [],
+            data.get("display_options") or [],
+        )
+        return data
+
+
+def _build_display_options(
+    field_name: str,
+    options: list[Any],
+    explicit_display_options: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    if explicit_display_options:
+        normalized: list[dict[str, Any]] = []
+        for option in explicit_display_options:
+            if isinstance(option, dict):
+                value = option.get("value")
+                label = option.get("label", value)
+                normalized.append({**option, "value": value, "label": label})
+        if normalized:
+            return normalized
+
+    try:
+        from prostanet.shared.presentation_text import resolve_option_label
+    except Exception:
+        resolve_option_label = None
+
+    display_options: list[dict[str, Any]] = []
+    for option in options or []:
+        if isinstance(option, dict):
+            value = option.get("value")
+            label = option.get("label")
+            normalized_option = dict(option)
+        elif isinstance(option, (list, tuple)) and len(option) >= 2:
+            value = option[0]
+            label = option[1]
+            normalized_option = {"value": value}
+        else:
+            value = option
+            label = None
+            normalized_option = {"value": value}
+
+        if label is None and resolve_option_label is not None:
+            label = resolve_option_label(field_name, value, options)
+        if label is None:
+            label = value
+        normalized_option["label"] = label
+        display_options.append(normalized_option)
+    return display_options
 
 
 @dataclass(frozen=True)
@@ -56,6 +110,33 @@ class RegistrationFragment:
         data = asdict(self)
         data["fields"] = [field.to_dict() for field in self.fields]
         return data
+
+
+@dataclass(frozen=True)
+class MedicationEntry:
+    """Medicamento concomitante estructurado (EPIC 2 FAUBOT).
+
+    Reemplaza al string libre en `current_medications` para que el motor DDI,
+    el score Halabi (opioide basal) y el gate de toxicidad puedan razonar sobre
+    el listado. Los campos mínimos son ``name`` + ``status``; ``dose``,
+    ``frequency``, ``route``, ``start_date``, ``indication`` y ``prescriber``
+    son opcionales pero habilitan auditoría clínica completa.
+    """
+
+    name: str
+    dose: str = ""
+    frequency: str = ""
+    route: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    indication: str = ""
+    prescriber: str = ""
+    status: str = "active"
+    atc_code: str = ""
+    source: str = "manual"
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -106,6 +187,8 @@ class EvidenceCitation:
     title: str
     guideline_or_trial: str
     source_tier: str
+    effective_date: str = ""
+    review_due_date: str = ""
     document_id: str = ""
     evidence_role: str = ""
     license_class: str = ""
@@ -121,6 +204,9 @@ class EvidenceCitation:
     applies_to_modules: list[str] = field(default_factory=list)
     derived_rule_ids: list[str] = field(default_factory=list)
     field_implications: list[str] = field(default_factory=list)
+    eligibility_implications: list[str] = field(default_factory=list)
+    required_traceable_fields: list[str] = field(default_factory=list)
+    applies_to_surfaces: list[str] = field(default_factory=list)
     ui_surfaces: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -424,6 +510,7 @@ class MasterFollowupPlan:
     optional_items: list[dict[str, Any]] = field(default_factory=list)
     highlight_actions: list[str] = field(default_factory=list)
     gaps_to_close: list[str] = field(default_factory=list)
+    capture_actions: list[dict[str, Any]] = field(default_factory=list)
     prognostic_rationale: list[dict[str, Any]] = field(default_factory=list)
     cadence_adjusted_by: list[str] = field(default_factory=list)
     backbone_alignment: dict[str, Any] = field(default_factory=dict)
@@ -661,6 +748,12 @@ class NextBestAction:
     title: str
     recommendation_family: str
     rationale: str
+    action_title: str = ""
+    action_rationale: str = ""
+    transition_title: str = ""
+    transition_rationale: str = ""
+    transition_pending: bool = False
+    transition_target_state: str = ""
     immediate_actions: list[str] = field(default_factory=list)
     data_that_could_change_course: list[str] = field(default_factory=list)
     contraindication_modifiers: list[str] = field(default_factory=list)

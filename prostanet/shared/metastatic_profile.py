@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 from typing import Any
 
 
@@ -136,6 +137,40 @@ def _summarize_sites(entries: list[dict[str, Any]]) -> str:
 
 def _normalize_site_key(value: Any) -> str:
     return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _normalize_stage_token(value: Any) -> str:
+    text = str(value or "").strip().upper().replace("CM", "M")
+    if text in {"M0", "M1", "M1A", "M1B", "M1C"}:
+        return text
+    if text in {"M1A.", "M1B.", "M1C."}:
+        return text.rstrip(".")
+    return ""
+
+
+def _parse_iso_date(value: Any) -> date | None:
+    if value in (None, ""):
+        return None
+    raw = str(value).strip()[:10]
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _normalize_progression_signal(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    return text if text in {"radiographic", "clinical", "mixed"} else ""
+
+
+def _stage_label(stage: str) -> str:
+    return {
+        "M0": "M0",
+        "M1_unspecified": "M1 documentado, subtipo anatómico pendiente",
+        "M1a": "M1a: ganglios no regionales",
+        "M1b": "M1b: metástasis óseas",
+        "M1c": "M1c: metástasis viscerales",
+    }.get(stage, stage or "M0")
 
 
 def _normalize_dynamic_site_entries(
@@ -535,6 +570,117 @@ def build_metastatic_composition_summary(data: dict[str, Any] | None) -> dict[st
         "bone_distribution_summary": str(burden.get("bone_distribution_summary") or ""),
         "visceral_distribution_summary": str(burden.get("visceral_distribution_summary") or ""),
         "supportive_implications": supportive_implications,
+    }
+
+
+def resolve_metastatic_state_context(
+    data: dict[str, Any] | None,
+    *,
+    reference_date: date | None = None,
+) -> dict[str, Any]:
+    data = data or {}
+    profile = build_metastatic_profile(data)
+    profile_stage = str(profile.get("m_substage_resolved") or "M0").upper()
+    conventional_stage = _normalize_stage_token(
+        data.get("conventional_imaging_status") or data.get("conventional_stage_before_psma")
+    )
+    psma_stage = _normalize_stage_token(data.get("psma_stage_after_psma"))
+    psma_result = str(data.get("psma_result") or "").strip().lower()
+    psma_positive = (
+        _is_truthy(data.get("psma_positive"))
+        or psma_stage.startswith("M1")
+        or psma_result in {"positivo", "positive", "metástasis", "metastasis", "diseminado"}
+    )
+    conventional_positive = conventional_stage.startswith("M1")
+    metastatic_known = (
+        profile_stage != "M0"
+        or conventional_positive
+        or psma_positive
+        or _is_truthy(data.get("metastatic_disease_known"))
+        or (
+            _is_present(data.get("metastasis_site"))
+            and str(data.get("metastasis_site") or "").strip().upper() not in {"M0", "NO", "NONE"}
+        )
+    )
+
+    metastatic_stage_resolved = "M0"
+    if profile_stage in {"M1A", "M1B", "M1C"}:
+        metastatic_stage_resolved = profile_stage[0] + profile_stage[1:].lower()
+    elif profile_stage == "M1":
+        metastatic_stage_resolved = "M1_unspecified"
+    elif psma_stage in {"M1A", "M1B", "M1C"}:
+        metastatic_stage_resolved = psma_stage[0] + psma_stage[1:].lower()
+    elif psma_stage == "M1":
+        metastatic_stage_resolved = "M1_unspecified"
+    elif conventional_stage in {"M1A", "M1B", "M1C"}:
+        metastatic_stage_resolved = conventional_stage[0] + conventional_stage[1:].lower()
+    elif conventional_stage == "M1":
+        metastatic_stage_resolved = "M1_unspecified"
+    elif metastatic_known:
+        metastatic_stage_resolved = "M1_unspecified"
+
+    if psma_positive and conventional_positive:
+        metastatic_detection_basis = "both"
+    elif conventional_positive:
+        metastatic_detection_basis = "conventional"
+    elif psma_positive:
+        metastatic_detection_basis = "psma_only"
+    elif metastatic_stage_resolved != "M0":
+        metastatic_detection_basis = "unknown"
+    else:
+        metastatic_detection_basis = "unknown"
+
+    assessment_date_raw = (
+        data.get("metastasis_assessment_date")
+        or data.get("psma_study_date")
+        or data.get("study_date")
+        or data.get("conventional_imaging_date")
+        or data.get("visit_date")
+        or ""
+    )
+    assessment_date = _parse_iso_date(assessment_date_raw)
+    currentness = "unknown"
+    if assessment_date:
+        currentness_days = ((reference_date or date.today()) - assessment_date).days
+        if currentness_days <= 180:
+            currentness = "current"
+        elif currentness_days <= 365:
+            currentness = "aging"
+        else:
+            currentness = "stale"
+
+    progression_pattern = _normalize_progression_signal(data.get("progression_pattern"))
+    disease_status = str(data.get("disease_status") or "").strip().lower()
+    suspected_systemic_progression = (
+        _is_truthy(data.get("suspected_systemic_progression"))
+        or progression_pattern in {"radiographic", "clinical", "mixed"}
+        or any(token in disease_status for token in ("progres", "radiograf", "symptom", "sintom", "clínic", "clinic"))
+    )
+    restaging_update_required = metastatic_stage_resolved != "M0" and (
+        currentness == "stale" or suspected_systemic_progression
+    )
+    if metastatic_stage_resolved == "M0":
+        restaging_update_reason = ""
+    elif suspected_systemic_progression:
+        restaging_update_reason = "M1 documentado; existe sospecha de progresión sistémica y se requiere nueva restadificación."
+    elif currentness == "stale":
+        restaging_update_reason = "M1 ya documentado; la imagen metastásica está desactualizada y se requiere restadificación actualizada."
+    elif currentness == "aging":
+        restaging_update_reason = "M1 documentado con imagen envejecida; mantener vigilancia de actualización si cambia la trayectoria clínica."
+    else:
+        restaging_update_reason = ""
+
+    return {
+        "metastatic_known": metastatic_stage_resolved != "M0",
+        "metastatic_stage_resolved": metastatic_stage_resolved,
+        "metastatic_stage_label": _stage_label(metastatic_stage_resolved),
+        "m_substage_resolved_legacy": profile_stage if profile_stage != "M0" else ("M1" if metastatic_stage_resolved == "M1_unspecified" else "M0"),
+        "metastatic_detection_basis": metastatic_detection_basis,
+        "metastasis_assessment_date": str(assessment_date_raw or ""),
+        "restaging_currentness_status": currentness,
+        "restaging_update_required": restaging_update_required,
+        "restaging_update_reason": restaging_update_reason,
+        "suspected_systemic_progression": suspected_systemic_progression,
     }
 
 

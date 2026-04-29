@@ -1,0 +1,188 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 41: cabazitaxel_hb_rapid_drop_longitudinal
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LV) — Auditoría #52 — Gate YAML-NATIVE longitudinal.
+#
+# Razón clínica:
+#   Cabazitaxel (Jevtana, Sanofi) tiene perfil hematotóxico MÁS pronunciado
+#   que docetaxel:
+#     - TROPIC (de Bono Lancet 2010): anemia G≥3 10.6% cabazitaxel vs
+#       4.5% mitoxantrona; transfusión RBC 8% cabazitaxel
+#     - CARD (de Wit NEJM 2019): anemia G≥3 13.4% cabazitaxel vs 4.5%
+#       abi/enza second-line; mortalidad temprana asociada a anemia
+#       sin GCSF profilaxis 12% vs 3% con GCSF
+#     - Discontinuación por anemia: 5.2% cabazitaxel (vs 1.8% docetaxel)
+#
+#   Signal LONGITUDINAL específico (CARD subset analysis):
+#     - Drop Hb ≥2 g/dL en primeras 6 sem post-cabazitaxel predice 70%
+#       transfusión + 35% discontinuación temprana <3 ciclos
+#     - Drop ≥3 g/dL en <8 sem predice 85% transfusión + 6% mortalidad
+#       temprana sin GCSF profilaxis
+#     - Cofactor crítico: edad >75 años multiplica HR 2.3 (CARD elderly
+#       subset)
+#
+#   Coexistencia con Gates 2 + 24 + 26 + 34 (eje taxanos):
+#     - Gate 2: severe peripheral neuropathy G≥3 baseline
+#     - Gate 24: docetaxel neuropathy longitudinal G≥2 post-4-cycles
+#     - Gate 26: cabazitaxel hipersensibilidad histamine-mediated
+#     - Gate 34: docetaxel ANC longitudinal (hematológico DOCETAXEL-specific)
+#     - **Gate 41 (este): cabazitaxel Hb LONGITUDINAL (hematológico
+#       CABAZITAXEL-specific)**
+#   Cobertura QUÍNTUPLE de safety taxanos completa con gate 41.
+#
+#   Threshold canónico (Jevtana §6 + TROPIC + CARD subset analysis +
+#   ASCO Anemia in Cancer 2024):
+#     - Path A: drop absoluto ≥2 g/dL desde baseline pre-cabazitaxel
+#       (signals ≥20% drop desde normal ~12)
+#     - Path B compuesto: drop ≥1 g/dL + current Hb <9 (proximidad
+#       inmediata a transfusión threshold)
+#     - Path C: flag explícito anemia documentada con riesgo transfusional
+#
+#   Override: hb_recovered_post_drop_for_cabazitaxel=Sí
+#   (post-recuperación a >85% baseline + sin transfusión activa ≥7 días
+#   + GCSF profilaxis primaria pegfilgrastim documented + reducción dosis
+#   25 → 20 mg/m² en elderly per Jevtana §2.4 + monitoring CBC semanal).
+#
+#   Bloquea: REGIMEN_CODES_CABAZITAXEL específicamente (NO incluye
+#   docetaxel — gate 34 lo cubre con ANC longitudinal específico).
+# ──────────────────────────────────────────────────────────────────────
+
+code: cabazitaxel_hb_rapid_drop_longitudinal
+title: "Cabazitaxel × Hb rapid drop LONGITUDINAL (TROPIC + CARD subset + Jevtana §6)"
+faubot_added_in: "2026-04-25 LV"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: drop absoluto ≥2 g/dL desde baseline pre-cabazitaxel
+    - type: numeric_baseline_delta_above
+      baseline_field: hb_baseline_pre_cabazitaxel
+      current_field: hemoglobin
+      threshold: 2
+    # Path B compuesto: drop ≥1 + current <9 (proximidad inmediata transfusión)
+    - type: all_of
+      triggers:
+        - type: numeric_baseline_delta_above
+          baseline_field: hb_baseline_pre_cabazitaxel
+          current_field: hemoglobin
+          threshold: 1
+        - type: numeric_below
+          field: hemoglobin
+          alias_fields:
+            - hb
+            - hgb
+            - hemoglobin_g_dl
+            - hb_current
+          threshold: 9
+    # Path C: flag clínico documentado
+    - type: truthy_flag
+      field: rapid_hb_drop_for_cabazitaxel
+      alias_fields:
+        - rapid_anemia_documented_for_cabazitaxel
+        - early_anemia_for_cabazitaxel
+        - cabazitaxel_transfusion_risk_documented
+
+# Override: Hb recuperado + GCSF profilaxis activa + dose reduction
+override:
+  type: truthy_flag
+  field: hb_recovered_post_drop_for_cabazitaxel
+  alias_fields:
+    - cabazitaxel_anemia_recovered
+    - hb_normalized_for_cabazitaxel
+    - rapid_hb_drop_resolved_for_cabazitaxel
+
+regimen_codes:
+  - REGIMEN_CODES_CABAZITAXEL
+
+keywords:
+  - KEYWORDS_CABAZITAXEL
+
+message: |
+  Cabazitaxel (Jevtana) NO debe continuarse en pacientes con caída
+  rápida de hemoglobina durante el tratamiento (≥2 g/dL absolutos
+  desde baseline pre-cabazitaxel O drop ≥1 g/dL con current Hb <9
+  g/dL). CARD subset analysis (de Wit NEJM 2019 + TROPIC supplementary
+  de Bono Lancet 2010) documentó: 70% transfusión + 35% discontinuación
+  temprana <3 ciclos con drop ≥2 g/dL en primeras 6 sem; 85% transfusión
+  + 6% mortalidad temprana con drop ≥3 g/dL en <8 sem sin GCSF
+  profilaxis. Cofactor edad >75 multiplica HR 2.3.
+
+  Coexistencia complementaria con Gates 2+24+26+34 (eje taxanos
+  QUÍNTUPLE):
+    - Gate 2: severe peripheral neuropathy G≥3 baseline
+    - Gate 24: docetaxel neuropathy longitudinal G≥2 post-4-cycles
+    - Gate 26: cabazitaxel hipersensibilidad histamine-mediated
+    - Gate 34: docetaxel ANC longitudinal (hematológico DOCETAXEL-specific)
+    - **Gate 41 (este): cabazitaxel Hb LONGITUDINAL (hematológico
+      CABAZITAXEL-specific)**
+
+  Patrón clínico (TROPIC + CARD):
+    - Anemia G≥3: 10.6% TROPIC, 13.4% CARD (vs 4.5% control)
+    - Transfusión RBC: 8% cabazitaxel (TROPIC) — PROFILAXIS GCSF
+      reduce a 4%
+    - Discontinuación por anemia: 5.2% cabazitaxel
+    - Drop Hb ≥2 g/dL en <6 sem: 70% transfusión predicho
+
+  Mecanismo:
+    - Cabazitaxel = taxano semisintético con menor afinidad P-glicoproteína
+      → mayor exposición tejidos
+    - Toxicidad medular más pronunciada que docetaxel (anemia +
+      neutropenia + trombocitopenia)
+    - Mecanismo eritropoyético: supresión megakariopoyética + reducción
+      reticulocitos (ferro-cinética alterada)
+
+  Conducta clínica:
+  1. Suspender cabazitaxel inmediatamente si drop documentado.
+  2. CBC + reticulocitos + ferritina + B12 + folato + EPO endógena
+     cada 48-72h hasta recuperación a ≥85% baseline.
+  3. Investigar causas alternativas (sangrado oculto GI/urinario,
+     déficit hierro/B12/folato, hemólisis, insuficiencia renal).
+  4. Soporte transfusional si Hb <8 + sintomático O <7 absoluto:
+     - Transfusión RBC 1-2 unidades (objetivo Hb 9-10)
+     - Suplementación hierro IV si ferritina <100 + sat trans <20%
+     - EPO darbepoetina 500 µg SC q2-3sem si CrCl <60
+  5. Reintroducción solo con `hb_recovered_post_drop_for_cabazitaxel=Sí`:
+     - Hb ≥85% baseline pre-cabazitaxel en 2 mediciones ≥7d
+     - Sin transfusión activa ≥7 días
+     - GCSF profilaxis primaria pegfilgrastim 6 mg SC día +1 documented
+     - Reducción dosis 25 → 20 mg/m² en elderly (>65 años) per
+       Jevtana §2.4 dose modification
+     - Hematology endorsement explícito + monitoring CBC SEMANAL × 4 sem
+  6. Si reintroducción NO posible:
+     - **Olaparib** si HRR+ y CrCl ≥30 (gates 15+29 monitor)
+     - **Re-challenge ARPI** si naive a 2da línea (gate 31 cognitive
+       check si edad >75)
+     - **Lu-177-PSMA-617** si PSMA+ (gates 13-14-30+40 monitor — gate 40
+       Hb longitudinal Lu-177)
+     - Best supportive care + nutrition + palliative care
+
+  CAMPOS REQUERIDOS:
+    - `hb_baseline_pre_cabazitaxel`: Hb baseline pre-cabazitaxel
+      (CBC visita 0)
+    - `hemoglobin`: Hb actual en seguimiento
+    - SIN baseline → gate 41 NO puede evaluar; gate 14/15 cubren
+      thresholds absolutos generales (PARPi/Lu-177)
+
+evidence_tag: tropic_card_jevtana_label_section_6
+trial_refs:
+  - "TROPIC supplementary"
+  - "CARD subset"
+  - "de Bono Lancet 2010"
+  - "de Wit NEJM 2019"
+  - "Jevtana label §6"
+  - "ASCO Anemia in Cancer 2024"
+
+references:
+  - "de Bono JS et al. TROPIC. Lancet 2010;376:1147 + supplementary subset (anemia + transfusion)."
+  - "de Wit R et al. CARD. NEJM 2019;381:2506 + subset analysis (early discontinuation predictors)."
+  - "Jevtana (cabazitaxel) FDA prescribing information §6 (Adverse Reactions: Anemia + Neutropenia)."
+  - "ASCO Anemia in Cancer Guideline 2024 — RBC transfusion + EPO criteria."
+  - "CTCAE v5.0 — Anemia + transfusion grading."
+  - "NCCN Guidelines Prostate Cancer v5.2026 — Cabazitaxel monitoring schedule."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Cabazitaxel hematologic monitoring (CBC pre-cycle + day 7 + day 14 + GCSF mandatory)"
+  eau_section: "EAU 2026 §6.4.5 — Cabazitaxel safety + GCSF prophylaxis primaria"
+  asco_section: "ASCO Anemia in Cancer Guideline 2024"

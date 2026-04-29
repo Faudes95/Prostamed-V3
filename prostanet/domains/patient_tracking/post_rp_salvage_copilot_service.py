@@ -16,6 +16,9 @@ from prostanet.domains.patient_tracking.event_graph import (
 from prostanet.domains.patient_tracking.prognostic_impact import (
     build_prognostic_impact_bundle,
 )
+from prostanet.domains.patient_tracking.post_rp_salvage_intensification_builder import (
+    build_post_rp_salvage_intensification_profile,
+)
 from prostanet.domains.patient_tracking.psma_imaging import (
     build_psma_decision_impact,
     build_psma_structured_profile,
@@ -60,7 +63,9 @@ def _safe_float(value: Any) -> float | None:
 
 
 def _normalize_text(value: Any) -> str:
-    return str(value or "").strip()
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def _normalize_for_compare(value: str) -> str:
@@ -249,6 +254,10 @@ class PostRPSalvageCopilotService:
             management_track=effective_management_track,
             patient=runtime_patient,
         )
+        intensification_profile = build_post_rp_salvage_intensification_profile(
+            payload,
+            psma_impact=psma_impact,
+        )
         (
             resolved_state,
             resolved_track,
@@ -261,16 +270,24 @@ class PostRPSalvageCopilotService:
             psma_impact=psma_impact,
         )
         module_result = self._evaluate_rule_based(resolved_state, payload)
-        requirements = decision_input_requirements or build_decision_input_requirements(
-            runtime_patient,
-            effective_state=resolved_state,
-            effective_management_track=resolved_track,
-            latest_assessment=latest_assessment or patient.get("latest_assessment"),
-            next_best_action=(longitudinal_bundle or {}).get("next_best_action") or {},
-        )
+        requirements = dict(decision_input_requirements or {})
+        if (
+            not requirements
+            or _normalize_text(requirements.get("effective_state")) != resolved_state
+            or _normalize_text(requirements.get("effective_management_track")) != resolved_track
+        ):
+            # Recompute blockers after the post-RP copilot resolves the operative state.
+            requirements = build_decision_input_requirements(
+                runtime_patient,
+                effective_state=resolved_state,
+                effective_management_track=resolved_track,
+                latest_assessment=latest_assessment or patient.get("latest_assessment"),
+                next_best_action=(longitudinal_bundle or {}).get("next_best_action") or {},
+            )
         blocking_inputs = self._build_blocking_input_groups(requirements)
         safety_gates = self._build_safety_gates(
             payload,
+            resolved_state=resolved_state,
             post_rp_course=post_rp_course,
             salvage_window_status=salvage_window_status,
             psma_profile=psma_profile,
@@ -298,6 +315,7 @@ class PostRPSalvageCopilotService:
             module_result=module_result,
             payload=payload,
             psma_impact=psma_impact,
+            intensification_profile=intensification_profile,
         )
         metastatic_composition_summary = build_shared_metastatic_summary(payload)
         rule_based_recommendation = enrich_recommendation_with_metastatic_summary(
@@ -311,9 +329,11 @@ class PostRPSalvageCopilotService:
             payload=payload,
         )
         local_salvage_pathway = self._build_local_salvage_pathway(
+            resolved_state=resolved_state,
             post_rp_course=post_rp_course,
             salvage_window_status=salvage_window_status,
             psma_impact=psma_impact,
+            intensification_profile=intensification_profile,
         )
         sequence_candidates = self._build_sequence_candidates(
             post_rp_course=post_rp_course,
@@ -360,19 +380,34 @@ class PostRPSalvageCopilotService:
             agent_outputs=[model_like_output],
             guideline_result=module_result,
         )
+        # Faubot 2026-04-25 (IX) — Pre-compute delta de gates pivotal antes
+        # de _build_why_changed_today para incluir narrativa clínica del delta.
+        from prostanet.shared.pivotal_gate_delta import (
+            compute_pivotal_gates_delta,
+            extract_previous_pivotal_gates,
+        )
+        _current_pivotal_gates = list(module_result.get("pivotal_contraindication_gates") or [])
+        _previous_pivotal_gates = extract_previous_pivotal_gates(latest_assessment)
+        _pivotal_gates_delta_pre = compute_pivotal_gates_delta(
+            _current_pivotal_gates, _previous_pivotal_gates
+        )
         why_changed_today = self._build_why_changed_today(
             payload,
             post_rp_course=post_rp_course,
             salvage_window_status=salvage_window_status,
             salvage_window_reason=salvage_window_reason,
             psma_impact=psma_impact,
+            intensification_profile=intensification_profile,
+            pivotal_gates_delta=_pivotal_gates_delta_pre,
         )
         why_changed_today = prepend_metastatic_context(why_changed_today, metastatic_composition_summary)
         post_rp_schedule_overlay = self._build_schedule_overlay(
+            resolved_state=resolved_state,
             post_rp_course=post_rp_course,
             salvage_window_status=salvage_window_status,
             blocking_groups=blocking_inputs,
             payload=payload,
+            intensification_profile=intensification_profile,
         )
         status = self._resolve_status(
             runtime_mode=runtime_mode,
@@ -392,6 +427,8 @@ class PostRPSalvageCopilotService:
             final_presented_recommendation=final_presented_recommendation,
             blocking_groups=blocking_inputs,
             blocked_by_overlay=blocked_by_overlay,
+            current_pivotal_gates=_current_pivotal_gates,
+            previous_pivotal_gates=_previous_pivotal_gates,
         )
         guideline_basis = self._guideline_basis(module_result)
         evidence_basis_current_visit = build_evidence_basis_current_visit(
@@ -448,7 +485,16 @@ class PostRPSalvageCopilotService:
                 "psma_stage_after_psma": psma_profile.get("psma_stage_after_psma", ""),
                 "psma_negative_dominant_lesions": bool(psma_profile.get("psma_negative_dominant_lesions")),
             },
+            "post_rp_salvage_intensification_profile": intensification_profile,
             "trigger_event": trigger_event or "longitudinal_refresh",
+            # Faubot 2026-04-24 (III) — propagar trazabilidad de gates pivotal
+            # y not_recommended desde recurrence_bcr (PRESTO triplet con
+            # abiraterona) y post_prostatectomy (sin gates pero campo neutro
+            # para uniformidad de contrato downstream).
+            "pivotal_contraindication_gates": list(
+                module_result.get("pivotal_contraindication_gates") or []
+            ),
+            "not_recommended": list(module_result.get("not_recommended") or []),
         }
 
     def _disabled_bundle(
@@ -491,6 +537,9 @@ class PostRPSalvageCopilotService:
             "post_rp_schedule_overlay": {},
             "risk_tools_summary": {},
             "prognostic_summary": {"modifier_keys": [], "recommended_actions": []},
+            # Faubot 2026-04-24 (III) — paridad con bundle activo.
+            "pivotal_contraindication_gates": [],
+            "not_recommended": [],
         }
 
     def _build_runtime_patient(
@@ -647,7 +696,7 @@ class PostRPSalvageCopilotService:
 
         if systemic_redirect:
             return (
-                effective_state,
+                "recurrence_bcr",
                 "systemic_surveillance",
                 "redirect_systemic",
                 "La imagen estructurada ya sugiere patrón no compatible con rescate local aislado; conviene redirigir fuera del salvage exclusivamente local.",
@@ -673,25 +722,33 @@ class PostRPSalvageCopilotService:
                     "pending_inputs",
                     f"Persisten vacíos decisivos para cerrar la ventana de salvage: {', '.join(missing_for_window)}.",
                 )
-            if salvage_feasible and not psma_done and (latest_psa is not None and latest_psa >= 0.2):
+            promote_to_bcr = effective_state == "recurrence_bcr" or (latest_psa is not None and latest_psa >= 0.2)
+            if salvage_feasible and not psma_done and promote_to_bcr:
                 return (
-                    "post_prostatectomy",
-                    "salvage_evaluation",
+                    "recurrence_bcr",
+                    "salvage",
                     "open_pending_restaging",
                     "El rescate temprano sigue siendo plausible, pero falta imagen dirigida para afinar extensión y factibilidad real.",
+                )
+            if salvage_feasible and promote_to_bcr:
+                return (
+                    "recurrence_bcr",
+                    "salvage",
+                    "open",
+                    "El PSA persistente mantiene una ventana de salvage local todavía plausible y debe acelerarse la evaluación temprana.",
                 )
             if salvage_feasible:
                 return (
                     "post_prostatectomy",
                     "salvage_evaluation",
                     "open",
-                    "El PSA persistente mantiene una ventana de salvage local todavía plausible y debe acelerarse la evaluación temprana.",
+                    "El PSA persistente sigue en evaluación temprana y todavía no cumple un umbral operativo suficiente para reclasificarlo como recurrencia bioquímica.",
                 )
             return (
-                "post_prostatectomy",
-                "salvage_evaluation",
+                "recurrence_bcr",
+                "systemic_surveillance",
                 "closed",
-                "La factibilidad de salvage local ya no está documentada como viable en este ciclo.",
+                "La factibilidad de salvage local ya no está documentada como viable y la estrategia debe redefinirse fuera de una vía curativa exclusivamente local.",
             )
 
         missing_for_window = []
@@ -749,12 +806,13 @@ class PostRPSalvageCopilotService:
     def _rule_based_title(
         self,
         *,
+        resolved_state: str,
         post_rp_course: str,
         salvage_window_status: str,
     ) -> str:
-        if post_rp_course == "stable_surveillance":
+        if resolved_state == "post_prostatectomy" and post_rp_course == "stable_surveillance":
             return "Mantener vigilancia post prostatectomía y control bioquímico"
-        if post_rp_course == "persistent_psa":
+        if resolved_state == "post_prostatectomy" and post_rp_course == "persistent_psa":
             return "Iniciar evaluación temprana de salvage por PSA persistente"
         if salvage_window_status in {"open", "open_pending_restaging", "pending_inputs"}:
             return "Activar salvage y reestadificación dirigida"
@@ -774,17 +832,64 @@ class PostRPSalvageCopilotService:
         module_result: dict[str, Any],
         payload: dict[str, Any],
         psma_impact: dict[str, Any],
+        intensification_profile: dict[str, Any],
     ) -> dict[str, Any]:
-        action = self._rule_based_title(post_rp_course=post_rp_course, salvage_window_status=salvage_window_status)
+        action = self._rule_based_title(
+            resolved_state=resolved_state,
+            post_rp_course=post_rp_course,
+            salvage_window_status=salvage_window_status,
+        )
         rationale = _normalize_text(salvage_window_reason or module_result.get("recommended_trajectory") or module_result.get("report_sections", {}).get("summary"))
         pathologic_stage = _normalize_text(payload.get("pathologic_stage")).lower()
         positive_margin = _normalize_text(payload.get("surgical_margin")).lower() in {"1", "positive", "positivo"}
         decipher_high = "alto" in _normalize_text(payload.get("decipher_risk")).lower()
         nccn_label = _normalize_text((module_result.get("nccn_primary") or {}).get("label"))
         first_treatment = next((item for item in (module_result.get("eligible_treatments") or []) if isinstance(item, dict) and _normalize_text(item.get("name"))), {})
+        high_risk = bool(intensification_profile.get("high_risk_post_rp_salvage"))
+        pelvic_rt_role = _normalize_text(intensification_profile.get("pelvic_rt_role"))
+        adt_duration_band = _normalize_text(intensification_profile.get("adt_duration_band"))
+        psma_restaging_role = _normalize_text(intensification_profile.get("psma_restaging_role"))
+        risk_features = list(intensification_profile.get("high_risk_feature_keys") or [])
         if post_rp_course == "stable_surveillance" and (positive_margin or decipher_high or pathologic_stage.startswith("pt3")):
             action = "Vigilancia estrecha con PSA ultrasensible y planificación temprana de salvage"
             rationale = "La patología adversa aumenta la urgencia de vigilancia y discusión temprana de salvage, aunque no redefine por sí sola una BCR verdadera."
+        # Auditoría #21 (cierre OOS-5): el override de intensificación temprana
+        # NO debe dispararse cuando `salvage_window_status == "pending_inputs"`.
+        # `pending_inputs` significa que faltan datos decisivos (ej. PSADT) sin
+        # los cuales no se puede sustentar la decisión SRT+ADT vs SRT sola per
+        # AUA/ASTRO/SUO Salvage 2024. En ese estado debemos mantener el título
+        # por default ("Activar salvage y reestadificación dirigida") para que
+        # el operador primero complete los inputs en lugar de saltar a la
+        # intensificación como si la ventana estuviera abierta. Las ramas
+        # {"open", "open_pending_restaging"} siguen disparando el override
+        # cuando la biología es high-risk y los datos decisivos ya están en el
+        # perfil.
+        if (
+            resolved_state == "recurrence_bcr"
+            and salvage_window_status in {"open", "open_pending_restaging"}
+            and high_risk
+        ):
+            action = (
+                "Activar salvage temprano intensificado con ADT y PSMA urgente"
+                if psma_restaging_role == "urgent_companion"
+                else "Activar salvage temprano intensificado con ADT"
+            )
+            rationale = (
+                "El salvage post-RP sigue siendo curativo, pero los high-risk features ya favorecen SRT + ADT sobre RT sola."
+            )
+            if pelvic_rt_role in {"consider", "preferred"}:
+                action = (
+                    "Activar salvage intensificado con ADT y decidir lecho versus lecho + pelvis"
+                    if psma_restaging_role != "urgent_companion"
+                    else "Activar salvage intensificado con ADT, PSMA urgente y decidir lecho versus lecho + pelvis"
+                )
+                rationale = (
+                    "La biología y/o la imagen sugieren que la discusión de pelvis electiva debe entrar junto con ADT concomitante."
+                )
+            if psma_restaging_role == "urgent_companion":
+                rationale = (
+                    f"{rationale} La PSMA debe hacerse de forma urgente para moldear el campo, pero un estudio negativo no debe retrasar la SRT."
+                )
         if _normalize_text(psma_impact.get("clinical_pattern")).lower() == "oligometastatic" and salvage_window_status == "open":
             action = "Considerar MDT o salvage multimodal guiado por PSMA"
             rationale = psma_impact.get("rationale") or "La distribución oligometastásica mantiene visible una ruta MDT/salvage multimodal."
@@ -803,6 +908,10 @@ class PostRPSalvageCopilotService:
             "recommendation_family": recommendation_family,
             "rationale": rationale,
             "guideline_basis": self._guideline_basis(module_result),
+            "high_risk_feature_keys": risk_features,
+            "pelvic_rt_role": pelvic_rt_role,
+            "adt_duration_band": adt_duration_band,
+            "psma_restaging_role": psma_restaging_role,
         }
 
     def _build_restaging_strategy(
@@ -822,8 +931,8 @@ class PostRPSalvageCopilotService:
         if salvage_window_status == "open_pending_restaging":
             return {
                 "status": "pending_psma",
-                "recommended_action": "Completar PSMA o imagen dirigida antes de cerrar la ruta de salvage.",
-                "rationale": "La ventana de salvage sigue siendo plausible, pero falta reestadificación dirigida para definir alcance y localización.",
+                "recommended_action": "Completar PSMA o imagen dirigida para moldear la ruta de salvage.",
+                "rationale": "La ventana de salvage sigue siendo plausible; la PSMA debe afinar alcance/campo sin convertirse en excusa para retrasar una SRT temprana si sigue siendo curativa.",
             }
         if salvage_window_status == "pending_inputs":
             return {
@@ -846,9 +955,11 @@ class PostRPSalvageCopilotService:
     def _build_local_salvage_pathway(
         self,
         *,
+        resolved_state: str,
         post_rp_course: str,
         salvage_window_status: str,
         psma_impact: dict[str, Any],
+        intensification_profile: dict[str, Any],
     ) -> dict[str, Any]:
         visible = salvage_window_status in {"open", "open_pending_restaging", "pending_inputs"}
         if not visible:
@@ -858,12 +969,23 @@ class PostRPSalvageCopilotService:
                 "recommended_path": "",
                 "rationale": "La ruta local aislada no es la dominante en este momento.",
             }
-        if post_rp_course == "persistent_psa":
+        pelvic_rt_role = _normalize_text(intensification_profile.get("pelvic_rt_role"))
+        adt_duration_band = _normalize_text(intensification_profile.get("adt_duration_band"))
+        psma_restaging_role = _normalize_text(intensification_profile.get("psma_restaging_role"))
+        companion_actions = list(
+            intensification_profile.get("companion_actions_required_for_preferred_regimen") or []
+        )
+        high_risk_features = list(intensification_profile.get("high_risk_feature_keys") or [])
+        if resolved_state == "post_prostatectomy" and post_rp_course == "persistent_psa":
             path = "Evaluación temprana de RT de salvage por PSA persistente"
         elif _normalize_text(psma_impact.get("clinical_pattern")).lower() == "oligometastatic":
             path = "MDT / salvage multimodal guiado por PSMA"
-        elif salvage_window_status == "pending_inputs":
+        elif resolved_state == "post_prostatectomy" and salvage_window_status == "pending_inputs":
             path = "Salvage post-RP pendiente de completar PSADT / factibilidad local"
+        elif _normalize_text(intensification_profile.get("salvage_intensification_preference")) == "rt_pelvic_short_adt":
+            path = "SRT al lecho + pelvis electiva + ADT concomitante"
+        elif bool(intensification_profile.get("high_risk_post_rp_salvage")):
+            path = "SRT temprana intensificada con ADT concomitante"
         else:
             path = "RT de salvage y staging dirigido por recurrencia bioquímica"
         return {
@@ -871,6 +993,15 @@ class PostRPSalvageCopilotService:
             "status": salvage_window_status,
             "recommended_path": path,
             "rationale": psma_impact.get("rationale") or "La ventana curativa sigue siendo visible y debe sostenerse en la agenda.",
+            "local_salvage_scope": _normalize_text(intensification_profile.get("local_salvage_scope")),
+            "pelvic_rt_role": pelvic_rt_role,
+            "adt_duration_band": adt_duration_band,
+            "psma_restaging_role": psma_restaging_role,
+            "high_risk_feature_keys": high_risk_features,
+            "negative_psma_should_not_delay_salvage": bool(
+                intensification_profile.get("negative_psma_should_not_delay_salvage")
+            ),
+            "companion_actions_required_for_preferred_regimen": companion_actions,
         }
 
     def _build_sequence_candidates(
@@ -925,6 +1056,16 @@ class PostRPSalvageCopilotService:
                     rationale="Sin cinética y factibilidad local la ruta de salvage no puede cerrarse todavía.",
                 )
             )
+        if salvage_window_status == "closed":
+            candidates.append(
+                PostRPSequenceCandidate(
+                    pathway_key="postlocal_redefinition",
+                    label="Cerrar ventana de salvage local y redefinir estrategia terapéutica",
+                    confidence=0.74,
+                    blocked=False,
+                    rationale="La ruta curativa local dejó de ser dominante y ahora corresponde una redefinición terapéutica postlocal.",
+                )
+            )
         if not candidates:
             candidates.append(
                 PostRPSequenceCandidate(
@@ -944,6 +1085,7 @@ class PostRPSalvageCopilotService:
         self,
         payload: dict[str, Any],
         *,
+        resolved_state: str,
         post_rp_course: str,
         salvage_window_status: str,
         psma_profile: dict[str, Any],
@@ -953,10 +1095,16 @@ class PostRPSalvageCopilotService:
         if post_rp_course == "persistent_psa":
             gates.append(
                 PostRPSafetyGate(
-                    gate_key="persistent_psa_not_bcr",
-                    label="PSA persistente no equivale a BCR",
+                    gate_key="persistent_psa_pending_confirmation"
+                    if resolved_state == "post_prostatectomy"
+                    else "persistent_psa_provenance_preserved",
+                    label="PSA persistente aún en evaluación postoperatoria"
+                    if resolved_state == "post_prostatectomy"
+                    else "PSA persistente reconocido como origen post-RP",
                     status="pass",
-                    rationale="La plataforma mantiene PSA persistente dentro del carril postoperatorio hasta documentar BCR verdadera.",
+                    rationale="La plataforma conserva PSA persistente dentro del carril postoperatorio mientras falten datos decisivos para cerrar la ventana de salvage."
+                    if resolved_state == "post_prostatectomy"
+                    else "El course de PSA persistente se conserva como provenance, pero la decisión operativa ya funciona como recurrencia bioquímica.",
                 )
             )
         margins = _normalize_text(payload.get("surgical_margin"))
@@ -1171,6 +1319,8 @@ class PostRPSalvageCopilotService:
         salvage_window_status: str,
         salvage_window_reason: str,
         psma_impact: dict[str, Any],
+        intensification_profile: dict[str, Any],
+        pivotal_gates_delta: dict[str, Any] | None = None,
     ) -> list[str]:
         notes = []
         latest_psa = _safe_float(payload.get("psa_current") or payload.get("psa_postop") or payload.get("psa"))
@@ -1183,31 +1333,64 @@ class PostRPSalvageCopilotService:
             notes.append(f"Decipher {payload.get('decipher_risk')}.")
         if _normalize_text(payload.get("psma_stage_after_psma")):
             notes.append(f"PSMA estructurado {payload.get('psma_stage_after_psma')}.")
+        if intensification_profile.get("high_risk_feature_keys"):
+            notes.append(
+                "High-risk salvage: " + ", ".join(list(intensification_profile.get("high_risk_feature_keys") or [])[:4]) + "."
+            )
         notes.append(f"Curso post-RP: {post_rp_course or 'no definido'}.")
         notes.append(f"Ventana de salvage: {salvage_window_status}.")
         if salvage_window_reason:
             notes.append(salvage_window_reason)
         if psma_impact.get("clinical_pattern") == "diseminado":
             notes.append("El PSMA diseminado reduce el peso de rescate local aislado.")
-        return notes[:6]
+        # Faubot 2026-04-25 (IX) — narrativa clínica del delta de gates pivotal.
+        if pivotal_gates_delta:
+            from prostanet.shared.pivotal_gate_delta import (
+                describe_gate_delta_in_clinical_language,
+            )
+            gate_notes = describe_gate_delta_in_clinical_language(pivotal_gates_delta)
+            notes.extend(gate_notes)
+        return notes[:8]
 
     def _build_schedule_overlay(
         self,
         *,
+        resolved_state: str,
         post_rp_course: str,
         salvage_window_status: str,
         blocking_groups: list[dict[str, Any]],
         payload: dict[str, Any],
+        intensification_profile: dict[str, Any],
     ) -> dict[str, Any]:
+        high_risk = bool(intensification_profile.get("high_risk_post_rp_salvage"))
+        pelvic_rt_role = _normalize_text(intensification_profile.get("pelvic_rt_role"))
+        psma_restaging_role = _normalize_text(intensification_profile.get("psma_restaging_role"))
         if post_rp_course == "stable_surveillance":
             primary_intent = "PSA seriado y vigilancia funcional post prostatectomía"
             cadence = ["PSA ultrasensible seriado", "Revisión funcional urinaria y sexual"]
-        elif post_rp_course == "persistent_psa":
+        elif post_rp_course == "persistent_psa" and resolved_state == "post_prostatectomy":
             primary_intent = "Evaluación temprana de salvage por PSA persistente"
             cadence = ["PSA ultrasensible y PSADT", "Definir factibilidad local e imagen dirigida"]
         elif salvage_window_status == "redirect_systemic":
             primary_intent = "Redirección fuera de salvage local aislado"
             cadence = ["Staging sistémico", "Discusión de intensificación terapéutica"]
+        elif salvage_window_status == "closed":
+            primary_intent = "Cerrar ventana de salvage local y redefinir estrategia terapéutica"
+            cadence = ["Reestadificación integral", "Discusión terapéutica postlocal no curativa"]
+        elif high_risk:
+            primary_intent = (
+                "Salvage temprano intensificado con ADT y PSMA urgente"
+                if psma_restaging_role == "urgent_companion"
+                else "Salvage temprano intensificado con ADT"
+            )
+            cadence = [
+                "SRT temprana con ADT concomitante",
+                "Definir duración de ADT según riesgo",
+            ]
+            if psma_restaging_role == "urgent_companion":
+                cadence.insert(1, "PSMA urgente para decidir lecho versus lecho + pelvis")
+            if pelvic_rt_role in {"consider", "preferred"}:
+                cadence.append("Discutir campo pélvico electivo")
         else:
             primary_intent = "Salvage y reestadificación dirigida"
             cadence = ["RT de salvage / evaluación local", "PSMA o imagen dirigida según contexto"]

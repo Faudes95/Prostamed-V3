@@ -1,0 +1,97 @@
+name: Faubot Agentic Loop — FDA SaMD Compliance Closure (LXXXVIII)
+
+on:
+  # Daily cron 06:00 UTC
+  schedule:
+    - cron: '0 6 * * *'
+  # Manual trigger (workflow_dispatch) for testing
+  workflow_dispatch:
+    inputs:
+      target_pillar:
+        description: 'Restrict to FDA SaMD pillar (1-7) or 0 for generic'
+        required: false
+        default: '0'
+        type: choice
+        options: ['0', '1', '2', '3', '4', '5', '6', '7']
+      dry_run:
+        description: 'Dry run (no git ops, no DB writes)'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+      auto_merge:
+        description: 'Enable auto-merge if safety gates pass (DEFAULT false in Shadow mode)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['true', 'false']
+
+jobs:
+  agentic_iteration:
+    name: Run Faubot agentic iteration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt 2>/dev/null || true
+          pip install pytest flask pyyaml
+
+      - name: Run agentic loop iteration
+        id: run_loop
+        env:
+          AGENTIC_AUTO_MERGE: ${{ github.event.inputs.auto_merge || 'false' }}
+          AGENTIC_TARGET_PILLAR: ${{ github.event.inputs.target_pillar || '0' }}
+          FLASK_ENV: development
+        run: |
+          DRY_RUN_FLAG=""
+          if [ "${{ github.event.inputs.dry_run || 'true' }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          PILLAR="${{ github.event.inputs.target_pillar || '0' }}"
+          PILLAR_FLAG=""
+          if [ "$PILLAR" != "0" ]; then
+            PILLAR_FLAG="--target-pillar $PILLAR"
+          fi
+          python -m prostanet.agentic.improvement_loop $DRY_RUN_FLAG $PILLAR_FLAG --fast \
+            > /tmp/loop_output.json 2>&1 || echo "loop_exit=$?" >> $GITHUB_OUTPUT
+
+      - name: Upload iteration log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentic-iteration-log-${{ github.run_id }}
+          path: |
+            /tmp/loop_output.json
+            prostanet/agentic/persistence/proposals_log.jsonl
+            prostanet/agentic/persistence/rollback_log.jsonl
+          retention-days: 30
+
+      - name: Post summary to job
+        if: always()
+        run: |
+          echo "## Faubot Agentic Loop Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          tail -100 /tmp/loop_output.json >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "no output" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on rollback
+        if: contains(steps.run_loop.outputs.loop_exit, '1')
+        run: |
+          echo "::warning::Loop iteration ended with non-zero exit (likely safety gates failed or rollback triggered). Review artifact."

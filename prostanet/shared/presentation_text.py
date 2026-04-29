@@ -64,6 +64,9 @@ OPTION_LABELS = {
         "4": "PI-RADS 4",
         "5": "PI-RADS 5",
     },
+    "gleason_primary": {"3": "Patrón 3", "4": "Patrón 4", "5": "Patrón 5"},
+    "gleason_secondary": {"3": "Patrón 3", "4": "Patrón 4", "5": "Patrón 5"},
+    "gleason_tertiary": {"3": "Patrón 3", "4": "Patrón 4", "5": "Patrón 5"},
     "volume_disease": {
         "Low": "Bajo volumen",
         "High": "Alto volumen",
@@ -111,6 +114,7 @@ OPTION_LABELS = {
     },
     "prior_prostatectomy": {"0": "No", "1": "Sí"},
     "prior_radiation": {"0": "No", "1": "Sí"},
+    "bcr_detected": {"0": "No", "1": "Sí"},
     "bcr2": {"0": "No", "1": "Sí"},
     "metachronous_metastasis": {"0": "No", "1": "Sí"},
     "cribriform_pattern": {"0": "No", "1": "Sí"},
@@ -205,7 +209,16 @@ BOOLEAN_CONTEXTUAL_OPTION_LABELS = {
     "confirmatory_biopsy_planned": {"0": "No planificada", "1": "Planificada"},
     "cv_risk_documented": {"0": "No documentado", "1": "Documentado"},
     "drug_interaction_reviewed": {"0": "No revisadas", "1": "Revisadas"},
+    "ddi_review_status": {
+        "not_started": "No iniciada",
+        "in_progress": "En curso",
+        "completed": "Completada",
+    },
     "dxa_baseline_done": {"0": "No realizada", "1": "Realizada"},
+    "active_liver_disease": {"0": "Ausente", "1": "Presente"},
+    "cirrhosis_or_portal_hypertension": {"0": "Ausente", "1": "Presente"},
+    "active_hepatitis_b_or_c": {"0": "Ausente", "1": "Presente"},
+    "prior_drug_induced_liver_injury": {"0": "Ausente", "1": "Presente"},
     "hepatic_risk_factors": {"0": "Ausentes", "1": "Presentes"},
     "micro_us_available": {"0": "No disponible", "1": "Disponible"},
     "low_activity": {"0": "No documentada", "1": "Sí, actividad reducida"},
@@ -303,7 +316,16 @@ TEXT_REPLACEMENTS = [
     ("Unfavorable Intermediate", "Intermedio desfavorable"),
     ("Intermediate (Favorable)", "Intermedio favorable"),
     ("Intermediate (Unfavorable)", "Intermedio desfavorable"),
+    ("High", "Alto"),
     ("Very High", "Muy alto"),
+    ("Low", "Bajo"),
+    ("Metastatic", "Metastásico"),
+    ("Locally Advanced", "Localmente avanzado"),
+    ("Definitive local therapy with long-course systemic intensification when indicated.", "Terapia local definitiva con intensificación sistémica prolongada cuando esté indicada."),
+    ("Consider definitive RT plus long-course ADT and systemic intensification in eligible patients.", "Considerar radioterapia definitiva más terapia de privación androgénica prolongada e intensificación sistémica en pacientes elegibles."),
+    ("EBRT plus long-course ADT with systemic intensification for eligible patients, or RP in selected candidates.", "Radioterapia externa más terapia de privación androgénica prolongada con intensificación sistémica en pacientes elegibles, o prostatectomía radical en candidatos seleccionados."),
+    ("EBRT plus long-course ADT, or RP with pelvic nodal dissection in selected patients.", "Radioterapia externa más terapia de privación androgénica prolongada, o prostatectomía radical con disección ganglionar pélvica en pacientes seleccionados."),
+    ("RT plus short-course ADT or RP in eligible patients.", "Radioterapia más terapia de privación androgénica de corta duración, o prostatectomía radical en pacientes elegibles."),
     ("Observation or definitive local therapy; AS only in carefully selected patients with >10-year life expectancy.", "Observación o terapia local definitiva; la vigilancia activa (AS) solo debe plantearse en pacientes cuidadosamente seleccionados con una esperanza de vida mayor de 10 años."),
     ("Observation is preferred below 10-year life expectancy.", "La observación es preferente cuando la esperanza de vida es menor de 10 años."),
     ("For appropriate surgical candidates after shared decision-making.", "Opción apropiada para candidatos quirúrgicos después de una toma de decisiones compartida."),
@@ -321,6 +343,7 @@ TEXT_REPLACEMENTS = [
     ("Use in eligible regional node-positive disease per NCCN 2026 pathway.", "Usar en enfermedad regional con ganglios positivos en pacientes elegibles según la ruta NCCN 2026."),
     ("NCCN 5.2026 classifies this patient as ", "La Red Nacional Integral del Cáncer (NCCN) 5.2026 clasifica a este paciente como "),
     ("EAU 2026 comparison:", "comparación con la Asociación Europea de Urología (EAU) 2026:"),
+    ("Regional N1M0", "Regional N1M0"),
     ("Classification and staging systems", "Clasificación y sistemas de estadificación"),
     ("Mayo Clinic Inspired", "Referencia visual inspirada en la Clínica Mayo"),
     ("Journey Clínico del Paciente", "Trayectoria clínica del paciente"),
@@ -576,9 +599,48 @@ def translate_text(value):
 
 
 def _uses_boolean_option_labels(raw_options) -> bool:
-    normalized = [str(option).strip() for option in raw_options or []]
+    normalized = []
+    for option in raw_options or []:
+        if isinstance(option, dict):
+            value = option.get("value")
+        elif isinstance(option, (list, tuple)) and option:
+            value = option[0]
+        else:
+            value = option
+        normalized.append(str(value).strip())
     filtered = [option for option in normalized if option != ""]
-    return filtered in (["0", "1"], ["1", "0"])
+    neutral_values = {
+        "Desconocido",
+        "desconocido",
+        "Pendiente",
+        "pendiente",
+        "No disponible",
+        "no disponible",
+        "unknown",
+    }
+    decision_values = [option for option in filtered if option not in neutral_values]
+    return set(decision_values) == {"0", "1"}
+
+
+def _uses_graded_numeric_options(raw_options) -> bool:
+    normalized = []
+    for option in raw_options or []:
+        if isinstance(option, dict):
+            value = option.get("value")
+        elif isinstance(option, (list, tuple)) and option:
+            value = option[0]
+        else:
+            value = option
+        normalized.append(str(value).strip())
+    filtered = [
+        option
+        for option in normalized
+        if option
+        and option.lower() not in {"desconocido", "pendiente", "no disponible", "unknown"}
+    ]
+    return bool(filtered) and all(re.fullmatch(r"\d+(?:\.\d+)?", option) for option in filtered) and any(
+        option not in {"0", "1"} for option in filtered
+    )
 
 
 def resolve_option_label(field_name: str, option, raw_options=None):
@@ -593,6 +655,8 @@ def resolve_option_label(field_name: str, option, raw_options=None):
         contextual_labels = BOOLEAN_CONTEXTUAL_OPTION_LABELS.get(field_name, BOOLEAN_OPTION_LABELS)
         if option_key in contextual_labels:
             return contextual_labels[option_key]
+    if _uses_graded_numeric_options(raw_options) and option_key not in {"", "Desconocido", "Pendiente", "No disponible", "unknown"}:
+        return f"Grado {option_key}"
     return translate_text(option)
 
 
@@ -616,13 +680,35 @@ def _humanize_field(field: dict, *, optional_research: bool = False) -> dict:
     translated["reference_range_unit"] = translate_text(translated.get("reference_range_unit", ""))
     translated["reference_range_label"] = translate_text(translated.get("reference_range_label", ""))
     raw_options = translated.get("options", [])
-    translated["display_options"] = [
-        {
-            "value": option,
-            "label": resolve_option_label(translated.get("name"), option, raw_options),
-        }
-        for option in raw_options
-    ]
+    explicit_display_options = translated.get("display_options") or []
+    display_options = []
+    source_options = explicit_display_options or raw_options
+    for option in source_options:
+        if isinstance(option, dict):
+            option_value = option.get("value")
+            option_label = option.get("label") or resolve_option_label(translated.get("name"), option_value, raw_options)
+            normalized_option = deepcopy(option)
+            normalized_option["value"] = option_value
+            normalized_option["label"] = translate_text(option_label)
+            display_options.append(normalized_option)
+            continue
+        if isinstance(option, (list, tuple)) and len(option) >= 2:
+            option_value = option[0]
+            option_label = option[1]
+            display_options.append(
+                {
+                    "value": option_value,
+                    "label": translate_text(option_label),
+                }
+            )
+            continue
+        display_options.append(
+            {
+                "value": option,
+                "label": resolve_option_label(translated.get("name"), option, raw_options),
+            }
+        )
+    translated["display_options"] = display_options
     return translated
 
 
@@ -834,3 +920,30 @@ def humanize_state_timeline(entries: list[dict]) -> list[dict]:
 
 def humanize_care_overlays(overlays: list[dict]) -> list[dict]:
     return _humanize_value(deepcopy(overlays))
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Auditoría Pacientes Insignia 2026-04-21 (§B.3) — mensaje unificado para
+# todas las emisiones de abiraterona con gate hepático (Child-Pugh B/C o
+# `child_pugh_b_or_c` boolean). Se comparte entre 6 trials: LATITUDE,
+# PEACE-1, COU-AA-301, COU-AA-302, PROpel, IPATential150.
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def abiraterone_hepatic_contraindication_note(
+    trial: str,
+    alternative: str = "enzalutamida o darolutamida",
+) -> str:
+    """Mensaje homogéneo de `not_recommended` cuando la abiraterona está
+    bloqueada por hepatopatía moderada/severa.
+
+    `trial` — identificador corto del estudio/contexto (ej. "PROpel", "LATITUDE",
+    "COU-AA-302").
+    `alternative` — ARPI(s) alternativa(s) sugerida(s); default cubre la
+    mayoría de escenarios (mHSPC y mCRPC post-ARPI naive).
+    """
+    return (
+        f"Abiraterona no recomendada en {trial} por compromiso hepático "
+        f"moderado/severo (Child-Pugh B/C o riesgo hepático documentado). "
+        f"Considerar {alternative} como ARPI alternativa y monitoreo ALT/AST."
+    )

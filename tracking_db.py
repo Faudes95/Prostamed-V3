@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import re
+from copy import deepcopy
 from datetime import datetime, timedelta, date
 import logging
 from pathlib import Path
@@ -12,7 +13,11 @@ from prostanet.domains.patient_tracking.psma_imaging import (
     build_psma_structured_profile,
     normalize_psma_imaging_payload,
 )
+from prostanet.domains.patient_tracking.closure_window_registry import enrich_window_with_registry
 from prostanet.domains.patient_tracking.therapy_catalog import normalize_regimen_code, regimen_label
+from prostanet.shared.clinical_fact_policies import certainty_rank, compute_freshness_status
+from prostanet.shared.clinical_fact_registry import extract_canonical_fact_candidates
+from prostanet.shared.converters import safe_bool
 from prostanet.shared.gleason_profile import apply_gleason_profile, normalize_gleason_profile
 from prostanet.shared.metastatic_profile import build_metastatic_profile, derive_legacy_metastasis
 
@@ -21,6 +26,30 @@ DB_PATH = os.environ.get("PROSTANET_DB_PATH", DEFAULT_DB_PATH)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+SQLITE_CONNECT_TIMEOUT_SEC = 30.0
+SQLITE_BUSY_TIMEOUT_MS = 30000
+SQLITE_WRITE_JOURNAL_MODE = "WAL"
+SQLITE_WRITE_SYNCHRONOUS = "NORMAL"
+
+
+_RUNTIME_DERIVED_RECORD_KEYS = {
+    "latest_signal_snapshot",
+    "master_followup_plan",
+    "master_followup_summary",
+    "therapeutic_readiness_bundle",
+    "advanced_followup_bundle",
+    "staging_adjudication_bundle",
+    "advanced_release_gate",
+    "care_intent_contract",
+    "decision_input_requirements",
+    "clinical_kernel_snapshot",
+    "profile_read_model",
+    "schedule_read_model",
+    "governance_read_model",
+    "window_worklist_bundle",
+    "live_benchmark",
+}
 
 
 def _document_store():
@@ -39,6 +68,15 @@ def configure_db_path(path=None):
 
 def get_db_path():
     return DB_PATH
+
+
+def _build_runtime_neutral_patient_record(record):
+    if not record:
+        return {}
+    neutral = deepcopy(record)
+    for key in _RUNTIME_DERIVED_RECORD_KEYS:
+        neutral.pop(key, None)
+    return neutral
 
 
 def _publish_clinical_event(
@@ -63,14 +101,28 @@ def _publish_clinical_event(
         pass  # Event bus is never-fail
 
 
-def _connect():
-    conn = sqlite3.connect(DB_PATH)
+def _connect(*, write=False, timeout=SQLITE_CONNECT_TIMEOUT_SEC):
+    conn = sqlite3.connect(DB_PATH, timeout=timeout)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
+    if write:
+        conn.execute(f"PRAGMA journal_mode = {SQLITE_WRITE_JOURNAL_MODE}")
+        conn.execute(f"PRAGMA synchronous = {SQLITE_WRITE_SYNCHRONOUS}")
     return conn
 
 
-def get_db_connection():
-    return _connect()
+def _close_connection_quietly(conn):
+    if conn is None:
+        return
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
+def get_db_connection(*, write=False):
+    return _connect(write=write)
 
 
 def get_full_record(nss_or_id):
@@ -101,6 +153,377 @@ def _safe_int(value, default=0):
         return int(float(value))
     except (TypeError, ValueError):
         return default
+
+
+def _row_to_dict(row, columns=None):
+    if row is None:
+        return None
+    if isinstance(row, dict):
+        return dict(row)
+    if isinstance(row, sqlite3.Row):
+        return dict(row)
+    if columns:
+        try:
+            return {column: row[idx] for idx, column in enumerate(columns)}
+        except (TypeError, IndexError):
+            pass
+    return dict(row)
+
+
+def _canonical_value_json(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _canonical_value_text(value):
+    if isinstance(value, (dict, list)):
+        return _canonical_value_json(value)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return "" if value is None else str(value)
+
+
+def _parse_iso_date(value):
+    if value in (None, "", "None"):
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text[:10], "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _fact_row_priority(row):
+    return (
+        certainty_rank(row.get("certainty_tier")),
+        _parse_iso_date(row.get("source_date")) or datetime.min,
+        _parse_iso_date(row.get("observed_at")) or datetime.min,
+        int(row.get("id") or 0),
+    )
+
+
+def _append_patient_fact_lineage_event(
+    cursor,
+    patient_id,
+    fact_key,
+    event_type,
+    *,
+    source_fact_id=None,
+    target_fact_id=None,
+    event_note="",
+    payload=None,
+):
+    cursor.execute(
+        '''
+        INSERT INTO patient_fact_lineage_events (
+            patient_id, fact_key, event_type, source_fact_id, target_fact_id, event_note, payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''',
+        (
+            patient_id,
+            fact_key,
+            event_type,
+            source_fact_id,
+            target_fact_id,
+            event_note or "",
+            _json_blob(payload or {}),
+        ),
+    )
+
+
+def _record_patient_fact_conflict(
+    cursor,
+    patient_id,
+    fact_key,
+    existing_fact,
+    candidate_fact,
+    *,
+    severity="moderate",
+    resolution_status="open",
+    resolution_reason="",
+):
+    cursor.execute(
+        '''
+        INSERT INTO patient_fact_conflicts (
+            patient_id, fact_key, existing_fact_id, candidate_fact_id, existing_value_text, candidate_value_text,
+            severity, resolution_status, resolution_reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''',
+        (
+            patient_id,
+            fact_key,
+            existing_fact.get("id"),
+            candidate_fact.get("id"),
+            existing_fact.get("normalized_value_text") or "",
+            candidate_fact.get("normalized_value_text") or "",
+            severity,
+            resolution_status,
+            resolution_reason or "",
+        ),
+    )
+
+
+def _persist_patient_clinical_facts(cursor, patient_id, fact_candidates):
+    persisted = []
+    for candidate in list(fact_candidates or []):
+        fact_key = str(candidate.get("fact_key") or "").strip()
+        if not fact_key:
+            continue
+        normalized_value_text = _canonical_value_text(candidate.get("value"))
+        value_json = _canonical_value_json(candidate.get("value"))
+        candidate_row = {
+            "patient_id": int(patient_id),
+            "fact_key": fact_key,
+            "value_json": value_json,
+            "normalized_value_text": normalized_value_text,
+            "source_type": candidate.get("source_type") or "derived",
+            "source_record_type": candidate.get("source_record_type") or "",
+            "source_record_id": candidate.get("source_record_id"),
+            "source_date": str(candidate.get("source_date") or ""),
+            "observed_at": str(candidate.get("observed_at") or candidate.get("source_date") or ""),
+            "state_context": str(candidate.get("state_context") or ""),
+            "management_track": str(candidate.get("management_track") or ""),
+            "certainty_tier": str(candidate.get("certainty_tier") or "derived"),
+            "freshness_status": str(candidate.get("freshness_status") or ""),
+            "freshness_expires_at": candidate.get("freshness_expires_at"),
+            "clinician_verified": 1 if candidate.get("clinician_verified") else 0,
+            "verification_note": str(candidate.get("verification_note") or ""),
+        }
+        if not candidate_row["freshness_status"]:
+            freshness_status, freshness_expires_at = compute_freshness_status(
+                fact_key,
+                source_date=candidate_row["source_date"],
+                observed_at=candidate_row["observed_at"],
+            )
+            candidate_row["freshness_status"] = freshness_status
+            candidate_row["freshness_expires_at"] = freshness_expires_at
+
+        cursor.execute(
+            '''
+            SELECT * FROM patient_clinical_facts
+            WHERE patient_id = ? AND fact_key = ? AND is_active = 1
+            ORDER BY updated_at DESC, id DESC
+            ''',
+            (patient_id, fact_key),
+        )
+        columns = [column[0] for column in (cursor.description or [])]
+        active_rows = [_row_to_dict(row, columns) for row in cursor.fetchall()]
+        best_existing = max(active_rows, key=_fact_row_priority) if active_rows else None
+
+        if best_existing and (
+            best_existing.get("normalized_value_text") == normalized_value_text
+            and str(best_existing.get("certainty_tier") or "") == candidate_row["certainty_tier"]
+            and str(best_existing.get("source_date") or "") == candidate_row["source_date"]
+            and str(best_existing.get("source_record_type") or "") == candidate_row["source_record_type"]
+            and str(best_existing.get("source_record_id") or "") == str(candidate_row["source_record_id"] or "")
+        ):
+            continue
+
+        incoming_priority = _fact_row_priority(candidate_row)
+        existing_priority = _fact_row_priority(best_existing) if best_existing else None
+        incoming_is_active = best_existing is None or incoming_priority >= existing_priority
+
+        cursor.execute(
+            '''
+            INSERT INTO patient_clinical_facts (
+                patient_id, fact_key, value_json, normalized_value_text, source_type, source_record_type,
+                source_record_id, source_date, observed_at, state_context, management_track, certainty_tier,
+                freshness_status, freshness_expires_at, clinician_verified, verification_note, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                patient_id,
+                fact_key,
+                value_json,
+                normalized_value_text,
+                candidate_row["source_type"],
+                candidate_row["source_record_type"],
+                candidate_row["source_record_id"],
+                candidate_row["source_date"],
+                candidate_row["observed_at"],
+                candidate_row["state_context"],
+                candidate_row["management_track"],
+                candidate_row["certainty_tier"],
+                candidate_row["freshness_status"],
+                candidate_row["freshness_expires_at"],
+                candidate_row["clinician_verified"],
+                candidate_row["verification_note"],
+                1 if incoming_is_active else 0,
+            ),
+        )
+        candidate_row["id"] = cursor.lastrowid
+        candidate_row["is_active"] = 1 if incoming_is_active else 0
+        persisted.append(candidate_row)
+        _append_patient_fact_lineage_event(
+            cursor,
+            patient_id,
+            fact_key,
+            "created" if incoming_is_active else "shadowed",
+            source_fact_id=candidate_row["id"],
+            event_note="Fact canónico persistido desde captura estructurada.",
+            payload={"source_type": candidate_row["source_type"], "source_record_type": candidate_row["source_record_type"]},
+        )
+
+        if best_existing and best_existing.get("normalized_value_text") != normalized_value_text:
+            severity = "critical" if fact_key in {
+                "metastatic_stage_resolved",
+                "known_cancer_diagnosis",
+                "castrate_testosterone_status",
+                "gleason_primary",
+                "gleason_secondary",
+                "isup_grade",
+            } else "moderate"
+            _record_patient_fact_conflict(
+                cursor,
+                patient_id,
+                fact_key,
+                best_existing,
+                candidate_row,
+                severity=severity,
+                resolution_status="resolved" if incoming_is_active else "open",
+                resolution_reason="Incoming fact superseded active fact." if incoming_is_active else "Incoming fact quedó en shadow hasta conciliación clínica.",
+            )
+            _append_patient_fact_lineage_event(
+                cursor,
+                patient_id,
+                fact_key,
+                "conflict_detected",
+                source_fact_id=best_existing.get("id"),
+                target_fact_id=candidate_row["id"],
+                event_note="Se detectó colisión entre dos versiones activas del mismo hecho.",
+                payload={"existing_value": best_existing.get("normalized_value_text"), "candidate_value": normalized_value_text},
+            )
+
+        if incoming_is_active and active_rows:
+            for existing in active_rows:
+                if existing.get("id") == candidate_row["id"]:
+                    continue
+                cursor.execute(
+                    '''
+                    UPDATE patient_clinical_facts
+                    SET is_active = 0, superseded_by_fact_id = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    ''',
+                    (candidate_row["id"], existing.get("id")),
+                )
+                _append_patient_fact_lineage_event(
+                    cursor,
+                    patient_id,
+                    fact_key,
+                    "superseded",
+                    source_fact_id=existing.get("id"),
+                    target_fact_id=candidate_row["id"],
+                    event_note="El nuevo fact canónico desplazó la versión previa.",
+                )
+    return persisted
+
+
+def _persist_canonical_facts_from_payload(
+    cursor,
+    patient_id,
+    payload,
+    *,
+    source_type,
+    source_record_type,
+    source_record_id=None,
+    source_date="",
+    observed_at="",
+    state_context="",
+    management_track="",
+    certainty_tier="wizard_or_intake",
+    clinician_verified=False,
+    verification_note="",
+):
+    fact_candidates = extract_canonical_fact_candidates(
+        payload,
+        source_type=source_type,
+        source_record_type=source_record_type,
+        source_record_id=source_record_id,
+        source_date=source_date,
+        observed_at=observed_at,
+        state_context=state_context,
+        management_track=management_track,
+        certainty_tier=certainty_tier,
+        clinician_verified=clinician_verified,
+        verification_note=verification_note,
+    )
+    return _persist_patient_clinical_facts(cursor, patient_id, fact_candidates)
+
+
+def _persist_verified_document_facts_to_canonical(
+    cursor,
+    patient_id,
+    document_id,
+    facts,
+    *,
+    state_context="",
+    management_track="",
+    verified_by="clinico",
+):
+    payload = {}
+    source_date = ""
+    for item in list(facts or []):
+        fact_key = str(item.get("fact_key") or "").strip()
+        field_name = str(item.get("field_name") or "").strip()
+        payload[fact_key] = item.get("value")
+        if field_name:
+            payload[field_name] = item.get("value")
+        if not source_date:
+            source_date = str(item.get("source_date") or "")
+    return _persist_canonical_facts_from_payload(
+        cursor,
+        patient_id,
+        payload,
+        source_type="source_document",
+        source_record_type="verified_document",
+        source_record_id=document_id,
+        source_date=source_date,
+        observed_at=source_date,
+        state_context=state_context,
+        management_track=management_track,
+        certainty_tier="document_verified",
+        clinician_verified=True,
+        verification_note=f"Documento verificado por {verified_by}",
+    )
+
+
+def get_patient_clinical_facts(patient_id, *, active_only=True):
+    conn = _connect()
+    cursor = conn.cursor()
+    query = "SELECT * FROM patient_clinical_facts WHERE patient_id = ?"
+    params = [int(patient_id)]
+    if active_only:
+        query += " AND is_active = 1"
+    query += " ORDER BY fact_key ASC, updated_at DESC, id DESC"
+    cursor.execute(query, params)
+    rows = []
+    for row in cursor.fetchall():
+        item = dict(row)
+        item["value"] = _parse_json_blob(item.get("value_json"), None)
+        item["clinician_verified"] = bool(item.get("clinician_verified"))
+        item["is_active"] = bool(item.get("is_active"))
+        rows.append(item)
+    conn.close()
+    return rows
+
+
+def get_patient_fact_conflicts(patient_id, *, unresolved_only=False):
+    conn = _connect()
+    cursor = conn.cursor()
+    query = "SELECT * FROM patient_fact_conflicts WHERE patient_id = ?"
+    params = [int(patient_id)]
+    if unresolved_only:
+        query += " AND COALESCE(resolution_status, 'open') NOT IN ('resolved', 'dismissed')"
+    query += " ORDER BY updated_at DESC, created_at DESC, id DESC"
+    cursor.execute(query, params)
+    rows = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return rows
 
 
 def patient_exists(patient_id):
@@ -158,29 +581,41 @@ def delete_patient_profile(nss_or_id):
     nss = str(identity["nss"] or "").strip()
     full_name = str(identity["full_name"] or "").strip()
 
-    cursor.execute("SELECT id FROM source_documents WHERE patient_id = ?", (patient_id,))
-    document_ids = [int(row["id"]) for row in cursor.fetchall()]
-    if document_ids:
-        placeholders = ",".join(["?"] * len(document_ids))
-        cursor.execute(f"DELETE FROM document_extraction_candidates WHERE document_id IN ({placeholders})", document_ids)
-        cursor.execute(f"DELETE FROM document_verification_tasks WHERE document_id IN ({placeholders})", document_ids)
-        cursor.execute(f"DELETE FROM verified_document_facts WHERE document_id IN ({placeholders})", document_ids)
+    # Auditoría #21 (cierre OOS-7): la eliminación de un paciente recorre todas las
+    # tablas con columna `patient_id` en orden alfabético, pero algunas tablas
+    # hijas (p. ej. `document_extraction_candidates → source_documents`) tienen
+    # claves foráneas a filas específicas, no al paciente. Desactivar las FK
+    # durante el borrado es el patrón canónico de SQLite para cascadas
+    # multi-tabla sin declarar ON DELETE CASCADE en cada esquema. Se reactiva
+    # antes de cerrar la conexión para preservar invariantes de futuras
+    # operaciones en el mismo pool.
+    cursor.execute("PRAGMA foreign_keys = OFF")
+    try:
+        cursor.execute("SELECT id FROM source_documents WHERE patient_id = ?", (patient_id,))
+        document_ids = [int(row["id"]) for row in cursor.fetchall()]
+        if document_ids:
+            placeholders = ",".join(["?"] * len(document_ids))
+            cursor.execute(f"DELETE FROM document_extraction_candidates WHERE document_id IN ({placeholders})", document_ids)
+            cursor.execute(f"DELETE FROM document_verification_tasks WHERE document_id IN ({placeholders})", document_ids)
+            cursor.execute(f"DELETE FROM verified_document_facts WHERE document_id IN ({placeholders})", document_ids)
 
-    table_names = [
-        row["name"]
-        for row in cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-        ).fetchall()
-    ]
-    for table_name in table_names:
-        if table_name == "patient_identity":
-            continue
-        columns = [column["name"] for column in cursor.execute(f"PRAGMA table_info({table_name})").fetchall()]
-        if "patient_id" in columns:
-            cursor.execute(f"DELETE FROM {table_name} WHERE patient_id = ?", (patient_id,))
+        table_names = [
+            row["name"]
+            for row in cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            ).fetchall()
+        ]
+        for table_name in table_names:
+            if table_name == "patient_identity":
+                continue
+            columns = [column["name"] for column in cursor.execute(f"PRAGMA table_info({table_name})").fetchall()]
+            if "patient_id" in columns:
+                cursor.execute(f"DELETE FROM {table_name} WHERE patient_id = ?", (patient_id,))
 
-    cursor.execute("DELETE FROM patient_identity WHERE id = ?", (patient_id,))
-    conn.commit()
+        cursor.execute("DELETE FROM patient_identity WHERE id = ?", (patient_id,))
+        conn.commit()
+    finally:
+        cursor.execute("PRAGMA foreign_keys = ON")
     conn.close()
 
     patient_dir = _document_store().root / f"patient_{patient_id}"
@@ -535,6 +970,7 @@ def _hydrate_biomarker_rows(rows):
         item["entry_origin"] = metadata.get("entry_origin") or ""
         item["assay_type"] = metadata.get("assay_type") or ""
         item["context"] = metadata.get("context") or ""
+        item["unit"] = item.get("unit") or metadata.get("unit") or ""
         item["line_of_therapy_number"] = metadata.get("line_of_therapy_number")
         item["line_of_therapy_context"] = metadata.get("line_of_therapy_context") or ""
         hydrated.append(item)
@@ -584,6 +1020,57 @@ def _derive_psa_series(biomarker_rows, follow_ups, baseline, identity):
     baseline_psa = (baseline or {}).get("baseline_psa")
     if _is_present(diagnosis_date) and baseline_psa is not None:
         return [{"sample_date": diagnosis_date, "value": baseline_psa}]
+    return []
+
+
+def _derive_testosterone_series(biomarker_rows, follow_ups, baseline, identity):
+    testosterone_rows = [
+        row
+        for row in biomarker_rows
+        if str(row.get("biomarker_type", "")).upper() == "TESTOSTERONA"
+    ]
+    if testosterone_rows:
+        return [
+            {
+                "sample_date": row.get("sample_date"),
+                "value": row.get("value"),
+                "source": row.get("source"),
+                "entry_origin": row.get("entry_origin"),
+                "context": row.get("context"),
+                "unit": row.get("unit") or "ng/dL",
+                "line_of_therapy_number": row.get("line_of_therapy_number"),
+                "line_of_therapy_context": row.get("line_of_therapy_context"),
+            }
+            for row in testosterone_rows
+            if _is_present(row.get("sample_date")) and row.get("value") is not None
+        ]
+    followup_points = [
+        {
+            "sample_date": visit.get("visit_date"),
+            "value": visit.get("testosterone_current"),
+            "source": "seguimiento_clinico",
+            "entry_origin": "follow_up_visit",
+            "context": str(visit.get("management_track") or visit.get("state_at_visit") or "seguimiento"),
+            "unit": "ng/dL",
+        }
+        for visit in follow_ups
+        if _is_present(visit.get("visit_date")) and visit.get("testosterone_current") is not None
+    ]
+    if followup_points:
+        return followup_points
+    diagnosis_date = (identity or {}).get("diagnosis_date")
+    baseline_testosterone = (baseline or {}).get("testosterone_baseline")
+    if _is_present(diagnosis_date) and baseline_testosterone is not None:
+        return [
+            {
+                "sample_date": diagnosis_date,
+                "value": baseline_testosterone,
+                "source": "baseline",
+                "entry_origin": "baseline",
+                "context": "baseline",
+                "unit": "ng/dL",
+            }
+        ]
     return []
 
 
@@ -734,6 +1221,38 @@ def _hydrate_treatment_adverse_event_rows(rows):
         item = dict(row)
         item["hospitalization"] = bool(item.get("hospitalization"))
         item["dose_modification_triggered"] = bool(item.get("dose_modification_triggered"))
+        events.append(item)
+    return events
+
+
+def _hydrate_therapeutic_window_event_rows(rows):
+    events = []
+    for row in rows:
+        item = dict(row)
+        item["evidence_used"] = _parse_json_blob(item.pop("evidence_used_json", None), {})
+        item["required_fact_keys"] = _parse_json_blob(item.pop("required_fact_keys_json", None), [])
+        item["missing_fact_keys"] = _parse_json_blob(item.pop("missing_fact_keys_json", None), [])
+        item["opportunity_lost"] = bool(item.get("opportunity_lost"))
+        events.append(item)
+    return events
+
+
+def _hydrate_patient_clinical_fact_rows(rows):
+    facts = []
+    for row in rows:
+        item = dict(row)
+        item["value"] = _parse_json_blob(item.get("value_json"), None)
+        item["clinician_verified"] = bool(item.get("clinician_verified"))
+        item["is_active"] = bool(item.get("is_active"))
+        facts.append(item)
+    return facts
+
+
+def _hydrate_patient_fact_lineage_rows(rows):
+    events = []
+    for row in rows:
+        item = dict(row)
+        item["payload"] = _parse_json_blob(item.pop("payload_json", None), {})
         events.append(item)
     return events
 
@@ -1660,7 +2179,7 @@ def _save_radiotherapy_course_detailed(cursor, patient_id, data, *, source_type=
     return course_id
 
 def init_tracking_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect(write=True)
     c = conn.cursor()
 
     c.execute(
@@ -1827,8 +2346,11 @@ def init_tracking_db():
         "ALTER TABLE follow_up_visits ADD COLUMN fatigue_score INTEGER",
         "ALTER TABLE follow_up_visits ADD COLUMN mini_cog_score INTEGER",
         "ALTER TABLE follow_up_visits ADD COLUMN weight_kg REAL",
+        "ALTER TABLE follow_up_visits ADD COLUMN height_cm REAL",
         "ALTER TABLE follow_up_visits ADD COLUMN bmi_current REAL",
+        "ALTER TABLE follow_up_visits ADD COLUMN weight_loss_6m_kg REAL",
         "ALTER TABLE follow_up_visits ADD COLUMN weight_loss_6m_pct REAL",
+        "ALTER TABLE follow_up_visits ADD COLUMN prior_weight_6m_kg REAL",
         "ALTER TABLE follow_up_visits ADD COLUMN exercise_status TEXT",
         "ALTER TABLE follow_up_visits ADD COLUMN nutrition_status TEXT",
         "ALTER TABLE follow_up_visits ADD COLUMN protein_supplements INTEGER",
@@ -3041,6 +3563,42 @@ def init_tracking_db():
 
     c.execute(
         '''
+        CREATE TABLE IF NOT EXISTS therapeutic_window_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL,
+            window_key TEXT NOT NULL,
+            window_opened_at TIMESTAMP,
+            window_status TEXT,
+            window_closed_at TIMESTAMP,
+            closure_type TEXT,
+            closure_reason TEXT,
+            evidence_used_json TEXT,
+            closed_by TEXT,
+            opportunity_lost INTEGER DEFAULT 0,
+            opportunity_loss_reason TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(patient_id) REFERENCES patient_identity(id)
+        )
+        '''
+    )
+    for ddl in (
+        "ALTER TABLE therapeutic_window_events ADD COLUMN decision_domain_blocked TEXT",
+        "ALTER TABLE therapeutic_window_events ADD COLUMN required_fact_keys_json TEXT",
+        "ALTER TABLE therapeutic_window_events ADD COLUMN missing_fact_keys_json TEXT",
+        "ALTER TABLE therapeutic_window_events ADD COLUMN owner_role TEXT",
+        "ALTER TABLE therapeutic_window_events ADD COLUMN sla_days INTEGER DEFAULT 0",
+        "ALTER TABLE therapeutic_window_events ADD COLUMN clinical_consequence_if_delayed TEXT",
+        "ALTER TABLE therapeutic_window_events ADD COLUMN target_state_if_closed TEXT",
+        "ALTER TABLE therapeutic_window_events ADD COLUMN redirect_state_if_negative TEXT",
+    ):
+        try:
+            c.execute(ddl)
+        except sqlite3.OperationalError:
+            pass
+
+    c.execute(
+        '''
         CREATE TABLE IF NOT EXISTS treatment_adverse_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             patient_id INTEGER NOT NULL,
@@ -3159,6 +3717,77 @@ def init_tracking_db():
             FOREIGN KEY(patient_id) REFERENCES patient_identity(id),
             FOREIGN KEY(document_id) REFERENCES source_documents(id),
             FOREIGN KEY(task_id) REFERENCES document_verification_tasks(id)
+        )
+        '''
+    )
+
+    c.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS patient_clinical_facts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL,
+            fact_key TEXT NOT NULL,
+            value_json TEXT,
+            normalized_value_text TEXT,
+            source_type TEXT,
+            source_record_type TEXT,
+            source_record_id INTEGER,
+            source_date DATE,
+            observed_at DATE,
+            state_context TEXT,
+            management_track TEXT,
+            certainty_tier TEXT,
+            freshness_status TEXT,
+            freshness_expires_at DATE,
+            clinician_verified INTEGER DEFAULT 0,
+            verification_note TEXT,
+            superseded_by_fact_id INTEGER,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(patient_id) REFERENCES patient_identity(id),
+            FOREIGN KEY(superseded_by_fact_id) REFERENCES patient_clinical_facts(id)
+        )
+        '''
+    )
+    c.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS patient_fact_lineage_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL,
+            fact_key TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            source_fact_id INTEGER,
+            target_fact_id INTEGER,
+            event_note TEXT,
+            payload_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(patient_id) REFERENCES patient_identity(id),
+            FOREIGN KEY(source_fact_id) REFERENCES patient_clinical_facts(id),
+            FOREIGN KEY(target_fact_id) REFERENCES patient_clinical_facts(id)
+        )
+        '''
+    )
+    c.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS patient_fact_conflicts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL,
+            fact_key TEXT NOT NULL,
+            existing_fact_id INTEGER,
+            candidate_fact_id INTEGER,
+            existing_value_text TEXT,
+            candidate_value_text TEXT,
+            severity TEXT DEFAULT 'moderate',
+            resolution_status TEXT DEFAULT 'open',
+            resolution_reason TEXT,
+            resolved_by TEXT,
+            resolved_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(patient_id) REFERENCES patient_identity(id),
+            FOREIGN KEY(existing_fact_id) REFERENCES patient_clinical_facts(id),
+            FOREIGN KEY(candidate_fact_id) REFERENCES patient_clinical_facts(id)
         )
         '''
     )
@@ -3413,8 +4042,11 @@ def init_tracking_db():
         "ALTER TABLE patient_demographics ADD COLUMN mini_cog_score INTEGER",
         "ALTER TABLE patient_demographics ADD COLUMN fatigue_score INTEGER",
         "ALTER TABLE patient_demographics ADD COLUMN weight_kg REAL",
+        "ALTER TABLE patient_demographics ADD COLUMN height_cm REAL",
         "ALTER TABLE patient_demographics ADD COLUMN bmi_current REAL",
+        "ALTER TABLE patient_demographics ADD COLUMN weight_loss_6m_kg REAL",
         "ALTER TABLE patient_demographics ADD COLUMN weight_loss_6m_pct REAL",
+        "ALTER TABLE patient_demographics ADD COLUMN prior_weight_6m_kg REAL",
         "ALTER TABLE patient_demographics ADD COLUMN low_activity INTEGER",
         "ALTER TABLE patient_demographics ADD COLUMN slow_gait INTEGER",
         "ALTER TABLE patient_demographics ADD COLUMN weak_grip INTEGER",
@@ -4308,8 +4940,9 @@ def _backfill_normalized_tracking_domains():
 
 
 def create_clinical_assessment_draft(module_id, state, input_snapshot, result_snapshot, guideline_versions):
+    conn = None
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _connect(write=True)
         c = conn.cursor()
         c.execute(
             '''
@@ -4328,11 +4961,12 @@ def create_clinical_assessment_draft(module_id, state, input_snapshot, result_sn
         )
         assessment_id = c.lastrowid
         conn.commit()
-        conn.close()
         return assessment_id
     except Exception as e:
         logger.error(f"Error creating clinical assessment draft: {e}")
         return None
+    finally:
+        _close_connection_quietly(conn)
 
 
 def get_clinical_assessment(assessment_id):
@@ -4356,6 +4990,7 @@ def get_clinical_assessment(assessment_id):
 
 
 def attach_clinical_assessment_to_patient(assessment_id, patient_id):
+    conn = None
     try:
         assessment = get_clinical_assessment(assessment_id)
         if not assessment:
@@ -4372,7 +5007,7 @@ def attach_clinical_assessment_to_patient(assessment_id, patient_id):
         management_intent_status = derive_management_intent_status(assessment.get("state"), assessment.get("result_snapshot", {}), record)
         event_kind = derive_timeline_event_kind(assessment.get("state"), assessment.get("result_snapshot", {}), record)
 
-        conn = sqlite3.connect(DB_PATH)
+        conn = _connect(write=True)
         c = conn.cursor()
         _ensure_prior_history_row(c, patient_id)
         c.execute(
@@ -4436,11 +5071,12 @@ def attach_clinical_assessment_to_patient(assessment_id, patient_id):
             },
         )
         conn.commit()
-        conn.close()
         return True, "Evaluación clínica vinculada"
     except Exception as e:
         logger.error(f"Error attaching clinical assessment: {e}")
         return False, str(e)
+    finally:
+        _close_connection_quietly(conn)
 
 
 def _fetch_latest_clinical_assessment(cursor, patient_id):
@@ -4878,11 +5514,34 @@ def _build_pro_payload(data):
         data,
         [
             "ipss_score",
+            "ipss_total",
             "iief5_score",
+            "bpi_worst_pain",
+            "bpi_average_pain",
+            "bpi_interference",
             "baseline_qol",
+            "eq5d_vas",
+            "fact_p_total",
+            "facit_fatigue_total",
             "baseline_urinary_qol",
             "baseline_sexual_qol",
             "baseline_bowel_qol",
+            "epic26_urinary_domain",
+            "epic26_sexual_domain",
+            "epic26_bowel_domain",
+            "epic26_hormonal_domain",
+            "eortc_qlq_c30_global_health",
+            "eortc_qlq_c30_physical",
+            "eortc_qlq_c30_role",
+            "eortc_qlq_c30_emotional",
+            "eortc_qlq_c30_fatigue",
+            "eortc_qlq_c30_pain",
+            "anxiety_score",
+            "g8_total",
+            "continence_status",
+            "time_to_continence_months",
+            "sexual_recovery_status",
+            "time_to_erection_months",
         ],
     ):
         return None
@@ -4895,9 +5554,30 @@ def _build_pro_payload(data):
         notes.append(f"Función intestinal basal 0-100: {data.get('baseline_bowel_qol')}")
     return {
         "date": datetime.now().strftime("%Y-%m-%d"),
-        "ipss_total": _safe_int(data.get("ipss_score"), None),
+        "ipss_total": _safe_int(_first_nonempty(data.get("ipss_total"), data.get("ipss_score")), None),
         "iief5_score": _safe_int(data.get("iief5_score"), None),
-        "eq5d_vas": _safe_int(data.get("baseline_qol"), None),
+        "bpi_worst_pain": _safe_int(data.get("bpi_worst_pain"), None),
+        "bpi_average_pain": _safe_int(data.get("bpi_average_pain"), None),
+        "bpi_interference": _safe_int(data.get("bpi_interference"), None),
+        "eq5d_vas": _safe_int(_first_nonempty(data.get("eq5d_vas"), data.get("baseline_qol")), None),
+        "fact_p_total": _safe_float(data.get("fact_p_total"), None),
+        "facit_fatigue_total": _safe_float(data.get("facit_fatigue_total"), None),
+        "g8_total": _safe_int(data.get("g8_total"), None),
+        "continence_status": data.get("continence_status"),
+        "time_to_continence_months": _safe_int(data.get("time_to_continence_months"), None),
+        "sexual_recovery_status": data.get("sexual_recovery_status"),
+        "time_to_erection_months": _safe_int(data.get("time_to_erection_months"), None),
+        "epic26_urinary_domain": _safe_float(_first_nonempty(data.get("epic26_urinary_domain"), data.get("baseline_urinary_qol")), None),
+        "epic26_sexual_domain": _safe_float(_first_nonempty(data.get("epic26_sexual_domain"), data.get("baseline_sexual_qol")), None),
+        "epic26_bowel_domain": _safe_float(_first_nonempty(data.get("epic26_bowel_domain"), data.get("baseline_bowel_qol")), None),
+        "epic26_hormonal_domain": _safe_float(data.get("epic26_hormonal_domain"), None),
+        "eortc_qlq_c30_global_health": _safe_float(data.get("eortc_qlq_c30_global_health"), None),
+        "eortc_qlq_c30_physical": _safe_float(data.get("eortc_qlq_c30_physical"), None),
+        "eortc_qlq_c30_role": _safe_float(data.get("eortc_qlq_c30_role"), None),
+        "eortc_qlq_c30_emotional": _safe_float(data.get("eortc_qlq_c30_emotional"), None),
+        "eortc_qlq_c30_fatigue": _safe_float(data.get("eortc_qlq_c30_fatigue"), None),
+        "eortc_qlq_c30_pain": _safe_float(data.get("eortc_qlq_c30_pain"), None),
+        "anxiety_score": _safe_float(data.get("anxiety_score"), None),
         "clinician_notes": " | ".join(notes) if notes else None,
     }
 
@@ -5044,6 +5724,62 @@ def _normalize_psa_history_points(
     return normalized_history
 
 
+def _normalize_testosterone_history_points(
+    raw_history,
+    *,
+    default_source="ingreso_inicial",
+    default_entry_origin="intake_registration",
+    default_sample_date="",
+    default_context="otro",
+    default_line_of_therapy_number=None,
+    default_line_of_therapy_context="",
+    default_unit="ng/dL",
+):
+    if isinstance(raw_history, str):
+        try:
+            raw_history = json.loads(raw_history)
+        except json.JSONDecodeError:
+            raw_history = []
+    if not isinstance(raw_history, list):
+        return []
+    normalized_history = []
+    for item in raw_history:
+        if not isinstance(item, dict):
+            continue
+        sample_date = str(item.get("sample_date") or "")[:10]
+        try:
+            datetime.strptime(sample_date, "%Y-%m-%d")
+        except (TypeError, ValueError):
+            sample_date = str(default_sample_date or "")[:10]
+            try:
+                datetime.strptime(sample_date, "%Y-%m-%d")
+            except (TypeError, ValueError):
+                continue
+        testosterone_value = _safe_float(
+            item.get("testosterone_value", item.get("value", item.get("testosterone"))),
+            None,
+        )
+        if testosterone_value is None:
+            continue
+        context = str(item.get("context") or default_context or "otro").strip().lower()
+        source = str(item.get("source") or item.get("lab_source") or default_source).strip()
+        unit = str(item.get("unit") or default_unit or "ng/dL").strip() or "ng/dL"
+        normalized_history.append(
+            {
+                "sample_date": sample_date,
+                "testosterone_value": testosterone_value,
+                "unit": unit,
+                "context": context or "otro",
+                "source": source or default_source,
+                "entry_origin": str(item.get("entry_origin") or default_entry_origin or "").strip() or default_entry_origin,
+                "line_of_therapy_number": _safe_int(item.get("line_of_therapy_number", default_line_of_therapy_number), None),
+                "line_of_therapy_context": str(item.get("line_of_therapy_context") or default_line_of_therapy_context or "").strip(),
+            }
+        )
+    normalized_history.sort(key=lambda item: (item["sample_date"], item["testosterone_value"]))
+    return normalized_history
+
+
 def _parse_intake_psa_history(data):
     raw_history = data.get("psa_history")
     if raw_history in (None, "", []):
@@ -5056,12 +5792,29 @@ def _parse_intake_psa_history(data):
     )
 
 
+def _parse_intake_testosterone_history(data):
+    return _normalize_testosterone_history_points(
+        data.get("testosterone_history"),
+        default_source="ingreso_inicial",
+        default_entry_origin="intake_registration",
+        default_context="otro",
+    )
+
+
 def _preferred_psa_longitudinal_value(data):
+    """LXC.1 fix B1: incluye baseline_psa como fallback para auto-persist al register.
+
+    PSA es el marcador por excelencia. Si el clínico captura solo `baseline_psa` en
+    intake (sin psa_history array), debe persistirse igualmente a biomarker_longitudinal
+    para que la torre de vigilancia lo refleje desde DB (no solo via auto-seed virtual).
+    """
     value = _safe_float(
         _first_nonempty(
             data.get("psa_current"),
             data.get("psa_postop"),
             data.get("psa"),
+            data.get("baseline_psa"),  # LXC.1 fix B1
+            data.get("psa_baseline_ng_ml"),  # alias del intake-wizard quick classify
         ),
         None,
     )
@@ -5071,7 +5824,29 @@ def _preferred_psa_longitudinal_value(data):
         return value, "psa_current"
     if _is_present(data.get("psa_postop")):
         return value, "psa_postop"
-    return value, "psa"
+    if _is_present(data.get("psa")):
+        return value, "psa"
+    if _is_present(data.get("baseline_psa")):
+        return value, "baseline_psa"
+    return value, "psa_baseline_ng_ml"
+
+
+def _preferred_testosterone_longitudinal_value(data):
+    value = _safe_float(
+        _first_nonempty(
+            data.get("testosterone_current"),
+            data.get("testosterone"),
+            data.get("testosterone_baseline"),
+        ),
+        None,
+    )
+    if value is None:
+        return None, ""
+    if _is_present(data.get("testosterone_current")):
+        return value, "testosterone_current"
+    if _is_present(data.get("testosterone")):
+        return value, "testosterone"
+    return value, "testosterone_baseline"
 
 
 def _preferred_psa_longitudinal_points(
@@ -5106,6 +5881,296 @@ def _preferred_psa_longitudinal_points(
         default_line_of_therapy_number=_safe_int(data.get("line_of_therapy_number"), None),
         default_line_of_therapy_context=str(data.get("line_of_therapy_context") or "").strip(),
     )
+
+
+# Faubot LXXVII #67E — Public append-only API for v2 longitudinal capture.
+# Estas funciones son thin wrappers sobre _persist_*_series_points existentes
+# que aceptan NSS (no patient_id) y devuelven {success, appended_id, source}
+# o {success:false, error:"duplicate", existing_id} si la fecha+valor existe.
+
+def append_biomarker_longitudinal(nss_or_id, biomarker_type, sample_date,
+                                   value, unit=None, context=None,
+                                   assay=None, source="longitudinal_v2",
+                                   extra_data=None):
+    """Append-only insert a biomarker_longitudinal con check anti-duplicación.
+
+    Args:
+        nss_or_id: NSS o patient_id (resuelto vía _resolve_identity_row)
+        biomarker_type: PSA / TESTOSTERONA / HEMOGLOBINA / ALP / LDH / etc.
+        sample_date: ISO date string
+        value: numeric
+        unit: opcional
+        context: opcional (clinical_context)
+        assay: opcional
+        source: opcional (default longitudinal_v2)
+        extra_data: payload estructurado adicional preservado en lab_source
+
+    Returns:
+        {success, appended_id, source} o {success:false, error, existing_id}
+    """
+    import json as _json
+    biomarker_upper = (biomarker_type or "").upper().strip()
+    if not biomarker_upper:
+        return {"success": False, "error": "missing_biomarker_type"}
+    if not sample_date:
+        return {"success": False, "error": "missing_sample_date"}
+    if value is None:
+        return {"success": False, "error": "missing_value"}
+
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return {"success": False, "error": "patient_not_found", "nss": nss_or_id}
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+
+        # Anti-duplicación: misma fecha + biomarker → 409
+        cursor.execute(
+            """
+            SELECT id FROM biomarker_longitudinal
+            WHERE patient_id = ? AND biomarker_type = ? AND sample_date = ?
+            LIMIT 1
+            """,
+            (patient_id, biomarker_upper, sample_date),
+        )
+        existing = cursor.fetchone()
+        if existing:
+            existing_id = existing["id"] if hasattr(existing, "__getitem__") else existing[0]
+            return {"success": False, "error": "duplicate", "existing_id": existing_id}
+
+        extra_payload = extra_data if isinstance(extra_data, dict) else {}
+        lab_source_blob = _json_blob({
+            "context": context or "longitudinal_append",
+            "assay_type": assay or "no_especificado",
+            "source": source,
+            "captured_via": "v2_longitudinal_capture_api",
+            "line_of_therapy_number": extra_payload.get("line_of_therapy_number"),
+            "line_of_therapy_context": extra_payload.get("line_of_therapy_context"),
+            "drug_scheme": extra_payload.get("drug_scheme"),
+            "extra_data": extra_payload,
+        })
+        cursor.execute(
+            """
+            INSERT INTO biomarker_longitudinal
+            (patient_id, biomarker_type, value, unit, sample_date, lab_source)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (patient_id, biomarker_upper, value, unit, sample_date, lab_source_blob),
+        )
+        conn.commit()
+        return {"success": True, "appended_id": cursor.lastrowid,
+                "source": source, "biomarker_type": biomarker_upper}
+    finally:
+        conn.close()
+
+
+def append_treatment_line_update(nss_or_id, payload):
+    """Persist a longitudinal treatment-line change from the v2 append UI.
+
+    This is the public write path for `kind=treatment_change`. It writes to
+    `treatment_history`, closes the previous active systemic line when a new
+    line starts, and emits a patient event so the PSA tower can bind PSA
+    kinetics to ADT alone, doublet, triplet, or later-line therapy bands.
+    """
+    data = dict(payload or {})
+    line_number = _safe_int(
+        data.get("line_of_therapy_number")
+        or data.get("line_of_therapy")
+        or data.get("tx_line"),
+        None,
+    )
+    line_context = str(
+        data.get("line_of_therapy_context")
+        or data.get("tx_context")
+        or data.get("context")
+        or ""
+    ).strip()
+    scheme = normalize_regimen_code(
+        data.get("drug_scheme")
+        or data.get("regimen_code")
+        or data.get("tx_regimen")
+        or data.get("current_treatment")
+    )
+    start_date = str(data.get("start_date") or data.get("tx_start") or data.get("date") or "")[:10]
+    end_date = str(data.get("end_date") or data.get("tx_end") or "")[:10]
+
+    if line_number is None:
+        return {"success": False, "error": "missing_line_of_therapy_number"}
+    if not _is_present(scheme):
+        return {"success": False, "error": "missing_drug_scheme"}
+    if not start_date:
+        return {"success": False, "error": "missing_start_date"}
+    try:
+        datetime.strptime(start_date, "%Y-%m-%d")
+    except ValueError:
+        return {"success": False, "error": "invalid_start_date"}
+    if end_date:
+        try:
+            datetime.strptime(end_date, "%Y-%m-%d")
+        except ValueError:
+            return {"success": False, "error": "invalid_end_date"}
+        if end_date < start_date:
+            return {"success": False, "error": "end_date_before_start_date"}
+
+    raw_outcome = str(data.get("outcome") or data.get("tx_status") or data.get("status") or "").strip()
+    raw_outcome_lower = raw_outcome.lower()
+    if any(token in raw_outcome_lower for token in ("progres", "progress")):
+        outcome = "Progression"
+    elif any(token in raw_outcome_lower for token in ("toxic", "toxicidad")):
+        outcome = "Toxicity"
+    elif any(token in raw_outcome_lower for token in ("discontinu", "paciente")):
+        outcome = "Discontinued"
+    elif any(token in raw_outcome_lower for token in ("complet", "completed")):
+        outcome = "Completed"
+    elif end_date:
+        outcome = "Completed"
+    else:
+        outcome = "Ongoing"
+
+    try:
+        from prostanet.domains.patient_tracking.psa_line_monitor import _classify_line_type
+
+        line_type = _classify_line_type(scheme)
+    except Exception:
+        line_type = {"category": "", "label": "", "components_count": None}
+
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return {"success": False, "error": "patient_not_found", "nss": nss_or_id}
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+
+        cursor.execute(
+            """
+            SELECT id FROM treatment_history
+            WHERE patient_id = ?
+              AND line_of_therapy = ?
+              AND drug_scheme = ?
+              AND start_date = ?
+            LIMIT 1
+            """,
+            (patient_id, line_number, scheme, start_date),
+        )
+        existing = cursor.fetchone()
+        if existing:
+            existing_id = existing["id"] if hasattr(existing, "__getitem__") else existing[0]
+            return {"success": False, "error": "duplicate", "existing_id": existing_id}
+
+        cursor.execute(
+            """
+            SELECT id, line_of_therapy, line_of_therapy_context, drug_scheme, start_date, outcome
+            FROM treatment_history
+            WHERE patient_id = ?
+            ORDER BY start_date DESC, id DESC
+            LIMIT 1
+            """,
+            (patient_id,),
+        )
+        latest = cursor.fetchone()
+        previous = dict(latest) if latest else {}
+        previous_is_active = str(previous.get("outcome") or "").lower() in {"", "ongoing", "activo"}
+        previous_same_line = (
+            previous
+            and _safe_int(previous.get("line_of_therapy"), None) == line_number
+            and normalize_regimen_code(previous.get("drug_scheme")) == scheme
+            and (not line_context or line_context == str(previous.get("line_of_therapy_context") or ""))
+        )
+        if latest and previous_is_active and not previous_same_line:
+            cursor.execute(
+                """
+                UPDATE treatment_history
+                SET end_date = COALESCE(end_date, ?),
+                    outcome = CASE
+                        WHEN outcome IS NULL OR outcome = '' OR lower(outcome) IN ('ongoing', 'activo')
+                        THEN 'Changed'
+                        ELSE outcome
+                    END
+                WHERE id = ?
+                """,
+                (start_date, previous.get("id")),
+            )
+
+        regimen_payload = {
+            "line_of_therapy_number": line_number,
+            "line_of_therapy_context": line_context,
+            "drug_scheme": scheme,
+            "drug_scheme_label": regimen_label(scheme),
+            "current_treatment": regimen_label(scheme),
+            "current_adt_context": data.get("current_adt_context"),
+            "castrate_testosterone_status": data.get("castrate_testosterone_status"),
+            "line_type": line_type.get("category"),
+            "line_type_label": line_type.get("label"),
+            "components_count": line_type.get("components_count"),
+            "captured_via": "longitudinal_v2_treatment_change",
+            "reason_for_change": data.get("reason_for_change") or data.get("tx_reason"),
+        }
+        cursor.execute(
+            """
+            INSERT INTO treatment_history (
+                patient_id, line_of_therapy, line_of_therapy_context, drug_scheme,
+                start_date, end_date, outcome, regimen_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                patient_id,
+                line_number,
+                line_context,
+                scheme,
+                start_date,
+                end_date or None,
+                outcome,
+                _json_blob({k: v for k, v in regimen_payload.items() if _is_present(v)}),
+            ),
+        )
+        inserted_id = cursor.lastrowid
+        conn.commit()
+    finally:
+        conn.close()
+
+    event_id = record_patient_event(
+        patient_id,
+        event_type="therapy_line_changed" if previous else "therapy_started",
+        event_date=start_date,
+        source_type="longitudinal_v2_treatment_change",
+        source_record_id=inserted_id,
+        payload={
+            "line_of_therapy_number": line_number,
+            "line_of_therapy_context": line_context,
+            "drug_scheme": scheme,
+            "drug_scheme_label": regimen_label(scheme),
+            "line_type": line_type.get("category"),
+            "line_type_label": line_type.get("label"),
+            "outcome": outcome,
+            "start_date": start_date,
+            "end_date": end_date,
+            "previous_line_of_therapy_number": previous.get("line_of_therapy"),
+            "previous_drug_scheme": previous.get("drug_scheme"),
+            "decision": "Cambio de línea terapéutica confirmado para torre de APE por línea",
+        },
+        mcode_focus={
+            "line_of_therapy_number": line_number,
+            "line_of_therapy_context": line_context,
+            "drug_scheme": scheme,
+        },
+    )
+    return {
+        "success": True,
+        "appended_id": inserted_id,
+        "event_id": event_id,
+        "source": "longitudinal_v2_treatment_change",
+        "line_of_therapy_number": line_number,
+        "line_of_therapy_context": line_context,
+        "drug_scheme": scheme,
+        "drug_scheme_label": regimen_label(scheme),
+        "line_type": line_type.get("category"),
+        "line_type_label": line_type.get("label"),
+        "outcome": outcome,
+        "start_date": start_date,
+        "end_date": end_date,
+    }
 
 
 def _persist_psa_series_points(cursor, patient_id, points):
@@ -5149,6 +6214,47 @@ def _persist_psa_series_points(cursor, patient_id, points):
     return persisted_points
 
 
+def _persist_testosterone_series_points(cursor, patient_id, points):
+    persisted_points = 0
+    for point in points:
+        cursor.execute(
+            """
+            SELECT id FROM biomarker_longitudinal
+            WHERE patient_id = ? AND biomarker_type = ? AND sample_date = ? AND value = ?
+            LIMIT 1
+            """,
+            (patient_id, "TESTOSTERONA", point["sample_date"], point["testosterone_value"]),
+        )
+        if cursor.fetchone():
+            continue
+        cursor.execute(
+            """
+            INSERT INTO biomarker_longitudinal (
+                patient_id, biomarker_type, value, unit, sample_date, lab_source
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                patient_id,
+                "TESTOSTERONA",
+                point["testosterone_value"],
+                point.get("unit") or "ng/dL",
+                point["sample_date"],
+                _json_blob(
+                    {
+                        "entry_origin": point.get("entry_origin") or "intake_registration",
+                        "context": point.get("context") or "otro",
+                        "source": point.get("source") or "ingreso_inicial",
+                        "unit": point.get("unit") or "ng/dL",
+                        "line_of_therapy_number": point.get("line_of_therapy_number"),
+                        "line_of_therapy_context": point.get("line_of_therapy_context") or "",
+                    }
+                ),
+            ),
+        )
+        persisted_points += 1
+    return persisted_points
+
+
 def _derive_baseline_psa_from_history(data, psa_history):
     explicit_baseline = _safe_float(data.get("baseline_psa"), None)
     if explicit_baseline is not None:
@@ -5164,14 +6270,117 @@ def _derive_baseline_psa_from_history(data, psa_history):
     return selected_point.get("psa_value"), selected_point
 
 
+def _preferred_testosterone_longitudinal_points(
+    data,
+    *,
+    sample_date,
+    default_source,
+    default_entry_origin,
+    default_context,
+):
+    value, _source_field = _preferred_testosterone_longitudinal_value(data)
+    if value is None:
+        return []
+    return _normalize_testosterone_history_points(
+        [
+            {
+                "sample_date": sample_date,
+                "testosterone_value": value,
+                "unit": data.get("testosterone_unit") or "ng/dL",
+                "context": data.get("assessment_context") or data.get("management_track") or data.get("assessment_state") or default_context,
+                "source": default_source,
+                "entry_origin": default_entry_origin,
+                "line_of_therapy_number": data.get("line_of_therapy_number"),
+                "line_of_therapy_context": data.get("line_of_therapy_context"),
+            }
+        ],
+        default_source=default_source,
+        default_entry_origin=default_entry_origin,
+        default_sample_date=sample_date,
+        default_context=default_context,
+        default_line_of_therapy_number=_safe_int(data.get("line_of_therapy_number"), None),
+        default_line_of_therapy_context=str(data.get("line_of_therapy_context") or "").strip(),
+        default_unit=str(data.get("testosterone_unit") or "ng/dL"),
+    )
+
+
+def _derive_baseline_testosterone_from_history(data, testosterone_history):
+    explicit_baseline = _safe_float(data.get("testosterone_baseline"), None)
+    if explicit_baseline is not None:
+        return explicit_baseline, None
+    pretreatment_points = [
+        item
+        for item in testosterone_history
+        if item.get("context") in {"pretratamiento", "pretreatment", "baseline", "diagnostic"}
+    ]
+    if not pretreatment_points:
+        return None, None
+    selected_point = max(pretreatment_points, key=lambda item: item.get("sample_date", ""))
+    return selected_point.get("testosterone_value"), selected_point
+
+
+def _derive_bmi_from_weight_height(weight_kg, height_cm):
+    weight = _safe_float(weight_kg, None)
+    height = _safe_float(height_cm, None)
+    if weight is None or height is None or weight <= 0 or height <= 0:
+        return None
+    height_m = height / 100.0
+    if height_m <= 0:
+        return None
+    return round(weight / (height_m * height_m), 1)
+
+
+def _derive_weight_loss_percent(weight_kg, weight_loss_kg):
+    current_weight = _safe_float(weight_kg, None)
+    loss_kg = _safe_float(weight_loss_kg, None)
+    if current_weight is None or loss_kg is None or current_weight <= 0 or loss_kg < 0:
+        return None, None
+    prior_weight = current_weight + loss_kg
+    if prior_weight <= 0:
+        return None, None
+    return round((loss_kg / prior_weight) * 100, 1), round(prior_weight, 1)
+
+
+def _apply_anthropometric_derivations(data):
+    if not isinstance(data, dict):
+        return data
+    weight_kg = _safe_float(data.get("weight_kg"), None)
+    height_cm = _safe_float(data.get("height_cm"), None)
+    derived_bmi = _derive_bmi_from_weight_height(weight_kg, height_cm)
+    if derived_bmi is not None:
+        data["bmi_current"] = derived_bmi
+    elif _is_present(data.get("bmi_current")):
+        data["bmi_current"] = _safe_float(data.get("bmi_current"), None)
+
+    weight_loss_kg = _safe_float(data.get("weight_loss_6m_kg"), None)
+    derived_pct, prior_weight = _derive_weight_loss_percent(weight_kg, weight_loss_kg)
+    if weight_loss_kg is not None:
+        data["weight_loss_6m_kg"] = weight_loss_kg
+    if derived_pct is not None:
+        data["weight_loss_6m_pct"] = derived_pct
+    elif _is_present(data.get("weight_loss_6m_pct")):
+        data["weight_loss_6m_pct"] = _safe_float(data.get("weight_loss_6m_pct"), None)
+    if prior_weight is not None:
+        data["prior_weight_6m_kg"] = prior_weight
+    if height_cm is not None:
+        data["height_cm"] = height_cm
+    return data
+
+
 def _persist_intake_biomarker_series(cursor, patient_id, diagnosis_date, data):
     psa_history = _parse_intake_psa_history(data)
+    testosterone_history = _parse_intake_testosterone_history(data)
     baseline_was_explicit = _is_present(data.get("baseline_psa"))
     baseline_psa_value, selected_baseline_point = _derive_baseline_psa_from_history(data, psa_history)
     if baseline_psa_value is not None and not baseline_was_explicit:
         data["baseline_psa"] = baseline_psa_value
+    testosterone_baseline_was_explicit = _is_present(data.get("testosterone_baseline"))
+    baseline_testosterone_value, selected_testosterone_baseline_point = _derive_baseline_testosterone_from_history(data, testosterone_history)
+    if baseline_testosterone_value is not None and not testosterone_baseline_was_explicit:
+        data["testosterone_baseline"] = baseline_testosterone_value
 
     persisted_points = _persist_psa_series_points(cursor, patient_id, psa_history)
+    persisted_testosterone_points = _persist_testosterone_series_points(cursor, patient_id, testosterone_history)
     scalar_psa_points = _preferred_psa_longitudinal_points(
         data,
         sample_date=data.get("local_therapy_date") or diagnosis_date,
@@ -5181,7 +6390,17 @@ def _persist_intake_biomarker_series(cursor, patient_id, diagnosis_date, data):
     )
     if scalar_psa_points:
         persisted_points += _persist_psa_series_points(cursor, patient_id, scalar_psa_points)
+    scalar_testosterone_points = _preferred_testosterone_longitudinal_points(
+        data,
+        sample_date=data.get("local_therapy_date") or diagnosis_date,
+        default_source="ingreso_inicial",
+        default_entry_origin="intake_registration",
+        default_context="otro",
+    )
+    if scalar_testosterone_points:
+        persisted_testosterone_points += _persist_testosterone_series_points(cursor, patient_id, scalar_testosterone_points)
     baseline_point = dict(selected_baseline_point) if selected_baseline_point else None
+    testosterone_baseline_point = dict(selected_testosterone_baseline_point) if selected_testosterone_baseline_point else None
 
     explicit_baseline = _safe_float(data.get("baseline_psa"), None)
     if baseline_point is None and explicit_baseline is not None:
@@ -5192,6 +6411,15 @@ def _persist_intake_biomarker_series(cursor, patient_id, diagnosis_date, data):
             "assay_type": "desconocido",
             "source": "campo_baseline_psa",
         }
+    explicit_testosterone_baseline = _safe_float(data.get("testosterone_baseline"), None)
+    if testosterone_baseline_point is None and explicit_testosterone_baseline is not None:
+        testosterone_baseline_point = {
+            "sample_date": "",
+            "testosterone_value": explicit_testosterone_baseline,
+            "context": "baseline",
+            "unit": str(data.get("testosterone_unit") or "ng/dL"),
+            "source": "campo_testosterone_baseline",
+        }
 
     return {
         "points_received": len(psa_history),
@@ -5200,6 +6428,11 @@ def _persist_intake_biomarker_series(cursor, patient_id, diagnosis_date, data):
         "baseline_source": "explicit_field" if baseline_was_explicit and selected_baseline_point is None else "derived_from_history" if selected_baseline_point else "not_available",
         "baseline_point": baseline_point,
         "series_only_points": max(len(psa_history) - (1 if baseline_point and selected_baseline_point else 0), 0),
+        "testosterone_points_received": len(testosterone_history),
+        "testosterone_points_persisted": persisted_testosterone_points,
+        "baseline_testosterone": explicit_testosterone_baseline if explicit_testosterone_baseline is not None else baseline_testosterone_value,
+        "baseline_testosterone_source": "explicit_field" if testosterone_baseline_was_explicit and selected_testosterone_baseline_point is None else "derived_from_history" if selected_testosterone_baseline_point else "not_available",
+        "baseline_testosterone_point": testosterone_baseline_point,
     }
 
 def register_new_patient(data, assessment=None):
@@ -5207,8 +6440,10 @@ def register_new_patient(data, assessment=None):
     Registra un nuevo paciente y su línea base clínica + tratamiento inicial.
     Retorna (success: bool, message: str)
     """
+    conn = None
     try:
         data = apply_gleason_profile(dict(data or {}))
+        data = _apply_anthropometric_derivations(data)
         assessment_state = str(data.get("assessment_state") or "").strip()
         advanced_states = {
             "adt_progression_verification",
@@ -5220,7 +6455,7 @@ def register_new_patient(data, assessment=None):
             "m0_crpc",
             "m1_crpc",
         }
-        conn = sqlite3.connect(DB_PATH)
+        conn = _connect(write=True)
         c = conn.cursor()
         
         # 1. Identidad
@@ -5232,7 +6467,6 @@ def register_new_patient(data, assessment=None):
             ''', (data.get('nss'), data.get('full_name'), data.get('dob')))
             patient_id = c.lastrowid
         except sqlite3.IntegrityError:
-            conn.close()
             return None, f"El paciente con NSS {data.get('nss')} ya existe.", {}
 
         # 2. Perfil Clínico Basal
@@ -5343,15 +6577,34 @@ def register_new_patient(data, assessment=None):
             data.get('prior_arpi_agent'),
             _safe_int(data.get('prior_arpi_duration'), 0)
         ))
+        _persist_canonical_facts_from_payload(
+            c,
+            patient_id,
+            {
+                **data,
+                "metastasis_site": metastasis_site,
+                "metastasis_count": metastatic_count,
+                "m_substage_resolved": metastatic["m_substage_resolved"],
+                "metastasis_assessment_date": metastatic["metastasis_assessment_date"],
+                "metastasis_document_source": metastatic["metastasis_document_source"],
+            },
+            source_type="wizard_or_intake",
+            source_record_type="patient_registration",
+            source_record_id=patient_id,
+            source_date=diagnosis_date,
+            observed_at=diagnosis_date,
+            state_context=assessment_state or "diagnostic_workup",
+            management_track=str(data.get("management_track") or ""),
+            certainty_tier="wizard_or_intake",
+        )
 
         conn.commit()
-        conn.close()
 
         if _has_any_value(data, [
             'estado_residencia', 'seguridad_social', 'escolaridad', 'tabaquismo', 'ipss_score', 'iief5_score',
             'g8_food_intake', 'g8_weight_loss', 'g8_mobility', 'g8_neuropsych', 'g8_bmi', 'g8_medications',
-            'g8_self_health', 'mini_cog_score', 'fatigue_score', 'weight_kg', 'bmi_current',
-            'weight_loss_6m_pct', 'low_activity', 'slow_gait', 'weak_grip', 'line_of_therapy_number',
+            'g8_self_health', 'mini_cog_score', 'fatigue_score', 'weight_kg', 'height_cm', 'bmi_current',
+            'weight_loss_6m_kg', 'weight_loss_6m_pct', 'low_activity', 'slow_gait', 'weak_grip', 'line_of_therapy_number',
             'line_of_therapy_context',
         ]):
             save_demographics(
@@ -5443,6 +6696,8 @@ def register_new_patient(data, assessment=None):
     except Exception as e:
         logger.error(f"Error registering patient: {e}")
         return None, str(e), {}
+    finally:
+        _close_connection_quietly(conn)
 
 def get_patient_history(nss_or_id):
     return get_patient_full_record(nss_or_id)
@@ -6350,8 +7605,29 @@ def _mirror_biomarkers_to_longitudinal(cursor, patient_id, visit_date, data):
     if preferred_psa_points:
         _persist_psa_series_points(cursor, patient_id, preferred_psa_points)
 
+    testosterone_history = _normalize_testosterone_history_points(
+        data.get("testosterone_history"),
+        default_source="seguimiento_clinico",
+        default_entry_origin="follow_up_visit",
+        default_sample_date=visit_date,
+        default_context=str(data.get("assessment_context") or data.get("management_track") or "seguimiento").strip(),
+        default_line_of_therapy_number=_safe_int(data.get("line_of_therapy_number"), None),
+        default_line_of_therapy_context=str(data.get("line_of_therapy_context") or "").strip(),
+        default_unit=str(data.get("testosterone_unit") or "ng/dL"),
+    )
+    if testosterone_history:
+        _persist_testosterone_series_points(cursor, patient_id, testosterone_history)
+    preferred_testosterone_points = _preferred_testosterone_longitudinal_points(
+        data,
+        sample_date=visit_date,
+        default_source="seguimiento_clinico",
+        default_entry_origin="follow_up_visit",
+        default_context=str(data.get("assessment_context") or data.get("management_track") or "seguimiento").strip(),
+    )
+    if preferred_testosterone_points:
+        _persist_testosterone_series_points(cursor, patient_id, preferred_testosterone_points)
+
     biomarker_specs = (
-        ("TESTOSTERONA", "testosterone", "ng/dL"),
         ("HEMOGLOBINA", "hemoglobin", "g/dL"),
         ("CREATININA", "creatinine", "mg/dL"),
         ("CISTATINA_C", "cystatin_c", "mg/L"),
@@ -6414,6 +7690,9 @@ def sync_scheduled_events(patient_record, state=None, management_track=None, hor
         build_agenda_board,
         infer_management_track,
         resolve_track_anchor,
+    )
+    from prostanet.domains.patient_tracking.guideline_schedule_engine import (
+        build_guideline_followup_plan,
     )
     from prostanet.domains.patient_tracking.copilot_alerts import build_copilot_alerts
     from prostanet.domains.patient_tracking.disease_course_outcomes import build_disease_course_bundle
@@ -6537,8 +7816,6 @@ def sync_scheduled_events(patient_record, state=None, management_track=None, hor
         orchestration_signals["cadence_adjusted_by"] = cadence_adjusted
     outcome_bundle = build_disease_course_bundle(
         patient_record,
-        state=schedule_state,
-        management_track=schedule_management_track,
         latest_assessment=patient_record.get("latest_assessment"),
     )
     risk_tools_bundle = build_risk_tools_panel(
@@ -6677,6 +7954,15 @@ def sync_scheduled_events(patient_record, state=None, management_track=None, hor
         plan_key=plan_key,
         calendar_horizon_months=horizon_months,
     )
+    guideline_followup_plan = build_guideline_followup_plan(
+        patient=patient_record,
+        state=schedule_state,
+        management_track=schedule_management_track,
+        agenda_board=agenda_board,
+        master_followup_plan=master_followup_plan,
+        signals=orchestration_signals,
+        care_intent_contract=orchestration_signals.get("care_intent_contract") or {},
+    )
     return {
         "state": state,
         "management_track": management_track,
@@ -6696,6 +7982,7 @@ def sync_scheduled_events(patient_record, state=None, management_track=None, hor
         "next_encounter": next_encounter,
         "master_followup_plan": master_followup_plan,
         "master_followup_summary": master_followup_plan.get("summary", {}),
+        "guideline_followup_plan": guideline_followup_plan,
         "schedule_anchor_strength": "weak" if (agenda_board.get("protocol_trace") or {}).get("anchor_is_fallback") else "strong",
         "milestone_plan": outcome_bundle.get("milestone_plan", []),
         "outcome_anchor": outcome_bundle.get("outcome_anchor", {}),
@@ -6719,17 +8006,31 @@ def sync_scheduled_events(patient_record, state=None, management_track=None, hor
 
 def _upsert_agenda_items(cursor, patient_id, items):
     existing = {}
+    # Auditoría #21 (cierre OOS-9): cuando una visita cierra un item en un
+    # estado A (p.ej. `adt_progression_verification:on_arpi:therapy_review`)
+    # y la reconciliación posterior transita el paciente al estado B
+    # (p.ej. `mcspc_low_volume_sync_oligo:on_arpi:therapy_review`), el
+    # agenda_key cambia pero la tarea clínica es la misma subtarea de la
+    # misma track. Capturamos un fallback indexado por (management_track,
+    # item_type) para propagar `partially_satisfied`/`completed` al nuevo
+    # item cuando el `agenda_key` antiguo ya no está activo.
+    existing_by_track_type = {}
     cursor.execute(
-        "SELECT agenda_key, status, due_at, completed_at, visit_record_id FROM followup_agenda_items WHERE patient_id = ?",
+        "SELECT agenda_key, status, due_at, completed_at, visit_record_id, management_track, item_type "
+        "FROM followup_agenda_items WHERE patient_id = ?",
         (patient_id,),
     )
     for row in cursor.fetchall():
-        existing[row[0]] = {
+        entry = {
             "status": row[1],
             "due_at": row[2],
             "completed_at": row[3],
             "visit_record_id": row[4],
         }
+        existing[row[0]] = entry
+        track_key = (row[5] or "", row[6] or "")
+        if row[1] in ("partially_satisfied", "completed") and track_key not in existing_by_track_type:
+            existing_by_track_type[track_key] = entry
     active_keys = {item["agenda_key"] for item in items if item.get("agenda_key")}
     if active_keys:
         cursor.execute(
@@ -6753,6 +8054,18 @@ def _upsert_agenda_items(cursor, patient_id, items):
         )
     for item in items:
         previous = existing.get(item["agenda_key"], {})
+        # Auditoría #21 (cierre OOS-9): fallback cross-state por (track, item_type).
+        # Aplica cuando el previous directo por agenda_key no está en un estado
+        # de satisfacción (overdue/due/scheduled), pero existe un item
+        # superseded de la misma track e item_type que SÍ fue satisfecho en un
+        # estado previo. En ese caso propagamos el status de satisfacción al
+        # nuevo item para no perder la actualización cross-transición.
+        if previous.get("status") not in ("partially_satisfied", "completed"):
+            track_fallback = existing_by_track_type.get(
+                (item.get("management_track") or "", item.get("item_type") or "")
+            )
+            if track_fallback:
+                previous = track_fallback
         status = item.get("status")
         completed_at = None
         visit_record_id = None
@@ -7069,6 +8382,155 @@ def _persist_transition_proposals(cursor, patient_id, event_id, proposals):
                 proposal.get("confirmation_status", "pending"),
                 _json_blob(proposal.get("requires_more_data_fields", [])),
             ),
+        )
+
+
+def _persist_therapeutic_window_events(cursor, patient_id, window_worklist_bundle):
+    active_windows = [
+        enrich_window_with_registry(dict(item))
+        for item in list(window_worklist_bundle.get("active_windows_ranked") or [])
+        if str(item.get("window_key") or "").strip()
+    ]
+    current_by_key = {str(item.get("window_key") or ""): item for item in active_windows}
+    cursor.execute(
+        """
+        SELECT * FROM therapeutic_window_events
+        WHERE patient_id = ?
+        ORDER BY created_at DESC, id DESC
+        """,
+        (patient_id,),
+    )
+    column_names = [description[0] for description in (cursor.description or [])]
+    existing_rows = []
+    for row in cursor.fetchall():
+        if isinstance(row, dict):
+            existing_rows.append(dict(row))
+            continue
+        if hasattr(row, "keys"):
+            existing_rows.append({key: row[key] for key in row.keys()})
+            continue
+        if column_names:
+            existing_rows.append(dict(zip(column_names, row)))
+    open_by_key = {}
+    for row in existing_rows:
+        key = str(row.get("window_key") or "")
+        if key and not row.get("window_closed_at") and key not in open_by_key:
+            open_by_key[key] = row
+    now_iso = datetime.now().isoformat(timespec="seconds")
+
+    def _closure_metadata(window):
+        status = str(window.get("window_status") or "").lower()
+        risk = str(window.get("opportunity_loss_risk") or "").lower()
+        if status == "redirected":
+            return now_iso, "redirected", "La ventana se cerró por redirección clínica.", 1 if risk == "confirmed" else 0
+        if status == "closed":
+            closure_type = "missed" if risk == "confirmed" else "completed"
+            reason = "La ventana terapéutica se considera cerrada en el recálculo longitudinal."
+            return now_iso, closure_type, reason, 1 if risk == "confirmed" else 0
+        return None, "", "", 0
+
+    for window_key, window in current_by_key.items():
+        open_row = open_by_key.get(window_key)
+        closed_at, closure_type, closure_reason, opportunity_lost = _closure_metadata(window)
+        evidence_used = {
+            "required_inputs": list(window.get("required_inputs") or []),
+            "missing_decisive_fields": list(window.get("missing_decisive_fields") or []),
+            "closure_tasks": list(window.get("closure_tasks") or []),
+            "why_this_matters_now": window.get("why_this_matters_now") or "",
+            "if_not_closed_clinical_consequence": window.get("if_not_closed_clinical_consequence") or "",
+        }
+        if open_row:
+            cursor.execute(
+                """
+                UPDATE therapeutic_window_events
+                SET window_status = ?, window_closed_at = COALESCE(?, window_closed_at),
+                    closure_type = CASE WHEN ? != '' THEN ? ELSE closure_type END,
+                    closure_reason = CASE WHEN ? != '' THEN ? ELSE closure_reason END,
+                    evidence_used_json = ?, closed_by = CASE WHEN ? IS NOT NULL THEN 'system' ELSE closed_by END,
+                    decision_domain_blocked = ?, required_fact_keys_json = ?, missing_fact_keys_json = ?,
+                    owner_role = ?, sla_days = ?, clinical_consequence_if_delayed = ?,
+                    target_state_if_closed = ?, redirect_state_if_negative = ?,
+                    opportunity_lost = CASE WHEN ? THEN 1 ELSE opportunity_lost END,
+                    opportunity_loss_reason = CASE
+                        WHEN ? THEN ?
+                        ELSE opportunity_loss_reason
+                    END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    window.get("window_status"),
+                    closed_at,
+                    closure_type,
+                    closure_type,
+                    closure_reason,
+                    closure_reason,
+                    _json_blob(evidence_used),
+                    closed_at,
+                    window.get("decision_domain_blocked"),
+                    _json_blob(window.get("required_fact_keys") or []),
+                    _json_blob(window.get("missing_fact_keys") or []),
+                    window.get("owner_role"),
+                    _safe_int(window.get("sla_days"), 0),
+                    window.get("clinical_consequence_if_delayed"),
+                    window.get("target_state_if_closed"),
+                    window.get("redirect_state_if_negative"),
+                    opportunity_lost,
+                    opportunity_lost,
+                    window.get("opportunity_loss_reason") or "",
+                    open_row.get("id"),
+                ),
+            )
+            continue
+        cursor.execute(
+            """
+            INSERT INTO therapeutic_window_events (
+                patient_id, window_key, window_opened_at, window_status, window_closed_at,
+                closure_type, closure_reason, evidence_used_json, closed_by,
+                decision_domain_blocked, required_fact_keys_json, missing_fact_keys_json,
+                owner_role, sla_days, clinical_consequence_if_delayed,
+                target_state_if_closed, redirect_state_if_negative,
+                opportunity_lost, opportunity_loss_reason
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                patient_id,
+                window_key,
+                now_iso,
+                window.get("window_status"),
+                closed_at,
+                closure_type or None,
+                closure_reason or None,
+                _json_blob(evidence_used),
+                "system" if closed_at else None,
+                window.get("decision_domain_blocked"),
+                _json_blob(window.get("required_fact_keys") or []),
+                _json_blob(window.get("missing_fact_keys") or []),
+                window.get("owner_role"),
+                _safe_int(window.get("sla_days"), 0),
+                window.get("clinical_consequence_if_delayed"),
+                window.get("target_state_if_closed"),
+                window.get("redirect_state_if_negative"),
+                opportunity_lost,
+                window.get("opportunity_loss_reason") if opportunity_lost else None,
+            ),
+        )
+
+    for window_key, open_row in open_by_key.items():
+        if window_key in current_by_key:
+            continue
+        cursor.execute(
+            """
+            UPDATE therapeutic_window_events
+            SET window_status = 'closed',
+                window_closed_at = COALESCE(window_closed_at, ?),
+                closure_type = COALESCE(closure_type, 'completed'),
+                closure_reason = COALESCE(closure_reason, 'La ventana dejó de estar activa tras el recálculo longitudinal.'),
+                closed_by = COALESCE(closed_by, 'system'),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (now_iso, open_row.get("id")),
         )
 
 
@@ -7622,6 +9084,11 @@ def _build_signal_snapshot_view(bundle):
         "active_safety": list(signals.get("active_safety") or []),
         "next_best_action": dict(bundle.get("next_best_action") or {}),
         "decision_governance_bundle": dict(bundle.get("decision_governance_bundle") or {}),
+        "diagnostic_certainty_bundle": dict(bundle.get("diagnostic_certainty_bundle") or {}),
+        "staging_certainty_bundle": dict(bundle.get("staging_certainty_bundle") or {}),
+        "minimum_decisive_dataset_bundle": dict(bundle.get("minimum_decisive_dataset_bundle") or {}),
+        "therapeutic_window_bundle": dict(bundle.get("therapeutic_window_bundle") or {}),
+        "window_worklist_bundle": dict(bundle.get("window_worklist_bundle") or {}),
         "pro_decision_bundle": dict(bundle.get("pro_decision_bundle") or {}),
         "shared_decision_bundle": dict(bundle.get("shared_decision_bundle") or {}),
         "palliative_transition_bundle": dict(bundle.get("palliative_transition_bundle") or {}),
@@ -7629,6 +9096,10 @@ def _build_signal_snapshot_view(bundle):
         "survivorship_transition_bundle": dict(bundle.get("survivorship_transition_bundle") or {}),
         "survivorship_monitoring_package": dict(bundle.get("survivorship_monitoring_package") or {}),
         "score_interpretation_catalog_snapshot": dict(bundle.get("score_interpretation_catalog_snapshot") or {}),
+        "precision_workflow_bundle": dict(bundle.get("precision_workflow_bundle") or {}),
+        "registry_core_bundle": dict(bundle.get("registry_core_bundle") or {}),
+        "endpoint_adjudication_bundle": dict(bundle.get("endpoint_adjudication_bundle") or {}),
+        "data_certainty_bundle": dict(bundle.get("data_certainty_bundle") or {}),
         "mcode_projection": dict(signals.get("mcode_projection") or {}),
         "evidence_basis": list(signals.get("evidence_basis") or []),
     }
@@ -7644,6 +9115,11 @@ def _merge_longitudinal_runtime_record_context(patient_record, longitudinal_bund
         "care_intent_contract",
         "decision_governance_bundle",
         "decision_blocking_bundle",
+        "diagnostic_certainty_bundle",
+        "staging_certainty_bundle",
+        "minimum_decisive_dataset_bundle",
+        "therapeutic_window_bundle",
+        "window_worklist_bundle",
         "clinician_decision_capture_bundle",
         "state_transition_confirmation_bundle",
         "adherence_tracking_bundle",
@@ -7652,6 +9128,10 @@ def _merge_longitudinal_runtime_record_context(patient_record, longitudinal_bund
         "shared_decision_bundle",
         "ctdna_refinement_bundle",
         "multimodal_imaging_concordance_bundle",
+        "precision_workflow_bundle",
+        "registry_core_bundle",
+        "endpoint_adjudication_bundle",
+        "data_certainty_bundle",
         "ichom_compliance_bundle",
         "treatment_adverse_event_bundle",
         "population_survival_context_bundle",
@@ -7682,6 +9162,22 @@ def _merge_longitudinal_runtime_record_context(patient_record, longitudinal_bund
         "localized_surveillance_bundle",
         "post_rt_salvage_bundle",
         "post_rt_schedule_overlay",
+        "advanced_followup_bundle",
+        "staging_adjudication_bundle",
+        "advanced_release_gate",
+        "supportive_care_toxicity_readiness_bundle",
+        "therapeutic_readiness_bundle",
+        "clinical_kernel_snapshot",
+        "effective_state",
+        "effective_recommendation_family",
+        "surface_consistency_status",
+        "surface_consistency_flags",
+        "clinical_fact_bundle",
+        "fact_freshness_summary",
+        "fact_conflict_summary",
+        "contradiction_resolution_bundle",
+        "state_reclassification_bundle",
+        "clinical_ledger_bundle",
     ):
         value = bundle.get(key)
         if value not in (None, "", [], {}):
@@ -7701,13 +9197,13 @@ def refresh_longitudinal_intelligence(
     include_live_benchmark=True,
 ):
     from prostanet.domains.patient_tracking.longitudinal_intelligence import (
-        _align_next_best_action_with_care_intent,
         build_longitudinal_intelligence_bundle,
         build_recommendation_audit,
     )
     from prostanet.domains.patient_tracking.decision_input_requirements_engine import (
         build_decision_input_requirements,
         detect_ui_contradiction_flags,
+        merge_staging_adjudication_into_requirements,
     )
     from prostanet.domains.patient_tracking.crpc_copilot_service import (
         build_crpc_copilot_bundle,
@@ -7740,10 +9236,40 @@ def refresh_longitudinal_intelligence(
     from prostanet.domains.patient_tracking.prognostic_impact import build_prognostic_impact_bundle
     from prostanet.domains.patient_tracking.psa_forecast import build_psa_forecast
     from prostanet.domains.patient_tracking.risk_tools import build_risk_tools_panel
+    from prostanet.domains.patient_tracking.advanced_followup_builder import (
+        build_advanced_followup_bundle,
+    )
+    from prostanet.domains.patient_tracking.clinical_kernel_snapshot_builder import (
+        build_runtime_kernel_shadow_context,
+    )
+    from prostanet.domains.patient_tracking.clinical_ledger_builder import (
+        build_patient_clinical_ledger_bundle,
+    )
+    from prostanet.domains.patient_tracking.staging_adjudication_builder import (
+        build_staging_adjudication_bundle,
+    )
+    from prostanet.domains.patient_tracking.advanced_release_gate_builder import (
+        build_advanced_release_gate,
+        merge_advanced_release_gate_into_requirements,
+    )
+    from prostanet.domains.patient_tracking.supportive_care_toxicity_readiness_builder import (
+        build_supportive_care_toxicity_readiness_bundle,
+    )
+    from prostanet.domains.patient_tracking.therapeutic_readiness_builder import (
+        build_therapeutic_readiness_bundle,
+    )
+    from prostanet.domains.patient_tracking.runtime_publication_builder import (
+        build_runtime_publication_payload,
+        prepare_runtime_publication_state,
+    )
+    from prostanet.domains.patient_tracking.runtime_signal_snapshot_builder import (
+        build_runtime_signal_snapshot,
+    )
     from prostanet.domains.clinical_validation.repository import persist_patient_clinical_ledger
 
     if force_recompute:
         recompute_patient_care_plan(nss_or_id)
+        record = None
     record = record or load_patient_record_core(nss_or_id, include_ledger=False)
     if not record:
         return {}
@@ -7761,10 +9287,11 @@ def refresh_longitudinal_intelligence(
     latest_snapshot = dict(refreshed.get("latest_signal_snapshot") or {})
     if not latest_snapshot:
         latest_snapshot = _build_signal_snapshot_view(bundle)
+    fresh_next_best_action = dict(bundle.get("next_best_action") or {})
+    if fresh_next_best_action:
+        latest_snapshot["next_best_action"] = fresh_next_best_action
     outcome_bundle = build_disease_course_bundle(
         refreshed,
-        state=bundle.get("signals", {}).get("reconciled_state") or bundle.get("signals", {}).get("state") or "",
-        management_track=bundle.get("signals", {}).get("reconciled_management_track") or bundle.get("signals", {}).get("management_track") or "",
         latest_assessment=refreshed.get("latest_assessment"),
     )
     risk_tools_bundle = build_risk_tools_panel(
@@ -7907,8 +9434,11 @@ def refresh_longitudinal_intelligence(
         "diagnostic_biopsy_bundle": diagnostic_biopsy_bundle,
         "localized_surveillance_bundle": localized_surveillance_bundle,
         "post_rt_salvage_bundle": post_rt_salvage_bundle,
+        "current_state": current_state,
+        "current_track": current_track,
     }
     active_bundle_key, active_copilot_bundle = select_primary_vertical_bundle(vertical_bundles)
+    vertical_bundles["active_copilot_bundle"] = active_copilot_bundle
     qa_passed = (
         (active_copilot_bundle.get("qa_validation") or {}).get("approved")
         if active_copilot_bundle
@@ -7930,155 +9460,232 @@ def refresh_longitudinal_intelligence(
         transition_resolution=bundle.get("transition_resolution", {}),
         care_intent_contract=bundle.get("care_intent_contract", {}),
     )
-    published_state = active_copilot_bundle.get("effective_state") or current_state
-    published_track = active_copilot_bundle.get("effective_management_track") or current_track
-    published_recommendation = {}
-    if _bundle_can_override_recommendation(active_copilot_bundle):
-        published_recommendation = dict(
-            active_copilot_bundle.get("final_presented_recommendation")
-            or active_copilot_bundle.get("rule_based_recommendation")
-            or {}
+    derived_fact_candidates = []
+    for fact in list(outcome_bundle.get("clinical_facts") or []):
+        fact_key = str(fact.get("fact_key") or "").strip()
+        if not fact_key or not _is_present(fact.get("value")):
+            continue
+        freshness_status, freshness_expires_at = compute_freshness_status(
+            fact_key,
+            source_date=fact.get("fact_date"),
+            observed_at=fact.get("fact_date"),
         )
-    if published_recommendation:
-        latest_snapshot["next_best_action"] = {
-            "title": str(published_recommendation.get("recommended_action") or ""),
-            "rationale": str(published_recommendation.get("rationale") or ""),
-            "recommendation_family": str(published_recommendation.get("recommendation_family") or ""),
-            "evidence_basis": list(active_copilot_bundle.get("guideline_basis") or []),
-            "source": str(published_recommendation.get("source") or "rule_based_primary"),
-        }
-    latest_snapshot.update(
-        {
-            "explicit_state": bundle.get("signals", {}).get("explicit_state"),
-            "effective_state_final": published_state,
-            "effective_management_track_final": published_track,
-            "effective_state": published_state,
-            "effective_management_track": published_track,
-            "reconciled_state": bundle.get("signals", {}).get("reconciled_state"),
-            "reconciled_management_track": bundle.get("signals", {}).get("reconciled_management_track"),
-            "state_conflict_flag": bundle.get("signals", {}).get("state_conflict_flag"),
-            "state_conflict_reason": bundle.get("signals", {}).get("state_conflict_reason"),
-            "supporting_evidence": bundle.get("signals", {}).get("supporting_evidence", {}),
-            "post_prostatectomy_course": bundle.get("signals", {}).get("post_prostatectomy_course", ""),
-            "transition_resolution": bundle.get("transition_resolution", {}),
-            "care_intent_contract": bundle.get("care_intent_contract", {}),
-            "palliative_transition_bundle": bundle.get("palliative_transition_bundle", {}),
-            "palliative_monitoring_package": bundle.get("palliative_monitoring_package", {}),
-            "survivorship_transition_bundle": bundle.get("survivorship_transition_bundle", {}),
-            "survivorship_monitoring_package": bundle.get("survivorship_monitoring_package", {}),
-            "late_effects_profile": bundle.get("late_effects_profile", {}),
-            "functional_recovery_profile": bundle.get("functional_recovery_profile", {}),
-            "survivorship_schedule_overlay": bundle.get("survivorship_schedule_overlay", {}),
-            "survivorship_plan": bundle.get("survivorship_plan", {}),
-            "symptom_burden_profile": bundle.get("symptom_burden_profile", {}),
-            "advance_care_planning_status": bundle.get("advance_care_planning_status", {}),
-            "hospice_eligibility": bundle.get("hospice_eligibility", {}),
-            "acute_palliative_alerts": bundle.get("acute_palliative_alerts", []),
-            "recommended_supportive_referrals": bundle.get("recommended_supportive_referrals", []),
-            "outcome_events_summary": outcome_bundle.get("outcome_events_summary", {}),
-            "pending_adjudications": outcome_bundle.get("pending_adjudications", []),
-            "current_response_state": outcome_bundle.get("current_response_state", {}),
-            "current_course_status": outcome_bundle.get("current_course_status", ""),
-            "last_adjudicated_event": outcome_bundle.get("last_adjudicated_event", {}),
-            "trial_comparable_endpoints": outcome_bundle.get("trial_comparable_endpoints", []),
-            "current_trial_comparable_profile": outcome_bundle.get("current_trial_comparable_profile", {}),
-            "prognostic_modifiers": prognostic_bundle.get("prognostic_modifiers", []),
-            "prognostic_recommended_actions": prognostic_bundle.get("recommended_actions", []),
-            "prognostic_followup_impact": prognostic_bundle.get("followup_impact", []),
-            "prognostic_capture_targets": prognostic_bundle.get("capture_targets", []),
-            "backbone_alignment": prognostic_bundle.get("backbone_alignment", {}),
-            "cadence_adjusted_by": prognostic_bundle.get("cadence_adjusted_by", []),
-            "psa_forecast": psa_forecast_bundle,
-            "forecast_reliability": psa_forecast_bundle.get("reliability", {}),
-            "live_benchmark": live_benchmark_bundle,
-            "benchmark_reliability": live_benchmark_bundle.get("reliability", {}),
-            "longitudinal_truth_snapshot": bundle.get("longitudinal_truth_snapshot", {}),
-            "decision_recalculation_trace": bundle.get("decision_recalculation_trace", {}),
-            "guideline_followup_plan": bundle.get("guideline_followup_plan", {}),
-            "laboratory_intelligence_profile": bundle.get("laboratory_intelligence_profile", {}),
-            "latest_clinically_decisive_visit": bundle.get("latest_clinically_decisive_visit", {}),
-            "blocking_inputs": decision_input_requirements.get("blocking_inputs", []),
-            "hard_blocking_inputs": decision_input_requirements.get("hard_blocking_inputs", []),
-            "decision_blocking_inputs": decision_input_requirements.get("decision_blocking_inputs", []),
-            "supportive_gaps": decision_input_requirements.get("supportive_gaps", []),
-            "required_to_recalculate": decision_input_requirements.get("required_to_recalculate", []),
-            "optional_context_inputs": decision_input_requirements.get("optional_context_inputs", []),
-            "decision_domains_blocked": decision_input_requirements.get("decision_domains_blocked", []),
-            "guideline_basis": bundle.get("guideline_followup_plan", {}).get("schedule_evidence_basis", []),
-            "ui_contradiction_flags": ui_contradiction_flags,
-            "crpc_copilot_bundle": crpc_copilot_bundle,
-            "crpc_copilot_status": crpc_copilot_bundle.get("status", "not_applicable"),
-            "post_rp_salvage_bundle": post_rp_salvage_bundle,
-            "post_rp_copilot_status": post_rp_salvage_bundle.get("status", "not_applicable"),
-            "mhspc_copilot_bundle": mhspc_copilot_bundle,
-            "mhspc_copilot_status": mhspc_copilot_bundle.get("status", "not_applicable"),
-            "diagnostic_biopsy_bundle": diagnostic_biopsy_bundle,
-            "diagnostic_copilot_status": diagnostic_biopsy_bundle.get("status", "not_applicable"),
-            "localized_surveillance_bundle": localized_surveillance_bundle,
-            "localized_copilot_status": localized_surveillance_bundle.get("status", "not_applicable"),
-            "post_rt_salvage_bundle": post_rt_salvage_bundle,
-            "post_rt_copilot_status": post_rt_salvage_bundle.get("status", "not_applicable"),
-            "salvage_window_status": post_rp_salvage_bundle.get("salvage_window_status", ""),
-            "salvage_window_reason": post_rp_salvage_bundle.get("salvage_window_reason", ""),
-            "post_rt_salvage_window_status": post_rt_salvage_bundle.get("post_rt_salvage_window_status", ""),
-            "qa_passed": qa_passed,
-            "sequence_summary": sequence_summary,
-            "crpc_schedule_overlay": crpc_copilot_bundle.get("crpc_schedule_overlay", {}),
-            "post_rp_schedule_overlay": post_rp_salvage_bundle.get("post_rp_schedule_overlay", {}),
-            "mhspc_schedule_overlay": mhspc_copilot_bundle.get("mhspc_schedule_overlay", {}),
-            "diagnostic_schedule_overlay": diagnostic_biopsy_bundle.get("diagnostic_schedule_overlay", {}),
-            "localized_schedule_overlay": localized_surveillance_bundle.get("localized_schedule_overlay", {}),
-            "post_rt_schedule_overlay": post_rt_salvage_bundle.get("post_rt_schedule_overlay", {}),
-        }
+        derived_fact_candidates.append(
+            {
+                "fact_key": fact_key,
+                "value": fact.get("value"),
+                "normalized_value_text": _canonical_value_text(fact.get("value")),
+                "source_type": fact.get("source_type") or "derived",
+                "source_record_type": "longitudinal_outcome_bundle",
+                "source_record_id": event_id,
+                "source_date": fact.get("fact_date") or "",
+                "observed_at": fact.get("fact_date") or "",
+                "state_context": current_state,
+                "management_track": current_track,
+                "certainty_tier": "derived",
+                "freshness_status": freshness_status,
+                "freshness_expires_at": freshness_expires_at,
+                "clinician_verified": False,
+                "verification_note": "",
+                "is_active": 1,
+            }
+        )
+    runtime_kernel_context = build_runtime_kernel_shadow_context(
+        refreshed,
+        latest_assessment=refreshed.get("latest_assessment"),
+        derived_fact_candidates=derived_fact_candidates,
     )
-    latest_snapshot["next_best_action"] = _align_next_best_action_with_care_intent(
-        latest_snapshot.get("next_best_action", {}),
-        bundle.get("care_intent_contract", {}),
-        decision_input_requirements,
+    bundle["clinical_kernel_snapshot"] = dict(
+        runtime_kernel_context.get("clinical_kernel_snapshot") or {}
     )
-    preferred_snapshot_regimen = (
-        (((refreshed.get("latest_assessment") or {}).get("result_snapshot") or {}).get("preferred_frontline_regimen") or {})
-        if isinstance((refreshed.get("latest_assessment") or {}).get("result_snapshot"), dict)
-        else {}
-    )
-    preferred_snapshot_family = str(
-        preferred_snapshot_regimen.get("family_label")
-        or preferred_snapshot_regimen.get("family_code")
+    bundle["effective_state"] = str(
+        runtime_kernel_context.get("effective_state")
+        or current_state
         or ""
-    ).strip()
-    preserve_runtime_recommendation_family = published_state == "post_radiotherapy_or_local_salvage"
-    current_snapshot_family = str(
-        (latest_snapshot.get("next_best_action") or {}).get("recommendation_family") or ""
-    ).strip()
-    if preferred_snapshot_family and (
-        not preserve_runtime_recommendation_family
-        or _should_backfill_recommendation_family(current_snapshot_family, preferred_snapshot_family)
-    ):
-        latest_snapshot.setdefault("next_best_action", {})
-        latest_snapshot["next_best_action"]["recommendation_family"] = preferred_snapshot_family
-        current_snapshot_family = preferred_snapshot_family
-    published_family = str(published_recommendation.get("recommendation_family") or "").strip()
-    if published_recommendation and (
-        not preserve_runtime_recommendation_family
-        or _should_backfill_recommendation_family(current_snapshot_family, published_family)
-    ):
-        latest_snapshot.setdefault("next_best_action", {})
-        latest_snapshot["next_best_action"]["recommendation_family"] = published_family
-    runtime_context_bundle = {
-        **bundle,
-        "signals": latest_snapshot,
-        "crpc_copilot_bundle": crpc_copilot_bundle,
-        "post_rp_salvage_bundle": post_rp_salvage_bundle,
-        "mhspc_copilot_bundle": mhspc_copilot_bundle,
-        "diagnostic_biopsy_bundle": diagnostic_biopsy_bundle,
-        "localized_surveillance_bundle": localized_surveillance_bundle,
-        "post_rt_salvage_bundle": post_rt_salvage_bundle,
-    }
+    )
+    bundle["effective_recommendation_family"] = str(
+        runtime_kernel_context.get("effective_recommendation_family")
+        or (bundle.get("therapeutic_readiness_bundle") or {}).get("candidate_family")
+        or ""
+    )
+    bundle["surface_consistency_status"] = str(
+        runtime_kernel_context.get("surface_consistency_status") or "consistent"
+    )
+    bundle["surface_consistency_flags"] = list(
+        runtime_kernel_context.get("surface_consistency_flags") or []
+    )
+    bundle["advanced_followup_bundle"] = build_advanced_followup_bundle(
+        patient_record=refreshed,
+        state=current_state,
+        latest_assessment=refreshed.get("latest_assessment"),
+        longitudinal_bundle=bundle,
+        decision_input_requirements=decision_input_requirements,
+        signals=latest_snapshot,
+    )
+    bundle["staging_adjudication_bundle"] = build_staging_adjudication_bundle(
+        patient_record=refreshed,
+        state=current_state,
+        latest_assessment=refreshed.get("latest_assessment"),
+        longitudinal_bundle=bundle,
+        therapeutic_readiness_bundle=bundle.get("therapeutic_readiness_bundle") or {},
+        decision_input_requirements=decision_input_requirements,
+        signals=latest_snapshot,
+    )
+    decision_input_requirements = merge_staging_adjudication_into_requirements(
+        decision_input_requirements,
+        bundle.get("staging_adjudication_bundle") or {},
+    )
+    bundle["advanced_release_gate"] = build_advanced_release_gate(
+        state=current_state,
+        next_best_action=dict(latest_snapshot.get("next_best_action") or bundle.get("next_best_action") or {}),
+        decision_input_requirements=decision_input_requirements,
+        advanced_followup_bundle=bundle.get("advanced_followup_bundle") or {},
+        staging_adjudication_bundle=bundle.get("staging_adjudication_bundle") or {},
+        signals=latest_snapshot,
+        candidate_family=str(
+            (latest_snapshot.get("next_best_action") or {}).get("recommendation_family")
+            or (bundle.get("therapeutic_readiness_bundle") or {}).get("candidate_family")
+            or ""
+        ),
+    )
+    decision_input_requirements = merge_advanced_release_gate_into_requirements(
+        decision_input_requirements,
+        bundle.get("advanced_release_gate") or {},
+    )
+    clinical_fact_bundle = dict(
+        runtime_kernel_context.get("clinical_fact_bundle")
+        or bundle.get("clinical_fact_bundle")
+        or {}
+    )
+    bundle["supportive_care_toxicity_readiness_bundle"] = build_supportive_care_toxicity_readiness_bundle(
+        patient_record=refreshed,
+        state=current_state,
+        management_track=current_track,
+        latest_assessment=refreshed.get("latest_assessment"),
+        clinical_fact_bundle=clinical_fact_bundle,
+        decision_input_requirements=decision_input_requirements,
+        palliative_transition_bundle=bundle.get("palliative_transition_bundle") or {},
+        palliative_monitoring_package=bundle.get("palliative_monitoring_package") or {},
+        survivorship_transition_bundle=bundle.get("survivorship_transition_bundle") or {},
+        survivorship_monitoring_package=bundle.get("survivorship_monitoring_package") or {},
+    )
+    assessment_result_snapshot = dict(
+        ((refreshed.get("latest_assessment") or {}).get("result_snapshot") or {})
+    )
+    if not bundle.get("therapeutic_readiness_bundle"):
+        bundle["therapeutic_readiness_bundle"] = build_therapeutic_readiness_bundle(
+            state=current_state,
+            phenotype_state=str(latest_snapshot.get("phenotype_state") or current_state or ""),
+            preferred_regimen=dict(assessment_result_snapshot.get("preferred_frontline_regimen") or {}),
+            next_best_action=dict(latest_snapshot.get("next_best_action") or bundle.get("next_best_action") or {}),
+            decision_input_requirements=decision_input_requirements,
+            comparative_eligibility_matrix=dict(
+                bundle.get("comparative_eligibility_matrix")
+                or assessment_result_snapshot.get("comparative_eligibility_matrix")
+                or {}
+            ),
+            systemic_regimen_scope_contract=dict(
+                bundle.get("systemic_regimen_scope_contract")
+                or assessment_result_snapshot.get("systemic_regimen_scope_contract")
+                or {}
+            ),
+            care_intent_contract=dict(bundle.get("care_intent_contract") or {}),
+            palliative_transition_bundle=dict(bundle.get("palliative_transition_bundle") or {}),
+            survivorship_transition_bundle=dict(bundle.get("survivorship_transition_bundle") or {}),
+            therapeutic_window_bundle=dict(bundle.get("therapeutic_window_bundle") or {}),
+            active_regimen_monitoring_package=dict(
+                bundle.get("active_regimen_monitoring_package")
+                or assessment_result_snapshot.get("active_regimen_monitoring_package")
+                or {}
+            ),
+            recommendation_block_status=str(
+                bundle.get("recommendation_block_status")
+                or latest_snapshot.get("recommendation_block_status")
+                or ""
+            ),
+            recommendation_block_reason=str(
+                bundle.get("recommendation_block_reason")
+                or latest_snapshot.get("recommendation_block_reason")
+                or ""
+            ),
+            allowed_actions_while_blocked=list(
+                bundle.get("allowed_actions_while_blocked")
+                or latest_snapshot.get("allowed_actions_while_blocked")
+                or []
+            ),
+            signals=dict(latest_snapshot or {}),
+            advanced_followup_bundle=dict(bundle.get("advanced_followup_bundle") or {}),
+            staging_adjudication_bundle=dict(bundle.get("staging_adjudication_bundle") or {}),
+            supportive_care_toxicity_readiness_bundle=dict(
+                bundle.get("supportive_care_toxicity_readiness_bundle") or {}
+            ),
+            advanced_release_gate=dict(bundle.get("advanced_release_gate") or {}),
+            clinical_fact_bundle=clinical_fact_bundle,
+        )
+    runtime_signal_projection = build_runtime_signal_snapshot(
+        patient_record=refreshed,
+        bundle=bundle,
+        latest_snapshot=latest_snapshot,
+        decision_input_requirements=decision_input_requirements,
+        outcome_bundle=outcome_bundle,
+        prognostic_bundle=prognostic_bundle,
+        psa_forecast_bundle=psa_forecast_bundle,
+        live_benchmark_bundle=live_benchmark_bundle,
+        vertical_bundles=vertical_bundles,
+        kernel_bundles=runtime_kernel_context,
+        qa_passed=qa_passed,
+        sequence_summary=sequence_summary,
+        ui_contradiction_flags=ui_contradiction_flags,
+    )
+    latest_snapshot = runtime_signal_projection.get("signals") or {}
+    runtime_bundle = runtime_signal_projection.get("runtime_bundle") or dict(bundle)
+    published_recommendation = runtime_signal_projection.get("published_recommendation") or {}
+    prepublication = prepare_runtime_publication_state(
+        patient_record=refreshed,
+        bundle=runtime_bundle,
+        signals=latest_snapshot,
+        decision_input_requirements=decision_input_requirements,
+        vertical_bundles={
+            **vertical_bundles,
+            "published_recommendation": published_recommendation,
+        },
+    )
+    latest_snapshot = prepublication.get("signals") or latest_snapshot
+    runtime_context_bundle = prepublication.get("runtime_context_bundle") or {}
     orchestration = _build_copilot_orchestration(
         refreshed,
         signals=latest_snapshot,
         longitudinal_bundle=runtime_context_bundle,
     )
+    clinical_ledger_bundle = build_patient_clinical_ledger_bundle(refreshed)
+    publication_projection = build_runtime_publication_payload(
+        patient_record=refreshed,
+        bundle=runtime_bundle,
+        signals=latest_snapshot,
+        orchestration=orchestration,
+        decision_input_requirements=decision_input_requirements,
+        outcome_bundle=outcome_bundle,
+        prognostic_bundle=prognostic_bundle,
+        psa_forecast_bundle=psa_forecast_bundle,
+        live_benchmark_bundle=live_benchmark_bundle,
+        vertical_bundles={
+            **vertical_bundles,
+            "published_recommendation": published_recommendation,
+        },
+        kernel_bundles=runtime_kernel_context,
+        qa_passed=qa_passed,
+        sequence_summary=sequence_summary,
+        clinical_ledger_bundle=clinical_ledger_bundle,
+        copilot_alerts=[],
+        transition_proposals=refreshed.get("transition_proposals") or [],
+        recommendation_audit=refreshed.get("recommendation_audit") or [],
+    )
+    latest_snapshot = publication_projection.get("signals") or latest_snapshot
+    runtime_context_bundle = publication_projection.get("runtime_context_bundle") or runtime_context_bundle
+    signals_to_persist = publication_projection.get("signals_to_persist") or {
+        "signals": latest_snapshot,
+        "next_best_action": latest_snapshot.get("next_best_action", {}),
+    }
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     signal_snapshot_id = (refreshed.get("latest_signal_snapshot") or {}).get("id")
@@ -8086,8 +9693,10 @@ def refresh_longitudinal_intelligence(
         c,
         refreshed["identity"]["id"],
         event_id,
-        {"signals": latest_snapshot, "next_best_action": latest_snapshot.get("next_best_action", {})},
+        signals_to_persist,
     )
+    _persist_patient_clinical_facts(c, refreshed["identity"]["id"], derived_fact_candidates)
+    _persist_therapeutic_window_events(c, refreshed["identity"]["id"], runtime_bundle.get("window_worklist_bundle") or {})
     _persist_copilot_alerts(c, refreshed["identity"]["id"], orchestration.get("copilot_alerts", []), source_snapshot_id=signal_snapshot_id)
     _persist_outcome_events(c, refreshed["identity"]["id"], outcome_bundle.get("outcome_events", []))
     _persist_adjudication_snapshot(c, refreshed["identity"]["id"], outcome_bundle)
@@ -8102,104 +9711,24 @@ def refresh_longitudinal_intelligence(
         _persist_post_rt_salvage_snapshot(c, refreshed["identity"]["id"], post_rt_salvage_bundle, trigger_event)
     conn.commit()
     conn.close()
+    published_alerts = get_patient_alerts(refreshed["identity"]["id"])
     persist_patient_clinical_ledger(
         int(refreshed["identity"]["id"]),
-        decision_trace=bundle.get("decision_recalculation_trace", {}),
-        guideline_plan=bundle.get("guideline_followup_plan", {}),
+        decision_trace=runtime_bundle.get("decision_recalculation_trace", {}),
+        guideline_plan=runtime_bundle.get("guideline_followup_plan", {}),
         signals=latest_snapshot,
         missing_input_requirements=decision_input_requirements,
-        latest_clinically_decisive_visit=bundle.get("latest_clinically_decisive_visit", {}),
+        latest_clinically_decisive_visit=runtime_bundle.get("latest_clinically_decisive_visit", {}),
         event_id=event_id,
     )
-    open_proposals = [
-        proposal for proposal in (refreshed.get("transition_proposals") or [])
-        if proposal.get("proposal_status") == "open"
-        and (bundle.get("transition_resolution") or {}).get("policy") == "manual_confirmation_required"
-    ]
-    recent_audit = (refreshed.get("recommendation_audit") or [])[:8]
-    return {
-        "signals": latest_snapshot,
-        "transition_proposals": open_proposals,
-        "next_best_action": latest_snapshot.get("next_best_action") or bundle.get("next_best_action", {}),
-        "recommendation_audit": recent_audit,
-        "copilot_alerts": get_patient_alerts(refreshed["identity"]["id"]),
-        "alert_summary": orchestration.get("alert_summary", {}),
-        "encounters": orchestration.get("encounters", []),
-        "master_followup_plan": orchestration.get("master_followup_plan", {}),
-        "master_followup_summary": orchestration.get("master_followup_summary", {}),
-        "schedule_anchor_strength": orchestration.get("schedule_anchor_strength", "strong"),
-        "outcome_events": outcome_bundle.get("outcome_events", []),
-        "outcome_events_summary": outcome_bundle.get("outcome_events_summary", {}),
-        "pending_adjudications": outcome_bundle.get("pending_adjudications", []),
-        "current_response_state": outcome_bundle.get("current_response_state", {}),
-        "current_course_status": outcome_bundle.get("current_course_status", ""),
-        "last_adjudicated_event": outcome_bundle.get("last_adjudicated_event", {}),
-        "trial_comparable_endpoints": outcome_bundle.get("trial_comparable_endpoints", []),
-        "current_trial_comparable_profile": outcome_bundle.get("current_trial_comparable_profile", {}),
-        "prognostic_modifiers": prognostic_bundle.get("prognostic_modifiers", []),
-        "prognostic_recommended_actions": prognostic_bundle.get("recommended_actions", []),
-        "prognostic_followup_impact": prognostic_bundle.get("followup_impact", []),
-        "prognostic_capture_targets": prognostic_bundle.get("capture_targets", []),
-        "backbone_alignment": prognostic_bundle.get("backbone_alignment", {}),
-        "cadence_adjusted_by": prognostic_bundle.get("cadence_adjusted_by", []),
-        "psa_forecast": psa_forecast_bundle,
-        "forecast_reliability": psa_forecast_bundle.get("reliability", {}),
-        "live_benchmark": live_benchmark_bundle,
-        "benchmark_reliability": live_benchmark_bundle.get("reliability", {}),
-        "longitudinal_truth_snapshot": bundle.get("longitudinal_truth_snapshot", {}),
-        "decision_recalculation_trace": bundle.get("decision_recalculation_trace", {}),
-        "guideline_followup_plan": bundle.get("guideline_followup_plan", {}),
-        "transition_resolution": bundle.get("transition_resolution", {}),
-        "care_intent_contract": bundle.get("care_intent_contract", {}),
-        "laboratory_intelligence_profile": bundle.get("laboratory_intelligence_profile", {}),
-        "latest_clinically_decisive_visit": bundle.get("latest_clinically_decisive_visit", {}),
-        "crpc_copilot_bundle": crpc_copilot_bundle,
-        "crpc_copilot_status": crpc_copilot_bundle.get("status", "not_applicable"),
-        "post_rp_salvage_bundle": post_rp_salvage_bundle,
-        "post_rp_copilot_status": post_rp_salvage_bundle.get("status", "not_applicable"),
-        "mhspc_copilot_bundle": mhspc_copilot_bundle,
-        "mhspc_copilot_status": mhspc_copilot_bundle.get("status", "not_applicable"),
-        "diagnostic_biopsy_bundle": diagnostic_biopsy_bundle,
-        "diagnostic_copilot_status": diagnostic_biopsy_bundle.get("status", "not_applicable"),
-        "localized_surveillance_bundle": localized_surveillance_bundle,
-        "localized_copilot_status": localized_surveillance_bundle.get("status", "not_applicable"),
-        "post_rt_salvage_bundle": post_rt_salvage_bundle,
-        "post_rt_copilot_status": post_rt_salvage_bundle.get("status", "not_applicable"),
-        "salvage_window_status": post_rp_salvage_bundle.get("salvage_window_status", ""),
-        "salvage_window_reason": post_rp_salvage_bundle.get("salvage_window_reason", ""),
-        "post_rt_salvage_window_status": post_rt_salvage_bundle.get("post_rt_salvage_window_status", ""),
-        "qa_passed": qa_passed,
-        "sequence_summary": sequence_summary,
-        "crpc_schedule_overlay": crpc_copilot_bundle.get("crpc_schedule_overlay", {}),
-        "post_rp_schedule_overlay": post_rp_salvage_bundle.get("post_rp_schedule_overlay", {}),
-        "mhspc_schedule_overlay": mhspc_copilot_bundle.get("mhspc_schedule_overlay", {}),
-        "diagnostic_schedule_overlay": diagnostic_biopsy_bundle.get("diagnostic_schedule_overlay", {}),
-        "localized_schedule_overlay": localized_surveillance_bundle.get("localized_schedule_overlay", {}),
-        "post_rt_schedule_overlay": post_rt_salvage_bundle.get("post_rt_schedule_overlay", {}),
-        "palliative_transition_bundle": bundle.get("palliative_transition_bundle", {}),
-        "palliative_monitoring_package": bundle.get("palliative_monitoring_package", {}),
-        "survivorship_transition_bundle": bundle.get("survivorship_transition_bundle", {}),
-        "survivorship_monitoring_package": bundle.get("survivorship_monitoring_package", {}),
-        "late_effects_profile": bundle.get("late_effects_profile", {}),
-        "functional_recovery_profile": bundle.get("functional_recovery_profile", {}),
-        "survivorship_schedule_overlay": bundle.get("survivorship_schedule_overlay", {}),
-        "survivorship_plan": bundle.get("survivorship_plan", {}),
-        "symptom_burden_profile": bundle.get("symptom_burden_profile", {}),
-        "advance_care_planning_status": bundle.get("advance_care_planning_status", {}),
-        "hospice_eligibility": bundle.get("hospice_eligibility", {}),
-        "acute_palliative_alerts": bundle.get("acute_palliative_alerts", []),
-        "recommended_supportive_referrals": bundle.get("recommended_supportive_referrals", []),
-        "blocking_inputs": decision_input_requirements.get("blocking_inputs", []),
-        "hard_blocking_inputs": decision_input_requirements.get("hard_blocking_inputs", []),
-        "decision_blocking_inputs": decision_input_requirements.get("decision_blocking_inputs", []),
-        "supportive_gaps": decision_input_requirements.get("supportive_gaps", []),
-        "required_to_recalculate": decision_input_requirements.get("required_to_recalculate", []),
-        "optional_context_inputs": decision_input_requirements.get("optional_context_inputs", []),
-        "decision_domains_blocked": decision_input_requirements.get("decision_domains_blocked", []),
-        "why_these_fields_now": decision_input_requirements.get("why_these_fields_now", []),
-        "guideline_basis": bundle.get("guideline_followup_plan", {}).get("schedule_evidence_basis", []),
-        "ui_contradiction_flags": ui_contradiction_flags,
+    publication_projection = {
+        **publication_projection,
+        "public_payload": {
+            **dict(publication_projection.get("public_payload") or {}),
+            "copilot_alerts": list(published_alerts or []),
+        },
     }
+    return publication_projection.get("public_payload") or {}
 
 
 def refresh_followup_agenda(patient_record, longitudinal_bundle=None):
@@ -8235,6 +9764,7 @@ def refresh_followup_agenda(patient_record, longitudinal_bundle=None):
 
 
 def get_patient_agenda(nss_or_id):
+    from prostanet.domains.patient_tracking.clinical_decision_governance import prioritize_items_for_window_worklist
     from prostanet.domains.patient_tracking.followup_agenda import enrich_agenda_board_with_encounters, longitudinal_item_sort_key
 
     record = get_patient_full_record(nss_or_id)
@@ -8281,6 +9811,10 @@ def get_patient_agenda(nss_or_id):
         current["action_mode"] = scheduled.get("action_mode") or current.get("action_mode") or "capture"
         merged_active_items.append(current)
     merged_active_items.sort(key=longitudinal_item_sort_key)
+    merged_active_items = prioritize_items_for_window_worklist(
+        merged_active_items,
+        longitudinal_bundle.get("window_worklist_bundle") or {},
+    )
     agenda_board["items"] = merged_active_items
     agenda_board["active_items"] = merged_active_items
     agenda_board["next_due_items"] = [item for item in merged_active_items if item.get("status") in {"due", "due_today"}][:4]
@@ -8309,6 +9843,7 @@ def get_patient_agenda(nss_or_id):
     agenda_board["last_adjudicated_event"] = schedule_bundle.get("last_adjudicated_event", {})
     agenda_board["trial_comparable_endpoints"] = schedule_bundle.get("trial_comparable_endpoints", [])
     agenda_board["current_trial_comparable_profile"] = schedule_bundle.get("current_trial_comparable_profile", {})
+    agenda_board["window_worklist_bundle"] = longitudinal_bundle.get("window_worklist_bundle", {})
     return agenda_board
 
 
@@ -8888,10 +10423,23 @@ def get_cohort_benchmarks():
 
 
 def get_patient_next_best_action(nss_or_id):
-    bundle = refresh_longitudinal_intelligence(nss_or_id, force_recompute=False)
+    record = get_patient_full_record(nss_or_id)
+    bundle = refresh_longitudinal_intelligence(
+        nss_or_id,
+        force_recompute=True,
+        record=record,
+        include_live_benchmark=False,
+    )
     if not bundle:
         return None
-    return bundle.get("next_best_action", {})
+    action = dict((bundle.get("signals") or {}).get("next_best_action") or bundle.get("next_best_action") or {})
+    if str(action.get("action_title") or "").strip():
+        action["title"] = str(action.get("action_title") or "").strip()
+    if str(action.get("action_rationale") or "").strip():
+        action["rationale"] = str(action.get("action_rationale") or "").strip()
+    if any(token in str(action.get("title") or "").lower() for token in ("salvage", "rescate")):
+        action["recommendation_family"] = "salvage"
+    return action
 
 
 def get_patient_labs_intelligence(nss_or_id):
@@ -9103,7 +10651,10 @@ def _confirm_transition_assessment(patient_id, proposal):
     assessment_service = ClinicalAssessmentService()
     latest_assessment = record.get("latest_assessment") or {}
     base_payload = dict((latest_assessment or {}).get("input_snapshot", {}) or {})
-    payload = merge_record_into_assessment_payload(base_payload, record)
+    payload = merge_record_into_assessment_payload(
+        base_payload,
+        _build_runtime_neutral_patient_record(record),
+    )
     target_state = proposal.get("target_state")
     result = registry.evaluate_module(target_state, payload)
     assessment_id = assessment_service.create_draft(
@@ -9928,6 +11479,16 @@ def verify_source_document(patient_id, document_id, data):
             serialized_facts,
             verified_by,
         )
+        record_snapshot = get_patient_full_record(patient_id) or {}
+        _persist_verified_document_facts_to_canonical(
+            c,
+            patient_id,
+            document_id,
+            serialized_facts,
+            state_context=(record_snapshot.get("prior_history") or {}).get("current_state") or "",
+            management_track=(record_snapshot.get("prior_history") or {}).get("management_track") or "",
+            verified_by=verified_by,
+        )
         c.execute(
             '''
             UPDATE source_documents
@@ -9962,6 +11523,7 @@ def save_stage_visit_bundle(patient_id, data):
     """
     try:
         data = apply_gleason_profile(dict(data or {}))
+        data = _apply_anthropometric_derivations(data)
         patient_id = int(patient_id)
         if not patient_exists(patient_id):
             return False, "Paciente no encontrado"
@@ -10034,12 +11596,12 @@ def save_stage_visit_bundle(patient_id, data):
                 current_treatment, dose_adjustment, disease_status, creatinine_current,
                 cystatin_c_current, bilirubin_current, ast_current, alt_current, ggt_current,
                 glucose_current, opioid_use, fatigue_score, mini_cog_score, weight_kg,
-                bmi_current, weight_loss_6m_pct, exercise_status, nutrition_status,
+                height_cm, bmi_current, weight_loss_6m_kg, weight_loss_6m_pct, prior_weight_6m_kg, exercise_status, nutrition_status,
                 protein_supplements, seizure_history, dermatitis_history, peripheral_neuropathy_grade, cv_risk_status,
                 ddi_reviewed, hepatic_risk_status, metastasis_site, metastasis_count,
                 m_substage_resolved, metastatic_profile_json, visit_bundle_json, visit_type,
                 state_at_visit, management_track, agenda_context_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
             (
                 patient_id,
@@ -10069,8 +11631,11 @@ def save_stage_visit_bundle(patient_id, data):
                 _safe_int(data.get("fatigue_score"), None),
                 _safe_int(data.get("mini_cog_score"), None),
                 _safe_float(data.get("weight_kg"), None),
+                _safe_float(data.get("height_cm"), None),
                 _safe_float(data.get("bmi_current"), None),
+                _safe_float(data.get("weight_loss_6m_kg"), None),
                 _safe_float(data.get("weight_loss_6m_pct"), None),
+                _safe_float(data.get("prior_weight_6m_kg"), None),
                 data.get("exercise_status"),
                 data.get("nutrition_status"),
                 _safe_int(data.get("protein_supplements", 0), 0),
@@ -10363,6 +11928,25 @@ def save_stage_visit_bundle(patient_id, data):
                 source_record_id=visit_record_id,
             )
 
+        _persist_canonical_facts_from_payload(
+            c,
+            patient_id,
+            {
+                **data,
+                "current_psa": visit_psa_current,
+                "metastasis_assessment_date": metastatic.get("metastasis_assessment_date"),
+                "metastasis_document_source": metastatic.get("metastasis_document_source"),
+            },
+            source_type="structured_result",
+            source_record_type="stage_visit",
+            source_record_id=visit_record_id,
+            source_date=visit_date,
+            observed_at=visit_date,
+            state_context=state,
+            management_track=management_track,
+            certainty_tier="structured_result",
+        )
+
         conn.commit()
         conn.close()
 
@@ -10379,7 +11963,9 @@ def save_stage_visit_bundle(patient_id, data):
                 "mini_cog_score",
                 "fatigue_score",
                 "weight_kg",
+                "height_cm",
                 "bmi_current",
+                "weight_loss_6m_kg",
                 "weight_loss_6m_pct",
                 "low_activity",
                 "slow_gait",
@@ -10561,6 +12147,7 @@ def get_stats():
 def save_demographics(patient_id, data):
     """Guarda o actualiza datos demográficos del paciente."""
     try:
+        data = _apply_anthropometric_derivations(dict(data or {}))
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('''
@@ -10571,10 +12158,10 @@ def save_demographics(patient_id, data):
                 actividad_fisica, ipss_score, iief5_score,
                 g8_food_intake, g8_weight_loss, g8_mobility, g8_neuropsych,
                 g8_bmi, g8_medications, g8_self_health,
-                mini_cog_score, fatigue_score, weight_kg, bmi_current,
-                weight_loss_6m_pct, low_activity, slow_gait, weak_grip,
+                mini_cog_score, fatigue_score, weight_kg, height_cm, bmi_current,
+                weight_loss_6m_kg, weight_loss_6m_pct, prior_weight_6m_kg, low_activity, slow_gait, weak_grip,
                 line_of_therapy_number, line_of_therapy_context
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             patient_id,
             data.get('estado_residencia'), data.get('seguridad_social'),
@@ -10595,8 +12182,11 @@ def save_demographics(patient_id, data):
             _safe_int(data.get('mini_cog_score'), None),
             _safe_int(data.get('fatigue_score'), None),
             _safe_float(data.get('weight_kg'), None),
+            _safe_float(data.get('height_cm'), None),
             _safe_float(data.get('bmi_current'), None),
+            _safe_float(data.get('weight_loss_6m_kg'), None),
             _safe_float(data.get('weight_loss_6m_pct'), None),
+            _safe_float(data.get('prior_weight_6m_kg'), None),
             _safe_int(data.get('low_activity'), None),
             _safe_int(data.get('slow_gait'), None),
             _safe_int(data.get('weak_grip'), None),
@@ -11128,7 +12718,7 @@ def save_pro_assessment(patient_id, data):
                 eortc_qlq_c30_global_health, eortc_qlq_c30_physical, eortc_qlq_c30_role,
                 eortc_qlq_c30_emotional, eortc_qlq_c30_fatigue, eortc_qlq_c30_pain,
                 anxiety_score, clinician_notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             patient_id, data.get('date', datetime.now().strftime('%Y-%m-%d')),
             data.get('ipss_total'), data.get('ipss_qol'), _safe_int(data.get('pad_usage', 0), 0),
@@ -11258,11 +12848,37 @@ def save_structured_result(patient_id, data):
         _persist_official_diagnosis_fields(cursor, patient_id, payload)
         conn.commit()
         conn.close()
+    record_snapshot = get_patient_full_record(patient_id) or {}
+    source_date = (
+        payload.get("study_date")
+        or payload.get("biopsy_date")
+        or payload.get("test_date")
+        or payload.get("surgery_date")
+        or payload.get("rt_date")
+        or datetime.now().strftime("%Y-%m-%d")
+    )
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    _persist_canonical_facts_from_payload(
+        cursor,
+        patient_id,
+        payload,
+        source_type="structured_result",
+        source_record_type=result_type,
+        source_record_id=None,
+        source_date=source_date,
+        observed_at=source_date,
+        state_context=(record_snapshot.get("prior_history") or {}).get("current_state") or "",
+        management_track=(record_snapshot.get("prior_history") or {}).get("management_track") or "",
+        certainty_tier="structured_result",
+    )
+    conn.commit()
+    conn.close()
     event_id = record_patient_event(
         patient_id,
         event_type=event_type,
-        event_date=payload.get("study_date") or payload.get("biopsy_date") or payload.get("test_date") or payload.get("surgery_date") or payload.get("rt_date") or datetime.now().strftime("%Y-%m-%d"),
-        state_context=(get_patient_full_record(patient_id) or {}).get("prior_history", {}).get("current_state", ""),
+        event_date=source_date,
+        state_context=(record_snapshot.get("prior_history") or {}).get("current_state", ""),
         source_type="structured_result",
         payload={"result_type": result_type, **payload},
         mcode_focus={"result_type": result_type},
@@ -11370,6 +12986,7 @@ def get_patient_full_record(nss_or_id, *, include_derivatives=True, include_ledg
         imaging = [dict(row) for row in c.fetchall()]
         for item in imaging:
             item["findings"] = _parse_json_blob(item.pop("findings_json", None), {})
+        psma_structured_profile = build_psma_structured_profile({"imaging": imaging})
 
         c.execute("SELECT * FROM mri_facts WHERE patient_id = ? ORDER BY fact_date DESC, id DESC", (patient_id,))
         mri_facts = [dict(row) for row in c.fetchall()]
@@ -11671,6 +13288,18 @@ def get_patient_full_record(nss_or_id, *, include_derivatives=True, include_ledg
         tumor_board_outcomes = _hydrate_tumor_board_outcome_rows(c.fetchall())
 
         c.execute(
+            """
+            SELECT * FROM therapeutic_window_events
+            WHERE patient_id = ?
+            ORDER BY CASE WHEN window_closed_at IS NULL THEN 0 ELSE 1 END ASC,
+                     COALESCE(updated_at, created_at, window_opened_at) DESC,
+                     id DESC
+            """,
+            (patient_id,),
+        )
+        therapeutic_window_events = _hydrate_therapeutic_window_event_rows(c.fetchall())
+
+        c.execute(
             "SELECT * FROM treatment_adverse_events WHERE patient_id = ? ORDER BY COALESCE(event_date, '') DESC, id DESC",
             (patient_id,),
         )
@@ -11721,6 +13350,24 @@ def get_patient_full_record(nss_or_id, *, include_derivatives=True, include_ledg
             (patient_id,),
         )
         verified_document_facts = _hydrate_verified_fact_rows(c.fetchall())
+
+        c.execute(
+            "SELECT * FROM patient_clinical_facts WHERE patient_id = ? ORDER BY fact_key ASC, updated_at DESC, id DESC",
+            (patient_id,),
+        )
+        patient_clinical_facts = _hydrate_patient_clinical_fact_rows(c.fetchall())
+
+        c.execute(
+            "SELECT * FROM patient_fact_lineage_events WHERE patient_id = ? ORDER BY created_at DESC, id DESC",
+            (patient_id,),
+        )
+        patient_fact_lineage_events = _hydrate_patient_fact_lineage_rows(c.fetchall())
+
+        c.execute(
+            "SELECT * FROM patient_fact_conflicts WHERE patient_id = ? ORDER BY updated_at DESC, created_at DESC, id DESC",
+            (patient_id,),
+        )
+        patient_fact_conflicts = [dict(row) for row in c.fetchall()]
 
         c.execute(
             "SELECT * FROM patient_consents WHERE patient_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
@@ -11869,6 +13516,7 @@ def get_patient_full_record(nss_or_id, *, include_derivatives=True, include_ledg
             'demographics': dict(demographics) if demographics else {},
             'family_history': family_history,
             'imaging': imaging,
+            'psma_structured_profile': psma_structured_profile,
             'mri_facts': mri_facts,
             'genomics': dict(genomics) if genomics else {},
             'genomic_reports': genomic_reports,
@@ -11901,6 +13549,7 @@ def get_patient_full_record(nss_or_id, *, include_derivatives=True, include_ledg
             'lesion_measurements': lesion_measurements,
             'biomarker_longitudinal': biomarker_longitudinal,
             'psa_series': _derive_psa_series(biomarker_longitudinal, follow_ups, baseline_dict, dict(identity)),
+            'testosterone_series': _derive_testosterone_series(biomarker_longitudinal, follow_ups, baseline_dict, dict(identity)),
             'data_provenance': data_provenance,
             'patient_events': patient_events,
             'latest_signal_snapshot': latest_signal_snapshot[0] if latest_signal_snapshot else {},
@@ -11908,6 +13557,7 @@ def get_patient_full_record(nss_or_id, *, include_derivatives=True, include_ledg
             'recommendation_audit': recommendation_audit,
             'clinical_decision_captures': clinical_decision_captures,
             'tumor_board_outcomes': tumor_board_outcomes,
+            'therapeutic_window_events': therapeutic_window_events,
             'treatment_adverse_events': treatment_adverse_events,
             'outcome_events': outcome_events,
             'latest_adjudication_snapshot': adjudication_snapshots[0] if adjudication_snapshots else {},
@@ -11916,6 +13566,9 @@ def get_patient_full_record(nss_or_id, *, include_derivatives=True, include_ledg
             'document_candidates': document_candidates,
             'document_verification_tasks': document_verification_tasks,
             'verified_document_facts': verified_document_facts,
+            'patient_clinical_facts': patient_clinical_facts,
+            'patient_fact_lineage_events': patient_fact_lineage_events,
+            'patient_fact_conflicts': patient_fact_conflicts,
             'survival_status_detail': latest_survival_status,
             'survival_status_history': survival_status_rows,
             'survival_anchor_events': survival_anchor_events,
@@ -11938,6 +13591,34 @@ def get_patient_full_record(nss_or_id, *, include_derivatives=True, include_ledg
             'clavien_dindo_events': clavien_events,
             'functional_recovery_snapshots': functional_recovery,
         }
+        testosterone_series = patient_record.get("testosterone_series") or []
+        testosterone_candidates = [
+            point
+            for point in testosterone_series
+            if _is_present(point.get("sample_date")) and point.get("value") is not None
+        ]
+        followup_testosterone_candidates = [
+            point
+            for point in testosterone_candidates
+            if str(point.get("entry_origin") or "").strip() == "follow_up_visit"
+        ]
+        if followup_testosterone_candidates:
+            testosterone_candidates = followup_testosterone_candidates
+        non_baseline_testosterone_candidates = [
+            point
+            for point in testosterone_candidates
+            if str(point.get("context") or "").strip().lower()
+            not in {"baseline", "diagnostic", "pretratamiento", "pretreatment"}
+        ]
+        if non_baseline_testosterone_candidates:
+            testosterone_candidates = non_baseline_testosterone_candidates
+        latest_testosterone_point = max(
+            testosterone_candidates,
+            key=lambda point: str(point.get("sample_date") or ""),
+            default={},
+        )
+        patient_record["latest_testosterone_value"] = latest_testosterone_point.get("value")
+        patient_record["latest_testosterone_date"] = latest_testosterone_point.get("sample_date") or ""
         if not include_derivatives:
             return patient_record
         return build_patient_record_derivatives(
@@ -11965,124 +13646,50 @@ def build_patient_record_derivatives(record, *, include=None, include_ledger=Tru
     prior_history = _decorate_prior_history(patient_record.get("prior_history"))
     patient_record["prior_history"] = prior_history
 
-    from prostanet.domains.patient_tracking.longitudinal_truth_service import build_longitudinal_truth_snapshot
-    from prostanet.domains.patient_tracking.reconciled_state import build_reconciled_state
-    from prostanet.domains.patient_tracking.followup_agenda import build_agenda_board
-    from prostanet.domains.patient_tracking.longitudinal_intelligence import resolve_followup_runtime_context
-    from prostanet.domains.patient_tracking.master_followup_plan import build_master_followup_plan
-    from prostanet.domains.patient_tracking.guideline_schedule_engine import build_guideline_followup_plan
-    from prostanet.domains.patient_tracking.followup_reconciliation_service import build_decision_recalculation_trace
-    from prostanet.domains.patient_tracking.laboratory_intelligence.service import build_laboratory_intelligence_profile
-    from prostanet.domains.patient_tracking.decision_input_requirements_engine import (
-        build_decision_input_requirements,
-        detect_ui_contradiction_flags,
+    from prostanet.domains.patient_tracking.clinical_kernel_snapshot_builder import (
+        build_patient_kernel_snapshot,
+    )
+    from prostanet.domains.patient_tracking.clinical_ledger_builder import (
+        attach_patient_clinical_ledger_histories,
+        build_patient_clinical_ledger_bundle,
+    )
+    from prostanet.domains.patient_tracking.governance_read_model_builder import (
+        build_patient_governance_context,
+    )
+    from prostanet.domains.patient_tracking.schedule_read_model_builder import (
+        build_patient_schedule_context,
     )
 
-    longitudinal_truth_snapshot = build_longitudinal_truth_snapshot(
+    kernel_snapshot = build_patient_kernel_snapshot(
         patient_record,
         latest_assessment=latest_assessment,
     )
-    patient_record["longitudinal_truth_snapshot"] = longitudinal_truth_snapshot
-    patient_record["superseded_inputs"] = list(longitudinal_truth_snapshot.get("superseded_inputs") or [])
-    patient_record["latest_clinically_decisive_visit"] = dict(
-        longitudinal_truth_snapshot.get("latest_clinically_decisive_visit") or {}
-    )
-    psma_structured_profile = build_psma_structured_profile(patient_record)
-    patient_record["psma_structured_profile"] = psma_structured_profile
-    patient_record["psma_decision_impact"] = build_psma_decision_impact(
-        psma_structured_profile,
-        state=str(prior_history.get("current_state") or ""),
-        management_track=str(prior_history.get("management_track") or ""),
-        patient=patient_record,
-    )
-
-    reconciliation = build_reconciled_state(patient_record, latest_assessment)
+    patient_record.update(kernel_snapshot)
+    reconciliation = dict(kernel_snapshot.get("reconciliation") or {})
     state = (
         reconciliation.get("reconciled_state")
         or latest_assessment.get("state")
         or prior_history.get("current_state")
         or "diagnostic_workup"
     )
-    management_track = reconciliation.get("reconciled_management_track") or "diagnostic_surveillance"
-    followup_runtime = resolve_followup_runtime_context(
-        patient_record,
-        state=state,
-        management_track=management_track,
-        latest_assessment=latest_assessment,
-        signals=dict(patient_record.get("latest_signal_snapshot") or {}),
-    )
-    effective_followup_state = str(followup_runtime.get("state") or state)
-    effective_followup_track = str(followup_runtime.get("management_track") or management_track)
-    patient_record["followup_runtime_context"] = dict(followup_runtime)
-    patient_record["schedule_state"] = effective_followup_state
-    patient_record["schedule_management_track"] = effective_followup_track
-    patient_record["schedule_override_reason"] = str(followup_runtime.get("override_reason") or "")
-    agenda_board = build_agenda_board(patient_record, effective_followup_state, effective_followup_track, latest_assessment)
-    guideline_followup_plan = build_guideline_followup_plan(
-        patient=patient_record,
-        state=effective_followup_state,
-        management_track=effective_followup_track,
-        agenda_board=agenda_board,
-        master_followup_plan=build_master_followup_plan(
+    patient_record.update(
+        build_patient_schedule_context(
             patient_record,
-            state=effective_followup_state,
-            management_track=effective_followup_track,
-            agenda_board=agenda_board,
-            signals=dict(patient_record.get("latest_signal_snapshot") or {}),
-            copilot_alerts=patient_record.get("alerts") or [],
-            next_best_action=(patient_record.get("latest_signal_snapshot") or {}).get("next_best_action") or {},
-        ),
-        signals=dict(patient_record.get("latest_signal_snapshot") or {}),
-        care_intent_contract=(patient_record.get("latest_signal_snapshot") or {}).get("care_intent_contract") or {},
+            latest_assessment=latest_assessment,
+            reconciliation=reconciliation,
+        )
     )
-    patient_record["guideline_followup_plan"] = guideline_followup_plan
-    patient_record["care_intent_contract"] = (patient_record.get("latest_signal_snapshot") or {}).get("care_intent_contract") or {}
-    patient_record["transition_resolution"] = (patient_record.get("latest_signal_snapshot") or {}).get("transition_resolution") or {}
-    patient_record["laboratory_intelligence_profile"] = build_laboratory_intelligence_profile(
-        patient_record,
-        state=effective_followup_state,
-        management_track=effective_followup_track,
-        latest_assessment=latest_assessment,
+    patient_record.update(
+        build_patient_governance_context(
+            patient_record,
+            latest_assessment=latest_assessment,
+            reconciliation=reconciliation,
+            longitudinal_truth_snapshot=patient_record.get("longitudinal_truth_snapshot") or {},
+        )
     )
-    patient_record["decision_recalculation_trace"] = build_decision_recalculation_trace(
-        patient=patient_record,
-        state=state,
-        management_track=management_track,
-        latest_assessment=latest_assessment,
-        longitudinal_truth_snapshot=longitudinal_truth_snapshot,
-        next_best_action=(patient_record.get("latest_signal_snapshot") or {}).get("next_best_action") or {},
-        reconciliation=reconciliation,
-        transition_resolution=patient_record.get("transition_resolution") or {},
-        care_intent_contract=patient_record.get("care_intent_contract") or {},
-    )
-    patient_record["decision_input_requirements"] = build_decision_input_requirements(
-        patient_record,
-        effective_state=effective_followup_state,
-        effective_management_track=effective_followup_track,
-        latest_assessment=latest_assessment,
-        next_best_action=(patient_record.get("latest_signal_snapshot") or {}).get("next_best_action") or {},
-    )
-    patient_record["ui_contradiction_flags"] = detect_ui_contradiction_flags(
-        patient_record,
-        effective_state=effective_followup_state,
-        effective_management_track=effective_followup_track,
-        decision_trace=patient_record.get("decision_recalculation_trace") or {},
-        schedule_bundle={
-            "schedule_state": effective_followup_state,
-            "schedule_management_track": effective_followup_track,
-            "schedule_override_reason": patient_record.get("schedule_override_reason") or "",
-            "schedule_primary_intent": guideline_followup_plan.get("schedule_primary_intent", ""),
-            "action_schedule_consistency": guideline_followup_plan.get("action_schedule_consistency"),
-        },
-        transition_resolution=patient_record.get("transition_resolution") or {},
-        care_intent_contract=patient_record.get("care_intent_contract") or {},
-    )
+    patient_record["clinical_ledger_bundle"] = build_patient_clinical_ledger_bundle(patient_record)
     if include_ledger:
-        from prostanet.domains.clinical_validation.repository import get_patient_ledger_histories
-
-        identity_id = ((patient_record.get("identity") or {}).get("id"))
-        if identity_id is not None:
-            patient_record.update(get_patient_ledger_histories(int(identity_id)))
+        patient_record = attach_patient_clinical_ledger_histories(patient_record)
     return patient_record
 
 
@@ -12134,7 +13741,10 @@ def recompute_patient_care_plan(nss_or_id):
         )
 
         record = get_patient_full_record(patient_id)
-        enriched_payload = merge_record_into_assessment_payload(assessment.get("input_snapshot", {}), record)
+        enriched_payload = merge_record_into_assessment_payload(
+            assessment.get("input_snapshot", {}),
+            _build_runtime_neutral_patient_record(record),
+        )
         updated_result = registry.evaluate_module(assessment["module_id"], enriched_payload)
         updated_guidelines = registry.get_guidelines_metadata()
         c.execute(

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from clinical_scores import docetaxel_fitness
+from prostanet.shared.advanced_support_normalizer import (
+    normalize_advanced_support_payload,
+    resolve_child_pugh_bc,
+    resolve_docetaxel_fit_override,
+)
 
 
 def _resolve_temporality(payload: dict, default: str = "auto") -> str:
@@ -20,8 +25,14 @@ def _resolve_temporality(payload: dict, default: str = "auto") -> str:
 def evaluate_mcspc_high_volume(payload: dict, *, default_temporality: str = "auto") -> dict:
     temporality = _resolve_temporality(payload, default_temporality)
     resolved_state = "mcspc_high_volume_sync" if temporality == "sync" else "mcspc_high_volume_metachronous"
+    payload = normalize_advanced_support_payload(payload, state=resolved_state)
     docetaxel = docetaxel_fitness({**payload, "state": resolved_state})
     child_pugh = str(payload.get("child_pugh_score", "A") or "A").strip().upper()
+    # Auditoría Pacientes Insignia 2026-04-21 (§B.1) — gate hepático unificado
+    # reconoce `child_pugh_score` canónico y `child_pugh_b_or_c` boolean de
+    # perfiles insignia. Habilita bloqueo de LATITUDE/PEACE-1/abiraterone
+    # doublet cuando el paciente tiene compromiso hepático moderado/severo.
+    child_pugh_bc = resolve_child_pugh_bc(payload)
     seizure_risk = str(payload.get("comorbidity_seizure", "0")) == "1"
     cardio_risk = str(payload.get("comorbidity_cardio", "0")) == "1" or str(payload.get("cv_risk_documented", "0")) == "1"
     frailty = str(payload.get("frailty_status", "Fit") or "Fit")
@@ -29,12 +40,17 @@ def evaluate_mcspc_high_volume(payload: dict, *, default_temporality: str = "aut
     assay_date = str(payload.get("molecular_assay_date", "")).strip()
     brca2_status = str(payload.get("brca2_status", "Desconocido") or "Desconocido")
     hrr_gene = str(payload.get("hrr_gene", "Desconocido") or "Desconocido")
-    ddi_reviewed = str(payload.get("drug_interaction_reviewed", "0")) == "1"
+    ddi_reviewed = str(payload.get("ddi_review_status") or "").strip().lower() == "completed"
 
     brca2_positive = brca2_status == "Positivo" or hrr_gene == "BRCA2"
     brca2_origin = str(payload.get("brca2_origin", "unknown") or "unknown").strip().lower()
     molecular_traceable = brca2_positive and assay_source not in {"", "Desconocida", "Desconocido"} and bool(assay_date) and brca2_origin != "unknown"
     fit_for_docetaxel = bool(docetaxel["fit_for_docetaxel"])
+    # Auditoría Pacientes Insignia 2026-04-21 (§E.1) — override explícito de
+    # docetaxel_fit si el clínico documentó Apto/No apto/Marginal.
+    docetaxel_override = resolve_docetaxel_fit_override(payload)
+    if docetaxel_override is not None:
+        fit_for_docetaxel = docetaxel_override
     docetaxel_base_eligibility = str(docetaxel.get("docetaxel_base_eligibility") or "not_assessable")
     docetaxel_default_intensification = str(docetaxel.get("docetaxel_default_intensification") or "no")
 
@@ -84,6 +100,22 @@ def evaluate_mcspc_high_volume(payload: dict, *, default_temporality: str = "aut
         "bone_protection_started": str(payload.get("bone_protection_started", "0")) == "1",
         "molecular_traceable": molecular_traceable,
         "brca2_origin": brca2_origin,
-        "abiraterone_hepatic_gate": "contraindicated" if child_pugh == "C" else ("caution" if child_pugh == "B" else "clear"),
+        # Auditoría Pacientes Insignia 2026-04-21 (§B.1) — dos vistas del gate:
+        #   `abiraterone_hepatic_tier` (string, legacy compat) conserva la
+        #   semántica histórica "contraindicated"/"caution"/"clear" usada por
+        #   service.py para enriquecer contraindications.
+        #   `abiraterone_hepatic_block` (bool) unifica la decisión clínica:
+        #   True → abiraterona NO recomendada (Child-Pugh B/C o señal
+        #   booleana `child_pugh_b_or_c`). Lo consume service.py para
+        #   LATITUDE/PEACE-1 (§B.2) y suprime la emisión.
+        "abiraterone_hepatic_tier": (
+            "contraindicated" if child_pugh == "C"
+            else "caution" if child_pugh == "B"
+            else "clear"
+        ),
+        "abiraterone_hepatic_gate": child_pugh_bc,
+        "abiraterone_hepatic_block": child_pugh_bc,
+        "child_pugh_bc": child_pugh_bc,
+        "ddi_review_status": str(payload.get("ddi_review_status") or ""),
         "recommendation": recommendation,
     }

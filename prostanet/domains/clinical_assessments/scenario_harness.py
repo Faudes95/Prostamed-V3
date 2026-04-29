@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import date, timedelta
 from typing import Any
+
+
+def _recent_date(days_ago: int) -> str:
+    return (date.today() - timedelta(days=days_ago)).isoformat()
 
 
 SCENARIO_LIBRARY = [
@@ -104,7 +109,8 @@ SCENARIO_LIBRARY = [
             "baseline_bowel_qol": 92,
         },
         "expected_state": "localized_initial",
-        "expected_label_contains": "low",
+        # Etiqueta oficial en español ("Bajo"); la calibración compara sin acentos.
+        "expected_label_contains": "bajo",
         "expected_treatment_contains": "Vigilancia activa",
     },
     {
@@ -132,7 +138,8 @@ SCENARIO_LIBRARY = [
             "metastasis_site": "M0",
         },
         "expected_state": "localized_initial",
-        "expected_label_contains": "unfavorable",
+        # Etiqueta oficial en español: "Intermedio desfavorable".
+        "expected_label_contains": "desfavorable",
         "expected_treatment_contains": "Radioterapia",
     },
     {
@@ -211,6 +218,10 @@ SCENARIO_LIBRARY = [
             "time_to_recurrence_months": 0,
         },
         "expected_state": "post_prostatectomy",
+        # El módulo post_prostatectomy emite `nccn_primary.label` en inglés
+        # (p. ej. "Post-RP surveillance", simétrico a "Adverse pathology under
+        # surveillance" del escenario post_rp_adverse). La recomendación en
+        # español vive en `tratamiento_principal`/`recommendation_family`.
         "expected_label_contains": "surveillance",
     },
     {
@@ -343,8 +354,8 @@ SCENARIO_LIBRARY = [
             "ast": 22,
             "alp": 90,
             "bilirubin": 0.8,
-            "cbc_date": "2026-03-20",
-            "liver_panel_date": "2026-03-20",
+            "cbc_date": _recent_date(3),
+            "liver_panel_date": _recent_date(3),
             "dxa_baseline_done": 1,
             "calcium_vitd_started": 1,
         },
@@ -364,6 +375,24 @@ SCENARIO_LIBRARY = [
                 {"site_key": "femur", "lesion_count": 1},
             ],
             "ecog_score": 1,
+            # Guard TX-1 (FAUBOT): la fitness para docetaxel debe ser explícita
+            # para que el módulo pueda comparar triplete vs AKEEGA en un paciente
+            # fit BRCA2+. Sin esta bandera el engine no podía confirmar si el
+            # paciente era o no elegible a quimio, y la trayectoria AKEEGA quedaba
+            # ambigua (FAUBOT FASE 2 TX-1).
+            "docetaxel_fit": 1,
+            "performance_status_driver": "cancer_related",
+            "peripheral_neuropathy_grade": 0,
+            "drug_interaction_reviewed": 1,
+            "anc": 2400,
+            "platelets": 215000,
+            "hemoglobin": 13.1,
+            "alt": 24,
+            "ast": 21,
+            "alp": 88,
+            "bilirubin": 0.7,
+            "cbc_date": _recent_date(3),
+            "liver_panel_date": _recent_date(3),
             "child_pugh_score": "A",
             "frailty_status": "Fit",
             "comorbidity_seizure": 0,
@@ -386,6 +415,12 @@ SCENARIO_LIBRARY = [
         "payload": {
             "psadt_months": 6,
             "castrate_testosterone_confirmed": 1,
+            "imaging_negative": 1,
+            "current_adt_context": "medical_adt_continuous",
+            "progression_pattern": "biochemical_only",
+            "conventional_imaging_status": "M0",
+            "conventional_imaging_modality": "CT + bone scan",
+            "conventional_imaging_date": _recent_date(5),
             "comorbidity_seizure": 1,
         },
         "expected_state": "m0_crpc",

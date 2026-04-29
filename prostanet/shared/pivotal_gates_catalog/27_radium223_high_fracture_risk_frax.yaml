@@ -1,0 +1,177 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 27: radium223_high_fracture_risk_frax
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XXXIV) — Auditoría #42 — Gate YAML-NATIVE.
+#
+# Razón clínica:
+#   Ra-223 (Xofigo) tiene WARNING crítico sobre fracturas patológicas en
+#   pacientes con alto riesgo basal de fractura por osteoporosis/CTIBL
+#   (Cancer Treatment-Induced Bone Loss). Mecanismo: Ra-223 deposita en
+#   hueso pero no protege contra fragility fractures; ERA-223 mostró
+#   exceso de fracturas (28% Ra-223+abi vs 12% placebo+abi) sin agente
+#   óseo concomitante.
+#
+#   FRAX (Fracture Risk Assessment Tool, WHO/OMS 2008):
+#     - 10-year major osteoporotic fracture probability (% MOF)
+#     - 10-year hip fracture probability (% Hip)
+#     - Inputs: edad + sexo + BMI + fracture history + smoking + glucocorticoids +
+#       rheumatoid arthritis + secondary osteoporosis + alcohol + DXA T-score
+#     - Threshold para tratamiento NOF Guidelines: MOF ≥20% O Hip ≥3%
+#       (high fracture risk → osteoporosis treatment indicated)
+#
+#   Datos de ERA-223 (Smith Lancet Oncol 2019;20:408) + Xofigo FDA
+#   prescribing information §5.4 (Bone Fractures):
+#     - Fractura patológica Ra-223: 28% sin bone modifying agent
+#     - Fractura con concomitant denosumab/ZA: 12% (riesgo basal)
+#     - Riesgo amplificado en pacientes con FRAX MOF >20%
+#     - PEACE-3 (Tombal ESMO 2024) requirió bisfosfonato/denosumab
+#       OBLIGATORIO + DXA basal + FRAX assessment
+#
+#   Threshold canónico:
+#     - FRAX MOF >20% (NOF/WHO threshold high fracture risk)
+#     - FRAX Hip >3% (NOF threshold high hip fracture risk)
+#     - DXA T-score lumbar OR femoral neck < -2.5 (osteoporosis WHO)
+#     - Fracture history pre-existente (vertebral, hip, wrist)
+#
+#   Coexistencia con Gate 9 (no_bone_protective_agent — NO se elimina):
+#     - Gate 9: Ra-223 sin denosumab/zoledronate documented (flag-based)
+#     - Gate 27: Ra-223 + FRAX numéricamente alto, requiere protección
+#       BONE PROTECTION ESTABLECIDA (no solo iniciada — sostenida ≥3 meses)
+#
+#   Override: bone_protection_established_pre_radium223=Sí (denosumab 120 mg
+#   SC c/4 sem O zoledronate 4 mg IV c/4 sem documentado ≥6 semanas pre-
+#   inicio + DXA monitoring pre/post + Vitamin D ≥800 IU/d + calcium
+#   ≥1200 mg/d + FRAX re-assessed post-treatment).
+#
+#   Bloquea: REGIMEN_CODES_RADIUM223 con cobertura más estricta que gate 9.
+# ──────────────────────────────────────────────────────────────────────
+
+code: radium223_high_fracture_risk_frax
+title: "Ra-223 × alto riesgo fractura FRAX (WHO threshold + ERA-223 + PEACE-3)"
+faubot_added_in: "2026-04-25 XXXIV"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1. FRAX MOF (Major Osteoporotic Fracture) > 20% (NOF threshold)
+    - type: numeric_above
+      field: frax_10yr_major_fracture_risk
+      alias_fields:
+        - frax_mof_percent
+        - frax_major_osteoporotic_fracture_10yr
+        - frax_score_mof
+      threshold: 20
+    # 2. FRAX Hip fracture > 3% (NOF threshold)
+    - type: numeric_above
+      field: frax_10yr_hip_fracture_risk
+      alias_fields:
+        - frax_hip_percent
+        - frax_hip_fracture_10yr
+        - frax_score_hip
+      threshold: 3
+    # 3. DXA T-score lumbar < -2.5 (osteoporosis WHO definition)
+    - type: numeric_below
+      field: dxa_t_score_lumbar
+      alias_fields:
+        - dxa_lumbar_t_score
+        - bmd_t_score_lumbar_spine
+      threshold: -2.5
+    # 4. DXA T-score femoral neck < -2.5
+    - type: numeric_below
+      field: dxa_t_score_femoral_neck
+      alias_fields:
+        - dxa_femoral_t_score
+        - bmd_t_score_femoral_neck
+      threshold: -2.5
+    # 5. Flag explícito alto riesgo fractura documentado
+    - type: truthy_flag
+      field: high_fracture_risk_for_radium223
+      alias_fields:
+        - severe_osteoporosis_documented
+        - prior_fragility_fracture_history
+        - vertebral_fracture_history
+
+# Override: bone protection ESTABLECIDA (no solo iniciada).
+# Diferente de gate 9 que solo requiere agent declarado.
+override:
+  type: truthy_flag
+  field: bone_protection_established_pre_radium223
+
+regimen_codes:
+  - REGIMEN_CODES_RADIUM223
+
+keywords:
+  - KEYWORDS_RADIUM223
+
+message: |
+  Radio-223 (Xofigo) NO debe iniciarse en pacientes con alto riesgo de
+  fractura osteoporótica (FRAX MOF >20%, FRAX Hip >3%, DXA T-score <-2.5
+  lumbar/femoral, o fracture history) sin bone protection ESTABLECIDA
+  (denosumab/zoledronate ≥6 semanas pre-inicio + DXA monitoring + Vitamin D
+  ≥800 IU/d + calcio ≥1200 mg/d).
+
+  Mecanismo: Ra-223 deposita en hueso pero NO protege contra fragility
+  fractures. ERA-223 mostró exceso de fracturas patológicas (28% Ra-223+abi
+  vs 12% placebo+abi) sin agente óseo concomitante. PEACE-3 requirió
+  bisfosfonato/denosumab obligatorio + DXA basal + FRAX assessment.
+
+  Evidencia regulatoria:
+    - Xofigo FDA prescribing information §5.4 — Bone Fractures warning:
+      monitor for new fractures; consider bone health agents.
+    - ERA-223 (Smith Lancet Oncol 2019;20:408) — Fractura 28% Ra-223+abi
+      sin agent vs 12% con agent; Ra-223+abi DISCONTINUADO en 2018.
+    - PEACE-3 (Tombal ESMO 2024) — Mandatory bone protection +
+      DXA basal + FRAX assessment para inclusión.
+    - WHO FRAX (Kanis 2008) — Validated 10-year fracture risk score.
+    - NOF (National Osteoporosis Foundation) Guidelines 2022 —
+      Treatment threshold: MOF ≥20% O Hip ≥3%.
+
+  Coexistencia con Gate 9 (no_bone_protective_agent general). Gate 27
+  añade trigger NUMÉRICO (FRAX/DXA) que cuantifica el riesgo basal,
+  no solo verifica presencia de agent declarado.
+
+  Conducta clínica:
+  1. Calcular FRAX score (https://www.sheffield.ac.uk/FRAX) con inputs:
+     edad + sexo + BMI + fracture history + smoking + glucocorticoids +
+     RA + secondary osteoporosis + alcohol + DXA T-score (si disponible).
+  2. DXA scan basal lumbar + femoral neck + total hip (si no en últimos
+     12 meses).
+  3. Si FRAX MOF >20% O Hip >3% O DXA T-score <-2.5:
+     - Iniciar denosumab 120 mg SC c/4 sem O zoledronate 4 mg IV c/4 sem
+       ≥6 semanas pre-inicio Ra-223 (NOT same day)
+     - Vitamin D 800-2000 IU/d (medir 25-OH-vit D pre-inicio, suplementar
+       si <30 ng/mL)
+     - Calcio 1200 mg/d (preferible dietético)
+     - DXA monitoring cada 12 meses durante Ra-223
+  4. Override (`bone_protection_established_pre_radium223=Sí`) tras
+     ≥6 semanas de bone agent + adherencia documentada + Vitamin D
+     repleto + calcio adecuado.
+  5. Considerar terapia alternativa si FRAX muy alto (>40% MOF) o
+     fracture history reciente:
+     - Lu-177-PSMA-617 si PSMA-positive (sin riesgo fragility fracture)
+     - ARPI (enzalutamida, abiraterona, darolutamida) si gates 17-21 OK
+     - Docetaxel/cabazitaxel si fitness permite
+     - PARPi si HRR mutation
+
+evidence_tag: era223_peace3_xofigo_who_frax_nof
+trial_refs:
+  - ERA-223
+  - PEACE-3
+  - "Xofigo label §5.4"
+  - "WHO FRAX 2008"
+  - "NOF 2022"
+
+references:
+  - "Smith MR et al. ERA-223. Lancet Oncol 2019;20:408-419."
+  - "Tombal B et al. PEACE-3. ESMO 2024."
+  - "Xofigo (Ra-223) FDA prescribing information §5.4 (Bone Fractures)."
+  - "Kanis JA et al. FRAX original. Osteoporos Int 2008;19:385-397."
+  - "NOF 2022 Clinician's Guide to Prevention and Treatment of Osteoporosis."
+  - "Saad F et al. — Bone health in mCRPC. Lancet Oncol 2019."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Ra-223 + bone health monitoring (mandatory)"
+  eau_section: "EAU 2026 §6.5.4 — Radium-223 fracture risk assessment"
+  who_section: "WHO FRAX 2008 + NOF 2022 treatment thresholds"

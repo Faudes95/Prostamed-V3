@@ -1,0 +1,120 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 20: arsi_in_seizure_history_grade3
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XXVI) — Gate YAML-NATIVE (Tier 2/3 D).
+#
+# Razón clínica:
+#   ARSI clase (especialmente enzalutamida, segundo apalutamida, último
+#   darolutamida por menor BBB penetration) tienen warnings de convulsiones:
+#     - Xtandi (enzalutamida) FDA prescribing information §5.2: convulsiones
+#       en 0.4% (PREVAIL/AFFIRM); contraindicado en seizure history
+#     - Erleada (apalutamida) FDA prescribing information §5.4: convulsiones
+#       en 0.6% (TITAN/SPARTAN)
+#     - Nubeqa (darolutamida) FDA prescribing information §5.4: warning
+#       general convulsiones 0.2% (ARASENS); MENOR riesgo pero NO ausente
+#
+#   Aunque darolutamida tiene menor riesgo, CTCAE v5 grado ≥3 (convulsiones
+#   prolongadas/repetitivas que requieren intervención URGENTE o status
+#   epilepticus) es contraindicación absoluta de TODOS los ARSI por
+#   consistency clínica + sentido común (un paciente con epilepsia
+#   refractaria no debe recibir ningún fármaco que baje el umbral
+#   convulsivo, ni siquiera el "más seguro" de la clase).
+#
+#   Override: seizure_disorder_controlled_for_arpi=Sí (tras optimización
+#   antiepiléptica + EEG documentado normal + neurología avala reanudar).
+# ──────────────────────────────────────────────────────────────────────
+
+code: arsi_in_seizure_history_grade3
+title: "ARSI × historia convulsiva grado ≥3 (CTCAE v5 + Xtandi/Erleada/Nubeqa labels)"
+faubot_added_in: "2026-04-25 XXVI"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1. Flag explícito CTCAE v5 grado ≥3 (convulsiones que requieren intervención)
+    - type: numeric_threshold
+      field: seizure_ctcae_grade
+      threshold: 3
+    # 2. Historia activa de epilepsia/convulsiones (cualquier severidad)
+    - type: truthy_flag
+      field: active_seizure_disorder
+      alias_fields:
+        - epilepsy_active
+        - seizure_disorder_active
+    # 3. Flag explícito documentado por neurología
+    - type: truthy_flag
+      field: seizure_history_grade3_documented
+      alias_fields:
+        - seizure_grade3_documented
+        - status_epilepticus_history
+
+# Override: tras optimización antiepiléptica + EEG normal + aval neurología
+override:
+  type: truthy_flag
+  field: seizure_disorder_controlled_for_arpi
+
+regimen_codes:
+  - REGIMEN_CODES_ARSI
+
+keywords:
+  - KEYWORDS_ARSI
+
+message: |
+  ARSI (enzalutamida, apalutamida, darolutamida) NO deben iniciarse o
+  continuarse con historia convulsiva grado ≥3 (CTCAE v5: convulsiones
+  prolongadas/repetitivas que requieren intervención urgente, status
+  epilepticus, o epilepsia refractaria activa).
+
+  Evidencia regulatoria por fármaco:
+    - Xtandi (enzalutamida) §5.2 — Convulsiones 0.4% en PREVAIL/AFFIRM;
+      contraindicado en seizure history o factores predisponentes.
+    - Erleada (apalutamida) §5.4 — Convulsiones 0.6% en TITAN/SPARTAN.
+    - Nubeqa (darolutamida) §5.4 — Convulsiones 0.2% en ARASENS;
+      menor riesgo (BBB penetration menor) pero NO ausente.
+
+  Aunque darolutamida tiene perfil más favorable de la clase, NO se
+  recomienda en convulsiones grado ≥3 por sentido común clínico:
+  un paciente con epilepsia refractaria no debe recibir ningún fármaco
+  que baje el umbral convulsivo, ni el "más seguro" de la clase.
+
+  Conducta clínica:
+  1. Suspender ARSI inmediatamente si convulsiones tratamiento-emergentes.
+  2. Optimización antiepiléptica con neurología (levetiracetam preferido
+     por mínimas DDIs; lamotrigina, valproato según guías).
+  3. EEG basal + control documentado.
+  4. Considerar terapia alternativa NO-ARSI:
+     - Docetaxel (sin riesgo SNC) si fitness lo permite
+     - Lu-177-PSMA-617 si elegible (sin perfil convulsivo)
+     - Abiraterona (sin riesgo convulsivo, vigilar HTA + hepatotox)
+  5. Override (`seizure_disorder_controlled_for_arpi=Sí`) tras
+     ≥6 meses libre de convulsiones + EEG normal + aval neurología.
+
+evidence_tag: xtandi_erleada_nubeqa_labels_seizure_ctcae_v5
+trial_refs:
+  - PREVAIL
+  - AFFIRM
+  - TITAN
+  - SPARTAN
+  - ARASENS
+  - "Xtandi label §5.2"
+  - "Erleada label §5.4"
+  - "Nubeqa label §5.4"
+  - "CTCAE v5"
+
+references:
+  - "Xtandi (enzalutamide) FDA prescribing information §5.2 (Convulsiones)."
+  - "Erleada (apalutamide) FDA prescribing information §5.4 (Convulsiones)."
+  - "Nubeqa (darolutamide) FDA prescribing information §5.4 (Convulsiones + BBB)."
+  - "Beer TM et al. PREVAIL. NEJM 2014;371:424."
+  - "Scher HI et al. AFFIRM. NEJM 2012;367:1187."
+  - "Chi KN et al. TITAN. NEJM 2019;381:13."
+  - "Smith MR et al. SPARTAN. NEJM 2018;378:1408."
+  - "Smith MR et al. ARASENS. NEJM 2022;386:1132."
+  - "Shore ND et al. — Darolutamida seizure profile (post-marketing)."
+  - "CTCAE v5.0 — Seizure grading."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — ARSI contraindications (seizure history)"
+  eau_section: "EAU 2026 §6.5.6 — Seizure precaution with ARSI"

@@ -5,8 +5,25 @@ from clinical_scores import briganti_lni, capra_score, kattan_organ_confined, pa
 from prostanet.domains.evidence_registry.service import EvidenceRegistryService
 from prostanet.domains.guideline_comparison.service import GuidelineComparisonService
 from prostanet.domains.localized_initial.rules_eau import classify_eau
-from prostanet.domains.localized_initial.rules_nccn import active_surveillance_position, classify_nccn
+from prostanet.domains.localized_initial.rules_nccn import (
+    _resolve_genomic_band,
+    active_surveillance_position,
+    classify_nccn,
+)
 from prostanet.domains.localized_initial.schemas import LOCALIZED_SCHEMA
+from prostanet.domains.patient_tracking.localized_modality import (
+    build_active_surveillance_monitoring_profile,
+    build_localized_modality_fitness_bundle,
+    build_localized_survival_context_bundle,
+    build_localized_tradeoff_bundle,
+    normalized_localized_values,
+    build_radical_prostatectomy_candidacy_profile,
+    parse_patient_priority_profile,
+)
+from prostanet.domains.patient_tracking.score_interpretation_catalog import (
+    build_score_interpretation_snapshot,
+    extract_epic26_domain_scorecards,
+)
 from prostanet.domains.patient_tracking.therapeutic_family_engine import (
     build_active_regimen_monitoring_package,
     build_comparative_bundle,
@@ -15,7 +32,16 @@ from prostanet.domains.patient_tracking.therapeutic_family_engine import (
     build_sequence_transition_bundle,
 )
 from prostanet.shared.contracts import evaluation_result
+from prostanet.shared.epic26 import normalize_epic26_payload
+from prostanet.shared.phase7_decision_bundles import build_pre_rp_phase7_bundle
+from prostanet.shared.pivotal_contraindication_gates import (
+    apply_pivotal_contraindication_gates,
+)
 from prostanet.shared.recommendation_enrichment import enrich_evaluation_result
+from prostanet.shared.staging_requirements_engine import (
+    radical_prostatectomy_contraindicated,
+    staging_gap_descriptor,
+)
 
 
 class LocalizedInitialService:
@@ -29,6 +55,7 @@ class LocalizedInitialService:
         return LOCALIZED_SCHEMA
 
     def evaluate(self, payload: dict) -> dict:
+        payload = normalized_localized_values(normalize_epic26_payload(payload))
         missing = self._missing(payload, ["psa", "clinical_tstage", "isup_grade", "num_cores_positive", "total_cores"])
         nccn = classify_nccn(payload)
         eau = classify_eau(payload)
@@ -61,26 +88,56 @@ class LocalizedInitialService:
         except Exception:
             pass
 
-        urinary_qol = float(payload.get("baseline_urinary_qol", 0) or 0)
-        sexual_qol = float(payload.get("baseline_sexual_qol", 0) or 0)
-        bowel_qol = float(payload.get("baseline_bowel_qol", 0) or 0)
         genomic_result = str(payload.get("genomic_classifier_result", "No aplica"))
+        # EPIC 2 FIX-LOCALIZED-GENOMIC: si un score numérico promueve al paciente a la
+        # banda "high", propaga "Alto" al resto del pipeline de localized_initial
+        # aunque el campo categórico sea "No aplica", "Bajo" o "Intermedio".
+        _genomic_band, _genomic_src, _genomic_narr = _resolve_genomic_band(payload)
+        if _genomic_band == "high" and genomic_result != "Alto":
+            genomic_result = "Alto"
         prior_pirads = str(payload.get("prior_mpmri_pirads_score", "desconocido") or "desconocido")
         adverse_variant_type = self._adverse_variant_type(payload)
         predict_ready = all(
             payload.get(field) not in (None, "")
             for field in ("age", "psa", "clinical_tstage", "isup_grade", "life_expectancy_years")
         )
+        patient_priorities = parse_patient_priority_profile(payload.get("patient_priority_profile"))
+        patient_priority_profile = {
+            "available": bool(patient_priorities),
+            "priorities": patient_priorities,
+        }
+        localized_modality_fitness_bundle = build_localized_modality_fitness_bundle(
+            payload,
+            nccn_group=nccn["risk_group"],
+            as_position=as_position,
+        )
+        radical_prostatectomy_candidacy_profile = build_radical_prostatectomy_candidacy_profile(
+            payload,
+            nccn_group=nccn["risk_group"],
+        )
+        localized_survival_context_bundle = build_localized_survival_context_bundle(payload)
+        occam_life_expectancy_bundle = payload.get("occam_life_expectancy_bundle") or {}
+        active_surveillance_monitoring_profile = build_active_surveillance_monitoring_profile(
+            payload,
+            as_position=as_position,
+        )
+        localized_tradeoff_bundle = build_localized_tradeoff_bundle(
+            payload,
+            nccn_group=nccn["risk_group"],
+            modality_bundle=localized_modality_fitness_bundle,
+            as_position=as_position,
+        )
+        score_interpretation_catalog_snapshot = build_score_interpretation_snapshot(payload)
+        epic26_domain_scores = extract_epic26_domain_scorecards(score_interpretation_catalog_snapshot)
 
         eligible_treatments = self._eligible_treatments(
             nccn["risk_group"],
-            float(payload.get("life_expectancy_years", 15) or 15),
             as_position,
-            urinary_qol,
-            sexual_qol,
-            bowel_qol,
             genomic_result,
             adverse_variant_type,
+            localized_modality_fitness_bundle,
+            radical_prostatectomy_candidacy_profile,
+            localized_survival_context_bundle,
         )
         ranked_treatments = [
             self._hydrate_localized_treatment_item(
@@ -98,7 +155,12 @@ class LocalizedInitialService:
             grouped.setdefault(family_code, []).append(item)
             if family_code not in family_order:
                 family_order.append(family_code)
-        preferred_family_order = self._family_order_for_localized(nccn["risk_group"], as_position, family_order)
+        preferred_family_order = self._family_order_for_localized(
+            nccn["risk_group"],
+            as_position,
+            family_order,
+            dominant_modality=str(localized_modality_fitness_bundle.get("dominant_modality") or ""),
+        )
         family_profiles: dict[str, dict] = {}
         if grouped.get("active_surveillance_family"):
             family_profiles["active_surveillance_family"] = build_family_profile(
@@ -106,9 +168,13 @@ class LocalizedInitialService:
                 ordered_regimens=grouped["active_surveillance_family"],
                 context={
                     "eligibility_status": "eligible" if as_position.get("eligible") else "conditional",
-                    "caution_drivers": [as_position.get("summary")] if as_position.get("status") in {"selected_candidate", "not_preferred"} else [],
-                    "winner_reason": "La vigilancia activa solo lidera cuando la biología, la RM/biopsia confirmatoria y la esperanza de vida sostienen esa vía.",
-                    "why_not_preferred": "Pierde prioridad con histología adversa, MRI de mayor riesgo o expectativa de vida limitada.",
+                    "caution_drivers": list(localized_modality_fitness_bundle.get("why_not_active_surveillance") or []),
+                    "preference_drivers": patient_priorities,
+                    "winner_reason": localized_modality_fitness_bundle.get("dominance_reason")
+                    if localized_modality_fitness_bundle.get("dominant_modality") == "active_surveillance"
+                    else "La vigilancia activa solo lidera cuando la biología, la RM/biopsia confirmatoria y la esperanza de vida sostienen esa vía.",
+                    "why_not_preferred": " ".join(list(localized_modality_fitness_bundle.get("why_not_active_surveillance") or [])[:2]) or "Pierde prioridad con histología adversa, MRI de mayor riesgo o expectativa de vida limitada.",
+                    "missing_inputs": list(localized_modality_fitness_bundle.get("missing_modality_fields") or []),
                 },
             )
         if grouped.get("radiotherapy_family"):
@@ -116,8 +182,14 @@ class LocalizedInitialService:
                 family_code="radiotherapy_family",
                 ordered_regimens=grouped["radiotherapy_family"],
                 context={
-                    "eligibility_status": "eligible",
-                    "winner_reason": "La familia radioterapia se ordena por grupo de riesgo y necesidad de ADT corta o prolongada.",
+                    "eligibility_status": "conditional" if localized_modality_fitness_bundle.get("radiotherapy_status") == "provisional" else "eligible",
+                    "winner_reason": localized_modality_fitness_bundle.get("dominance_reason")
+                    if localized_modality_fitness_bundle.get("dominant_modality") == "radiotherapy"
+                    else "La familia radioterapia se ordena por grupo de riesgo, factibilidad técnica y costo funcional basal.",
+                    "why_not_preferred": " ".join(list(localized_modality_fitness_bundle.get("why_not_radiotherapy") or [])[:2]),
+                    "caution_drivers": list(localized_modality_fitness_bundle.get("why_not_radiotherapy") or []),
+                    "preference_drivers": patient_priorities,
+                    "missing_inputs": list(localized_modality_fitness_bundle.get("missing_modality_fields") or []),
                 },
             )
         if grouped.get("multimodal_local_family"):
@@ -126,7 +198,11 @@ class LocalizedInitialService:
                 ordered_regimens=grouped["multimodal_local_family"],
                 context={
                     "eligibility_status": "eligible",
-                    "winner_reason": "La intensificación multimodal local domina cuando el riesgo muy alto o regional exige control local y sistémico combinados.",
+                    "winner_reason": localized_modality_fitness_bundle.get("dominance_reason")
+                    if localized_modality_fitness_bundle.get("dominant_modality") == "multimodal_local"
+                    else "La intensificación multimodal local domina cuando el riesgo muy alto o regional exige control local y sistémico combinados.",
+                    "preference_drivers": patient_priorities,
+                    "missing_inputs": list(localized_modality_fitness_bundle.get("missing_modality_fields") or []),
                 },
             )
         if grouped.get("surgery_family"):
@@ -134,8 +210,14 @@ class LocalizedInitialService:
                 family_code="surgery_family",
                 ordered_regimens=grouped["surgery_family"],
                 context={
-                    "eligibility_status": "eligible",
-                    "winner_reason": "La cirugía permanece visible para candidatos apropiados, pero su prioridad depende del riesgo y del contexto funcional basal.",
+                    "eligibility_status": "conditional" if localized_modality_fitness_bundle.get("surgery_status") == "provisional" else "eligible",
+                    "winner_reason": localized_modality_fitness_bundle.get("dominance_reason")
+                    if localized_modality_fitness_bundle.get("dominant_modality") == "surgery"
+                    else "La cirugía permanece visible para candidatos apropiados, pero su prioridad depende del riesgo, la aptitud anestésico-quirúrgica y el contexto funcional basal.",
+                    "why_not_preferred": " ".join(list(localized_modality_fitness_bundle.get("why_not_surgery") or [])[:2]),
+                    "caution_drivers": list(localized_modality_fitness_bundle.get("why_not_surgery") or []),
+                    "preference_drivers": patient_priorities,
+                    "missing_inputs": list(localized_modality_fitness_bundle.get("missing_modality_fields") or []),
                 },
             )
         if grouped.get("observation_family"):
@@ -144,7 +226,10 @@ class LocalizedInitialService:
                 ordered_regimens=grouped["observation_family"],
                 context={
                     "eligibility_status": "eligible",
-                    "winner_reason": "La observación solo sube cuando la expectativa de vida o el balance beneficio-riesgo reducen la utilidad de terapia local definitiva.",
+                    "winner_reason": localized_modality_fitness_bundle.get("dominance_reason")
+                    if localized_modality_fitness_bundle.get("dominant_modality") == "observation"
+                    else "La observación solo sube cuando la expectativa de vida o el balance beneficio-riesgo reducen la utilidad de terapia local definitiva.",
+                    "preference_drivers": patient_priorities,
                 },
             )
         comparative_bundle = build_comparative_bundle(
@@ -172,6 +257,84 @@ class LocalizedInitialService:
         not_recommended = self._not_recommended(nccn["risk_group"], as_position, genomic_result, adverse_variant_type, prior_pirads, payload)
         durations = self._durations(nccn["risk_group"])
         applicability = as_position["status"] if as_position["eligible"] else ("not_recommended" if as_position.get("requires_escalation") else "guideline-consistent")
+
+        # ── Brecha M-staging gate + RP-cT4 — 2026-04-22 (§E.1-E.3) ─────────────
+        # Gate A (staging M obligatorio): si PSA>20, cT2b-T4, ISUP≥4 o Gleason≥8
+        # exigen estadificación M (NCCN PROS-2 cat 1; EAU 2026 §6.4) y NO está
+        # documentada (sin PSMA PET/CT, sin GGO+TAC/RM, sin imaging_negative_metastases),
+        # se BLOQUEA toda emisión curativa y se emite "Completar estadificación M".
+        # ProPSMA (Hofman 2020) sustenta PSMA PET/CT preferente.
+        # Gate B (RP contraindicada): cT4, invasión rectal/vesical o fijación pélvica
+        # contraindican RP+PLND de forma ABSOLUTA (NCCN PROS-3; EAU §6.5.1). Aún si
+        # el staging libera Gate A (M0 confirmado), se RETIRA la opción quirúrgica
+        # del catálogo manteniendo EBRT+ADT como ruta curativa.
+        staging_gap = staging_gap_descriptor(payload)
+        rp_block = radical_prostatectomy_contraindicated(payload)
+        eligible_treatments_local: list[dict] = list(comparative_bundle.get("eligible_treatments") or ranked_treatments)
+        rp_filter_applied = False
+        if rp_block.get("contraindicated"):
+            rp_keywords = (
+                "prostatectom", "prostatectomy", "rp+plnd", "rp + plnd",
+                "radical prostatectomy",
+            )
+            filtered: list[dict] = []
+            for treatment in eligible_treatments_local:
+                name = str(treatment.get("name") or "").lower()
+                if any(kw in name for kw in rp_keywords):
+                    rp_filter_applied = True
+                    continue
+                filtered.append(treatment)
+            eligible_treatments_local = filtered
+            severity_es = "absolutamente" if rp_block.get("severity") == "absolute" else "relativamente"
+            not_recommended.append(
+                f"Prostatectomía radical (RP+PLND) {severity_es} contraindicada — "
+                f"{'; '.join(rp_block.get('reasons') or [])}. "
+                f"Alternativas preferentes: {'; '.join(rp_block.get('alternatives') or [])}. "
+                "Referencia: NCCN PROS-3 v5.2026; EAU 2026 §6.5.1."
+            )
+        # ── Pivotal contraindication gates — Faubot 2026-04-23 ─────────────
+        # Filtra abiraterona (HTA descontrolada, ICC NYHA III-IV) y docetaxel
+        # (neuropatía severa) cuando el comparador sugiere intensificación
+        # sistémica multimodal en VERY HIGH risk (STAMPEDE arm G:
+        # RT+ADT+abiraterona). Centraliza las 10 contraindicaciones del
+        # módulo `pivotal_contraindication_gates` para mantener consistencia
+        # entre dominios (mHSPC, mCRPC, BCR, localizado).
+        gate_bundle_local = apply_pivotal_contraindication_gates(payload, eligible_treatments_local)
+        eligible_treatments_local = gate_bundle_local["filtered_treatments"]
+        for msg in gate_bundle_local["not_recommended_messages"]:
+            if msg not in not_recommended:
+                not_recommended.append(msg)
+        pivotal_gates_local = gate_bundle_local["gates_triggered"]
+        if staging_gap and staging_gap.get("blocking"):
+            risk_band = (staging_gap.get("risk_band") or "").upper() or "ALTO/MUY ALTO"
+            staging_treatments: list[dict] = [{
+                "name": "Completar estadificación M antes de iniciar tratamiento curativo",
+                "priority": "mandatory_pre_treatment",
+                "category": "staging_imaging",
+                "notes": (
+                    f"Riesgo {risk_band}. "
+                    f"Motivos: {'; '.join(staging_gap.get('reasons') or [])}. "
+                    f"Pendiente: {', '.join(staging_gap.get('missing_modalities') or [])}. "
+                    "Referencia: NCCN PROS-2/PROS-3 v5.2026 cat 1; EAU 2026 §6.4."
+                ),
+                "next_steps": staging_gap.get("recommended") or [],
+            }]
+            for item in staging_gap.get("recommended") or []:
+                staging_treatments.append({
+                    "name": item.get("name") or "Imagenología de estadificación M",
+                    "priority": item.get("priority", "first_line"),
+                    "category": "staging_imaging",
+                    "notes": item.get("rationale") or "",
+                })
+            eligible_treatments_local = staging_treatments
+            not_recommended = [
+                "Tratamiento curativo radical (prostatectomía radical, radioterapia definitiva, "
+                "RT+ADT prolongada o RT+ADT+abiraterona) DIFERIDO hasta completar estadificación M. "
+                f"Probabilidad pre-test de M1 oculto en este perfil de riesgo {risk_band}: alta "
+                "(Briganti / ProsTIC nomograms; ProPSMA Hofman 2020). Saltar la estadificación puede "
+                "llevar a tratamiento radical en un paciente con M1 sincrónico oculto.",
+            ]
+            applicability = "blocked_pending_staging"
 
         psa = float(payload.get("psa", 0) or 0)
         clinical_tstage = str(payload.get("clinical_tstage", "T1c")).upper()
@@ -221,9 +384,12 @@ class LocalizedInitialService:
                 "treatment_intent": eau["treatment_intent"],
                 "comparison": comparison,
             },
-            eligible_treatments=comparative_bundle.get("eligible_treatments") or ranked_treatments,
+            eligible_treatments=eligible_treatments_local,
             not_recommended=not_recommended,
-            missing_critical_inputs=missing,
+            missing_critical_inputs=(
+                missing + [f"Estadificación M ({m})" for m in (staging_gap.get("missing_modalities") or [])]
+                if (staging_gap and staging_gap.get("blocking")) else missing
+            ),
             contraindications=[],
             durations_and_conditions=durations,
             evidence_trace=[self.registry.get_module_evidence(self.module_id)],
@@ -235,8 +401,8 @@ class LocalizedInitialService:
             report_sections=report_sections,
             decision_quality={
                 "recommendation_family": preferred_regimen.get("family_label") or nccn["label"],
-                "confidence_category": "vigilada" if missing else "alta",
-                "requires_human_review": bool(as_position.get("requires_escalation")),
+                "confidence_category": "vigilada" if (missing or localized_modality_fitness_bundle.get("modality_fitness_status") != "clear") else "alta",
+                "requires_human_review": bool(as_position.get("requires_escalation")) or localized_modality_fitness_bundle.get("modality_fitness_status") != "clear",
             },
         )
         result["comparative_eligibility_matrix"] = comparative_bundle.get("comparative_eligibility_matrix") or {}
@@ -250,10 +416,49 @@ class LocalizedInitialService:
             "family_code": preferred_regimen.get("family_code") or "",
             "family_label": preferred_regimen.get("family_label") or "",
         }
+        result["active_surveillance_position"] = as_position
+        result["localized_modality_fitness_bundle"] = localized_modality_fitness_bundle
+        result["localized_tradeoff_bundle"] = localized_tradeoff_bundle
+        result["radical_prostatectomy_candidacy_profile"] = radical_prostatectomy_candidacy_profile
+        result["localized_survival_context_bundle"] = localized_survival_context_bundle
+        result["occam_life_expectancy_bundle"] = occam_life_expectancy_bundle
+        result["active_surveillance_monitoring_profile"] = active_surveillance_monitoring_profile
+        result["patient_priority_profile"] = patient_priority_profile
+        result["score_interpretation_catalog_snapshot"] = score_interpretation_catalog_snapshot
+        result["epic26_domain_scores"] = epic26_domain_scores
         result["sequence_transition_bundle"] = sequence_transition_bundle
         result["active_regimen_monitoring_package"] = active_monitoring_package
         if as_position.get("requires_escalation"):
             result["state_classification_override"] = "unsupported_or_escalate"
+        # Brecha M-staging gate + RP-cT4 — 2026-04-22:
+        # Si Gate A activo, override del estado y forzar revisión humana. Si Gate B
+        # disparó (RP filtrada), exponer descriptor para auditoría/UI.
+        if staging_gap and staging_gap.get("blocking"):
+            result["state_classification_override"] = "staging_required"
+            result["requires_human_review"] = True
+            result["applicability"] = "blocked_pending_staging"
+            result["staging_gap"] = staging_gap
+            result.setdefault("decision_quality", {})["requires_human_review"] = True
+            result["decision_quality"]["confidence_category"] = "vigilada"
+        elif staging_gap:
+            # Tier="considered" (intermedio desfavorable) — exponer descriptor
+            # informativo sin bloquear tratamiento.
+            result["staging_gap"] = staging_gap
+        if rp_filter_applied:
+            result["rp_contraindication"] = rp_block
+        if pivotal_gates_local:
+            # Faubot 2026-04-23 — exponer trazabilidad de gates pivotal.
+            result["pivotal_contraindication_gates"] = [
+                {
+                    "code": g.get("code"),
+                    "severity": g.get("severity"),
+                    "message": g.get("message"),
+                    "evidence_tag": g.get("evidence_tag"),
+                    "trial_refs": list(g.get("trial_refs") or ()),
+                }
+                for g in pivotal_gates_local
+            ]
+        result["phase7_advanced_bundle"] = build_pre_rp_phase7_bundle(payload)
         return enrich_evaluation_result(
             result,
             clinical_title="Ruta priorizada de manejo inicial localizado",
@@ -262,7 +467,26 @@ class LocalizedInitialService:
             personalized_fundamentals=[
                 *nccn["reasons"],
                 as_position["summary"],
-                f"Esperanza de vida estimada: {life_expectancy:g} años.",
+                radical_prostatectomy_candidacy_profile.get("candidate_summary") or "",
+                localized_survival_context_bundle.get("summary") or "",
+                localized_modality_fitness_bundle.get("dominance_reason") or "",
+                localized_tradeoff_bundle.get("tradeoff_summary") or "",
+                f"ECOG documentado: {payload.get('ecog_score', 'No documentado')}.",
+                f"Índice de Charlson documentado: {payload.get('charlson_score', 'No documentado')}.",
+                (
+                    (
+                        f"Esperanza de vida ajustada: {life_expectancy:g} años, derivada por OCCAM público variante {occam_life_expectancy_bundle.get('variant_label', 'calculada')}."
+                        if occam_life_expectancy_bundle.get("source") == "pcothercause_public_repo"
+                        else f"Esperanza de vida estimada: {life_expectancy:g} años."
+                    )
+                    if payload.get("life_expectancy_years") not in (None, "")
+                    else "La expectativa de vida queda como contexto secundario y no sustituye fitness/comorbilidad objetivos."
+                ),
+                (
+                    f"Horizonte pronóstico NCCN local: {localized_survival_context_bundle.get('life_expectancy_horizon_label', 'No disponible')}."
+                    if localized_survival_context_bundle.get("life_expectancy_horizon_label")
+                    else ""
+                ),
                 f"Puntaje pronóstico CAPRA: {capra.get('score', 'no disponible') if isinstance(capra, dict) else capra}.",
                 f"Riesgo ganglionar según Briganti: {briganti.get('risk_pct', 'no disponible') if isinstance(briganti, dict) else briganti}.",
                 f"Tablas de Partin: probabilidad de organo-confinamiento {partin.get('oc_prob', 'no disponible')}% y riesgo ganglionar {partin.get('lni_prob', 'no disponible')}%.",
@@ -280,14 +504,19 @@ class LocalizedInitialService:
                 "PREDICT Prostate debe correrse cuando las entradas estan completas para cuantificar beneficio absoluto y reforzar la decision compartida."
                 if predict_ready
                 else "PREDICT Prostate aun no puede correrse con total trazabilidad porque faltan entradas estructuradas de counseling.",
-                "Los PROs basales y la señal genómica modulan la conversación entre vigilancia activa, cirugía y radioterapia cuando el caso es limítrofe.",
+                "Los PROs validados y la señal genómica modulan la conversación entre vigilancia activa, cirugía y radioterapia cuando el caso es limítrofe.",
+                (
+                    "Prioridades del paciente: " + ", ".join(patient_priorities) + "."
+                    if patient_priorities
+                    else "Si hoy compiten cirugía y radioterapia, falta cerrar prioridades explícitas del paciente para sostener la recomendación."
+                ),
             ],
             alternatives=[
                 "Prostatectomía radical o radioterapia definitiva según candidabilidad quirúrgica, preferencia del paciente y disponibilidad local.",
-                "Observación clínica cuando la esperanza de vida sea limitada o la carga de comorbilidad reduzca el beneficio de un tratamiento local definitivo.",
+                "Observación clínica cuando el horizonte de beneficio sea limitado o la carga de comorbilidad/fragilidad reduzca el beneficio de un tratamiento local definitivo.",
             ],
             shared_decision_message=(
-                "La decisión final debe integrar la expectativa de vida, la disposición a vigilancia activa, la tolerancia a terapia local definitiva y la relevancia de preservar función urinaria, sexual y calidad de vida."
+                "La decisión final debe integrar candidabilidad quirúrgica objetiva, disposición a vigilancia activa, factibilidad de radioterapia y la relevancia de preservar función urinaria, sexual e intestinal con escalas validadas."
             ),
             comparison_message=(
                 (
@@ -306,15 +535,19 @@ class LocalizedInitialService:
     @staticmethod
     def _eligible_treatments(
         nccn_group: str,
-        life_expectancy: float,
         as_position: dict,
-        urinary_qol: float,
-        sexual_qol: float,
-        bowel_qol: float,
         genomic_result: str,
         adverse_variant_type: str,
+        localized_modality_fitness_bundle: dict,
+        radical_prostatectomy_candidacy_profile: dict,
+        localized_survival_context_bundle: dict,
     ) -> list[dict]:
         treatments: list[dict] = []
+        surgery_status = str(radical_prostatectomy_candidacy_profile.get("candidate_status") or "provisional")
+        rt_status = str(localized_modality_fitness_bundle.get("radiotherapy_status") or "provisional")
+        plnd_role = str(radical_prostatectomy_candidacy_profile.get("plnd_role") or "consider")
+        prefer_observation = bool(localized_survival_context_bundle.get("prefer_observation"))
+        life_expectancy_horizon_band = str(localized_survival_context_bundle.get("life_expectancy_horizon_band") or "")
         if as_position.get("requires_escalation"):
             return [
                 {
@@ -331,33 +564,69 @@ class LocalizedInitialService:
         if as_position["eligible"]:
             treatments.append({"name": "Vigilancia activa", "priority": as_position["status"], "notes": as_position["summary"]})
         if nccn_group == "LOW":
-            if life_expectancy < 10:
-                treatments.append({"name": "Observación clínica", "priority": "preferred", "notes": "La observación clínica suele ser preferente cuando la esperanza de vida es menor de 10 años."})
-            treatments.append({"name": "Radioterapia definitiva", "priority": "eligible", "notes": "Considérese cuando la vigilancia activa no es aceptable, especialmente si la línea basal urinaria ya es frágil y la cirugía sería menos atractiva." if urinary_qol < 60 else "Considérese cuando la vigilancia activa no es aceptable."})
-            treatments.append({"name": "Prostatectomía radical", "priority": "eligible", "notes": "Para candidatos quirúrgicos apropiados tras decisión compartida, sobre todo si la función intestinal basal hace menos atractiva la radioterapia." if bowel_qol < 60 else "Para candidatos quirúrgicos apropiados tras decisión compartida."})
+            if prefer_observation:
+                observation_note = localized_survival_context_bundle.get("summary") or "El horizonte de beneficio local parece limitado y hace razonable observación clínica."
+                if life_expectancy_horizon_band == "le_5_years":
+                    observation_note = "Con expectativa de vida menor o igual a 5 años, la observación clínica domina claramente sobre una terapia local definitiva automática."
+                elif life_expectancy_horizon_band == "between_5_and_10_years":
+                    observation_note = "Entre 5 y 10 años de expectativa de vida, la observación clínica suele ser preferente frente a una terapia local definitiva rutinaria."
+                treatments.append({"name": "Observación clínica", "priority": "preferred", "notes": observation_note})
+            if rt_status != "blocked":
+                rt_priority = "selected_candidate" if life_expectancy_horizon_band == "le_5_years" else "eligible"
+                rt_note = "Considérese cuando la vigilancia activa no es aceptable y la factibilidad radioterápica está razonablemente cerrada."
+                if life_expectancy_horizon_band == "le_5_years":
+                    rt_note = "Solo considérese en casos seleccionados cuando exista una razón clínica fuerte para no seguir observación pese a una expectativa de vida menor o igual a 5 años."
+                treatments.append({"name": "Radioterapia definitiva", "priority": rt_priority, "notes": rt_note})
+            if surgery_status != "not_candidate":
+                surgery_priority = "eligible" if surgery_status == "candidate" else "selected_candidate"
+                if life_expectancy_horizon_band == "le_5_years":
+                    surgery_priority = "selected_candidate"
+                treatments.append({"name": "Prostatectomía radical", "priority": surgery_priority, "notes": radical_prostatectomy_candidacy_profile.get("candidate_summary") or "Para candidatos quirúrgicos apropiados tras decisión compartida."})
         elif nccn_group == "FAVORABLE INTERMEDIATE":
-            treatments.extend([
-                {"name": "Radioterapia definitiva", "priority": "eligible", "notes": "Opción estándar razonable para enfermedad intermedia favorable, especialmente si preservar la función sexual basal es prioritario." if sexual_qol > 60 else "Opción estándar razonable para enfermedad intermedia favorable."},
-                {"name": "Prostatectomía radical", "priority": "eligible", "notes": "Opción estándar para candidatos quirúrgicos apropiados." if bowel_qol >= 60 else "Opción estándar para candidatos quirúrgicos apropiados, particularmente si la función intestinal basal hace menos atractiva la radioterapia."},
-            ])
-            if life_expectancy <= 10:
-                treatments.append({"name": "Observación clínica", "priority": "preferred", "notes": "Puede ser preferente en hombres seleccionados con esperanza de vida de 5 a 10 años."})
+            if rt_status != "blocked":
+                rt_priority = "selected_candidate" if life_expectancy_horizon_band == "le_5_years" else "eligible"
+                rt_note = "Opción estándar razonable para enfermedad intermedia favorable cuando la radioterapia es factible."
+                if life_expectancy_horizon_band == "le_5_years":
+                    rt_note = "Con expectativa de vida menor o igual a 5 años, la radioterapia debe reservarse para casos seleccionados y no como salida automática."
+                elif life_expectancy_horizon_band == "between_5_and_10_years":
+                    rt_note = "Sigue siendo una alternativa válida, pero entre 5 y 10 años de expectativa de vida la observación clínica suele ganar peso en pacientes asintomáticos."
+                treatments.append({"name": "Radioterapia definitiva", "priority": rt_priority, "notes": rt_note})
+            if surgery_status != "not_candidate":
+                surgery_priority = "eligible" if surgery_status == "candidate" else "selected_candidate"
+                if life_expectancy_horizon_band == "le_5_years":
+                    surgery_priority = "selected_candidate"
+                surgery_note = radical_prostatectomy_candidacy_profile.get("candidate_summary") or "Opción estándar para candidatos quirúrgicos apropiados."
+                if life_expectancy_horizon_band == "between_5_and_10_years":
+                    surgery_note = f"{surgery_note} Entre 5 y 10 años de expectativa de vida, la observación clínica suele competir con más fuerza que una cirugía automática."
+                elif life_expectancy_horizon_band == "le_5_years":
+                    surgery_note = f"{surgery_note} Con expectativa de vida menor o igual a 5 años, debe quedar como opción muy seleccionada, no dominante."
+                treatments.append({"name": "Prostatectomía radical", "priority": surgery_priority, "notes": surgery_note})
+            if prefer_observation:
+                observation_note = "Puede ser preferente en hombres seleccionados cuando el horizonte de beneficio local es limitado."
+                if life_expectancy_horizon_band == "between_5_and_10_years":
+                    observation_note = "Entre 5 y 10 años de expectativa de vida, la observación clínica suele ser preferente en intermedio favorable asintomático."
+                elif life_expectancy_horizon_band == "le_5_years":
+                    observation_note = "Con expectativa de vida menor o igual a 5 años, la observación clínica gana prioridad clara sobre una terapia local definitiva automática en intermedio favorable."
+                treatments.append({"name": "Observación clínica", "priority": "preferred", "notes": observation_note})
         elif nccn_group == "UNFAVORABLE INTERMEDIATE":
             treatments.extend([
                 {"name": "Radioterapia + terapia de privación androgénica", "priority": "preferred", "notes": "La terapia de privación androgénica de curso corto debe acompañar a la radioterapia en la mayoría de los pacientes elegibles."},
-                {"name": "Prostatectomía radical", "priority": "eligible", "notes": "Úsese en pacientes seleccionados apropiadamente, con planeación ganglionar pélvica cuando esté indicada."},
             ])
+            if surgery_status != "not_candidate":
+                treatments.append({"name": "Prostatectomía radical", "priority": "eligible" if surgery_status == "candidate" else "selected_candidate", "notes": "Úsese en pacientes seleccionados apropiadamente, con planeación ganglionar pélvica cuando esté indicada." if plnd_role == "preferred" else radical_prostatectomy_candidacy_profile.get("candidate_summary") or "Úsese en pacientes seleccionados apropiadamente."})
         elif nccn_group == "HIGH":
             treatments.extend([
                 {"name": "Radioterapia externa + terapia de privación androgénica", "priority": "preferred", "notes": "Ruta de intensificación con terapia de privación androgénica prolongada."},
-                {"name": "Prostatectomía radical + disección ganglionar pélvica", "priority": "eligible", "notes": "Para candidatos quirúrgicos seleccionados en centros con experiencia."},
             ])
+            if surgery_status != "not_candidate":
+                treatments.append({"name": "Prostatectomía radical + disección ganglionar pélvica", "priority": "eligible" if surgery_status == "candidate" else "selected_candidate", "notes": "Para candidatos quirúrgicos seleccionados en centros con experiencia."})
         elif nccn_group == "VERY HIGH":
             treatments.extend([
                 {"name": "Radioterapia externa + terapia de privación androgénica", "priority": "preferred", "notes": "Úsese terapia de privación androgénica prolongada e intensificación en hombres elegibles."},
                 {"name": "Radioterapia externa + terapia de privación androgénica + abiraterona", "priority": "preferred", "notes": "Ruta de intensificación sistémica para enfermedad de muy alto riesgo."},
-                {"name": "Prostatectomía radical + disección ganglionar pélvica", "priority": "selected_candidate", "notes": "Reservada para candidatos quirúrgicos cuidadosamente seleccionados."},
             ])
+            if surgery_status != "not_candidate":
+                treatments.append({"name": "Prostatectomía radical + disección ganglionar pélvica", "priority": "selected_candidate", "notes": "Reservada para candidatos quirúrgicos cuidadosamente seleccionados."})
         else:
             treatments.extend([
                 {"name": "Radioterapia definitiva + terapia de privación androgénica", "priority": "preferred", "notes": "Ruta preferente para enfermedad regional N1M0."},
@@ -417,21 +686,42 @@ class LocalizedInitialService:
         return "none"
 
     @staticmethod
-    def _family_order_for_localized(nccn_group: str, as_position: dict, discovered: list[str]) -> list[str]:
+    def _family_order_for_localized(
+        nccn_group: str,
+        as_position: dict,
+        discovered: list[str],
+        *,
+        dominant_modality: str = "",
+    ) -> list[str]:
         if nccn_group == "LOW":
             preferred = ["active_surveillance_family", "observation_family", "radiotherapy_family", "surgery_family"]
             if as_position.get("status") == "observation_preferred":
                 preferred = ["observation_family", "active_surveillance_family", "radiotherapy_family", "surgery_family"]
         elif nccn_group == "FAVORABLE INTERMEDIATE":
             preferred = ["radiotherapy_family", "surgery_family", "active_surveillance_family", "observation_family"]
+            if as_position.get("status") == "observation_preferred":
+                preferred = ["observation_family", "radiotherapy_family", "surgery_family", "active_surveillance_family"]
         elif nccn_group in {"UNFAVORABLE INTERMEDIATE", "HIGH"}:
             preferred = ["radiotherapy_family", "surgery_family", "multimodal_local_family", "active_surveillance_family", "observation_family"]
         else:
             preferred = ["multimodal_local_family", "radiotherapy_family", "surgery_family", "observation_family", "active_surveillance_family"]
+        dominant_family = LocalizedInitialService._family_code_for_modality(dominant_modality)
+        if dominant_family and dominant_family in discovered:
+            preferred = [dominant_family] + [family_code for family_code in preferred if family_code != dominant_family]
         for family_code in discovered:
             if family_code not in preferred:
                 preferred.append(family_code)
         return preferred
+
+    @staticmethod
+    def _family_code_for_modality(modality: str) -> str:
+        return {
+            "active_surveillance": "active_surveillance_family",
+            "surgery": "surgery_family",
+            "radiotherapy": "radiotherapy_family",
+            "observation": "observation_family",
+            "multimodal_local": "multimodal_local_family",
+        }.get(str(modality or "").strip(), "")
 
     @staticmethod
     def _hydrate_localized_treatment_item(

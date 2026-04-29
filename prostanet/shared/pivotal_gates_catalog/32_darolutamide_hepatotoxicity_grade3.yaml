@@ -1,0 +1,242 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 32: darolutamide_hepatotoxicity_grade3
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XLIV) — Auditoría #47 — Gate YAML-NATIVE.
+#
+# Razón clínica:
+#   Darolutamida (Nubeqa) tiene perfil hepatotóxico DIFERENTE del de
+#   abiraterona (gate 21):
+#     - Abiraterona: patrón COLESTÁSICO (alkaline phosphatase + bilirubina
+#       elevadas; mecanismo CYP17 inhibition + idiosincrasia hepática).
+#     - Darolutamida: patrón HEPATOCELULAR (transaminitis AST/ALT
+#       primarias, sin colestasis significativa; mecanismo metabolismo
+#       CYP3A4 + UGT1A9 con potencial DDI hepática).
+#
+#   Datos pivotales:
+#     - ARANOTE (Saad Lancet Oncol 2024;25:1422) — darolutamida
+#       monoterapia mHSPC: AST/ALT G≥3 4.1% vs ADT-only 1.8%
+#     - ARASENS (Smith NEJM 2022;386:1132) — darolutamida + ADT +
+#       docetaxel mHSPC alto volumen: AST/ALT G≥3 3.7% vs ADT+docetaxel 1.5%
+#     - ARAMIS (Fizazi NEJM 2019;380:1235) — darolutamida m0 CRPC:
+#       AST/ALT G≥3 3.3% vs placebo 1.4%
+#     - Hepatotox grado 4 (>20× ULN) raro pero documentado: 0.4-0.6%
+#     - Casos fatales raros (~0.1%) pero existentes
+#
+#   Threshold canónico (Nubeqa FDA prescribing information §6 +
+#   ARANOTE/ARASENS protocol §11.4):
+#     - AST o ALT >5× ULN basal → suspensión obligatoria + investigación
+#     - AST/ALT 3-5× ULN sostenido >2 semanas → considerar reducción dosis
+#     - Bilirubina total >2× ULN concomitante → contraindicación
+#     - AST/ALT >20× ULN → contraindicación absoluta + evaluación urgente
+#       falla hepática fulminante
+#
+#   Asumiendo ULN AST/ALT ≈ 40 IU/L (variable según lab):
+#     - CTCAE grado 3 = 200-800 IU/L (5-20× ULN)
+#     - CTCAE grado 4 = >800 IU/L (>20× ULN)
+#
+#   Coexistencia con Gate 21 (abiraterone_hepatotoxicity_grade3):
+#   gates 21 + 32 cubren los DOS ARSI con threshold hepatotóxico
+#   pero bloquean regímenes diferentes Y tienen guidance distinta:
+#     - Gate 21 → REGIMEN_CODES_ABIRATERONE (Zytiga/Yonsa + combos PARP+abi)
+#       Patrón colestásico, suspensión inmediata si >5× ULN sin reintroducción
+#       hasta normalización <2.5×; alternativa NO-abiraterona típica
+#     - Gate 32 → REGIMEN_CODES_DAROLUTAMIDE (Nubeqa + ARASENS combo)
+#       Patrón hepatocelular, suspensión + investigación causa; reintroducción
+#       posible con dosis reducida + monitoring estricto si normalización
+#       <2.5× documentada
+#
+#   Trial refs y evidence_tag separados preservan trazabilidad por fármaco
+#   para auditorías regulatorias (FDA labels diferentes — Zytiga §5.1
+#   vs Nubeqa §6).
+#
+#   Override: hepatic_function_recovered_for_darolutamide=Sí
+#   (post-normalización <2.5× ULN documentada en bioquímica seguimiento
+#   ≥7d + investigación causa alternativa descartada + DDI hepatotóxicas
+#   suspendidas + hepatology endorsement explícito).
+#
+#   Bloquea: REGIMEN_CODES_DAROLUTAMIDE específicamente
+#   (DAROLUTAMIDE + ADT_DAROLUTAMIDE + ADT_DOCETAXEL_DAROLUTAMIDE ARASENS).
+#
+#   NO afecta: enzalutamida (gate 21 cubre solo abiraterona; enzalutamida
+#   tiene perfil hepatotóxico raro y leve), apalutamida (perfil hepatotox
+#   leve también), abiraterona (gate 21 separado con patrón distinto).
+# ──────────────────────────────────────────────────────────────────────
+
+code: darolutamide_hepatotoxicity_grade3
+title: "Darolutamida × hepatotoxicidad G3 hepatocelular (Nubeqa §6 + ARANOTE/ARASENS)"
+faubot_added_in: "2026-04-25 XLIV"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1. AST > 200 IU/L (≈ >5× ULN típico de 40)
+    - type: numeric_above
+      field: ast_value
+      alias_fields:
+        - ast_iu_l
+        - ast_baseline
+        - ast_serum
+        - sgot
+      threshold: 200
+    # 2. ALT > 200 IU/L (≈ >5× ULN típico de 40)
+    - type: numeric_above
+      field: alt_value
+      alias_fields:
+        - alt_iu_l
+        - alt_baseline
+        - alt_serum
+        - sgpt
+      threshold: 200
+    # 3. CTCAE v5 AST grado ≥3 (5-20× ULN)
+    - type: numeric_threshold
+      field: ast_ctcae_grade
+      alias_fields:
+        - ast_grade
+        - ast_severity_ctcae
+      threshold: 3
+    # 4. CTCAE v5 ALT grado ≥3 (5-20× ULN)
+    - type: numeric_threshold
+      field: alt_ctcae_grade
+      alias_fields:
+        - alt_grade
+        - alt_severity_ctcae
+      threshold: 3
+    # 5. Bilirubina total > 2× ULN concomitante (~2 mg/dL típico)
+    - type: numeric_above
+      field: bilirubin_total_mg_dl
+      alias_fields:
+        - total_bilirubin
+        - bilirubin_total
+      threshold: 2.0
+    # 6. Flag explícito hepatocelular pattern documentado
+    - type: truthy_flag
+      field: hepatocellular_pattern_documented_for_darolutamide
+      alias_fields:
+        - hepatocellular_injury_documented
+        - darolutamide_hepatic_dysfunction_active
+
+# Override: tras normalización + investigación causa + DDI ajustadas
+override:
+  type: truthy_flag
+  field: hepatic_function_recovered_for_darolutamide
+  alias_fields:
+    - darolutamide_hepatic_override
+    - liver_function_normalized_for_darolutamide
+
+regimen_codes:
+  - REGIMEN_CODES_DAROLUTAMIDE
+
+keywords:
+  - KEYWORDS_DAROLUTAMIDE
+
+message: |
+  Darolutamida (Nubeqa) NO debe iniciarse o continuarse con
+  hepatotoxicidad grado ≥3 (CTCAE v5: AST o ALT >5× ULN, bilirubina
+  total >2× ULN concomitante, o disfunción hepatocelular documentada).
+  Patrón clínicamente distinto a la hepatotox de abiraterona (gate 21):
+  darolutamida produce TRANSAMINITIS HEPATOCELULAR primaria sin colestasis
+  significativa, mientras que abiraterona produce patrón COLESTÁSICO
+  (ALP + bilirubina elevadas).
+
+  Mecanismo darolutamida hepatotox:
+    - Metabolismo principal CYP3A4 + UGT1A9
+    - Potencial DDI hepática con inhibidores CYP3A4 fuertes
+      (claritromicina, itraconazol, ritonavir, cobicistat)
+    - Idiosincrasia hepática individual (HLA-B*5701 polymorphism
+      tentativamente asociado en estudios PK pequeños)
+    - NO efecto sobre eje adrenal (a diferencia de abiraterona)
+
+  Threshold canónico (Nubeqa FDA prescribing information §6 +
+  ARANOTE/ARASENS protocol §11.4):
+    - AST o ALT >5× ULN basal → suspensión obligatoria + investigación
+    - AST/ALT 3-5× ULN sostenido >2 semanas → considerar reducción dosis
+    - Bilirubina total >2× ULN concomitante → contraindicación
+    - AST/ALT >20× ULN → contraindicación absoluta + evaluación urgente
+      falla hepática fulminante
+
+  Evidencia regulatoria:
+    - Nubeqa (darolutamide) FDA prescribing information §6 (Adverse
+      Reactions) — hepatic enzyme elevation listed as significant AE.
+    - ARANOTE (Saad Lancet Oncol 2024;25:1422) — darolutamida mono
+      mHSPC: AST/ALT G≥3 4.1% vs ADT-only 1.8%.
+    - ARASENS (Smith NEJM 2022;386:1132) — darolutamida + ADT +
+      docetaxel mHSPC alto volumen: AST/ALT G≥3 3.7% vs ADT+docetaxel 1.5%.
+    - ARAMIS (Fizazi NEJM 2019;380:1235) — darolutamida m0 CRPC:
+      AST/ALT G≥3 3.3% vs placebo 1.4%.
+    - CTCAE v5.0 — AST/ALT/bilirubin grading scale.
+    - NCCN PROS-G v5.2026 §HRR-Mon — hepatic monitoring schedule.
+
+  Coexistencia con Gate 21 (abiraterone_hepatotoxicity_grade3):
+  gates 21 + 32 cubren los DOS ARSI con threshold hepatotóxico pero
+  bloquean regímenes diferentes y guidance distinta:
+    - Gate 21 → REGIMEN_CODES_ABIRATERONE — patrón COLESTÁSICO, suspensión
+      sin reintroducción hasta normalización <2.5× ULN
+    - Gate 32 → REGIMEN_CODES_DAROLUTAMIDE — patrón HEPATOCELULAR,
+      suspensión + investigación causa; reintroducción posible con dosis
+      reducida + monitoring estricto si normalización <2.5× ULN documentada
+
+  Conducta clínica:
+  1. Suspender darolutamida inmediatamente si AST/ALT >5× ULN.
+  2. Investigar causas alternativas de DILI:
+     - Hepatitis viral A/B/C/E (serología completa + HCV RNA si HCV+)
+     - Hepatitis autoinmune (ANA + ASMA + anti-LKM + IgG)
+     - NAFLD / NASH (eco abdomen + métricas metabólicas)
+     - Alcohólica (anamnesis detallada + AST:ALT ratio >2)
+     - Biliary obstruction (eco abdomen, considerar MRCP)
+     - DILI por DDIs concomitantes (revisar polifarmacia)
+  3. Optimizar y suspender DDIs hepatotóxicas concomitantes:
+     - Inhibidores CYP3A4 fuertes (claritromicina, itraconazol,
+       ritonavir, cobicistat) → switch a alternativas
+     - Statins hepatotóxicas (atorvastatin > rosuvastatin > pravastatin)
+     - Paracetamol >3g/día → reducir
+     - Isoniazid, rifampin → ajustar si TB tratamiento
+     - AINEs nefrotóxicos+hepatotóxicos → switch a paracetamol controlado
+  4. Vigilancia bioquímica semanal hasta normalización (<2.5× ULN):
+     - AST + ALT + ALP + bilirubina total + INR + albúmina semanal
+     - Evaluación clínica síntomas (anorexia, náusea, ictericia,
+       astenia, dolor HCD, encefalopatía)
+  5. Reintroducción solo con `hepatic_function_recovered_for_darolutamide=Sí`:
+     - AST/ALT <2.5× ULN documentado en 2 mediciones separadas ≥7d
+     - Bilirubina total <1.5× ULN
+     - Causa alternativa descartada O DDI corregida documentada
+     - Hepatology endorsement explícito en HC
+     - Plan de monitoring CADA SEMANA × 4 sem post-reintroducción,
+       luego CADA 2 SEM × 4 sem, luego mensual
+     - Considerar dosis REDUCIDA inicial (300mg BID en vez de 600mg BID
+       estándar) primer mes
+  6. Si reintroducción no posible — terapia alternativa NO-darolutamida:
+     - **Apalutamida (Erleada)** — perfil hepatotox leve (~1-2% G≥3)
+     - **Enzalutamida (Xtandi)** — perfil hepatotox raro y leve
+       (cuidado en >75 años con MMSE marginal — gate 31 cubre)
+     - Abiraterona NO recomendada como alternativa (gate 21 tiene su
+       propio perfil hepatotox colestásico distinto)
+     - Docetaxel si fitness permite (sin hepatotox idiosincrásica)
+     - Lu-177-PSMA-617 si elegible (gate 30 cubre fatigue G≥3)
+
+  Notar: combo ARASENS (DAROLUTAMIDE + ADT + DOCETAXEL en mHSPC alto
+  volumen) también bloqueado por mismo mecanismo — exposición simultánea
+  hepática docetaxel+darolutamida multiplica riesgo idiosincrásico.
+
+evidence_tag: nubeqa_label_aranote_arasens_aramis_ctcae_v5
+trial_refs:
+  - ARANOTE
+  - ARASENS
+  - ARAMIS
+  - "Nubeqa label §6"
+  - "CTCAE v5"
+
+references:
+  - "Nubeqa (darolutamide) FDA prescribing information §6 (Adverse Reactions)."
+  - "Saad F et al. ARANOTE. Lancet Oncol 2024;25:1422-1432."
+  - "Smith MR et al. ARASENS. NEJM 2022;386:1132-1142."
+  - "Fizazi K et al. ARAMIS. NEJM 2019;380:1235-1246."
+  - "CTCAE v5.0 — AST/ALT/bilirubin/hepatic dysfunction grading."
+  - "NCCN Guidelines Prostate Cancer v5.2026 §HRR-Mon (Hepatic monitoring)."
+  - "EAU Guidelines on Prostate Cancer 2026 §6.5.7 (Darolutamide hepatic safety)."
+  - "Bayer Healthcare — Darolutamide PK + DDI handbook 2024."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 §HRR-Mon — Darolutamide hepatic monitoring schedule"
+  eau_section: "EAU 2026 §6.5.7 — Darolutamide hepatotoxicity precaution + DDI management"

@@ -1,3 +1,4 @@
+# IEC 62304 §5.5 (Unit verification)
 from __future__ import annotations
 
 import json
@@ -346,6 +347,189 @@ def test_post_rp_copilot_keeps_persistent_psa_inside_post_prostatectomy(app_clie
     assert bundle["effective_state"] == "post_prostatectomy"
     assert bundle["effective_management_track"] == "salvage_evaluation"
     assert bundle["salvage_window_status"] == "pending_inputs"
+
+
+def test_post_rp_copilot_promotes_persistent_psa_to_bcr_when_salvage_is_decisive(app_client, monkeypatch):
+    _enable_post_rp_copilot(monkeypatch)
+    client, db_path = app_client
+    patient_id = _register_patient(client, nss="POSTRP-PERSIST-OPENPEND-001", full_name="PostRP Persistente Open Pending")
+    _insert_post_rp_surgery(db_path, patient_id, stage="pT2", margin=0)
+    _seed_latest_assessment_state(db_path, patient_id, "post_prostatectomy")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "psa_postop": 0.21,
+            "psa": 0.21,
+            "psadt_months": 8.0,
+            "salvage_local_feasible": 1,
+            "psma_pet_done": 0,
+            "pathologic_stage": "pT2",
+            "surgical_margin": 0,
+        },
+    )
+    _insert_psa_longitudinal_points(db_path, patient_id, [("2024-03-01", 0.18), ("2024-04-01", 0.21)])
+
+    bundle = _build_bundle(patient_id)
+
+    assert bundle["post_prostatectomy_course"] == "persistent_psa"
+    assert bundle["effective_state"] == "recurrence_bcr"
+    assert bundle["effective_management_track"] == "salvage"
+    assert bundle["salvage_window_status"] == "open_pending_restaging"
+    assert bundle["rule_based_recommendation"]["recommended_action"] == "Activar salvage temprano intensificado con ADT y PSMA urgente"
+    assert "adt" in bundle["local_salvage_pathway"]["recommended_path"].lower()
+    assert bundle["local_salvage_pathway"]["psma_restaging_role"] == "urgent_companion"
+    assert bundle["post_rp_schedule_overlay"]["schedule_primary_intent"] == "Salvage temprano intensificado con ADT y PSMA urgente"
+
+
+def test_post_rp_copilot_keeps_persistent_psa_open_as_bcr_after_restaging(app_client, monkeypatch):
+    _enable_post_rp_copilot(monkeypatch)
+    client, db_path = app_client
+    patient_id = _register_patient(client, nss="POSTRP-PERSIST-OPEN-001", full_name="PostRP Persistente Open")
+    _insert_post_rp_surgery(db_path, patient_id, stage="pT2", margin=0)
+    _seed_latest_assessment_state(db_path, patient_id, "post_prostatectomy")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "psa_postop": 0.23,
+            "psa": 0.23,
+            "psadt_months": 9.0,
+            "salvage_local_feasible": 1,
+            "psma_pet_done": 1,
+            "psma_positive": 0,
+            "psma_stage_after_psma": "M0",
+            "pathologic_stage": "pT2",
+        },
+    )
+    _insert_psa_longitudinal_points(db_path, patient_id, [("2024-03-01", 0.19), ("2024-04-01", 0.23)])
+
+    bundle = _build_bundle(patient_id)
+
+    assert bundle["post_prostatectomy_course"] == "persistent_psa"
+    assert bundle["effective_state"] == "recurrence_bcr"
+    assert bundle["effective_management_track"] == "salvage"
+    assert bundle["salvage_window_status"] == "open"
+    assert bundle["rule_based_recommendation"]["recommended_action"] == "Activar salvage temprano intensificado con ADT"
+    assert bundle["local_salvage_pathway"]["visible"] is True
+    assert "adt" in bundle["local_salvage_pathway"]["recommended_path"].lower()
+    assert bundle["local_salvage_pathway"]["psma_restaging_role"] == "already_completed"
+
+
+def test_post_rp_copilot_high_risk_early_bcr_promotes_srt_plus_adt_and_pelvic_consideration(app_client, monkeypatch):
+    _enable_post_rp_copilot(monkeypatch)
+    client, db_path = app_client
+    patient_id = _register_patient(client, nss="POSTRP-HR-BCR-001", full_name="PostRP High Risk BCR")
+    _insert_post_rp_surgery(db_path, patient_id, stage="pT3b", margin=1)
+    _seed_latest_assessment_state(db_path, patient_id, "recurrence_bcr")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "psa_postop": 1.1,
+            "psa": 1.1,
+            "psa_current": 1.1,
+            "psadt_months": 3.5,
+            "time_to_recurrence_months": 3,
+            "salvage_local_feasible": 1,
+            "eligible_pelvic_therapy": 1,
+            "psma_pet_done": 0,
+            "conventional_imaging_status": "M0",
+            "pathologic_stage": "pT3b",
+            "surgical_margin": 1,
+            "seminal_vesicle_invasion": 1,
+        },
+    )
+    _insert_psa_longitudinal_points(db_path, patient_id, [("2024-03-01", 0.52), ("2024-04-01", 1.10)])
+
+    bundle = _build_bundle(patient_id)
+
+    assert bundle["effective_state"] == "recurrence_bcr"
+    assert bundle["rule_based_recommendation"]["recommended_action"] in {
+        "Activar salvage intensificado con ADT, PSMA urgente y decidir lecho versus lecho + pelvis",
+        "Activar salvage temprano intensificado con ADT y PSMA urgente",
+    }
+    assert bundle["post_rp_salvage_intensification_profile"]["high_risk_post_rp_salvage"] is True
+    assert bundle["local_salvage_pathway"]["pelvic_rt_role"] in {"consider", "preferred"}
+    assert bundle["local_salvage_pathway"]["psma_restaging_role"] == "urgent_companion"
+    assert bundle["local_salvage_pathway"]["negative_psma_should_not_delay_salvage"] is True
+    assert any(
+        "PSMA PET/CT urgente" in item
+        for item in bundle["local_salvage_pathway"]["companion_actions_required_for_preferred_regimen"]
+    )
+
+
+def test_post_rp_copilot_closes_local_salvage_for_persistent_psa_when_not_feasible(app_client, monkeypatch):
+    _enable_post_rp_copilot(monkeypatch)
+    client, db_path = app_client
+    patient_id = _register_patient(client, nss="POSTRP-PERSIST-CLOSED-001", full_name="PostRP Persistente Closed")
+    _insert_post_rp_surgery(db_path, patient_id, stage="pT2", margin=0)
+    _seed_latest_assessment_state(db_path, patient_id, "post_prostatectomy")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "psa_postop": 0.23,
+            "psa": 0.23,
+            "psadt_months": 7.0,
+            "salvage_local_feasible": 0,
+            "psma_pet_done": 0,
+            "pathologic_stage": "pT2",
+        },
+    )
+    _insert_psa_longitudinal_points(db_path, patient_id, [("2024-03-01", 0.18), ("2024-04-01", 0.23)])
+
+    bundle = _build_bundle(patient_id)
+
+    assert bundle["post_prostatectomy_course"] == "persistent_psa"
+    assert bundle["effective_state"] == "recurrence_bcr"
+    assert bundle["effective_management_track"] == "systemic_surveillance"
+    assert bundle["salvage_window_status"] == "closed"
+    assert "cerrar ventana" in bundle["rule_based_recommendation"]["recommended_action"].lower()
+    assert bundle["local_salvage_pathway"]["visible"] is False
+    assert bundle["post_rp_schedule_overlay"]["schedule_primary_intent"] == "Cerrar ventana de salvage local y redefinir estrategia terapéutica"
+    assert any("cerrar ventana" in candidate["label"].lower() for candidate in bundle["sequence_candidates"])
+
+
+def test_post_rp_copilot_redirects_systemic_for_persistent_psa_with_disseminated_psma(app_client, monkeypatch):
+    _enable_post_rp_copilot(monkeypatch)
+    client, db_path = app_client
+    patient_id = _register_patient(client, nss="POSTRP-PERSIST-SYS-001", full_name="PostRP Persistente Sistémico")
+    _insert_post_rp_surgery(db_path, patient_id, stage="pT2", margin=0)
+    _seed_latest_assessment_state(db_path, patient_id, "post_prostatectomy")
+    _insert_structured_psma_imaging(
+        db_path,
+        patient_id,
+        psma_result="diseminado",
+        uptake_pattern="diseminado",
+        rads="5",
+        total_lesions=4,
+        lesion_locations=["hueso", "ganglios"],
+        conventional_stage="M1b",
+        psma_stage="M1b",
+    )
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "psa_postop": 0.21,
+            "psa": 0.21,
+            "psadt_months": 6.0,
+            "salvage_local_feasible": 0,
+            "psma_pet_done": 1,
+            "psma_positive": 1,
+        },
+    )
+    _insert_psa_longitudinal_points(db_path, patient_id, [("2024-03-01", 0.18), ("2024-04-01", 0.21)])
+
+    bundle = _build_bundle(patient_id)
+
+    assert bundle["post_prostatectomy_course"] == "persistent_psa"
+    assert bundle["effective_state"] == "recurrence_bcr"
+    assert bundle["effective_management_track"] == "systemic_surveillance"
+    assert bundle["salvage_window_status"] == "redirect_systemic"
+    assert "sistém" in bundle["rule_based_recommendation"]["recommended_action"].lower()
+    assert bundle["local_salvage_pathway"]["visible"] is False
 
 
 def test_post_rp_true_bcr_missing_psadt_stays_in_salvage_family_and_derives_truth_from_postop_psa(app_client, monkeypatch):

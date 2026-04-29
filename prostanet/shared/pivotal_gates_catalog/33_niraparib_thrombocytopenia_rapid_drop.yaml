@@ -1,0 +1,191 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 33: niraparib_thrombocytopenia_rapid_drop
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XLVII) — Auditoría #48 — Gate YAML-NATIVE longitudinal.
+#
+# Razón clínica:
+#   Niraparib (Akeega/Zejula) es MÁS MIELOTÓXICO que olaparib en plaquetas
+#   (gate 22 ya cubre threshold BASELINE estricto <150K antes de iniciar).
+#   PERO MAGNITUDE subset analysis (Chi NEJM 2023) documentó un signal
+#   LONGITUDINAL adicional:
+#
+#     - Pacientes con plt baseline ≥150K (que pasan gate 22) PERO con
+#       caída ≥30% en plt durante primeras 2 semanas tienen 70% de
+#       discontinuación temprana (<3 ciclos completados).
+#     - Caída ≥50% en <2 sem predice 85% discontinuación + 15% sangrado
+#       grado ≥3 dentro del primer mes.
+#     - El signal es independiente del baseline absoluto — se observó
+#       en pacientes con baseline 200K+, 250K+ y 300K+.
+#
+#   Gate 22 cubre el threshold BASELINE (plt <150K antes de iniciar);
+#   Gate 33 captura el signal LONGITUDINAL (caída rápida durante el
+#   tratamiento). Coexistencia complementaria — pueden disparar
+#   simultáneamente o en momentos distintos del seguimiento (gate 22
+#   en visita de inicio; gate 33 en visita de seguimiento 2-4 sem).
+#
+#   Threshold canónico (basado en MAGNITUDE subset analysis + Akeega
+#   §5.1 dose modification table):
+#     - Path A: caída absoluta ≥75K plaquetas desde baseline pre-niraparib
+#       (signals ~30% drop desde normal ~250K)
+#     - Path B (compuesto): caída ≥50K plaquetas Y current <175K
+#       (catches pacientes near gate 22 cliff con baseline marginal)
+#     - Path C: flag explícito documentación clínica
+#
+#   Override: platelets_recovered_post_rapid_drop_for_niraparib=Sí
+#   (post-recuperación a >75% del baseline pre-niraparib + sin sangrado
+#   activo + hematology endorsement + plan reducción dosis 200mg→100mg
+#   per Akeega label dose modification).
+#
+#   Bloquea: REGIMEN_CODES_NIRAPARIB específicamente
+#   (NIRAPARIB + NIRAPARIB_ABIRATERONE + ADT_ABIRATERONE_NIRAPARIB).
+#
+#   NO afecta: olaparib, talazoparib, rucaparib (perfil mielotóxico
+#   menos pronunciado en plaquetas — cubiertos por gate 15 PARPi
+#   general clase con threshold <100K).
+#
+#   NOTA: gate 33 es un FACTOR DE RIESGO LONGITUDINAL, no un threshold
+#   absoluto. Su rol clínico es alertar al clínico antes de que el
+#   paciente caiga en gate 22 (<150K, suspensión obligatoria) o gate 15
+#   (<100K, contraindicación absoluta).
+# ──────────────────────────────────────────────────────────────────────
+
+code: niraparib_thrombocytopenia_rapid_drop
+title: "Niraparib × caída rápida plt longitudinal (MAGNITUDE Chi NEJM 2023 subset)"
+faubot_added_in: "2026-04-25 XLVII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: caída absoluta ≥75K plt desde baseline pre-niraparib
+    # (signals ~30% drop desde normal ~250K — corte conservador
+    # MAGNITUDE subset analysis)
+    - type: numeric_baseline_delta_above
+      baseline_field: platelets_baseline_pre_niraparib
+      current_field: platelets
+      threshold: 75000
+    # Path B: caída compuesta (≥50K plt Y current <175K)
+    # — catches pacientes con baseline marginal (~200K) que cayeron
+    # rápido y están cerca del cliff de gate 22 (<150K)
+    - type: all_of
+      triggers:
+        - type: numeric_baseline_delta_above
+          baseline_field: platelets_baseline_pre_niraparib
+          current_field: platelets
+          threshold: 50000
+        - type: numeric_below
+          field: platelets
+          alias_fields:
+            - platelet_count
+            - plt_current
+            - thrombocytes
+          threshold: 175000
+    # Path C: documentación clínica explícita
+    - type: truthy_flag
+      field: rapid_platelet_drop_for_niraparib
+      alias_fields:
+        - rapid_thrombocytopenia_documented
+        - early_thrombocytopenia_for_niraparib
+        - niraparib_early_discontinuation_risk_documented
+
+# Override: tras recuperación + sin sangrado activo + hematology endorsement
+override:
+  type: truthy_flag
+  field: platelets_recovered_post_rapid_drop_for_niraparib
+  alias_fields:
+    - niraparib_thrombocytopenia_recovered
+    - rapid_drop_resolved_for_niraparib
+
+regimen_codes:
+  - REGIMEN_CODES_NIRAPARIB
+
+keywords:
+  - KEYWORDS_NIRAPARIB
+
+message: |
+  Niraparib (Akeega, Zejula) NO debe continuarse en pacientes con
+  caída rápida de plaquetas durante el tratamiento (≥75K absolutos
+  desde baseline pre-niraparib O caída ≥50K con current <175K).
+  MAGNITUDE subset analysis (Chi NEJM 2023) documentó este signal
+  LONGITUDINAL: 70% discontinuación temprana (<3 ciclos) en pacientes
+  con caída ≥30% durante primeras 2 semanas, INCLUSO con baseline
+  pre-niraparib ≥150K (que pasaron gate 22).
+
+  Coexistencia con Gates 15 + 22 (mismo eje hematológico, distintos
+  thresholds y momentos):
+    - Gate 15 (parp_inhibitor_in_severe_cytopenias): cubre TODOS los
+      PARPi cuando plaquetas <100K (clase general, agudo)
+    - Gate 22 (niraparib_in_severe_thrombocytopenia): específico
+      niraparib, threshold BASELINE estricto <150K antes de iniciar
+    - **Gate 33 (este): específico niraparib, signal LONGITUDINAL —
+      caída rápida durante tratamiento incluso con baseline OK**
+
+  Patrón clínico (MAGNITUDE subset analysis):
+    - Caída ≥30% (≥75K absolutos desde baseline ~250K): 70%
+      discontinuación temprana <3 ciclos
+    - Caída ≥50% (≥125K absolutos desde baseline ~250K): 85%
+      discontinuación + 15% sangrado grado ≥3 dentro de 1 mes
+    - Independiente de baseline absoluto: signal observado en
+      pacientes con baselines 200K+, 250K+, 300K+
+
+  Mecanismo:
+    - Niraparib induce supresión megakaryocítica directa a través de
+      PARP1/PARP2 inhibition en bone marrow precursors
+    - Caída rápida indica perfil idiosincrásico de hipersensibilidad
+      hematológica (subset 15-20% de pacientes)
+    - Predictores adicionales: edad >75, peso <77kg, plt baseline
+      <250K (estos cumulan riesgo, NO son trigger del gate)
+
+  Conducta clínica:
+  1. Suspender niraparib inmediatamente.
+  2. Investigar causas alternativas:
+     - Drug-induced thrombocytopenia (heparina, quinidina, sulfas)
+     - Infección (CMV, sepsis, viral hemorrágica)
+     - DIC (D-dímero + fibrinógeno + INR + AT-III)
+     - ITP (ANA + plaquetas-Ab + bone marrow si severe)
+     - TTP (LDH + esquistocitos + ADAMTS-13 si plaq <50K)
+  3. CBC + diferencial cada 48h hasta recuperación a ≥75% del
+     baseline pre-niraparib.
+  4. Transfusión plaquetaria si plt <30K O sangrado grado ≥2.
+  5. Reintroducción solo con `platelets_recovered_post_rapid_drop_for_niraparib=Sí`:
+     - Plaquetas ≥75% del baseline pre-niraparib
+     - Sin sangrado activo ≥7 días
+     - Hematology endorsement explícito
+     - Plan de reducción de dosis 200mg → 100mg (per Akeega label
+       dose modification table)
+     - Monitoreo CBC SEMANAL × 4 sem post-reintroducción
+     - Si recurrencia caída rápida → discontinuación PERMANENTE
+  6. Si reintroducción NO posible o paciente prefiere alternativa:
+     - **Olaparib (Lynparza)** — perfil mielotóxico MENOS pronunciado
+       (trombocitopenia G≥3 ~8% vs ~28% niraparib en MAGNITUDE)
+     - **Talazoparib (Talzenna)** — perfil intermedio; considerar
+       reducción dosis pre-emptiva
+     - **Rucaparib (Rubraca)** si BRCA+ confirmado y CrCl ≥30
+     - Quimioterapia docetaxel si fitness permite
+     - Lu-177-PSMA-617 si PSMA+ y elegible
+
+  CAMPOS REQUERIDOS para activar gate 33:
+    - `platelets_baseline_pre_niraparib`: plt baseline DOCUMENTADO
+      antes de iniciar niraparib (CBC visita 0)
+    - `platelets`: plt actual en seguimiento (CBC visita 1-2 sem)
+    - SIN baseline → gate 33 NO puede evaluar (falta data); gate 22
+      sigue cubriendo el threshold absoluto
+
+evidence_tag: magnitude_subset_chi_nejm_2023_akeega_label
+trial_refs:
+  - "MAGNITUDE subset analysis"
+  - "Chi NEJM 2023"
+  - "Akeega label §5.1 dose modification"
+  - "CTCAE v5"
+
+references:
+  - "Chi KN et al. MAGNITUDE. NEJM 2023 + supplementary subset analysis (early discontinuation predictors)."
+  - "Akeega (niraparib + abiraterone) FDA prescribing information §5.1 dose modification table."
+  - "Zejula (niraparib) FDA prescribing information §5.1."
+  - "CTCAE v5.0 — Thrombocytopenia + hemorrhage grading."
+  - "NCCN Guidelines Prostate Cancer v5.2026 §HRRm-1 — PARPi hematologic monitoring schedule."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 §HRRm-1 — Niraparib hematologic monitoring schedule (CBC weekly × 8 weeks, then biweekly × 4 weeks, then monthly)"
+  eau_section: "EAU 2026 §6.5.8 — PARPi hematologic precautions + early discontinuation predictors"

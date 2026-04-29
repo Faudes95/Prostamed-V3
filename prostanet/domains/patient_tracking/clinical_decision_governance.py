@@ -259,6 +259,72 @@ def _build_clinician_decision_capture_bundle(
     }
 
 
+def prioritize_items_for_window_worklist(
+    agenda_items: list[dict[str, Any]],
+    window_worklist_bundle: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Rank agenda items that close the active therapeutic/diagnostic window.
+
+    The profile already applies its own chronological sort before calling this
+    helper. This function keeps that relative order inside each priority band
+    while lifting closure tasks and fields tied to the top active window.
+    """
+
+    bundle = dict(window_worklist_bundle or {})
+    top_window = dict(bundle.get("top_active_window") or {})
+    closure_tasks = list(bundle.get("closure_tasks") or [])
+    task_keys = {
+        str(task.get("agenda_key") or task.get("key") or task.get("item_key") or "").strip()
+        for task in closure_tasks
+        if str(task.get("agenda_key") or task.get("key") or task.get("item_key") or "").strip()
+    }
+    decisive_fields = set()
+    for source in (
+        top_window.get("required_inputs"),
+        top_window.get("missing_decisive_fields"),
+        top_window.get("display_missing_decisive_fields"),
+        bundle.get("blocking_dataset_fields"),
+        bundle.get("display_blocking_dataset_fields"),
+    ):
+        decisive_fields.update(str(item).strip() for item in (source or []) if str(item or "").strip())
+    owner_domain = str(top_window.get("owner_domain") or "").strip().lower()
+
+    def _item_fields(item: dict[str, Any]) -> set[str]:
+        fields: set[str] = set()
+        for key in (
+            "fields",
+            "capture_fields",
+            "required_inputs",
+            "raw_fields",
+            "display_fields_summary",
+            "missing_inputs",
+        ):
+            fields.update(str(value).strip() for value in (item.get(key) or []) if str(value or "").strip())
+        return fields
+
+    ranked: list[tuple[int, int, dict[str, Any]]] = []
+    for index, raw_item in enumerate(agenda_items or []):
+        item = dict(raw_item or {})
+        agenda_key = str(item.get("agenda_key") or item.get("key") or item.get("item_key") or "").strip()
+        item_fields = _item_fields(item)
+        item_owner = str(item.get("owner_domain") or item.get("module_owner") or item.get("category") or "").strip().lower()
+        if agenda_key and agenda_key in task_keys:
+            priority = 0
+            item["window_worklist_priority"] = "closure_task"
+        elif decisive_fields and item_fields.intersection(decisive_fields):
+            priority = 1
+            item["window_worklist_priority"] = "decisive_field"
+        elif owner_domain and item_owner and owner_domain == item_owner:
+            priority = 2
+            item["window_worklist_priority"] = "owner_domain"
+        else:
+            priority = 3
+            item.setdefault("window_worklist_priority", "")
+        ranked.append((priority, index, item))
+    ranked.sort(key=lambda row: (row[0], row[1]))
+    return [item for _, _, item in ranked]
+
+
 def _is_high_impact_transition(proposal: dict[str, Any]) -> bool:
     from_state = str(proposal.get("from_state") or "")
     target_state = str(proposal.get("target_state") or "")

@@ -1,0 +1,47 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 8: polysorbate_hypersensitivity
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XIII) — Migrado a YAML declarativo.
+#
+# Razón clínica:
+#   Hipersensibilidad documentada a polisorbato 80 (excipiente del
+#   solvente de cabazitaxel) → contraindicación absoluta. TROPIC y CARD
+#   excluyeron hipersensibilidad polisorbato.
+# ──────────────────────────────────────────────────────────────────────
+
+code: polysorbate_hypersensitivity
+title: "Hipersensibilidad a polisorbato 80"
+faubot_added_in: "2026-04-23 I"
+faubot_migrated_to_yaml_in: "2026-04-25 XIII"
+severity: hard_block
+
+trigger:
+  type: truthy_flag
+  field: polysorbate_hypersensitivity
+  alias_fields:
+    - hypersensitivity_polysorbate
+
+override: null
+
+regimen_codes:
+  - REGIMEN_CODES_CABAZITAXEL
+
+keywords:
+  - KEYWORDS_CABAZITAXEL
+
+message: |
+  Cabazitaxel NO recomendado por hipersensibilidad documentada a polisorbato 80
+  (excipiente del solvente). Considerar Lu-177 PSMA-617, olaparib (si BRCA+) o
+  abiraterona como alternativa en mCRPC post-docetaxel (TROPIC y CARD excluyeron
+  hipersensibilidad polisorbato).
+
+evidence_tag: tropic_card_label
+trial_refs:
+  - TROPIC
+  - CARD
+
+references:
+  - "de Bono JS et al. TROPIC. Lancet 2010;376:1147-1154."
+  - "de Wit R et al. CARD. NEJM 2019;381:2506-2518."
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Cabazitaxel post-docetaxel mCRPC"

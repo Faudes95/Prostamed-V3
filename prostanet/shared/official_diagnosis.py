@@ -105,6 +105,62 @@ def diagnosis_capture_options() -> dict[str, list[str]]:
     }
 
 
+# Guard DX-1 (FAUBOT FASE 6): AJCC 8th edition TNM enumeración canónica.
+# Cualquier valor fuera de este catálogo debe generar un warning en backend
+# para que el clínico pueda corregir antes de firmar el diagnóstico oficial.
+_VALID_T_STAGES = {"Tx", "T1", "T1a", "T1b", "T1c", "T2", "T2a", "T2b", "T2c", "T3", "T3a", "T3b", "T4"}
+_VALID_N_STAGES = {"Nx", "N0", "N1"}
+_VALID_M_STAGES = {"Mx", "M0", "M1", "M1a", "M1b", "M1c"}
+
+
+def _check_tnm_value(raw: Any, valid_set: set[str], normalized: str, label: str, *, prefix: str) -> dict[str, Any]:
+    raw_text = str(raw or "").strip()
+    if not raw_text:
+        return {"value": "", "raw": "", "valid": True, "warning": ""}
+    # Normalizamos case + prefix clínico (cT/cN/cM) antes de comparar vs AJCC.
+    cleaned = raw_text.upper().replace("C" + prefix.upper(), prefix.upper()).strip()
+    canonical_match = None
+    for candidate in valid_set:
+        if candidate.upper() == cleaned:
+            canonical_match = candidate
+            break
+    if canonical_match is not None:
+        return {"value": canonical_match, "raw": raw_text, "valid": True, "warning": ""}
+    return {
+        "value": normalized,
+        "raw": raw_text,
+        "valid": False,
+        "warning": (
+            f"{label} '{raw_text}' no coincide con la enumeración AJCC 8ª edición. "
+            f"Valores permitidos: {', '.join(sorted(valid_set))}."
+        ),
+    }
+
+
+def validate_tnm_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
+    """Valida T/N/M contra AJCC 8ª edición y retorna warnings backend (DX-1).
+
+    Se invoca desde `build_official_diagnosis_context` y cualquier ingress
+    que firme diagnóstico oficial. Los warnings se exponen al clínico sin
+    bloquear la UI, pero impiden marcar el diagnóstico como ``confirmed``.
+    """
+    source = dict(payload or {})
+    t_raw = source.get("clinical_tstage") or ""
+    n_raw = source.get("nodal_status") or ""
+    m_raw = source.get("m_substage_resolved") or source.get("metastasis_site") or ""
+    t_result = _check_tnm_value(t_raw, _VALID_T_STAGES, _normalize_t_stage(t_raw), "T clínico", prefix="T")
+    n_result = _check_tnm_value(n_raw, _VALID_N_STAGES, _normalize_n_stage(n_raw), "N clínico", prefix="N")
+    m_result = _check_tnm_value(m_raw, _VALID_M_STAGES, _normalize_m_stage(m_raw), "M clínico", prefix="M")
+    warnings = [r["warning"] for r in (t_result, n_result, m_result) if not r["valid"]]
+    return {
+        "clinical_tstage": t_result,
+        "nodal_status": n_result,
+        "m_substage": m_result,
+        "valid": all(r["valid"] for r in (t_result, n_result, m_result)),
+        "warnings": warnings,
+    }
+
+
 def diagnosis_field_label(field_name: str) -> str:
     return OFFICIAL_DIAGNOSIS_FIELD_LABELS.get(field_name, field_name.replace("_", " "))
 
@@ -338,6 +394,35 @@ def _compose_verification_diagnosis(facts: dict[str, Any]) -> str:
     return diagnosis
 
 
+def _has_histology_confirmation(latest_biopsy: dict[str, Any], facts: dict[str, Any]) -> bool:
+    positive_cores = _safe_int(
+        _first_nonempty(
+            latest_biopsy.get("positive_cores"),
+            latest_biopsy.get("num_cores_positive"),
+            facts.get("positive_cores"),
+        )
+    ) or 0
+    if positive_cores > 0:
+        return True
+    return any(
+        _is_present(
+            _first_nonempty(
+                latest_biopsy.get(field),
+                facts.get(field),
+            )
+        )
+        for field in ("gleason_primary", "gleason_secondary", "isup_grade", "histology_subtype")
+    )
+
+
+def _operational_diagnosis_fallback(state: str, operational_label: str) -> str:
+    if state == "diagnostic_workup":
+        return "Sospecha de cáncer de próstata en estudio"
+    if state == "post_negative_biopsy_followup":
+        return "Sospecha persistente tras biopsia benigna inicial"
+    return operational_label or "Diagnóstico en consolidación"
+
+
 def _diagnosis_template_kind(state: str, facts: dict[str, Any], patient: dict[str, Any]) -> str:
     if state in MHSPC_STATES:
         return "mhspc"
@@ -450,6 +535,8 @@ def build_official_diagnosis_context(
 
     kind = _diagnosis_template_kind(state, facts, patient)
     operational_label = operational_module_label or "Diagnóstico en consolidación"
+    histology_confirmed = _has_histology_confirmation(latest_biopsy, facts)
+    provisional_operational_label = _operational_diagnosis_fallback(state, operational_label)
     if kind == "localized":
         official = _compose_localized_diagnosis(facts)
     elif kind == "postlocal":
@@ -471,15 +558,55 @@ def build_official_diagnosis_context(
     missing_raw = [field for field in required_fields if not _is_present(facts.get(field))]
     if kind == "operational" or not formal_components_present:
         status = "missing"
-        official = operational_label
+        official = provisional_operational_label
     elif not missing_raw:
         status = "complete"
     else:
         status = "partial"
 
+    display_status = "confirmed"
+    if state in DIAGNOSTIC_LOCALIZED_STATES and not histology_confirmed:
+        official = provisional_operational_label
+        display_status = "provisional"
+    elif status == "complete":
+        display_status = "confirmed"
+    elif status == "partial":
+        display_status = "incomplete"
+    else:
+        display_status = "operational_only"
+
+    # Guard DX-1: validación AJCC 8ª edición de TNM ingresado (warnings backend).
+    tnm_validation = validate_tnm_payload(
+        {
+            "clinical_tstage": _first_nonempty(
+                baseline.get("clinical_tstage"),
+                assessment_input.get("clinical_tstage"),
+                parsed_t,
+            ),
+            "nodal_status": _first_nonempty(
+                baseline.get("nodal_status"),
+                assessment_input.get("nodal_status"),
+                parsed_n,
+            ),
+            "m_substage_resolved": _first_nonempty(
+                latest_followup.get("m_substage_resolved"),
+                baseline.get("m_substage_resolved"),
+                assessment_input.get("m_substage_resolved"),
+                assessment_input.get("metastasis_site"),
+                parsed_m,
+            ),
+        }
+    )
+    tnm_warnings = list(tnm_validation.get("warnings") or [])
+    if tnm_warnings and display_status == "confirmed":
+        display_status = "incomplete"
+
     return {
         "official_diagnosis": official,
         "official_diagnosis_status": status,
+        "official_diagnosis_display_status": display_status,
+        "official_diagnosis_confirmed": histology_confirmed and not tnm_warnings,
+        "operational_diagnosis": provisional_operational_label,
         "official_diagnosis_missing_fields_raw": missing_raw,
         "official_diagnosis_missing_fields": [diagnosis_field_label(field) for field in missing_raw],
         "official_diagnosis_source_summary": _source_summary(patient, facts, raw_assessment or {}, display_assessment or {}, baseline, latest_biopsy),
@@ -487,4 +614,6 @@ def build_official_diagnosis_context(
         "operational_module_label": operational_label,
         "template_kind": kind,
         "facts": facts,
+        "tnm_validation": tnm_validation,
+        "tnm_validation_warnings": tnm_warnings,
     }

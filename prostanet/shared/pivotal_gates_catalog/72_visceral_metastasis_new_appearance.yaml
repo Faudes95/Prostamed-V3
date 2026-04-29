@@ -1,0 +1,153 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 72: visceral_metastasis_new_appearance
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXVIII) — Auditoría #67D — Visceral mets nuevas.
+#
+# Razón clínica:
+#   Aparición de **nuevas metástasis viscerales** (hígado, pulmón,
+#   peritoneo, SNC) en paciente con PCa establecido es:
+#
+#   1. **Marcador progresión severa**: peor pronóstico (HR mortalidad 2-3×)
+#   2. **Auto-disparo rPFS event**: PCWG3 endpoint formal
+#   3. **Triggera consideración NEPC** (gate 67):
+#      - Visceral mets prominent en NEPC/small cell
+#      - LDH elevation paralelo común
+#      - Biopsia hepática/pulmonar puede confirmar transformación
+#   4. **Triggera consideración platinum-based chemo**:
+#      - Si NEPC confirmado: EP regimen (carboplatin + etoposide)
+#      - Si adenocarcinoma puro: cabazitaxel o Lu-177-PSMA
+#
+#   Severity: soft_warning — alerta cambio severo + reroute terapéutico
+#   + biopsia visceral consideration + NEPC workup.
+#
+#   Coexistencia: gate complementa gate 67 (NEPC) + gate 68 (visceral
+#   crisis si funcionalmente comprometido) + gate 75 (composite rPFS).
+# ──────────────────────────────────────────────────────────────────────
+
+code: visceral_metastasis_new_appearance
+title: "Nuevas metástasis viscerales (hígado/pulmón/SNC) → rPFS event + reroute + NEPC workup"
+faubot_added_in: "2026-04-26 LXXVIII"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: nueva mets visceral genérica
+    - type: truthy_flag
+      field: new_visceral_metastasis_documented
+      alias_fields:
+        - nueva_metastasis_visceral_documentada
+        - new_visceral_mets
+        - visceral_progression_new
+    # Path B: nueva mets hepática específica
+    - type: truthy_flag
+      field: new_liver_metastasis_appeared
+      alias_fields:
+        - nueva_metastasis_hepatica
+        - liver_mets_new_appearance
+    # Path C: nueva mets pulmonar específica
+    - type: truthy_flag
+      field: new_lung_metastasis_appeared
+      alias_fields:
+        - nueva_metastasis_pulmonar
+        - lung_mets_new_appearance
+    # Path D: nueva mets SNC (cerebro/leptomeningeal)
+    - type: truthy_flag
+      field: new_cns_metastasis_appeared
+      alias_fields:
+        - nueva_metastasis_snc
+        - brain_mets_new
+        - leptomeningeal_disease_new
+    # Path E: count visceral mets aumentó significativamente
+    - type: numeric_above
+      field: visceral_metastases_count_increase
+      alias_fields:
+        - cambio_count_metastasis_viscerales
+      threshold: 0  # ≥1 nueva visceral
+
+regimen_codes: []  # Gate informativo — dispara reroute no bloquea
+
+keywords:
+  - metástasis visceral
+  - visceral metastases
+  - liver metastasis
+  - lung metastasis
+  - brain metastasis
+
+message: |
+  📊 ALERTA: Nuevas metástasis viscerales detectadas → **rPFS event
+  marker** + reroute terapéutico + NEPC workup obligatorio.
+
+  🔬 SIGNIFICADO CLÍNICO:
+
+  **Nuevas mets viscerales = peor pronóstico**:
+  - HR mortalidad 2-3× vs solo bone mets
+  - Mediana survival mCRPC visceral: 12-15m (vs 24-30m bone-only)
+  - Marker enfermedad biológicamente agresiva
+
+  **Distribución típica visceral en mCRPC**:
+  - Hígado: 10-15% (peor pronóstico, posible NEPC)
+  - Pulmón: 5-10% (mejor que hepático)
+  - SNC: <5% (NEPC/small cell-like)
+  - Peritoneal: <5% (raro adenocarcinoma puro)
+
+  🎯 ACCIÓN OBLIGATORIA:
+
+  **1. Workup confirmación**:
+  - CT thorax/abdomen/pelvis con contraste
+  - PSMA-PET para correlation + missed sites
+  - LDH, AST/ALT, bilirubin (función hepática)
+
+  **2. Considerar NEPC transformation** (gate 67):
+  - Visceral mets + AR signaling loss + LDH elevation = NEPC sospecha
+  - Biopsia visceral si accesible (hígado percutánea, pulmón
+    transbronquial)
+  - Chromogranin A, synaptophysin, NSE en tejido
+
+  **3. Reroute terapéutico**:
+  - Si bajo ARPI (abi/enza/apa): switch a taxane
+  - Si NEPC confirmed: platinum-based chemo (EP regimen)
+  - Si adenocarcinoma + PSMA-positive: Lu-177-PSMA (VISION trial)
+  - Si HRR+ (BRCA/ATM): considerar PARP (PROfound/MAGNITUDE)
+
+  **4. Documentar rPFS event** (PCWG3 formal endpoint):
+  - Fecha primera detección visceral nueva
+  - Type (liver/lung/CNS) + count
+  - Survival impact discussion con paciente
+
+  **5. Goals of care discussion**:
+  - Mediana survival post-visceral progression: 12-15m
+  - Considerar palliative care early integration
+  - Trial enrollment priorizar (rare disease, evidence limitada)
+
+  ⚠️ INTEGRACIÓN COMPOSITE:
+  Si gate 72 fires + gate 71 (PSMA progression) + gate 53/55 (PSA prog)
+  → gate 75 composite rPFS event triple confirmación → switch línea
+  inmediato + considerar trial visceral-specific.
+
+  🔬 EVIDENCIA:
+  - **CHAARTED (Sweeney NEJM 2015)**: visceral mets como prognostic factor
+  - **VISION (Sartor NEJM 2021)**: Lu-177-PSMA en mCRPC visceral (response 30%)
+  - **CARD (de Wit NEJM 2019)**: cabazitaxel vs ARPI 2nd line (visceral benefit)
+  - **PCWG3 (Scher JCO 2016)**: visceral progression como rPFS endpoint
+  - **Aparicio Eur Urol 2024**: NEPC visceral predominance pattern
+  - **NCCN Prostate v5.2026 PROS-G**: visceral mets management
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `new_visceral_metastasis_documented`: flag general visceral nueva
+  - `new_liver_metastasis_appeared`: flag específico hepática
+  - `new_lung_metastasis_appeared`: flag específico pulmonar
+  - `new_cns_metastasis_appeared`: flag específico SNC
+  - `visceral_metastases_count_current`: count actual
+  - `visceral_metastases_count_baseline`: count basal
+  - `visceral_metastases_count_increase`: cambio calculado
+
+evidence_tag: chaarted_2015_vision_2021_card_2019_pcwg3_visceral_progression
+trial_refs:
+  - "CHAARTED (Sweeney NEJM 2015)"
+  - "VISION (Sartor NEJM 2021;385:1091)"
+  - "CARD (de Wit NEJM 2019)"
+  - "PCWG3 (Scher JCO 2016;34:1402)"
+  - "Aparicio Eur Urol 2024 (NEPC visceral)"
+  - "NCCN Prostate v5.2026 PROS-G"

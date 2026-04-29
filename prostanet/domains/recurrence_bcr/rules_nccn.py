@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from prostanet.shared.phoenix import evaluate_phoenix
+
 
 def classify_recurrence(payload: dict) -> dict:
     prior_prostatectomy = str(payload.get("prior_prostatectomy", "0")) == "1"
@@ -16,15 +18,20 @@ def classify_recurrence(payload: dict) -> dict:
     psma_pet_done = str(payload.get("psma_pet_done", "0")) == "1"
     psma_pet_result = str(payload.get("psma_pet_result", "No realizado"))
 
+    # Phoenix gate (NCCN PROS-10, EAU 2026 §6.3.2). Si hay radioterapia previa
+    # y el paciente aún no cumple nadir+2 ng/mL, NO se etiqueta como recurrencia.
+    phoenix = evaluate_phoenix(payload)
+    phoenix_payload = phoenix.to_dict()
+
     psma_pet_recommended = False
     psma_pet_reason = ""
 
     if prior_prostatectomy and psa_current > 0.2 and salvage_local_feasible:
         psma_pet_recommended = True
         psma_pet_reason = "Post-RP con PSA >0.2 ng/mL donde PSMA-PET podría cambiar la estrategia de rescate."
-    elif prior_radiation and local_salvage_candidate:
+    elif prior_radiation and local_salvage_candidate and phoenix.threshold_reached:
         psma_pet_recommended = True
-        psma_pet_reason = "Post-RT con posibilidad de rescate local potencialmente curativo."
+        psma_pet_reason = "Post-RT con Phoenix cumplido y posibilidad de rescate local potencialmente curativo."
 
     if bcr2 and conventional_imaging_m0:
         high_risk = psadt <= 9
@@ -42,6 +49,7 @@ def classify_recurrence(payload: dict) -> dict:
             "conventional_imaging_m0": conventional_imaging_m0,
             "psma_pet_done": psma_pet_done,
             "psma_pet_result": psma_pet_result,
+            "phoenix": phoenix_payload,
         }
 
     if prior_prostatectomy:
@@ -58,9 +66,32 @@ def classify_recurrence(payload: dict) -> dict:
             "conventional_imaging_m0": conventional_imaging_m0,
             "psma_pet_done": psma_pet_done,
             "psma_pet_result": psma_pet_result,
+            "phoenix": phoenix_payload,
         }
 
     if prior_radiation:
+        if not phoenix.threshold_reached:
+            return {
+                "label": "Pre-Phoenix monitoring",
+                "recommendation": (
+                    "PSA aún no cumple criterio Phoenix (nadir + 2 ng/mL). "
+                    "No detonar salvage ni re-estadificación precoz; mantener "
+                    "PSA cada 3 meses hasta cumplir Phoenix o evidencia "
+                    "clínica/radiográfica/biopsia de recurrencia local."
+                ),
+                "enza_match": False,
+                "apalutamide_experimental": False,
+                "high_risk_bcr2": False,
+                "psma_pet_recommended": False,
+                "psma_pet_reason": "Diferir PSMA-PET hasta cumplir Phoenix o confirmar recurrencia local.",
+                "salvage_local_feasible": salvage_local_feasible,
+                "local_salvage_candidate": local_salvage_candidate,
+                "conventional_imaging_m0": conventional_imaging_m0,
+                "psma_pet_done": psma_pet_done,
+                "psma_pet_result": psma_pet_result,
+                "phoenix": phoenix_payload,
+                "phoenix_gate_blocked": True,
+            }
         return {
             "label": "Post-RT recurrence",
             "recommendation": "Re-stage and consider local salvage versus systemic transition based on kinetics and whether salvage remains technically curative.",
@@ -74,6 +105,7 @@ def classify_recurrence(payload: dict) -> dict:
             "conventional_imaging_m0": conventional_imaging_m0,
             "psma_pet_done": psma_pet_done,
             "psma_pet_result": psma_pet_result,
+            "phoenix": phoenix_payload,
         }
 
     return {
@@ -89,4 +121,5 @@ def classify_recurrence(payload: dict) -> dict:
         "conventional_imaging_m0": conventional_imaging_m0,
         "psma_pet_done": psma_pet_done,
         "psma_pet_result": psma_pet_result,
+        "phoenix": phoenix_payload,
     }

@@ -1,0 +1,164 @@
+{# ProstaMed v2 PRODUCTION catalog viewer — wrapper unificado v2.
+
+   Renderiza Audit Log · Gates Coverage · Versioning Dashboard · cualquier
+   página de catálogo dentro del shell v2 con sidebar + design system.
+
+   Variables consumidas:
+     - catalog_view: "audit_log" | "gates_coverage" | "versioning"
+     - page_title, page_subtitle: strings
+     - content_blocks: list of {kind, ...} bloques renderizables
+         kind="kpi_grid"   → {items: [{label, value, sub, variant}]}
+         kind="table"      → {title, columns: [str], rows: [[...]], head_meta}
+         kind="json_block" → {title, content: dict|str, head_meta}
+         kind="card_list"  → {title, items: [{title, sub, body, badges}]}
+         kind="raw_html"   → {html: safe HTML}
+     - sidebar_active: key del sidebar a marcar como activo
+     - faubot_release, gates_active_count: badges info
+#}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }} · ProstaMed v2</title>
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+
+{# Faubot LXXXIII — Sidebar centralizado via macro (resuelve bug "UI previa cargada") #}
+{% from "components/pm2_sidebar.html" import pm2_sidebar %}
+
+{# Mapping legacy sidebar_active → macro active param (compat backward) #}
+{% set _macro_active = (
+    'audit' if sidebar_active == 'audit_log' else
+    'gates' if sidebar_active == 'gates_coverage' else
+    'versioning' if sidebar_active == 'versioning' else
+    'cohort' if sidebar_active == 'cohort_references' else
+    'therapy' if sidebar_active == 'therapy_catalog' else
+    sidebar_active
+) %}
+
+<div class="pm2-app-shell">
+
+    {{ pm2_sidebar(
+        active=_macro_active,
+        faubot_release=faubot_release or '2026-04-26 LXXXIII',
+        gates_count=gates_active_count or 85,
+    ) }}
+
+    <header class="pm2-app-header">
+        <div class="pm2-header-search">
+            <svg class="pm2-ic" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="m21 21-4.35-4.35"/></svg>
+            <input type="search" placeholder="Buscar en catálogo…">
+        </div>
+        <div class="pm2-header-tools">
+            <span class="pm2-faubot-chip"><span class="pm2-faubot-pulse"></span> Faubot · live</span>
+            {% set legacy_url = ('/audit-log' if sidebar_active == 'audit_log' else '/gates-coverage-dashboard' if sidebar_active == 'gates_coverage' else '/versioning-dashboard') %}
+            <a class="pm2-icon-btn" href="{{ legacy_url }}?v=legacy" title="Ver versión clásica">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="1.7" d="M3 12c0-4.97 4.03-9 9-9s9 4.03 9 9-4.03 9-9 9-9-4.03-9-9zm9-5v5l3 2"/></svg>
+            </a>
+        </div>
+    </header>
+
+    <main id="main-content" class="pm2-app-main" tabindex="-1">
+
+        <section style="padding: var(--space-6) var(--space-6) 0">
+            <div class="pm2-kicker">PROSTAMED 2026 · CATÁLOGO {{ sidebar_active | upper | replace('_', ' ') }}</div>
+            <h1 style="font-family:var(--pm-font-display);font-size:2rem;font-weight:700;letter-spacing:-.03em;color:#f8fbff;margin:6px 0 4px">{{ page_title }}</h1>
+            <p style="color:var(--pn-text-muted);font-size:.92rem;max-width:78ch;line-height:1.5">{{ page_subtitle }}</p>
+        </section>
+
+        <section style="padding: var(--space-5) var(--space-6)">
+            {% for block in content_blocks %}
+
+            {% if block.kind == "kpi_grid" %}
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--space-3);margin-bottom:var(--space-5)">
+                {% for kpi in block.entries %}
+                <article class="pm2-kpi-card" data-variant="{{ kpi.variant or 'info' }}">
+                    <div class="pm2-kpi-label">{{ kpi.label }}</div>
+                    <div class="pm2-kpi-value">{{ kpi.value }}</div>
+                    {% if kpi.sub %}
+                    <div class="pm2-kpi-foot">
+                        <div class="pm2-kpi-trend pm2-metric-trend--flat">{{ kpi.sub }}</div>
+                    </div>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            </div>
+
+            {% elif block.kind == "table" %}
+            <article class="pm2-tab-card" style="margin-bottom:var(--space-4)">
+                <div class="pm2-tab-card-head">
+                    <h3>{{ block.title }}</h3>
+                    {% if block.head_meta %}<span class="pm2-head-meta">{{ block.head_meta }}</span>{% endif %}
+                </div>
+                <div style="padding:0;max-height:520px;overflow-y:auto">
+                    <table class="pm2-tbl">
+                        <thead><tr>{% for c in block.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+                        <tbody>
+                            {% for row in block.rows %}
+                            <tr>{% for cell in row %}<td>{{ cell | safe }}</td>{% endfor %}</tr>
+                            {% else %}
+                            <tr><td colspan="{{ block.columns | length }}"><div style="padding:24px;text-align:center;color:var(--pn-text-soft)">Sin datos</div></td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </article>
+
+            {% elif block.kind == "json_block" %}
+            <article class="pm2-tab-card" style="margin-bottom:var(--space-4)">
+                <div class="pm2-tab-card-head">
+                    <h3>{{ block.title }}</h3>
+                    {% if block.head_meta %}<span class="pm2-head-meta">{{ block.head_meta }}</span>{% endif %}
+                </div>
+                <div style="font-family:ui-monospace,monospace;font-size:.74rem;line-height:1.65;color:#cbd5e1;background:var(--surface-1);max-height:380px;overflow:auto;padding:14px">
+                    <pre style="margin:0;white-space:pre-wrap">{{ block.content }}</pre>
+                </div>
+            </article>
+
+            {% elif block.kind == "card_list" %}
+            <article class="pm2-tab-card" style="margin-bottom:var(--space-4)">
+                <div class="pm2-tab-card-head">
+                    <h3>{{ block.title }}</h3>
+                    {% if block.head_meta %}<span class="pm2-head-meta">{{ block.head_meta }}</span>{% endif %}
+                </div>
+                <div class="pm2-tab-card-body" style="display:flex;flex-direction:column;gap:10px">
+                    {% for item in block.entries %}
+                    <div style="padding:12px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:10px;border-left:3px solid var(--pn-accent)">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">
+                            <div style="color:#f0fbff;font-size:.88rem;font-weight:650">{{ item.title }}</div>
+                            {% if item.sub %}<span class="pm2-state-chip" style="font-size:.66rem">{{ item.sub }}</span>{% endif %}
+                        </div>
+                        {% if item.body %}<div style="color:var(--pn-text-muted);font-size:.78rem;line-height:1.45">{{ item.body | safe }}</div>{% endif %}
+                        {% if item.badges %}
+                        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+                            {% for b in item.badges %}<span class="pm2-state-chip" style="font-size:.66rem">{{ b }}</span>{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </article>
+
+            {% elif block.kind == "raw_html" %}
+            {{ block.html | safe }}
+
+            {% endif %}
+
+            {% endfor %}
+        </section>
+
+        <footer style="padding:1.5rem;text-align:center;color:var(--pn-text-soft);font-size:.72rem;letter-spacing:.06em;border-top:1px solid var(--border-subtle);margin-top:1rem">
+            ProstaMed v2 · Catálogo · {{ page_title }}
+        </footer>
+    </main>
+</div>
+
+<script src="{{ url_for('static', filename='js/clinical_intelligence_v2.js') }}"></script>
+</body>
+</html>

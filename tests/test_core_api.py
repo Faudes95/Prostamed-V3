@@ -1,3 +1,4 @@
+# IEC 62304 §5.5 (Unit verification)
 import csv
 import io
 import json
@@ -131,6 +132,22 @@ def _insert_psa_longitudinal_points(db_path, patient_id, points):
             INSERT INTO biomarker_longitudinal (
                 patient_id, biomarker_type, value, unit, sample_date, lab_source
             ) VALUES (?, 'PSA', ?, 'ng/mL', ?, 'unit_test')
+            """,
+            (patient_id, value, sample_date),
+        )
+    conn.commit()
+    conn.close()
+
+
+def _insert_testosterone_longitudinal_points(db_path, patient_id, points):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    for sample_date, value in points:
+        cursor.execute(
+            """
+            INSERT INTO biomarker_longitudinal (
+                patient_id, biomarker_type, value, unit, sample_date, lab_source
+            ) VALUES (?, 'TESTOSTERONA', ?, 'ng/dL', ?, 'unit_test')
             """,
             (patient_id, value, sample_date),
         )
@@ -284,6 +301,33 @@ def _update_latest_assessment_input(db_path, patient_id, payload):
     conn.close()
 
 
+def _update_latest_assessment_result_snapshot(db_path, patient_id, payload):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT id, result_snapshot
+        FROM clinical_assessments
+        WHERE patient_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (patient_id,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        conn.close()
+        raise AssertionError("No latest assessment found to update")
+    current_snapshot = json.loads(row[1] or "{}")
+    current_snapshot.update(payload)
+    cursor.execute(
+        "UPDATE clinical_assessments SET result_snapshot = ? WHERE id = ?",
+        (json.dumps(current_snapshot), row[0]),
+    )
+    conn.commit()
+    conn.close()
+
+
 def test_schedule_exposes_palliative_lane_and_capture_blocks_when_symptom_burden_is_high(app_client):
     client, db_path = app_client
     payload = make_patient_payload(nss="39999999991", full_name="Paciente Paliativo Longitudinal")
@@ -407,6 +451,765 @@ def test_survivorship_plan_endpoint_returns_canonical_bundle_and_schedule_overla
     assert "Recuperación urinaria y sexual post-prostatectomía" in schedule_titles
 
 
+def test_decision_governance_endpoint_exposes_spanish_score_interpretations(app_client):
+    client, db_path = app_client
+    import tracking_db
+
+    payload = make_patient_payload(nss="39999999993", full_name="Paciente Governance Scores")
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "post_prostatectomy")
+
+    assert tracking_db.save_pro_assessment(
+        patient_id,
+        {
+            "date": date.today().isoformat(),
+            "ipss_total": 23,
+            "iief5_score": 7,
+            "eq5d_vas": 35,
+            "epic26_urinary_domain": 38,
+            "epic26_sexual_domain": 18,
+        },
+    )
+
+    governance_response = client.get(f"/api/patients/{patient_id}/decision-governance")
+    assert governance_response.status_code == 200
+    governance_payload = governance_response.get_json()
+    snapshot = governance_payload["score_interpretation_catalog_snapshot"]
+
+    assert snapshot["ipss_total"]["score_grade_es"] == "Severo"
+    assert "Carga urinaria alta" in snapshot["ipss_total"]["clinical_equivalence_es"]
+    assert snapshot["iief5_score"]["score_grade_es"] == "Disfunción severa"
+    assert snapshot["eq5d_vas"]["score_grade_es"] == "Calidad de vida muy baja"
+    assert snapshot["epic26_urinary_incontinence_domain"]["score_grade_es"] == "Severamente afectada"
+    assert snapshot["epic26_urinary_irritative_domain"]["score_grade_es"] == "Severamente afectada"
+    assert snapshot["epic26_urinary_domain"]["score_grade_es"] == "Severamente afectada"
+    assert isinstance(governance_payload["diagnostic_certainty_bundle"], dict)
+    assert isinstance(governance_payload["staging_certainty_bundle"], dict)
+    assert governance_payload["minimum_decisive_dataset_bundle"]["dataset_key"] == "post_prostatectomy"
+    assert isinstance(governance_payload["therapeutic_window_bundle"], dict)
+    assert isinstance(governance_payload["precision_workflow_bundle"], dict)
+    assert isinstance(governance_payload["registry_core_bundle"], dict)
+    assert isinstance(governance_payload["endpoint_adjudication_bundle"], dict)
+    assert isinstance(governance_payload["data_certainty_bundle"], dict)
+
+    schedule_payload = client.get(f"/api/patients/{patient_id}/schedule").get_json()
+    assert schedule_payload["recommendation_block_status"] in {"clear", "provisional", "hard_stop"}
+    assert schedule_payload["score_interpretation_catalog_snapshot"]["ipss_total"]["score_grade_es"] == "Severo"
+    assert schedule_payload["minimum_decisive_dataset_bundle"]["dataset_key"] == "post_prostatectomy"
+    assert "therapeutic_window_bundle" in schedule_payload
+
+
+def test_therapeutic_windows_endpoint_prioritizes_post_rp_salvage_and_persists_event(app_client):
+    client, db_path = app_client
+    import tracking_db
+
+    payload = make_patient_payload(nss="399999999933", full_name="Paciente Worklist Post RP")
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "post_prostatectomy")
+
+    response = client.get(f"/api/patients/{patient_id}/therapeutic-windows")
+    assert response.status_code == 200
+    window_payload = response.get_json()["window_worklist_bundle"]
+
+    assert window_payload["available"] is True
+    assert window_payload["top_active_window"]["window_key"] == "post_rp_salvage_window"
+    assert any("salvage post-RP" in task["label"] or "PSADT" in task["label"] for task in window_payload["closure_tasks"])
+
+    schedule_payload = client.get(f"/api/patients/{patient_id}/schedule").get_json()
+    assert schedule_payload["window_worklist_bundle"]["top_active_window"]["window_key"] == "post_rp_salvage_window"
+    assert schedule_payload["schedule"][0]["window_closure_priority"] is True
+
+    record = tracking_db.get_patient_full_record(patient_id)
+    assert record["therapeutic_window_events"]
+    assert record["therapeutic_window_events"][0]["window_key"] == "post_rp_salvage_window"
+
+
+def test_post_negative_biopsy_followup_reopens_workup_when_mri_signal_persists(app_client):
+    client, db_path = app_client
+    import tracking_db
+
+    payload = make_patient_payload(
+        nss="399999999931",
+        full_name="Paciente Sospecha Persistente",
+        baseline_psa=7.6,
+    )
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "post_negative_biopsy_followup")
+
+    assert tracking_db.save_mri_fact(
+        patient_id,
+        {
+            "fact_date": date.today().isoformat(),
+            "decision_usable": 1,
+            "pirads_score": 5,
+            "lesion_location": "base periférica derecha",
+            "lesion_size_mm": 14,
+            "prostate_volume_ml": 38,
+        },
+    )
+    assert tracking_db.save_biopsy(
+        patient_id,
+        {
+            "biopsy_date": date.today().isoformat(),
+            "biopsy_type": "fusion",
+            "biopsy_route": "transperineal",
+            "biopsy_context": "diagnostica",
+            "total_cores": 12,
+            "positive_cores": 0,
+            "systematic_cores": [{"core_id": "S1", "core_type": "systematic", "positive": False}],
+            "targeted_cores": [{"core_id": "T1", "core_type": "targeted", "positive": False}],
+        },
+    )
+
+    governance_payload = client.get(f"/api/patients/{patient_id}/decision-governance").get_json()
+    diagnostic_bundle = governance_payload["diagnostic_certainty_bundle"]
+    window_worklist_bundle = governance_payload["window_worklist_bundle"]
+
+    assert diagnostic_bundle["diagnosis_certainty"] == "persistent_suspicion_after_negative_biopsy"
+    assert diagnostic_bundle["negative_biopsy_followup_status"] == "persistent_suspicion_reopen_workup"
+    assert "PI-RADS 5" in diagnostic_bundle["persistent_suspicion_drivers"]
+    assert window_worklist_bundle["top_active_window"]["window_key"] == "diagnostic_mri_biopsy_window"
+    assert governance_payload["recommendation_block_status"] in {"provisional", "hard_stop"}
+
+
+def test_post_negative_biopsy_followup_reopens_workup_when_dre_remains_suspicious(app_client):
+    client, db_path = app_client
+    import tracking_db
+
+    payload = make_patient_payload(
+        nss="39999999941",
+        full_name="Paciente DRE Persistente",
+        baseline_psa=5.4,
+    )
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "post_negative_biopsy_followup")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "psa": 5.4,
+            "psad": 0.11,
+            "pirads_score": "3",
+            "dre_suspicious": "1",
+            "prior_biopsy_count": 1,
+            "planned_biopsy_type": "Pendiente",
+            "planned_biopsy_route": "No definida",
+        },
+    )
+
+    assert tracking_db.save_biopsy(
+        patient_id,
+        {
+            "biopsy_date": date.today().isoformat(),
+            "biopsy_type": "systematic",
+            "biopsy_route": "transperineal",
+            "biopsy_context": "diagnostica",
+            "total_cores": 12,
+            "positive_cores": 0,
+        },
+    )
+
+    governance_payload = client.get(f"/api/patients/{patient_id}/decision-governance").get_json()
+    diagnostic_bundle = governance_payload["diagnostic_certainty_bundle"]
+    window_worklist_bundle = governance_payload["window_worklist_bundle"]
+
+    assert diagnostic_bundle["negative_biopsy_followup_status"] == "persistent_suspicion_reopen_workup"
+    assert "DRE sospechoso" in diagnostic_bundle["persistent_suspicion_drivers"]
+    assert window_worklist_bundle["top_active_window"]["window_key"] == "diagnostic_mri_biopsy_window"
+    assert "dre" in window_worklist_bundle["top_active_window"]["why_this_matters_now"].lower() or governance_payload["recommendation_block_status"] in {"provisional", "hard_stop"}
+
+
+def test_diagnostic_workup_requires_repeat_psa_before_clear_closure_when_initial_psa_is_three_to_ten(app_client):
+    client, db_path = app_client
+
+    payload = make_patient_payload(
+        nss="39999999942",
+        full_name="Paciente Repeat PSA",
+        baseline_psa=5.8,
+    )
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "diagnostic_workup")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "psa": 5.8,
+            "psad": 0.12,
+            "pirads_score": "3",
+            "dre_suspicious": "0",
+            "prostate_volume_ml": 48,
+            "planned_biopsy_type": "Pendiente",
+            "planned_biopsy_route": "No definida",
+        },
+    )
+
+    governance_payload = client.get(f"/api/patients/{patient_id}/decision-governance").get_json()
+    diagnostic_bundle = governance_payload["diagnostic_certainty_bundle"]
+    dataset_bundle = governance_payload["minimum_decisive_dataset_bundle"]
+    top_window = governance_payload["window_worklist_bundle"]["top_active_window"]
+
+    assert diagnostic_bundle["repeat_psa_required"] is True
+    assert diagnostic_bundle["repeat_psa_status"] == "required_not_done"
+    assert "repeat_psa_value" in dataset_bundle["missing_required_fields"]
+    assert top_window["window_key"] == "diagnostic_mri_biopsy_window"
+    assert any("psa repetido" in task["label"].lower() for task in top_window["closure_tasks"])
+    assert governance_payload["recommendation_block_status"] in {"provisional", "hard_stop"}
+
+
+def test_patient_profile_uses_provisional_copy_for_repeat_psa_gate(app_client):
+    client, db_path = app_client
+
+    payload = make_patient_payload(
+        nss="399999999421",
+        full_name="Paciente Perfil Repeat PSA",
+        baseline_psa=5.8,
+    )
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "diagnostic_workup")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "psa": 5.8,
+            "psad": 0.12,
+            "pirads_score": "3",
+            "dre_suspicious": "0",
+            "prostate_volume_ml": 48,
+        },
+    )
+
+    profile_response = client.get(f"/patient_profile/{payload['nss']}")
+    assert profile_response.status_code == 200
+    html = profile_response.get_data(as_text=True)
+
+    assert "Sospecha de c&aacute;ncer de pr&oacute;stata en estudio" in html or "Sospecha de cáncer de próstata en estudio" in html
+    assert "Repetir PSA antes de cerrar la decisi&oacute;n diagn&oacute;stica" in html or "Repetir PSA antes de cerrar la decisión diagnóstica" in html
+    assert "histol&oacute;gicamente confirmado" not in html
+    assert "histológicamente confirmado" not in html
+
+
+def test_patient_profile_surfaces_reopen_copy_for_suspicious_dre_after_negative_biopsy(app_client):
+    client, db_path = app_client
+    import tracking_db
+
+    payload = make_patient_payload(
+        nss="399999999422",
+        full_name="Paciente Perfil Reapertura",
+        baseline_psa=5.4,
+    )
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "post_negative_biopsy_followup")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "psa": 5.4,
+            "psad": 0.11,
+            "pirads_score": "3",
+            "dre_suspicious": "1",
+            "prior_biopsy_count": 1,
+        },
+    )
+    assert tracking_db.save_biopsy(
+        patient_id,
+        {
+            "biopsy_date": date.today().isoformat(),
+            "biopsy_type": "systematic",
+            "biopsy_route": "transperineal",
+            "biopsy_context": "diagnostica",
+            "total_cores": 12,
+            "positive_cores": 0,
+        },
+    )
+
+    profile_response = client.get(f"/patient_profile/{payload['nss']}")
+    assert profile_response.status_code == 200
+    html = profile_response.get_data(as_text=True)
+
+    assert "Sospecha persistente tras biopsia benigna inicial" in html
+    assert "Reabrir estudio diagn&oacute;stico con MRI, PSAD y decisi&oacute;n de rebiopsia" in html or "Reabrir estudio diagnóstico con MRI, PSAD y decisión de rebiopsia" in html
+    assert "Mantener seguimiento diagn&oacute;stico con PSA y MRI seriados" not in html
+    assert "Mantener seguimiento diagnóstico con PSA y MRI seriados" not in html
+
+
+def test_localized_governance_exposes_modality_bundles_and_closure_window_when_tradeoff_dataset_is_incomplete(app_client):
+    client, db_path = app_client
+
+    payload = make_patient_payload(
+        nss="399999999424",
+        full_name="Paciente Modalidad Local",
+        baseline_psa=9.8,
+        clinical_tstage="T2a",
+        gleason_primary=3,
+        gleason_secondary=4,
+        isup_grade=2,
+        num_cores_positive=3,
+        total_cores=12,
+        life_expectancy_years=14,
+    )
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "localized_initial")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "psa": 9.8,
+            "clinical_tstage": "T2a",
+            "clinical_risk_group": "FAVORABLE INTERMEDIATE",
+            "isup_grade": 2,
+            "nodal_status": "N0",
+            "metastasis_site": "M0",
+            "positive_cores": 3,
+            "total_cores": 12,
+            "pirads_score": "3",
+            "prostate_volume_ml": 42,
+            "ecog_score": 1,
+            "charlson_score": 1,
+            "anesthesia_surgical_fitness": "Fit",
+            "frailty_status": "Fit",
+            "g8_score": 15,
+            "ipss_score": 7,
+            "iief5_score": 19,
+        },
+    )
+
+    governance_payload = client.get(f"/api/patients/{patient_id}/decision-governance").get_json()
+    dataset_bundle = governance_payload["minimum_decisive_dataset_bundle"]
+    modality_bundle = governance_payload["localized_modality_fitness_bundle"]
+    window_worklist_bundle = governance_payload["window_worklist_bundle"]
+
+    assert modality_bundle["available"] is True
+    assert governance_payload["localized_tradeoff_bundle"]["available"] is True
+    assert governance_payload["patient_priority_profile"]["available"] is False
+    assert dataset_bundle["dataset_key"] == "localized_initial"
+    assert "patient_priority_profile" not in dataset_bundle["missing_required_fields"]
+    assert window_worklist_bundle["top_active_window"]["window_key"] == "localized_modality_closure_window"
+    assert "radiotherapy_feasibility" in (window_worklist_bundle["top_active_window"].get("required_inputs") or [])
+
+
+def test_patient_profile_surfaces_localized_modality_panel_when_tradeoff_is_open(app_client):
+    client, db_path = app_client
+
+    payload = make_patient_payload(
+        nss="399999999425",
+        full_name="Paciente Perfil Modalidad",
+        baseline_psa=9.6,
+        clinical_tstage="T2a",
+        gleason_primary=3,
+        gleason_secondary=4,
+        isup_grade=2,
+        num_cores_positive=3,
+        total_cores=12,
+        life_expectancy_years=14,
+    )
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "localized_initial")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "psa": 9.6,
+            "clinical_tstage": "T2a",
+            "clinical_risk_group": "FAVORABLE INTERMEDIATE",
+            "isup_grade": 2,
+            "nodal_status": "N0",
+            "metastasis_site": "M0",
+            "positive_cores": 3,
+            "total_cores": 12,
+            "pirads_score": "3",
+            "prostate_volume_ml": 40,
+            "ecog_score": 1,
+            "charlson_score": 1,
+            "anesthesia_surgical_fitness": "Fit",
+            "radiotherapy_feasibility": "feasible",
+            "frailty_status": "Fit",
+            "g8_score": 15,
+            "ipss_score": 6,
+            "iief5_score": 20,
+        },
+    )
+
+    profile_response = client.get(f"/patient_profile/{payload['nss']}")
+    assert profile_response.status_code == 200
+    html = profile_response.get_data(as_text=True)
+
+    assert "Aptitud por modalidad local" in html
+    assert "Candidato a RP" in html
+    assert "Modalidad dominante hoy" in html
+    assert "Faltan prioridades expl&iacute;citas del paciente" in html or "Faltan prioridades explícitas del paciente" in html
+
+
+def test_adt_progression_verification_keeps_crpc_dataset_blocked_until_castration_and_restaging_close(app_client):
+    client, db_path = app_client
+
+    payload = make_patient_payload(nss="399999999932", full_name="Paciente Verificación CRPC")
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "adt_progression_verification")
+
+    governance_payload = client.get(f"/api/patients/{patient_id}/decision-governance").get_json()
+    dataset_bundle = governance_payload["minimum_decisive_dataset_bundle"]
+    window_worklist_bundle = governance_payload["window_worklist_bundle"]
+    schedule_payload = client.get(f"/api/patients/{patient_id}/schedule").get_json()
+
+    assert dataset_bundle["dataset_key"] == "CRPC"
+    assert dataset_bundle["dataset_status"] in {"provisional", "hard_stop"}
+    assert "testosterone" in dataset_bundle["missing_required_fields"]
+    assert window_worklist_bundle["top_active_window"]["window_key"] == "crpc_verification_window"
+    assert "testosterona" in schedule_payload["next_best_action"]["title"].lower() or "crpc" in schedule_payload["next_best_action"]["title"].lower()
+    assert governance_payload["recommendation_block_status"] in {"provisional", "hard_stop"}
+
+
+def test_patient_profile_exits_nmcrpc_copy_when_psma_already_documents_recent_m1(app_client):
+    import tracking_db
+
+    client, db_path = app_client
+
+    payload = make_patient_payload(nss="399999999932B", full_name="Paciente PSMA M1")
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "m0_crpc")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "current_adt_context": "ADT continua",
+            "conventional_imaging_status": "M0",
+            "progression_pattern": "biochemical_only",
+            "psa": 3.4,
+        },
+    )
+    _insert_structured_psma_imaging(
+        db_path,
+        patient_id,
+        study_date="2026-03-20",
+        psma_result="diseminado",
+        uptake_pattern="diseminado",
+        conventional_stage="M0",
+        psma_stage="M1b",
+        lesion_locations=["hueso"],
+        total_lesions=2,
+    )
+
+    longitudinal_payload = tracking_db.refresh_longitudinal_intelligence(patient_id, force_recompute=True)
+    governance_payload = client.get(f"/api/patients/{patient_id}/decision-governance").get_json()
+    profile_html = client.get(f"/patient_profile/{payload['nss']}").get_data(as_text=True)
+
+    assert longitudinal_payload["metastatic_stage_resolved"] == "M1b"
+    assert longitudinal_payload["metastatic_detection_basis"] == "psma_only"
+    assert longitudinal_payload["signals"]["effective_state"] == "adt_progression_verification"
+    assert governance_payload["window_worklist_bundle"]["top_active_window"]["window_key"] == "progression_verification_closure_window"
+    assert "M1b" in profile_html
+    assert "m0 CRPC ya no es elegible" in profile_html
+    assert "Metástasis documentadas por PET PSMA; el caso ya corresponde a M1." in profile_html
+    assert "M1 documentado; falta cerrar castraci" in profile_html
+
+
+def test_patient_profile_hides_legacy_recommendation_panel_when_reconciled_surface_is_post_rt(app_client):
+    client, db_path = app_client
+
+    payload = make_patient_payload(
+        nss="399999999932D",
+        full_name="Paciente Perfil Consistente",
+        metastasis_site="M1",
+        volume_disease="High",
+    )
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE prior_clinical_history SET current_state = ? WHERE patient_id = ?",
+        ("post_radiotherapy_or_local_salvage", patient_id),
+    )
+    conn.commit()
+    conn.close()
+
+    profile_response = client.get(f"/patient_profile/{payload['nss']}")
+    assert profile_response.status_code == 200
+    html = profile_response.get_data(as_text=True)
+
+    assert "Consistencia de superficies" in html
+    assert "estado cl&iacute;nico efectivo actual" in html or "estado clínico efectivo actual" in html
+    assert "Motor de Decisi&oacute;n Cl&iacute;nica" not in html
+    assert "Motor de Decisión Clínica" not in html
+
+
+def test_positive_m1_imaging_stays_m1_when_stale_and_requests_restaging_update(app_client):
+    import tracking_db
+
+    client, db_path = app_client
+
+    payload = make_patient_payload(nss="399999999932C", full_name="Paciente M1 restaging")
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "m0_crpc")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "current_adt_context": "ADT continua",
+            "conventional_imaging_status": "M0",
+            "progression_pattern": "biochemical_only",
+            "psa": 6.1,
+        },
+    )
+    _insert_structured_psma_imaging(
+        db_path,
+        patient_id,
+        study_date="2025-02-15",
+        psma_result="diseminado",
+        uptake_pattern="diseminado",
+        conventional_stage="M0",
+        psma_stage="M1b",
+        lesion_locations=["hueso"],
+        total_lesions=3,
+    )
+
+    longitudinal_payload = tracking_db.refresh_longitudinal_intelligence(patient_id, force_recompute=True)
+
+    assert longitudinal_payload["metastatic_stage_resolved"] == "M1b"
+    assert longitudinal_payload["restaging_update_required"] is True
+    assert longitudinal_payload["restaging_currentness_status"] == "stale"
+    assert longitudinal_payload["signals"]["effective_state"] == "adt_progression_verification"
+
+
+def test_clinical_copy_bundle_separates_transition_from_current_decision_for_vulnerable_mhspc():
+    from prostanet.domains.patient_tracking.profile_compass import build_patient_profile_view_model
+
+    patient = {
+        "identity": {"nss": "399999999423", "full_name": "Paciente Perfil mHSPC"},
+        "baseline": {
+            "histology_subtype": "Adenocarcinoma acinar",
+            "gleason_primary": 4,
+            "gleason_secondary": 4,
+            "isup_grade": 4,
+            "volume_disease": "High",
+            "g8_score": 11,
+            "mini_cog_score": 2,
+        },
+        "prior_history": {"current_state": "mcspc_high_volume_sync"},
+        "follow_ups": [],
+        "biopsies": [],
+        "source_documents": [],
+        "latest_signal_snapshot": {
+            "next_best_action": {
+                "title": "Priorizar ADT + darolutamida",
+                "action_title": "Priorizar ADT + darolutamida",
+                "action_rationale": "La vulnerabilidad geriátrica y cognitiva actual desprioriza el triplete hasta completar CGA.",
+                "transition_title": "Confirmar transición a mHSPC sincrónico de bajo volumen",
+                "transition_rationale": "La carga metastásica visible necesita cierre documental antes de reclasificar el subfenotipo.",
+                "transition_pending": True,
+                "transition_target_state": "mcspc_low_volume_sync_oligo",
+                "recommendation_family": "ADT + ARPI",
+            },
+            "care_intent_contract": {
+                "headline": "Confirmar transición a mHSPC sincrónico de bajo volumen",
+                "narrative": "Narrativa legacy que no debe dominar el copy principal.",
+                "recommendation_family": "ADT + ARPI",
+            },
+        },
+        "care_intent_contract": {
+            "headline": "Confirmar transición a mHSPC sincrónico de bajo volumen",
+            "narrative": "Narrativa legacy que no debe dominar el copy principal.",
+            "recommendation_family": "ADT + ARPI",
+        },
+        "transition_resolution": {"policy": "manual_confirmation_required"},
+        "decision_governance_bundle": {},
+        "window_worklist_bundle": {},
+    }
+    latest_assessment_raw = {
+        "assessment_date": "2026-04-02",
+        "state": "mcspc_high_volume_sync",
+        "input_snapshot": {"volume_disease": "High", "g8_score": 11, "mini_cog_score": 2},
+        "result_snapshot": {},
+    }
+    latest_assessment = {
+        "state": "mcspc_high_volume_sync",
+        "module_label": "mHSPC de alto volumen sincrónico",
+        "display_result": {"source_citations": []},
+    }
+    longitudinal_bundle = {
+        "signals": {
+            "state": "mcspc_high_volume_sync",
+            "reconciled_state": "mcspc_high_volume_sync",
+            "management_track": "systemic_surveillance",
+            "reconciled_management_track": "systemic_surveillance",
+            "next_best_action": patient["latest_signal_snapshot"]["next_best_action"],
+        },
+        "care_intent_contract": patient["care_intent_contract"],
+    }
+
+    profile = build_patient_profile_view_model(
+        patient=patient,
+        latest_assessment_raw=latest_assessment_raw,
+        latest_assessment=latest_assessment,
+        state_timeline=[{"management_intent_status_label": "Pendiente de confirmación", "event_kind_label": "Recomendación generada"}],
+        care_overlays=[],
+        longitudinal_bundle=longitudinal_bundle,
+    )
+
+    copy_bundle = profile["clinical_copy_bundle"]
+
+    assert copy_bundle["operational_state_display"]["headline"] == "mHSPC de alto volumen sincrónico"
+    assert copy_bundle["decision_today_display"]["headline"] == "Priorizar ADT + darolutamida"
+    assert copy_bundle["transition_display"]["visible"] is True
+    assert "bajo volumen" in copy_bundle["transition_display"]["headline"].lower()
+    assert "Confirmar transición" not in copy_bundle["decision_today_display"]["headline"]
+
+
+def test_window_worklist_bundle_surfaces_opportunity_metrics_for_precision_and_psma_gaps(app_client):
+    client, db_path = app_client
+
+    payload = make_patient_payload(nss="399999999934", full_name="Paciente Worklist Precision")
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "m1_crpc")
+
+    window_payload = client.get(f"/api/patients/{patient_id}/therapeutic-windows").get_json()["window_worklist_bundle"]
+
+    active_keys = {item["window_key"] for item in window_payload["active_windows_ranked"]}
+    assert "precision_hrr_testing_window" in active_keys
+    assert "psma_eligibility_window" in active_keys
+    assert window_payload["opportunity_loss_summary"]["hrr_testing_missing_when_indicated"] >= 1
+    assert window_payload["opportunity_loss_summary"]["psma_delayed_when_indicated"] >= 1
+
+
+def test_decision_capture_endpoint_persists_real_clinician_decision(app_client):
+    client, db_path = app_client
+
+    payload = make_patient_payload(nss="39999999994", full_name="Paciente Decision Capture")
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "m1_crpc")
+
+    response = client.post(
+        f"/api/patients/{patient_id}/decision-capture",
+        json={
+            "state_at_decision": "m1_crpc",
+            "recommended_option": "Cabazitaxel",
+            "recommended_family": "systemic_sequencing",
+            "recommended_confidence": 0.82,
+            "clinician_selected_option": "Continuar ARPI mientras se completa restaging",
+            "clinician_selected_family": "temporary_bridge",
+            "followed_system_recommendation": "no",
+            "discordance_reason_category": "toxicity_fitness",
+            "discordance_reason_free_text": "Se prioriza tolerabilidad mientras se completa reevaluación.",
+            "toxicity_driver": "fatiga acumulada",
+            "shared_with_patient": True,
+            "decided_by": "oncologia_medica",
+        },
+    )
+    assert response.status_code == 200
+
+    governance_payload = client.get(f"/api/patients/{patient_id}/decision-governance").get_json()
+    capture_bundle = governance_payload["clinician_decision_capture_bundle"]
+
+    assert capture_bundle["decision_capture_status"] == "captured"
+    assert capture_bundle["clinician_selected_option"] == "Continuar ARPI mientras se completa restaging"
+    assert capture_bundle["followed_system_recommendation"] == "no"
+    assert capture_bundle["discordance_reason_category"] == "toxicity_fitness"
+
+
+def test_state_transition_confirmation_endpoint_persists_rejection_workflow(app_client):
+    client, db_path = app_client
+
+    payload = make_patient_payload(nss="39999999995", full_name="Paciente Transition Review")
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "adt_progression_verification")
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO state_transition_proposals (
+            patient_id, proposal_key, from_state, from_management_track, target_state,
+            target_management_track, proposal_status, priority, requires_confirmation,
+            rationale, trigger_signals_json, next_actions_json, evidence_basis_json,
+            confirmation_status
+        ) VALUES (?, ?, ?, ?, ?, ?, 'open', 'high', 1, ?, ?, ?, ?, 'pending')
+        """,
+        (
+            patient_id,
+            "governance:m0_crpc",
+            "adt_progression_verification",
+            "verification",
+            "m0_crpc",
+            "systemic_surveillance",
+            "Se sospecha CRPC no metastásico.",
+            json.dumps(["PSA rising under ADT"]),
+            json.dumps(["Confirmar testosterona sérica"]),
+            json.dumps(["PCWG3 contextual"]),
+        ),
+    )
+    proposal_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    response = client.post(
+        f"/api/patients/{patient_id}/state-transition-confirmation",
+        json={
+            "proposal_id": proposal_id,
+            "confirmation_status": "rejected",
+            "confirmed_by": "oncologia_medica",
+            "rejection_reason": "Falta testosterona confirmatoria para cerrar CRPC.",
+            "requires_more_data_fields": ["testosterone"],
+        },
+    )
+    assert response.status_code == 200
+
+    governance_payload = client.get(f"/api/patients/{patient_id}/decision-governance").get_json()
+    transition_bundle = governance_payload["state_transition_confirmation_bundle"]
+    reviewed = next(item for item in transition_bundle["high_impact_proposals"] if item["id"] == proposal_id)
+
+    assert reviewed["confirmation_status"] == "rejected"
+    assert reviewed["rejection_reason"] == "Falta testosterona confirmatoria para cerrar CRPC."
+    assert reviewed["requires_more_data_fields"] == ["testosterone"]
+
+
+def test_tumor_board_outcome_endpoint_closes_loop_in_governance_bundle(app_client):
+    client, db_path = app_client
+
+    payload = make_patient_payload(nss="39999999996", full_name="Paciente Tumor Board Outcome")
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "m1_crpc")
+
+    response = client.post(
+        f"/api/patients/{patient_id}/tumor-board-outcome",
+        json={
+            "discussion_date": date.today().isoformat(),
+            "trigger_reason": "discordancia entre secuencia sugerida y preferencia clínica",
+            "system_recommendation_at_board": "Cabazitaxel",
+            "board_recommendation": "PSMA-RLT tras completar restaging",
+            "board_recommendation_family": "systemic_sequencing",
+            "board_consensus_level": "consenso_pleno",
+            "board_reasoning_structured": "Se prioriza secuencia guiada por biología y disponibilidad.",
+            "required_followup_actions": ["Completar PSMA PET/CT", "Revalorar toxicidad acumulada"],
+            "board_overrode_system": "yes",
+        },
+    )
+    assert response.status_code == 200
+
+    governance_payload = client.get(f"/api/patients/{patient_id}/decision-governance").get_json()
+    board_bundle = governance_payload["tumor_board_outcome_bundle"]
+
+    assert board_bundle["available"] is True
+    assert board_bundle["board_recommendation"] == "PSMA-RLT tras completar restaging"
+    assert board_bundle["board_overrode_system"] == "yes"
+
+
 def test_terminal_care_pathway_handles_heterogeneous_current_medications_without_warning(caplog):
     from prostanet.domains.patient_tracking.terminal_care_pathway import assess_terminal_care
 
@@ -467,6 +1270,118 @@ def test_register_patient_returns_real_id_and_persists_core_tables(app_client):
     record = record_response.get_json()
     assert record["success"] is True
     assert record["patient"]["identity"]["full_name"] == payload["full_name"]
+
+
+def test_register_patient_dual_writes_canonical_facts_and_exposes_fact_endpoint(app_client):
+    client, db_path = app_client
+    payload = make_patient_payload(
+        nss="12345678902",
+        full_name="Paciente Facts Demo",
+        current_adt_context="adjuvant",
+    )
+
+    response = client.post("/api/register_patient", json=payload)
+
+    assert response.status_code == 200
+    patient_id = response.get_json()["patient_id"]
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT fact_key, normalized_value_text, source_type, certainty_tier
+        FROM patient_clinical_facts
+        WHERE patient_id = ? AND is_active = 1
+        ORDER BY fact_key
+        """,
+        (patient_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    persisted_fact_keys = {row[0] for row in rows}
+    assert "baseline_psa" in persisted_fact_keys
+    assert "line_of_therapy_number" in persisted_fact_keys
+    assert "metastatic_stage_resolved" in persisted_fact_keys
+
+    facts_response = client.get(f"/api/patients/{patient_id}/clinical-facts")
+    assert facts_response.status_code == 200
+    facts_payload = facts_response.get_json()
+    assert facts_payload["success"] is True
+    facts = {
+        item["fact_key"]: item
+        for item in facts_payload["clinical_fact_bundle"]["facts"]
+    }
+    assert facts["baseline_psa"]["resolved_value"] == 8.4
+    assert facts["metastatic_stage_resolved"]["resolved_value"] == "M0"
+    assert facts_payload["fact_freshness_summary"]["available"] is True
+
+
+def test_fact_conflicts_and_ledger_surface_m1_reclassification_from_m0_crpc(app_client):
+    import tracking_db
+
+    client, db_path = app_client
+    payload = make_patient_payload(nss="12345678903", full_name="Paciente Reclass M1")
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "m0_crpc")
+
+    conn = tracking_db.get_db_connection()
+    cursor = conn.cursor()
+    tracking_db._persist_canonical_facts_from_payload(
+        cursor,
+        patient_id,
+        {
+            "metastatic_disease_known": 1,
+            "metastasis_site": "hueso",
+            "bone_metastasis_present": 1,
+            "bone_axial_count": 1,
+            "psma_pet_done": 1,
+            "psma_positive": 1,
+            "psma_stage_after_psma": "M1b",
+            "metastasis_assessment_date": "2026-03-20",
+            "metastasis_document_source": "psma_pet",
+        },
+        source_type="structured_result",
+        source_record_type="stage_visit",
+        source_record_id=101,
+        source_date="2026-03-20",
+        observed_at="2026-03-20",
+        state_context="m0_crpc",
+        management_track="systemic",
+        certainty_tier="structured_result",
+    )
+    conn.commit()
+    conn.close()
+
+    facts_response = client.get(f"/api/patients/{patient_id}/clinical-facts")
+    assert facts_response.status_code == 200
+    facts_payload = facts_response.get_json()
+    facts = {
+        item["fact_key"]: item
+        for item in facts_payload["clinical_fact_bundle"]["facts"]
+    }
+    assert facts["metastatic_stage_resolved"]["resolved_value"] == "M1b"
+    assert facts["metastatic_detection_basis"]["resolved_value"] == "psma_only"
+
+    conflicts_response = client.get(f"/api/patients/{patient_id}/fact-conflicts")
+    assert conflicts_response.status_code == 200
+    conflicts_payload = conflicts_response.get_json()
+    assert conflicts_payload["success"] is True
+    assert conflicts_payload["fact_conflict_summary"]["total_conflicts"] >= 1
+    contradiction_bundle = conflicts_payload["contradiction_resolution_bundle"]
+    assert contradiction_bundle["block_status"] == "hard_stop"
+    assert contradiction_bundle["state_reclassification_required"] is True
+    assert "adt_progression_verification" in contradiction_bundle["state_reclassification_targets"]
+
+    ledger_response = client.get(f"/api/patients/{patient_id}/clinical-ledger")
+    assert ledger_response.status_code == 200
+    ledger_payload = ledger_response.get_json()["clinical_ledger_bundle"]
+    assert ledger_payload["available"] is True
+    assert any(
+        item["fact_key"] == "metastatic_stage_resolved"
+        for item in ledger_payload["fact_lineage"]
+    )
 
 
 def test_register_patient_rejects_duplicate_nss(app_client):
@@ -774,12 +1689,16 @@ def test_clinical_hub_hides_classifier_noise_and_starts_empty(app_client):
     assert "Distribución de metástasis óseas" in html
     assert "Distribución de metástasis viscerales" in html
     assert "Enfermedad metastásica conocida" in html
+    assert "Recurrencia bioquímica y segunda recurrencia bioquímica sin metástasis" in html
     assert 'name="metastatic_disease_known"' in html
+    assert 'name="bcr_detected"' in html
     assert 'name="visceral_site_entries"' in html
     assert 'name="bone_site_entries"' in html
     assert 'name="nonregional_nodal_site_entries"' in html
     assert 'name="nonregional_nodal_metastasis_present"' in html
     assert "Cadena ganglionar no regional" in html
+    assert "Sí, abrir asistente de BCR" not in html
+    assert "No, abrir seguimiento post-tratamiento local" not in html
     assert 'name="volume_disease"' not in html
     assert 'value="Oligometastatic"' not in html
     assert "setActiveDomain(null);" in html
@@ -1710,6 +2629,12 @@ def test_missing_input_actions_expose_display_copy_without_losing_machine_fields
     from prostanet.domains.patient_tracking.profile_compass import build_patient_profile_view_model
 
     refreshed = tracking_db.get_patient_full_record(payload["nss"])
+    longitudinal_bundle = tracking_db.refresh_longitudinal_intelligence(
+        patient_id,
+        force_recompute=False,
+        record=refreshed,
+        include_live_benchmark=False,
+    )
     profile = build_patient_profile_view_model(
         patient=refreshed,
         latest_assessment_raw=refreshed.get("latest_assessment") or {},
@@ -1717,10 +2642,12 @@ def test_missing_input_actions_expose_display_copy_without_losing_machine_fields
         state_timeline=refreshed.get("state_timeline") or [],
         care_overlays=refreshed.get("care_overlays") or [],
         recommendations={},
+        longitudinal_bundle=longitudinal_bundle,
     )
 
     action = next(item for item in profile["missing_input_actions"] if item["key"] == "line_refresh")
     assert {"line_of_therapy_number", "current_adt_context", "drug_scheme"} <= set(action["raw_fields"])
+    assert {"psa_history", "testosterone_history"} <= set(action["visible_fields"])
     assert action["display_cta"] == "Completar en visita"
     assert action["display_group"] == "Visita clínica"
     assert "Contexto actual de ADT" in action["display_fields_summary"]
@@ -1826,6 +2753,12 @@ def test_patient_profile_alerts_and_provenance_hide_machine_copy(app_client):
     from prostanet.domains.patient_tracking.profile_compass import build_patient_profile_view_model
 
     refreshed = tracking_db.get_patient_full_record(payload["nss"])
+    longitudinal_bundle = tracking_db.refresh_longitudinal_intelligence(
+        patient_id,
+        force_recompute=False,
+        record=refreshed,
+        include_live_benchmark=False,
+    )
     profile = build_patient_profile_view_model(
         patient=refreshed,
         latest_assessment_raw=refreshed.get("latest_assessment") or {},
@@ -1833,6 +2766,7 @@ def test_patient_profile_alerts_and_provenance_hide_machine_copy(app_client):
         state_timeline=refreshed.get("state_timeline") or [],
         care_overlays=refreshed.get("care_overlays") or [],
         recommendations={},
+        longitudinal_bundle=longitudinal_bundle,
     )
 
     alert = next(item for item in profile["copilot"]["clinical_alerts"] if item.get("display_fields_to_capture"))
@@ -1901,6 +2835,155 @@ def test_profile_alert_copy_collapses_duplicate_title_message():
     assert copilot["clinical_alerts"][0]["display_message"] == ""
     assert patient_alerts[0]["display_title"] == duplicated
     assert patient_alerts[0]["display_description"] == ""
+
+
+def test_master_followup_plan_and_profile_focus_copy_use_structured_labels():
+    from prostanet.domains.patient_tracking.master_followup_plan import build_master_followup_plan
+    from prostanet.domains.patient_tracking.profile_compass import build_patient_profile_view_model
+
+    patient = {
+        "id": 99,
+        "nss": "39494949599",
+        "full_name": "Paciente Copy Visible",
+        "recommendation_block_reason": "Faltan datos críticos que cambian la conducta clínica: progression_pattern, conventional_imaging_status",
+        "latest_signal_snapshot": {
+            "critical_missing": ["current_adt_context", "psa_history", "weight_loss_6m_pct"],
+            "awaiting_review": ["line_of_therapy_context"],
+            "active_safety": ["castrate_testosterone_status"],
+        },
+        "decision_blocking_bundle": {
+            "decision_blocking_inputs": ["progression_pattern", "conventional_imaging_status"],
+        },
+        "palliative_monitoring_package": {
+            "required_visit_fields": ["bpi_worst_pain", "weight_loss_6m_kg"],
+            "missing_inputs": ["current_analgesics", "bowel_regimen_started"],
+        },
+        "survivorship_monitoring_package": {
+            "required_visit_fields": ["fatigue_score", "mini_cog_score"],
+            "missing_inputs": ["weight_loss_6m_pct", "systolic_bp"],
+        },
+        "copilot_alerts": [
+            {
+                "alert_key": "copy-check",
+                "title": "Recalcular con captura estructurada",
+                "message": "Faltan datos que cambian la conducta actual.",
+                "severity": "warning",
+                "fields_to_capture": ["psa_history", "eq5d_vas_band", "weight_loss_6m_pct"],
+            }
+        ],
+        "agenda_items": [
+            {
+                "agenda_key": "copy-agenda-1",
+                "title": "Revisión activa",
+                "status": "due",
+                "summary": "Captura clínica dirigida.",
+                "required_inputs": ["psa_history", "weight_loss_6m_pct", "drug_scheme"],
+            }
+        ],
+    }
+    latest_assessment_raw = {"state": "adt_progression_verification", "assessment_date": "2026-04-07", "input_snapshot": {}, "result_snapshot": {}}
+    latest_assessment = {"state": "adt_progression_verification", "module_label": "Verificación ADT", "display_result": {}}
+
+    profile = build_patient_profile_view_model(
+        patient=patient,
+        latest_assessment_raw=latest_assessment_raw,
+        latest_assessment=latest_assessment,
+        state_timeline=[],
+        care_overlays=[],
+        recommendations={},
+    )
+
+    assert profile["clinical_signals"]["display_critical_missing"] == [
+        "Contexto actual de ADT",
+        "Serie longitudinal de PSA / APE",
+        "Pérdida de peso en 6 meses",
+    ]
+    assert profile["clinical_signals"]["display_awaiting_review"] == ["Contexto clínico de la línea actual"]
+    assert profile["clinical_signals"]["display_active_safety"] == ["Estado de castración"]
+    assert profile["decision_blocking_bundle"]["display_decision_blocking_inputs"] == [
+        "Patrón de progresión",
+        "Imagen convencional actual",
+    ]
+    assert {
+        "BPI dolor peor basal",
+        "BPI dolor peor",
+        "Peso actual",
+        "Estatura",
+        "Índice de masa corporal",
+        "Pérdida de peso en 6 meses",
+        "Mini-Cog",
+        "Fuerza de prensión reducida",
+    } <= set(profile["palliative_monitoring_package"]["display_required_visit_fields"])
+    assert all("_" not in item for item in profile["palliative_monitoring_package"]["display_missing_inputs"])
+    assert {"Fatiga basal", "Síntomas de fatiga", "Mini-Cog"} <= set(
+        profile["survivorship_monitoring_package"]["display_required_visit_fields"]
+    )
+    assert profile["survivorship_monitoring_package"]["display_missing_inputs"] == [
+        "Pérdida de peso en 6 meses",
+        "Presión arterial sistólica",
+    ]
+    assert profile["display_recommendation_block_reason"] == (
+        "Faltan datos críticos que cambian la conducta clínica: "
+        "Patrón de progresión, Imagen convencional actual"
+    )
+    assert {"PSA actual", "Serie longitudinal de PSA / APE", "Pérdida de peso en 6 meses"} <= set(
+        profile["active_agenda_items"][0]["display_required_inputs"]
+    )
+    assert "psa_history" not in profile["active_agenda_items"][0]["display_required_inputs"]
+    assert "weight_loss_6m_pct" not in profile["active_agenda_items"][0]["display_required_inputs"]
+
+    master_plan = build_master_followup_plan(
+        patient=patient,
+        state="adt_progression_verification",
+        management_track="systemic_surveillance",
+        agenda_board={
+            "stage_protocol": {"title": "Plan maestro", "cadence_summary": "Seguimiento estrecho."},
+            "protocol_trace": {"anchor_date": "2026-04-07", "anchor_source": "stage_visit_records.visit_date"},
+            "protocol_comparators": [],
+            "active_items": [
+                {
+                    "agenda_key": "copy-agenda-1",
+                    "title": "Revisión activa",
+                    "status": "due",
+                    "summary": "Captura clínica dirigida.",
+                    "required_inputs": ["psa_history", "weight_loss_6m_pct", "drug_scheme"],
+                }
+            ],
+            "encounters": [],
+        },
+        signals={
+            "critical_missing": ["current_adt_context", "psa_history", "weight_loss_6m_pct"],
+            "survivorship_transition_bundle": {
+                "missing_inputs": ["systolic_bp"],
+            },
+            "prognostic_capture_targets": [
+                {
+                    "title": "Captura de PROs",
+                    "raw_fields": ["eq5d_vas_band", "fatigue_score"],
+                    "display_fields_summary": ["EQ-5D VAS basal", "EQ-5D VAS", "Fatiga basal", "Síntomas de fatiga"],
+                }
+            ],
+        },
+        copilot_alerts=patient["copilot_alerts"],
+        next_best_action={},
+    )
+
+    joined_gaps = " ".join(master_plan["gaps_to_close"])
+    assert "Contexto actual de ADT" in joined_gaps
+    assert "Serie longitudinal de PSA / APE" in joined_gaps
+    assert "Pérdida de peso en 6 meses" in joined_gaps
+    assert "EQ-5D VAS basal" in joined_gaps
+    assert "Presión arterial sistólica" in joined_gaps
+    assert "current_adt_context" not in joined_gaps
+    assert "psa_history" not in joined_gaps
+    assert "weight_loss_6m_pct" not in joined_gaps
+    assert "eq5d_vas_band" not in joined_gaps
+    assert "systolic_bp" not in joined_gaps
+    assert {"PSA actual", "Serie longitudinal de PSA / APE", "Pérdida de peso en 6 meses"} <= set(
+        master_plan["due_items"][0]["display_required_inputs"]
+    )
+    assert "psa_history" not in master_plan["due_items"][0]["display_required_inputs"]
+    assert "weight_loss_6m_pct" not in master_plan["due_items"][0]["display_required_inputs"]
 
 
 def test_bcr_without_imaging_stays_non_metastatic_and_pending_restaging(app_client):
@@ -2554,11 +3637,41 @@ def test_mhspc_ranking_trace_propagates_to_signals_and_schedule(app_client):
         signals_payload["mhspc_copilot_bundle"],
         schedule_payload["mhspc_copilot_bundle"],
     ):
+        assert bundle["systemic_regimen_scope"] == "mhspc_doublet_triplet"
         assert bundle["preferred_frontline_regimen"]["regimen_code"] == "ADT_DAROLUTAMIDE"
         assert bundle["frontline_ranking_trace"]["winner_reason"]
         assert "docetaxel" in bundle["frontline_ranking_trace"]["why_not_triplet"].lower()
         assert bundle["triplet_decision"]["status"] == "not_prioritized"
         assert bundle["docetaxel_fitness"]["docetaxel_base_eligibility"] == "eligible_with_caution"
+    assert schedule_payload["systemic_regimen_scope"] == "mhspc_doublet_triplet"
+    assert schedule_payload["systemic_regimen_scope_contract"]["scope"] == "mhspc_doublet_triplet"
+
+
+def test_schedule_and_profile_keep_non_systemic_modules_out_of_triplet_scope(app_client):
+    client, _db_path = app_client
+    payload = make_patient_payload(
+        nss="39999999990",
+        full_name="Paciente Localizado Sin Scope Sistémico",
+        assessment_state="localized_initial",
+        psa=6.2,
+        gleason_primary=3,
+        gleason_secondary=3,
+        positive_cores=2,
+        total_cores=12,
+        pirads_score=3,
+        clinical_t_stage="T1c",
+    )
+    register = client.post("/api/register_patient", json=payload)
+    patient_id = register.get_json()["patient_id"]
+
+    schedule_payload = client.get(f"/api/patients/{patient_id}/schedule").get_json()
+    governance_payload = client.get(f"/api/patients/{patient_id}/decision-governance").get_json()
+    profile_html = client.get(f"/patient_profile/{payload['nss']}").get_data(as_text=True)
+
+    assert schedule_payload["systemic_regimen_scope"] == "not_applicable"
+    assert governance_payload["systemic_regimen_scope"] == "not_applicable"
+    assert governance_payload["systemic_regimen_scope_contract"]["scope"] == "not_applicable"
+    assert "Por qué sí o por qué no triplete" not in profile_html
 
 
 def test_signals_outcomes_and_cohort_survival_analysis_expose_forecast_and_live_benchmark(app_client):
@@ -2795,7 +3908,7 @@ def test_visit_schema_filters_fields_for_item_scoped_arpi_bundle(app_client):
         for section in payload["visit_schema"]["sections"]
         for field in section["fields"]
     }
-    assert {"visit_date", "mini_cog_score", "fatigue_score", "cv_risk_documented", "drug_interaction_reviewed"} <= field_names
+    assert {"visit_date", "mini_cog_score", "fatigue_score", "cv_risk_documented", "ddi_review_status"} <= field_names
     assert "line_of_therapy" not in field_names
     assert payload["agenda_item_context"]["decision_targets"] == ["arpi_safety", "supportive_care", "treatment_tolerability"]
 
@@ -2883,9 +3996,17 @@ def test_visit_schema_supports_capture_block_for_missing_inputs(app_client):
         for field in section["fields"]
     }
     assert {"visit_date", "line_of_therapy_number", "line_of_therapy_context", "psa"} <= field_names
+    assert {"drug_scheme", "psa_history"} <= field_names
     assert "clinician_notes" not in field_names
     assert payload["visit_schema"]["schema_scope"] == "exact_capture_block"
     assert payload["visit_schema"]["capture_fields"] == ["line_of_therapy_number", "line_of_therapy_context", "psa"]
+    assert payload["visit_schema"]["visible_fields"] == [
+        "line_of_therapy_number",
+        "line_of_therapy_context",
+        "drug_scheme",
+        "psa",
+        "psa_history",
+    ]
     assert payload["agenda_item_context"]["mode"] == "capture_block"
     assert payload["agenda_item_context"]["decision_targets"] == ["systemic_sequencing"]
 
@@ -2950,6 +4071,148 @@ def test_visit_schema_uses_canonical_regimen_dropdown_for_advanced_tracks(app_cl
     assert "ADT_DOCETAXEL_DAROLUTAMIDE" not in option_values
 
 
+def test_visit_schema_converges_longitudinal_widgets_with_legacy_followup_fallbacks(app_client):
+    client, _ = app_client
+    register = client.post("/api/register_patient", json=make_patient_payload(nss="45555555565", full_name="Paciente Longitudinal Convergente"))
+    patient_id = register.get_json()["patient_id"]
+
+    schema_response = client.get(
+        f"/api/patients/{patient_id}/visit-schema"
+        "?state=m1_crpc"
+        "&track=systemic_surveillance"
+    )
+    assert schema_response.status_code == 200
+    schema = schema_response.get_json()["visit_schema"]
+    fields = {
+        field["name"]: field
+        for section in schema["sections"]
+        for field in section["fields"]
+    }
+
+    assert "psa" in fields
+    assert "testosterone" in fields
+    assert fields["psa_history"]["field_type"] == "psa_history"
+    assert fields["testosterone_history"]["field_type"] == "testosterone_history"
+    assert "height_cm" in fields
+    assert "weight_loss_6m_kg" in fields
+    assert "weight_loss_6m_pct" not in fields
+    assert fields["bmi_current"]["field_type"] == "number"
+    assert "calcula automáticamente" in fields["bmi_current"]["help_text"]
+    assert fields["mini_cog_score"]["field_type"] == "select"
+    assert any(isinstance(option, dict) and "Severamente anormal" in option.get("label", "") for option in fields["mini_cog_score"]["options"])
+    assert fields["weak_grip"]["field_type"] == "select"
+    weak_grip_labels = [option["label"] for option in fields["weak_grip"]["options"] if isinstance(option, dict)]
+    assert "Ausente" in weak_grip_labels
+    assert "Presente" in weak_grip_labels
+
+
+def test_visit_schema_expands_lab_item_to_structured_longitudinal_biomarker_widgets(app_client):
+    client, db_path = app_client
+    register = client.post("/api/register_patient", json=make_patient_payload(nss="45555555566", full_name="Paciente Agenda Laboratorio"))
+    patient_id = register.get_json()["patient_id"]
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO follow_up_visits (
+            patient_id, visit_date, psa_current, testosterone_current, current_treatment,
+            disease_status, ecog_current, agenda_context_json, visit_bundle_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            patient_id,
+            "2026-03-15",
+            3.4,
+            18.0,
+            "Abiraterona + ADT",
+            "Seguimiento estable",
+            1,
+            json.dumps({}),
+            json.dumps({}),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    agenda = client.get(f"/api/patients/{patient_id}/agenda").get_json()["agenda"]
+    lab_item = next(item for item in agenda["items"] if item["title"] == "Laboratorio de seguridad y actividad")
+
+    schema_response = client.get(f"/api/patients/{patient_id}/visit-schema?agenda_id={lab_item['id']}")
+    assert schema_response.status_code == 200
+    schema = schema_response.get_json()["visit_schema"]
+    field_names = {
+        field["name"]
+        for section in schema["sections"]
+        for field in section["fields"]
+    }
+
+    assert {"visit_date", "psa", "psa_history", "testosterone", "testosterone_history"} <= field_names
+    assert "psa_history" not in schema["capture_fields"]
+    assert "testosterone_history" not in schema["capture_fields"]
+    assert {"psa_history", "testosterone_history"} <= set(schema["visible_fields"])
+    assert "psa" in schema["required_inputs"]
+    assert "testosterone" in schema["required_inputs"]
+
+
+def test_visit_schema_expands_frailty_item_to_structured_anthropometry_bundle(app_client):
+    client, db_path = app_client
+    register = client.post("/api/register_patient", json=make_patient_payload(nss="45555555567", full_name="Paciente Agenda Fragilidad"))
+    patient_id = register.get_json()["patient_id"]
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO follow_up_visits (
+            patient_id, visit_date, psa_current, testosterone_current, current_treatment,
+            disease_status, ecog_current, agenda_context_json, visit_bundle_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            patient_id,
+            "2026-03-15",
+            3.4,
+            18.0,
+            "Abiraterona + ADT",
+            "Seguimiento estable",
+            1,
+            json.dumps({}),
+            json.dumps({}),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    agenda = client.get(f"/api/patients/{patient_id}/agenda").get_json()["agenda"]
+    frailty_item = next(item for item in agenda["items"] if item["title"] == "Fragilidad y fitness terapéutica")
+
+    schema_response = client.get(f"/api/patients/{patient_id}/visit-schema?agenda_id={frailty_item['id']}")
+    assert schema_response.status_code == 200
+    schema = schema_response.get_json()["visit_schema"]
+    field_names = {
+        field["name"]
+        for section in schema["sections"]
+        for field in section["fields"]
+    }
+
+    assert {
+        "visit_date",
+        "weight_kg",
+        "height_cm",
+        "bmi_current",
+        "weight_loss_6m_kg",
+        "mini_cog_score",
+        "weak_grip",
+    } <= field_names
+    assert "weight_loss_6m_pct" not in field_names
+    assert "height_cm" not in schema["capture_fields"]
+    assert "mini_cog_score" not in schema["capture_fields"]
+    assert {"height_cm", "mini_cog_score"} <= set(schema["visible_fields"])
+    assert "weight_loss_6m_kg" in schema["required_inputs"]
+    assert "weak_grip" in schema["required_inputs"]
+
+
 def test_agenda_route_exposes_required_action_mode_and_completed_at(app_client):
     client, db_path = app_client
     register = client.post("/api/register_patient", json=make_patient_payload(nss="45555555559", full_name="Paciente Agenda Enriquecida"))
@@ -2992,8 +4255,123 @@ def test_visit_schema_uses_monitoring_capture_fields_from_form_scope_without_exp
 
     assert visit_schema["schema_scope"] == "exact_capture_block"
     assert visit_schema["capture_fields"] == ["psa", "testosterone", "systolic_bp"]
-    assert {"visit_date", "psa", "testosterone", "systolic_bp"} <= field_names
+    assert {"visit_date", "psa", "psa_history", "testosterone", "testosterone_history", "systolic_bp"} <= field_names
+    assert visit_schema["visible_fields"] == [
+        "psa",
+        "psa_history",
+        "testosterone",
+        "testosterone_history",
+        "systolic_bp",
+    ]
     assert "clinician_notes" not in field_names
+
+
+def test_visit_schema_expands_pro_capture_blocks_to_band_and_numeric_fields(app_client):
+    client, _ = app_client
+    register = client.post("/api/register_patient", json=make_patient_payload(nss="45555555568", full_name="Paciente PRO Capture Block"))
+    patient_id = register.get_json()["patient_id"]
+
+    schema_response = client.get(
+        f"/api/patients/{patient_id}/visit-schema"
+        "?state=m1_crpc"
+        "&track=systemic_surveillance"
+        "&fields=eq5d_vas,bpi_worst_pain"
+        "&capture_title=Completar%20PROs"
+        "&capture_group=advanced_shared_decision"
+        "&decision_affected=quality_of_life"
+    )
+    assert schema_response.status_code == 200
+    payload = schema_response.get_json()
+    field_names = {
+        field["name"]
+        for section in payload["visit_schema"]["sections"]
+        for field in section["fields"]
+    }
+    assert {"visit_date", "eq5d_vas_band", "eq5d_vas", "bpi_worst_pain_band", "bpi_worst_pain"} <= field_names
+    assert payload["visit_schema"]["visible_fields"] == [
+        "eq5d_vas_band",
+        "eq5d_vas",
+        "bpi_worst_pain_band",
+        "bpi_worst_pain",
+    ]
+
+
+def test_visit_schema_supports_active_surveillance_confirmatory_biopsy_and_mri_interval_inputs(app_client):
+    client, _ = app_client
+    register = client.post("/api/register_patient", json=make_patient_payload(nss="45555555569", full_name="Paciente Vigilancia Activa MRI"))
+    patient_id = register.get_json()["patient_id"]
+
+    schema_response = client.get(
+        f"/api/patients/{patient_id}/visit-schema"
+        "?state=localized_initial"
+        "&track=active_surveillance"
+        "&fields=confirmatory_biopsy_done,mri_interval_months"
+        "&capture_title=Confirmar%20vigilancia%20activa"
+        "&capture_group=active_surveillance"
+        "&decision_affected=active_surveillance"
+    )
+    assert schema_response.status_code == 200
+    payload = schema_response.get_json()
+    field_names = {
+        field["name"]
+        for section in payload["visit_schema"]["sections"]
+        for field in section["fields"]
+    }
+
+    assert {"visit_date", "confirmatory_biopsy_done", "mri_interval_months"} <= field_names
+    assert payload["visit_schema"]["visible_fields"] == [
+        "confirmatory_biopsy_done",
+        "mri_interval_months",
+    ]
+
+
+def test_visit_schema_supports_adt_bone_protection_capture_inputs(app_client):
+    client, _ = app_client
+    register = client.post("/api/register_patient", json=make_patient_payload(nss="45555555570", full_name="Paciente Salud Osea ADT"))
+    patient_id = register.get_json()["patient_id"]
+
+    schema_response = client.get(
+        f"/api/patients/{patient_id}/visit-schema"
+        "?state=mcspc_high_volume"
+        "&track=systemic_surveillance"
+        "&fields=calcium_vitd_started,bone_protection_started"
+        "&capture_title=Soporte%20oseo%20ADT"
+        "&capture_group=bone_support"
+        "&decision_affected=bone_health"
+    )
+    assert schema_response.status_code == 200
+    payload = schema_response.get_json()
+    field_names = {
+        field["name"]
+        for section in payload["visit_schema"]["sections"]
+        for field in section["fields"]
+    }
+
+    assert {"visit_date", "calcium_vitd_started", "bone_protection_started"} <= field_names
+    assert payload["visit_schema"]["visible_fields"] == [
+        "calcium_vitd_started",
+        "bone_protection_started",
+    ]
+
+
+def test_decision_input_requirements_publish_visible_fields_for_pro_and_monitoring_blocks():
+    from prostanet.domains.patient_tracking.decision_input_requirements_engine import build_decision_input_requirements
+
+    patient = {
+        "prior_history": {"current_state": "m1_crpc"},
+        "follow_ups": [{}],
+        "stage_visits": [],
+    }
+    bundle = build_decision_input_requirements(
+        patient,
+        effective_state="m1_crpc",
+        effective_management_track="systemic_surveillance",
+        latest_assessment={"state": "m1_crpc"},
+        next_best_action={},
+    )
+
+    assert {"eq5d_vas_band", "eq5d_vas", "bpi_worst_pain_band", "bpi_worst_pain"} <= set(bundle["pro_capture_block"]["visible_fields"])
+    assert {"psa_history", "testosterone_history"} <= set(bundle["monitoring_capture_block"]["visible_fields"])
 
 
 def test_visit_schema_includes_structured_metastatic_distribution_for_advanced_tracks(app_client):
@@ -3124,6 +4502,107 @@ def test_stage_visit_persists_structured_psa_history_into_longitudinal_series(ap
     assert any(point.get("line_of_therapy_context") == "mCRPC_first_line" for point in record["psa_series"])
 
 
+def test_stage_visit_persists_structured_testosterone_history_and_runtime_prefers_latest_series_value(app_client):
+    client, db_path = app_client
+    register = client.post("/api/register_patient", json=make_patient_payload(nss="45555555564", full_name="Paciente Testosterona Longitudinal"))
+    patient_id = register.get_json()["patient_id"]
+
+    visit_response = client.post(
+        f"/api/patients/{patient_id}/visits",
+        json={
+            "visit_date": "2026-03-20",
+            "state": "m1_crpc",
+            "management_track": "systemic_surveillance",
+            "disease_status": "Seguimiento estable",
+            "testosterone_history": [
+                {
+                    "sample_date": "2026-02-15",
+                    "testosterone_value": 74,
+                    "context": "seguimiento",
+                    "unit": "ng/dL",
+                },
+                {
+                    "sample_date": "2026-03-20",
+                    "testosterone_value": 18,
+                    "context": "seguimiento",
+                    "unit": "ng/dL",
+                    "line_of_therapy_number": 2,
+                    "line_of_therapy_context": "mCRPC_first_line",
+                },
+            ],
+            "line_of_therapy_number": 2,
+            "line_of_therapy_context": "mCRPC_first_line",
+        },
+    )
+    assert visit_response.status_code == 200
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT biomarker_type, sample_date, value FROM biomarker_longitudinal WHERE patient_id = ? AND biomarker_type = 'TESTOSTERONA' ORDER BY sample_date ASC",
+        (patient_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    assert ("TESTOSTERONA", "2026-02-15", 74.0) in rows
+    assert ("TESTOSTERONA", "2026-03-20", 18.0) in rows
+
+    import tracking_db
+    from prostanet.domains.patient_tracking.longitudinal_intelligence import _derive_castrate_status as derive_longitudinal_castrate_status
+    from prostanet.domains.patient_tracking.reconciled_state import _derive_castrate_status as derive_reconciled_castrate_status
+
+    record = tracking_db.get_patient_full_record(patient_id)
+    assert any(point.get("sample_date") == "2026-03-20" and point.get("unit") == "ng/dL" for point in record["testosterone_series"])
+    assert any(point.get("line_of_therapy_number") == 2 for point in record["testosterone_series"])
+    assert any(point.get("line_of_therapy_context") == "mCRPC_first_line" for point in record["testosterone_series"])
+    assert record["latest_testosterone_value"] == 18.0
+    assert record["latest_testosterone_date"] == "2026-03-20"
+
+
+def test_refresh_longitudinal_intelligence_publishes_latest_testosterone_from_series(app_client):
+    client, _db_path = app_client
+    register = client.post("/api/register_patient", json=make_patient_payload(nss="45555555565", full_name="Paciente Runtime Testosterona"))
+    patient_id = register.get_json()["patient_id"]
+
+    visit_response = client.post(
+        f"/api/patients/{patient_id}/visits",
+        json={
+            "visit_date": "2026-03-20",
+            "state": "m1_crpc",
+            "management_track": "systemic_surveillance",
+            "disease_status": "Seguimiento estable",
+            "testosterone_history": [
+                {
+                    "sample_date": "2026-02-15",
+                    "testosterone_value": 74,
+                    "context": "seguimiento",
+                    "unit": "ng/dL",
+                },
+                {
+                    "sample_date": "2026-03-20",
+                    "testosterone_value": 18,
+                    "context": "seguimiento",
+                    "unit": "ng/dL",
+                    "line_of_therapy_number": 2,
+                    "line_of_therapy_context": "mCRPC_first_line",
+                },
+            ],
+            "line_of_therapy_number": 2,
+            "line_of_therapy_context": "mCRPC_first_line",
+        },
+    )
+    assert visit_response.status_code == 200
+
+    import tracking_db
+
+    runtime = tracking_db.refresh_longitudinal_intelligence(patient_id)
+    assert runtime["latest_testosterone_value"] == 18.0
+    assert runtime["latest_testosterone_date"] == "2026-03-20"
+    assert runtime["castrate_status_resolved"] == "confirmed_castrate"
+    assert runtime["castrate_testosterone_status"] == "confirmed_castrate"
+
+
 def test_stage_visit_does_not_persist_survival_status_noise_on_routine_followup(app_client):
     client, db_path = app_client
     register = client.post("/api/register_patient", json=make_patient_payload(nss="45555555563", full_name="Paciente Rutina Viva"))
@@ -3146,6 +4625,54 @@ def test_stage_visit_does_not_persist_survival_status_noise_on_routine_followup(
     cursor.execute("SELECT COUNT(*) FROM survival_status_records WHERE patient_id = ?", (patient_id,))
     assert cursor.fetchone()[0] == 0
     conn.close()
+
+
+def test_stage_visit_derives_bmi_and_weight_loss_percent_from_kg_inputs(app_client):
+    client, db_path = app_client
+    register = client.post("/api/register_patient", json=make_patient_payload(nss="45555555566", full_name="Paciente Fragilidad IMC"))
+    patient_id = register.get_json()["patient_id"]
+
+    visit_response = client.post(
+        f"/api/patients/{patient_id}/visits",
+        json={
+            "visit_date": "2026-03-25",
+            "state": "m1_crpc",
+            "management_track": "systemic_surveillance",
+            "weight_kg": 70,
+            "height_cm": 175,
+            "weight_loss_6m_kg": 5,
+            "weak_grip": 1,
+            "mini_cog_score": 3,
+        },
+    )
+    assert visit_response.status_code == 200
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT weight_kg, height_cm, bmi_current, weight_loss_6m_kg, weight_loss_6m_pct, prior_weight_6m_kg
+        FROM follow_up_visits
+        WHERE patient_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (patient_id,),
+    )
+    followup_row = cursor.fetchone()
+    cursor.execute(
+        """
+        SELECT weight_kg, height_cm, bmi_current, weight_loss_6m_kg, weight_loss_6m_pct, prior_weight_6m_kg, weak_grip
+        FROM patient_demographics
+        WHERE patient_id = ?
+        """,
+        (patient_id,),
+    )
+    demographics_row = cursor.fetchone()
+    conn.close()
+
+    assert followup_row == (70.0, 175.0, 22.9, 5.0, 6.7, 75.0)
+    assert demographics_row == (70.0, 175.0, 22.9, 5.0, 6.7, 75.0, 1)
 
 
 def test_register_patient_normalizes_canonical_regimen_code_from_catalog(app_client):
@@ -3224,7 +4751,18 @@ def test_item_scoped_advanced_visit_updates_canonical_longitudinal_targets(app_c
     assert patient["treatments"][-1]["drug_scheme"] == "ADT_ABIRATERONE"
 
     agenda_after = client.get("/api/patients/46464646464/agenda").get_json()["agenda"]
-    completed_item = next(item for item in agenda_after["items"] if item["agenda_key"] == therapy_item["agenda_key"])
+    # Auditoría #21 (cierre OOS-9): la visita reporta conventional_imaging_status=M1
+    # sobre un paciente previamente M0, lo cual reconcilia legítimamente el estado
+    # de `adt_progression_verification` a `mcspc_low_volume_sync_oligo`. El
+    # `agenda_key` contiene el estado, por lo que cambia. El identificador estable
+    # cross-transición es (management_track, item_type), y el tracker_db propaga
+    # `partially_satisfied` al nuevo item cuando la (track, item_type) coincide.
+    completed_item = next(
+        item
+        for item in agenda_after["items"]
+        if item.get("management_track") == therapy_item.get("management_track")
+        and item.get("item_type") == therapy_item.get("item_type")
+    )
     assert completed_item["status"] == "partially_satisfied"
     import tracking_db
     from prostanet.domains.patient_tracking.profile_compass import build_patient_profile_view_model
@@ -3777,6 +5315,40 @@ def test_response_visualization_falls_back_to_followups_and_stage_visit_writes_b
     points = visualization.get_json()["visualization"]["psa_trajectory"]["points"]
     assert points
     assert points[-1]["psa"] == 5.2
+
+    register_series = client.post("/api/register_patient", json=make_patient_payload(nss="88888888891", full_name="Visualización Serie"))
+    series_id = register_series.get_json()["patient_id"]
+    _insert_psa_longitudinal_points(
+        db_path,
+        series_id,
+        [
+            ("2026-01-15", 8.1),
+            ("2026-02-20", 5.6),
+            ("2026-03-25", 3.2),
+        ],
+    )
+
+    import tracking_db
+    from prostanet.domains.patient_tracking.profile_compass import build_patient_profile_view_model
+
+    series_record = tracking_db.get_patient_full_record(series_id)
+    profile = build_patient_profile_view_model(
+        patient=series_record,
+        latest_assessment_raw=series_record.get("latest_assessment") or {},
+        latest_assessment=series_record.get("latest_assessment") or {},
+        state_timeline=series_record.get("state_timeline") or [],
+        care_overlays=series_record.get("care_overlays") or [],
+        recommendations={},
+    )
+    observability_points = profile["psa_observability"]["points"]
+    assert [point["date"] for point in observability_points] == ["2026-01-15", "2026-02-20", "2026-03-25"]
+    assert [point["psa"] for point in observability_points] == [8.1, 5.6, 3.2]
+
+    series_visualization = client.post(f"/api/patients/{series_id}/response-visualization")
+    assert series_visualization.status_code == 200
+    series_points = series_visualization.get_json()["visualization"]["psa_trajectory"]["points"]
+    assert [point["date"] for point in series_points] == ["2026-01-15", "2026-02-20", "2026-03-25"]
+    assert [point["psa"] for point in series_points] == [8.1, 5.6, 3.2]
 
     register_tracking = client.post("/api/register_patient", json=make_patient_payload(nss="88888888890", full_name="Tracking"))
     tracking_id = register_tracking.get_json()["patient_id"]
@@ -4964,6 +6536,335 @@ def test_post_rp_bcr_escalates_schedule_runtime_to_salvage_without_localized_fal
     assert next_action_payload["next_best_action"]["recommendation_family"] in {"salvage", "Ruta de rescate"}
 
 
+def test_therapeutic_readiness_converges_across_schedule_profile_and_response_visualization(app_client):
+    client, db_path = app_client
+    payload = make_patient_payload(
+        nss="94949494957",
+        full_name="Paciente Readiness Salvage",
+        baseline_psa=13.5,
+        metastasis_site="M0",
+    )
+    register = client.post("/api/register_patient", json=payload)
+    assert register.status_code == 200
+    patient_id = register.get_json()["patient_id"]
+
+    _seed_latest_assessment_state(db_path, patient_id, "recurrence_bcr")
+    _insert_postlocal_bcr_context(
+        db_path,
+        patient_id,
+        surgery_date="2025-11-12",
+        bcr_date="2026-03-27",
+        bcr_psa=0.48,
+        psadt=None,
+    )
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "prior_prostatectomy": 1,
+            "prior_radiation": 0,
+            "metastatic_disease_known": 0,
+            "conventional_imaging_current": "negative",
+        },
+    )
+    _update_latest_assessment_result_snapshot(
+        db_path,
+        patient_id,
+        {
+            "preferred_frontline_regimen": {
+                "family_code": "salvage_rt_family",
+                "family_label": "Salvage RT",
+                "regimen_code": "SALVAGE_RT_ALONE",
+                "regimen_label": "Salvage RT",
+                "required_missing_fields": ["psadt_months"],
+                "stale_inputs": ["psma_positive"],
+            },
+            "comparative_eligibility_matrix": {
+                "salvage_rt_family": {
+                    "family_code": "salvage_rt_family",
+                    "eligibility_status": "conditional",
+                    "missing_inputs": ["psadt_months"],
+                    "stale_inputs": ["psma_positive"],
+                    "variant_ranking": {
+                        "preferred_regimen_code": "SALVAGE_RT_ALONE",
+                        "preferred_regimen_label": "Salvage RT",
+                    },
+                }
+            },
+            "systemic_regimen_scope_contract": {
+                "scope": "not_applicable",
+                "reason": "salvage_local_path",
+            },
+        },
+    )
+
+    schedule_response = client.get(f"/api/patients/{patient_id}/schedule")
+    assert schedule_response.status_code == 200
+    schedule_payload = schedule_response.get_json()
+    readiness = schedule_payload["therapeutic_readiness_bundle"]
+    assert readiness["candidate_family"] == "salvage_rt_family"
+    assert readiness["candidate_regimen_code"] == "SALVAGE_RT_ALONE"
+    assert readiness["readiness_status"] in {"blocked_by_missing_data", "conditional_pending_closure"}
+    assert "psadt_months" in readiness["required_to_release"]
+    assert all("_" not in label for label in readiness["display_required_to_release"])
+    assert schedule_payload["readiness_status"] == readiness["readiness_status"]
+    assert schedule_payload["master_followup_plan"]["summary"]["therapeutic_readiness_status"] == readiness["readiness_status"]
+    assert (
+        schedule_payload["master_followup_plan"]["summary"]["therapeutic_candidate_label"]
+        == readiness["candidate_regimen_label"]
+    )
+    joined_gaps = " ".join(schedule_payload["master_followup_plan"]["gaps_to_close"])
+    assert "psadt_months" not in joined_gaps
+
+    import tracking_db
+    from prostanet.domains.patient_tracking.profile_compass import build_patient_profile_view_model
+
+    refreshed = tracking_db.get_patient_full_record(payload["nss"])
+    longitudinal_bundle = tracking_db.refresh_longitudinal_intelligence(
+        patient_id,
+        force_recompute=False,
+        record=refreshed,
+        include_live_benchmark=False,
+    )
+    profile = build_patient_profile_view_model(
+        patient=refreshed,
+        latest_assessment_raw=refreshed.get("latest_assessment") or {},
+        latest_assessment=refreshed.get("latest_assessment") or {},
+        state_timeline=refreshed.get("state_timeline") or [],
+        care_overlays=refreshed.get("care_overlays") or [],
+        recommendations={},
+        longitudinal_bundle=longitudinal_bundle,
+    )
+    profile_readiness = profile["therapeutic_readiness_bundle"]
+    assert profile_readiness["candidate_family"] == "salvage_rt_family"
+    assert profile_readiness["candidate_regimen_code"] == "SALVAGE_RT_ALONE"
+    assert profile["readiness_status"] == readiness["readiness_status"]
+    assert profile["required_to_release"] == readiness["required_to_release"]
+    assert all("_" not in label for label in profile_readiness["display_required_to_release"])
+
+    response_visualization = client.post(f"/api/patients/{patient_id}/response-visualization")
+    assert response_visualization.status_code == 200
+    response_payload = response_visualization.get_json()
+    assert response_payload["readiness_status"] == readiness["readiness_status"]
+    assert response_payload["therapeutic_readiness_bundle"]["candidate_family"] == "salvage_rt_family"
+    assert response_payload["therapeutic_readiness_bundle"]["candidate_regimen_code"] == "SALVAGE_RT_ALONE"
+
+    profile_page = client.get(f"/patient_profile/{payload['nss']}")
+    assert profile_page.status_code == 200
+    profile_html = profile_page.get_data(as_text=True)
+    assert "Therapeutic Readiness &amp; Release Gate" in profile_html
+    assert readiness["candidate_regimen_label"] in profile_html
+
+
+def test_profile_view_model_surfaces_post_rt_recurrence_bundle_and_actionable_release_ctas():
+    from prostanet.domains.patient_tracking.profile_compass import build_patient_profile_view_model
+
+    patient = {
+        "identity": {
+            "id": 302,
+            "full_name": "Paciente Post RT",
+            "nss": "30303030303",
+            "diagnosis_date": "2024-01-10",
+            "dob": "1962-02-01",
+            "age": 64,
+        },
+        "baseline": {
+            "prior_radiation": 1,
+            "dxa_baseline_done": 1,
+            "cv_risk_documented": 1,
+            "smoking_status": "Nunca",
+            "calcium_vitd_started": 1,
+            "bone_protection_started": 0,
+        },
+        "follow_ups": [
+            {
+                "visit_date": "2026-04-01",
+                "late_urinary_grade": "2",
+                "late_bowel_grade": "1",
+                "total_cholesterol": 188,
+                "hba1c": 5.8,
+            }
+        ],
+        "latest_signal_snapshot": {},
+    }
+    therapeutic_readiness_bundle = {
+        "readiness_status": "blocked_by_missing_data",
+        "candidate_family": "salvage_rt_family",
+        "candidate_regimen_code": "SALVAGE_RT_ALONE",
+        "candidate_regimen_label": "Salvage RT",
+        "capture_actions": [
+            {
+                "title": "Completar reestadificación post-RT",
+                "summary": "Cerrar PSMA, mpMRI y biopsia antes de liberar salvage.",
+                "focus": "post_rt_salvage",
+                "display_fields_summary": ["Disponibilidad de PSMA-PET", "mpMRI prostática", "Biopsia transperineal"],
+                "fields": ["psma_pet_done", "mpmri_done", "biopsy_proven_local_recurrence"],
+            }
+        ],
+    }
+    longitudinal_bundle = {
+        "therapeutic_readiness_bundle": therapeutic_readiness_bundle,
+        "post_rt_salvage_bundle": {
+            "post_rt_failure_definition": {
+                "psa_history_points": [
+                    {"sample_date": "2025-12-01", "value": 0.4, "source": "nadir"},
+                    {"sample_date": "2026-03-15", "value": 2.6, "source": "psa_history"},
+                    {"sample_date": "2026-06-20", "value": 2.9, "source": "psa_history"},
+                ],
+                "psa_nadir": 0.4,
+                "psa_nadir_date": "2025-12-01",
+                "phoenix_threshold": 2.4,
+                "phoenix_threshold_reached": True,
+                "phoenix_confirmation_status": "confirmed_longitudinal",
+                "bounce_suspected": False,
+                "psadt_months": 7.4,
+                "salvage_release_status": "pending_restaging_inputs",
+                "required_missing_fields": ["psma_pet_done", "mpmri_done", "biopsy_proven_local_recurrence"],
+            },
+            "post_rt_transition_bundle": {
+                "transition_status": "restate_before_decision",
+                "trigger_reasons": ["Falta tríada de restadificación antes de salvage curativo."],
+                "required_missing_fields": ["psma_pet_done", "mpmri_done", "biopsy_proven_local_recurrence"],
+            },
+        },
+    }
+
+    profile = build_patient_profile_view_model(
+        patient=patient,
+        latest_assessment_raw={"state": "post_radiotherapy_or_local_salvage", "result_snapshot": {}},
+        latest_assessment={"state": "post_radiotherapy_or_local_salvage", "module_label": "Post-RT salvage"},
+        state_timeline=[],
+        care_overlays=[],
+        recommendations={},
+        longitudinal_bundle=longitudinal_bundle,
+    )
+
+    post_rt_profile = profile["post_rt_recurrence_profile"]
+    assert post_rt_profile["available"] is True
+    assert post_rt_profile["phoenix_threshold_reached"] is True
+    assert post_rt_profile["phoenix_confirmation_status"] == "confirmed_longitudinal"
+    assert post_rt_profile["capture_action"]["title"] == "Completar reestadificación post-RT"
+    assert "psma_pet_done" in post_rt_profile["required_missing_fields"]
+    assert profile["rt_toxicity_timeline"]["available"] is True
+    assert {item["domain"] for item in profile["rt_toxicity_timeline"]["timeline"]} >= {"GU", "GI"}
+    survivorship_labels = {item["label"] for item in profile["survivorship_checklist"]["items"]}
+    assert {"DXA", "Lípidos / metabólico", "Riesgo cardiovascular", "Cesación tabáquica"} <= survivorship_labels
+    assert profile["therapeutic_capture_actions"][0]["title"] == "Completar reestadificación post-RT"
+
+
+def test_advanced_release_gate_converges_across_schedule_profile_and_response_for_m0_crpc_psma_only_upstaging(app_client):
+    client, db_path = app_client
+    payload = make_patient_payload(nss="39999999996", full_name="Paciente nmCRPC PSMA")
+    register = client.post("/api/register_patient", json=payload)
+    assert register.status_code == 200
+    patient_id = register.get_json()["patient_id"]
+    _seed_latest_assessment_state(db_path, patient_id, "m0_crpc")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "testosterone_value": 18,
+            "current_adt_context": "ADT continua",
+            "conventional_imaging_status": "M0",
+            "conventional_imaging_date": "2026-03-01",
+            "progression_pattern": "biochemical_only",
+            "dxa_baseline_done": 1,
+            "calcium_vitd_started": 1,
+            "bone_protection_started": 1,
+            "hba1c": 5.8,
+            "total_cholesterol": 180,
+            "creatinine": 0.9,
+            "mini_cog_score": 4,
+        },
+    )
+    _update_latest_assessment_result_snapshot(
+        db_path,
+        patient_id,
+        {
+            "preferred_frontline_regimen": {
+                "family_code": "arpi_family",
+                "regimen_code": "ADT_DAROLUTAMIDE",
+                "regimen_label": "ADT + darolutamida",
+            },
+            "comparative_eligibility_matrix": {
+                "arpi_family": {
+                    "family_code": "arpi_family",
+                    "eligibility_status": "eligible",
+                    "variant_ranking": {
+                        "preferred_regimen_code": "ADT_DAROLUTAMIDE",
+                        "preferred_regimen_label": "ADT + darolutamida",
+                    },
+                }
+            },
+        },
+    )
+    _insert_structured_psma_imaging(
+        db_path,
+        patient_id,
+        study_date="2026-04-01",
+        psma_result="oligometastatic",
+        uptake_pattern="oligometastatic",
+        conventional_stage="M0",
+        psma_stage="M1a",
+        upstaged=True,
+        management_changed=True,
+    )
+
+    schedule_response = client.get(f"/api/patients/{patient_id}/schedule")
+    assert schedule_response.status_code == 200
+    schedule_payload = schedule_response.get_json()
+    readiness = schedule_payload["therapeutic_readiness_bundle"]
+    effective_state = schedule_payload["effective_state"]
+
+    assert effective_state in {"m0_crpc", "m1_crpc"}
+    assert readiness["readiness_status"] == "blocked_by_missing_data"
+    assert readiness["adjudication_gate_status"] == "blocked_by_missing_data"
+    assert readiness["monitoring_gate_status"] in {"supported", "conditional_pending_closure"}
+    assert "conventional_imaging_status" in readiness["required_to_release"] or "psma_positive" in readiness["required_to_release"]
+    assert any("adjudicación" in blocker.lower() or "nmcrpc" in blocker.lower() for blocker in readiness["release_blockers"])
+    assert schedule_payload["master_followup_plan"]["summary"]["therapeutic_readiness_status"] == "blocked_by_missing_data"
+    assert schedule_payload["master_followup_plan"]["summary"]["adjudication_gate_status"] == "blocked_by_missing_data"
+
+    import tracking_db
+    from prostanet.domains.patient_tracking.profile_compass import build_patient_profile_view_model
+
+    refreshed = tracking_db.get_patient_full_record(payload["nss"])
+    longitudinal_bundle = tracking_db.refresh_longitudinal_intelligence(
+        patient_id,
+        force_recompute=False,
+        record=refreshed,
+        include_live_benchmark=False,
+    )
+    profile = build_patient_profile_view_model(
+        patient=refreshed,
+        latest_assessment_raw=refreshed.get("latest_assessment") or {},
+        latest_assessment=refreshed.get("latest_assessment") or {},
+        state_timeline=refreshed.get("state_timeline") or [],
+        care_overlays=refreshed.get("care_overlays") or [],
+        recommendations={},
+        longitudinal_bundle=longitudinal_bundle,
+    )
+
+    assert profile["effective_state"] == effective_state
+    assert profile["therapeutic_readiness_bundle"]["readiness_status"] == "blocked_by_missing_data"
+    assert profile["therapeutic_readiness_bundle"]["adjudication_gate_status"] == "blocked_by_missing_data"
+    assert profile["therapeutic_capture_actions"]
+    assert any(
+        {"psma_pet_done", "psma_positive", "conventional_imaging_status"}.intersection(
+            set(action.get("fields") or action.get("raw_fields") or [])
+        )
+        for action in profile["therapeutic_capture_actions"]
+    )
+
+    response_visualization = client.post(f"/api/patients/{patient_id}/response-visualization")
+    assert response_visualization.status_code == 200
+    response_payload = response_visualization.get_json()
+
+    assert response_payload["effective_state"] == effective_state
+    assert response_payload["therapeutic_readiness_bundle"]["readiness_status"] == "blocked_by_missing_data"
+    assert response_payload["therapeutic_readiness_bundle"]["adjudication_gate_status"] == "blocked_by_missing_data"
+
+
 def test_post_rp_bcr_keeps_salvage_family_uses_postop_psa_and_demotes_embark_to_context(app_client):
     client, db_path = app_client
     register = client.post(
@@ -5222,7 +7123,10 @@ def test_registration_context_humanizes_scales_and_dedupes_advanced_fields(app_c
     ]
     assert visible_names.count("mini_cog_score") == 1
     assert visible_names.count("fatigue_score") == 1
-    assert visible_names.count("weight_loss_6m_pct") == 1
+    assert visible_names.count("weight_loss_6m_kg") == 1
+    assert "weight_loss_6m_pct" not in visible_names
+    assert visible_names.count("height_cm") == 1
+    assert visible_names.count("testosterone_history") == 1
 
     g8_field = next(
         field
@@ -5230,7 +7134,22 @@ def test_registration_context_humanizes_scales_and_dedupes_advanced_fields(app_c
         for field in fragment["fields"]
         if field["name"] == "g8_food_intake"
     )
+    mini_cog_field = next(
+        field
+        for fragment in draft_data["registration_fragments"]
+        for field in fragment["fields"]
+        if field["name"] == "mini_cog_score"
+    )
+    testosterone_history_field = next(
+        field
+        for fragment in draft_data["registration_fragments"]
+        for field in fragment["fields"]
+        if field["name"] == "testosterone_history"
+    )
     assert any("Disminución severa" in option["label"] for option in g8_field["display_options"])
+    assert mini_cog_field["field_type"] == "select"
+    assert any("Severamente anormal" in option["label"] for option in mini_cog_field["display_options"])
+    assert testosterone_history_field["field_type"] == "testosterone_history"
     assert "G8 total" in g8_field["score_interpretation"]
     assert draft_data["capture_layers"]
 
@@ -5518,7 +7437,7 @@ def test_pivotal_match_restricts_post_rp_bcr_to_salvage_trials_and_uses_backbone
     assert data["success"] is True
     visible_names = {str(item.get("study_name", "")) for item in data["eligible_matches"] + data["partial_matches"] + data["ineligible_matches"]}
     assert visible_names
-    assert visible_names <= {"RAVES", "RADICALS-RT", "ARTISTIC", "GETUG-AFU 16", "RTOG 9601", "SPPORT", "EMBARK", "EMPIRE-1"}
+    assert visible_names <= {"RAVES", "RADICALS-RT", "RADICALS-HD", "ARTISTIC", "GETUG-AFU 16", "RTOG 9601", "SPPORT", "EMBARK", "EMPIRE-1"}
     assert "PROTECT" not in visible_names
     assert "CHAARTED" not in visible_names
     getug = next((item for item in data["partial_matches"] + data["ineligible_matches"] if item.get("study_name") == "GETUG-AFU 16"), {})

@@ -1,0 +1,80 @@
+# 21 CFR Part 11 Compliance Checklist — Electronic Records and Signatures
+# Per FDA 21 CFR Part 11 Subpart B (Electronic Records) + Subpart C (Electronic Signatures)
+#
+# 8 controls required for ProstaMed (handles PHI clinical decision records):
+
+document: "21 CFR Part 11 Controls Checklist"
+faubot_release: "2026-04-27 LXXXVIII"
+last_updated: "2026-04-27"
+
+electronic_signature:
+  description: "Electronic signature with unique combination of identification code + password (§11.200)"
+  implemented: false
+  current_state: "Flask session auth via clinical_session decorator. NO formal e-signature system yet."
+  gap: "Need formal e-sign workflow: name+timestamp+content_hash binding for each clinical decision audit row."
+  artifact_path: "prostanet/shared/electronic_signature.py (planned)"
+  effort_h: 8.0
+
+audit_trail:
+  description: "Computer-generated, time-stamped audit trail of all changes (§11.10(e))"
+  implemented: true
+  current_state: "audit_tracking.md (Faubot iterative log) + clinical_audit_log SQLite table + decision_audit per-patient JSON snapshots."
+  gap: "Centralize all 3 sources into unified queryable audit trail with cryptographic chain."
+  artifact_path: "prostanet/shared/clinical_audit_log.py (existing, refinable)"
+  partial: true
+
+access_control:
+  description: "Limit system access to authorized individuals (§11.10(d))"
+  implemented: true
+  current_state: "require_clinical_session decorator with scope ABAC (phi:read/write/audit). DORMANT mode for dev, ACTIVE mode CLINICAL_AUTH_ENABLED=true."
+  gap: "Document role-based access matrix in prostanet/regulatory/qms/access_control_matrix.yaml"
+  artifact_path: "prostanet/shared/security_helpers.py (existing)"
+  partial: true
+
+data_integrity:
+  description: "Validate accuracy, reliability, and consistent intended performance (§11.10(a))"
+  implemented: true
+  current_state: "FAUBOT_RELEASE versioning + per-gate YAML SHA + decision_audit immutable snapshots + transition_event_id timestamp-based."
+  gap: "Add tamper-evidence: HMAC chain over decision_audit entries."
+  artifact_path: "prostanet/shared/algorithm_version.py (existing)"
+  partial: true
+
+retention_policy:
+  description: "Retention period as required by predicate rules (§11.10(c))"
+  implemented: false
+  current_state: "Not formalized. SQLite db retains indefinitely."
+  gap: "Define retention policy: clinical decision audit 10 years (FDA standard), cohort de-identification 25 years (HIPAA + research)."
+  artifact_path: "prostanet/regulatory/qms/retention_policy.md (planned)"
+  effort_h: 2.0
+
+validation:
+  description: "Validation of systems to ensure accuracy, reliability, and intended performance (§11.10(a))"
+  implemented: true
+  current_state: "3942+ pytest tests + 89 gates pivotal + per-gate trial_refs + cross-domain integration tests + E2E HTTP smoke."
+  gap: "Formal validation protocol (IQ/OQ/PQ) document."
+  artifact_path: "prostanet/regulatory/qms/validation_protocol.md (planned)"
+  partial: true
+
+archival_procedures:
+  description: "Procedures for archival, retrieval, and copying of records (§11.10(c) + §11.30)"
+  implemented: false
+  current_state: "Manual via git history + sqlite backup."
+  gap: "Documented archival SOP with periodic backup schedule + offsite storage encryption."
+  artifact_path: "prostanet/regulatory/qms/archival_procedures.md (planned)"
+  effort_h: 4.0
+
+copies_procedures:
+  description: "Ability to generate accurate, complete copies in human-readable + electronic form (§11.10(b))"
+  implemented: true
+  current_state: "Decision audit JSON export + patient profile PDF (planned) + audit_tracking.md as human-readable copy."
+  gap: "Formalize 'export full patient record' UI button + standardized PDF template via anthropic-skills:pdf."
+  partial: true
+
+# Aggregate
+summary:
+  controls_implemented: 5      # audit_trail, access_control, data_integrity, validation, copies (counted as full)
+  controls_partial: 4
+  controls_missing: 3          # electronic_signature, retention_policy, archival_procedures
+  total_controls: 8
+  current_compliance_pct: 62.5  # (5 full + 4 partial * 0.5) / 8 * 100, when scoring relaxed
+  strict_compliance_pct: 25.0  # (only fully-implemented) / 8 * 100

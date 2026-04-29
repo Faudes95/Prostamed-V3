@@ -1,0 +1,56 @@
+# Faubot 2026-04-25 (XVIII) — Gate 11 migrado de Python a YAML.
+# Originalmente en `pivotal_contraindication_gates.detect_radium223_in_cord_compression`.
+# Activo en Faubot 2026-04-24 IV (gates 11-12 Ra-223 × emergencias).
+
+code: radium223_in_cord_compression
+title: "Ra-223 con compresión medular activa o sospechada"
+faubot_added_in: "2026-04-24 IV"
+faubot_migrated_to_yaml_in: "2026-04-25 XVIII"
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1) Compresión medular truthy (campo principal o alias epidural)
+    - type: truthy_flag
+      field: spinal_cord_compression
+      alias_fields:
+        - epidural_compression
+    # 2) Debilidad MMII moderada/severa/paresia (substring match)
+    - type: string_contains_any
+      field: lower_limb_weakness
+      keywords:
+        - moderada
+        - severa
+        - paresia
+    # 3) Síntomas neurológicos sugerentes
+    - type: string_contains_any
+      field: cord_compression_symptoms
+      keywords:
+        - debilidad mmii
+        - anestesia
+        - retención urinaria nueva
+        - retencion urinaria nueva
+        - incontinencia fecal
+
+override:
+  type: truthy_flag
+  field: cord_compression_stabilized
+
+regimen_codes:
+  - REGIMEN_CODES_RADIUM223
+keywords:
+  - KEYWORDS_RADIUM223
+
+message: |
+  Radio-223 NO debe iniciarse con compresión medular activa o sospechada (Xofigo Bayer 2024 prescribing information). Estabilizar primero con dexametasona 16 mg IV + RT 30 Gy/10 fx (Loblaw ASCO 2012) o cirugía descompresiva (criterios Patchell) ANTES de considerar Ra-223. La mielosupresión post-Ra-223 (anemia 31%, trombocitopenia 12% en ALSYMPCA) puede demorar la cirugía descompresiva. Reevaluar Ra-223 tras estabilización estructural documentada (`cord_compression_stabilized=Sí`).
+
+evidence_tag: xofigo_label_loblaw_2012
+trial_refs:
+  - ALSYMPCA
+  - Xofigo label
+  - Loblaw 2012
+references:
+  - Xofigo (Ra-223) FDA prescribing information. Bayer 2024.
+  - Loblaw DA et al. ASCO 2012. Spinal cord compression management.
+  - NCCN PROS-G v5.2026 + NCCN Oncologic Emergencies v3.2026.

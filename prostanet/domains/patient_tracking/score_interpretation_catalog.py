@@ -2,6 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
+EPIC26_VISIBLE_SCORE_KEYS = (
+    "epic26_urinary_incontinence_domain",
+    "epic26_urinary_irritative_domain",
+    "epic26_bowel_domain",
+    "epic26_sexual_domain",
+    "epic26_hormonal_domain",
+    "epic26_overall_urinary_bother",
+)
+
 
 def _safe_float(value: Any) -> float | None:
     try:
@@ -121,12 +130,26 @@ def interpret_fact_p(value: Any) -> dict[str, Any]:
     return _base_payload("fact_p_total", "FACT-P", score, directionality="higher_is_better", score_grade_es="Afectación marcada", clinical_equivalence_es="Carga sintomática y funcional alta de enfermedad avanzada.", band_range="<70")
 
 
+def interpret_fatigue_score(value: Any) -> dict[str, Any]:
+    score = _safe_int(value)
+    if score is None:
+        return _base_payload("fatigue_score", "Fatiga basal", value, directionality="higher_is_worse", score_grade_es="No disponible", clinical_equivalence_es="Sin fatiga estructurada cuantificada.")
+    if score <= 3:
+        return _base_payload("fatigue_score", "Fatiga basal", score, directionality="higher_is_worse", score_grade_es="Fatiga leve", clinical_equivalence_es="Actividad global conservada.", band_range="0-3")
+    if score <= 6:
+        return _base_payload("fatigue_score", "Fatiga basal", score, directionality="higher_is_worse", score_grade_es="Fatiga moderada", clinical_equivalence_es="Limita parcialmente actividad y tolerancia terapéutica.", band_range="4-6")
+    return _base_payload("fatigue_score", "Fatiga basal", score, directionality="higher_is_worse", score_grade_es="Fatiga severa", clinical_equivalence_es="Limita de forma importante la actividad y la tolerancia al tratamiento.", band_range="7-10")
+
+
 def interpret_epic26_domain(domain_key: str, value: Any) -> dict[str, Any]:
     label_map = {
+        "epic26_urinary_incontinence_domain": "EPIC-26 urinario: incontinencia",
+        "epic26_urinary_irritative_domain": "EPIC-26 urinario: irritativo/obstructivo",
         "epic26_urinary_domain": "EPIC-26 función urinaria",
         "epic26_sexual_domain": "EPIC-26 función sexual",
         "epic26_bowel_domain": "EPIC-26 función intestinal",
         "epic26_hormonal_domain": "EPIC-26 síntomas hormonales",
+        "epic26_overall_urinary_bother": "EPIC-26 molestia urinaria global",
     }
     score = _safe_float(value)
     label = label_map.get(domain_key, domain_key)
@@ -243,6 +266,7 @@ def build_score_interpretation_snapshot(field_values: dict[str, Any]) -> dict[st
         "bpi_worst_pain": interpret_bpi_worst_pain,
         "eq5d_vas": interpret_eq5d_vas,
         "facit_fatigue_total": interpret_facit_f,
+        "fatigue_score": interpret_fatigue_score,
         "fact_p_total": interpret_fact_p,
         "pirads_v21_score": interpret_pirads,
         "pirads_score": interpret_pirads,
@@ -254,7 +278,15 @@ def build_score_interpretation_snapshot(field_values: dict[str, Any]) -> dict[st
     for key, interpreter in direct_interpreters.items():
         if key in field_values and field_values.get(key) not in (None, ""):
             snapshot[key] = interpreter(field_values.get(key))
-    for key in ("epic26_urinary_domain", "epic26_sexual_domain", "epic26_bowel_domain", "epic26_hormonal_domain"):
+    for key in (
+        "epic26_urinary_incontinence_domain",
+        "epic26_urinary_irritative_domain",
+        "epic26_urinary_domain",
+        "epic26_sexual_domain",
+        "epic26_bowel_domain",
+        "epic26_hormonal_domain",
+        "epic26_overall_urinary_bother",
+    ):
         if field_values.get(key) not in (None, ""):
             snapshot[key] = interpret_epic26_domain(key, field_values.get(key))
     eortc_function_fields = {
@@ -275,3 +307,8 @@ def build_score_interpretation_snapshot(field_values: dict[str, Any]) -> dict[st
         if field_values.get(key) not in (None, ""):
             snapshot[key] = interpret_eortc_symptom(label, key, field_values.get(key))
     return snapshot
+
+
+def extract_epic26_domain_scorecards(snapshot: dict[str, dict[str, Any]] | None) -> list[dict[str, Any]]:
+    snapshot = dict(snapshot or {})
+    return [dict(snapshot[key]) for key in EPIC26_VISIBLE_SCORE_KEYS if snapshot.get(key)]

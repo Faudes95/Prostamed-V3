@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from typing import Any
 
+from prostanet.domains.patient_tracking.clinical_decision_governance import prioritize_items_for_window_worklist
 from prostanet.domains.patient_tracking.followup_agenda import build_agenda_board, infer_management_track, longitudinal_item_sort_key
 from prostanet.domains.patient_tracking.capture_flows import build_missing_input_capture_bundle
+from prostanet.domains.patient_tracking.capture_surface import display_capture_field_summary
 from prostanet.domains.patient_tracking.cohort_analytics import (
     build_patient_kpis,
     compute_patient_cohort_completeness,
@@ -18,6 +21,51 @@ from prostanet.domains.patient_tracking.mhspc_evidence import (
     resolve_mhspc_state,
     visible_trials_for_mhspc_state,
 )
+from prostanet.domains.patient_tracking.profile_read_model_builder import (
+    build_profile_support_projection,
+    build_surface_consistency_projection,
+)
+from prostanet.domains.patient_tracking.advanced_followup_builder import (
+    build_advanced_followup_bundle,
+)
+from prostanet.domains.patient_tracking.advanced_therapy_decision_builder import (
+    build_advanced_therapy_decision_panel,
+)
+from prostanet.domains.patient_tracking.epic2_clinical_cards_builder import (
+    build_epic2_clinical_cards,
+)
+from prostanet.domains.patient_tracking.bone_health_engine import (
+    build_bone_health_recommendation,
+)
+from prostanet.domains.patient_tracking.ctcae_capture_engine import (
+    capture_ctcae_events,
+)
+from prostanet.shared.germline_testing_triggers import (
+    should_offer_germline_testing,
+)
+from prostanet.domains.patient_tracking.tradeoff_engine import (
+    build_tradeoff_matrix,
+)
+from prostanet.domains.research_intelligence.trial_matching_engine import (
+    build_trial_matching_bundle,
+)
+from prostanet.domains.reporting.sdm_preference_elicitation import (
+    build_elicitation_form,
+    score_elicitation,
+)
+from prostanet.domains.patient_tracking.advanced_release_gate_builder import (
+    build_advanced_release_gate,
+    merge_advanced_release_gate_into_requirements,
+)
+from prostanet.domains.patient_tracking.supportive_care_toxicity_readiness_builder import (
+    build_supportive_care_toxicity_readiness_bundle,
+)
+from prostanet.domains.patient_tracking.staging_adjudication_builder import (
+    build_staging_adjudication_bundle,
+)
+from prostanet.domains.patient_tracking.decision_input_requirements_engine import (
+    merge_staging_adjudication_into_requirements,
+)
 from prostanet.domains.patient_tracking.live_benchmark import (
     is_live_benchmark_applicable_state,
     resolve_live_benchmark_from_snapshot,
@@ -26,6 +74,13 @@ from prostanet.domains.patient_tracking.psa_line_monitor import build_psa_by_tre
 from prostanet.domains.patient_tracking.prognostic_impact import build_prognostic_impact_bundle
 from prostanet.domains.patient_tracking.reconciled_state import build_reconciled_state
 from prostanet.domains.patient_tracking.risk_tools import build_risk_tools_panel
+from prostanet.domains.patient_tracking.score_interpretation_catalog import (
+    build_score_interpretation_snapshot,
+    extract_epic26_domain_scorecards,
+)
+from prostanet.domains.patient_tracking.therapeutic_readiness_builder import (
+    build_therapeutic_readiness_bundle,
+)
 from prostanet.domains.patient_tracking.therapy_catalog import summarize_trial_backbones, trial_backbone
 from prostanet.domains.patient_tracking.therapy_catalog import regimen_label, therapy_select_options
 from prostanet.domains.patient_tracking.vertical_runtime import (
@@ -34,7 +89,9 @@ from prostanet.domains.patient_tracking.vertical_runtime import (
     select_primary_vertical_bundle,
 )
 from prostanet.shared.official_diagnosis import build_official_diagnosis_context, diagnosis_field_label
+from prostanet.shared.clinical_fact_resolver import resolve_patient_clinical_facts
 from prostanet.shared.presentation_text import resolve_option_label
+from prostanet.shared.systemic_regimen_scope import build_systemic_regimen_scope_contract
 from prostanet.shared.ui_value_normalizer import (
     normalize_capture_target_label,
     normalize_decision_domain_label,
@@ -70,6 +127,7 @@ POST_RP_SALVAGE_TRIALS = {
     "EMBARK",
     "EMPIRE-1",
     "GETUG-AFU 16",
+    "RADICALS-HD",
     "RADICALS-RT",
     "RAVES",
     "RTOG 9601",
@@ -79,6 +137,7 @@ POST_RP_CONTEXTUAL_SUPPORT_TRIALS = {
     "ARTISTIC",
     "EMPIRE-1",
     "GETUG-AFU 16",
+    "RADICALS-HD",
     "RADICALS-RT",
     "RAVES",
     "RTOG 9601",
@@ -117,6 +176,85 @@ STATE_DISPLAY_MAP = {
     "mcspc_high_volume": "mHSPC de alto volumen",
     "m0_crpc": "CRPC sin metástasis",
     "m1_crpc": "CRPC metastásico",
+}
+
+GENERIC_CARE_INTENT_PATTERNS = (
+    "definir tratamiento local",
+    "tratamiento local definitivo",
+    "mantener o redefinir la estrategia local",
+    "monitorizar recuperación",
+    "monitorizar recuperacion",
+    "reevaluar secuencia sistémica",
+    "reevaluar secuencia sistemica",
+    "priorizar radioterapia definitiva",
+    "activar tratamiento local intensificado",
+    "redefinir estrategia terapéutica",
+    "confirm castrate testosterone",
+    "optimizar adt",
+    "confirmar testosterona en rango de castración",
+    "confirmar testosterona en rango de castracion",
+)
+
+HARD_CARE_INTENT_OVERRIDE_PATTERNS = (
+    "optimizar adt",
+    "confirmar testosterona",
+    "confirmar castración",
+    "confirmar castracion",
+    "completar datos críticos",
+    "completar datos criticos",
+    "confirmar fallo post-rt",
+    "reabrir estudio diagnóstico",
+    "reabrir estudio diagnostico",
+)
+
+SPECIFIC_DECISION_TOKENS = (
+    "vigilancia activa",
+    "observación clínica",
+    "observacion clinica",
+    "prostatect",
+    "radioterapia",
+    "salvage",
+    "rescate",
+    "cryotherapy",
+    "mdt",
+    "sbrt",
+    "adt",
+    "abirater",
+    "enzalut",
+    "apalut",
+    "darolut",
+    "olapar",
+    "pembrol",
+    "docetax",
+    "cabazitax",
+    "lutec",
+    "pluvicto",
+    "biopsia",
+)
+
+DECISION_COMPARE_STOPWORDS = {
+    "de",
+    "la",
+    "el",
+    "y",
+    "con",
+    "sin",
+    "para",
+    "del",
+    "las",
+    "los",
+    "hoy",
+    "ruta",
+    "actual",
+    "priorizar",
+    "activar",
+    "mantener",
+    "definir",
+    "confirmar",
+    "reevaluar",
+    "redirigir",
+    "continuar",
+    "sostener",
 }
 
 ALGORITHM_EXPLANATIONS = {
@@ -261,6 +399,298 @@ def _first_nonempty(*values: Any) -> Any:
     return ""
 
 
+def _normalize_surface_text(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    ascii_folded = "".join(
+        ch
+        for ch in unicodedata.normalize("NFKD", text)
+        if not unicodedata.combining(ch)
+    )
+    return " ".join(ascii_folded.split())
+
+
+def _decision_tokens(value: Any) -> set[str]:
+    text = _normalize_surface_text(value)
+    tokens = {
+        token
+        for token in "".join(ch if ch.isalnum() else " " for ch in text).split()
+        if len(token) >= 4 and token not in DECISION_COMPARE_STOPWORDS
+    }
+    return tokens
+
+
+def _decision_titles_aligned(left: Any, right: Any) -> bool:
+    left_text = _normalize_surface_text(left)
+    right_text = _normalize_surface_text(right)
+    if not left_text or not right_text:
+        return False
+    if left_text == right_text:
+        return True
+    if left_text in right_text or right_text in left_text:
+        return True
+    left_tokens = _decision_tokens(left_text)
+    right_tokens = _decision_tokens(right_text)
+    if not left_tokens or not right_tokens:
+        return False
+    overlap = len(left_tokens & right_tokens)
+    return overlap >= min(2, len(left_tokens), len(right_tokens))
+
+
+def _is_transition_like_headline(value: Any) -> bool:
+    return _normalize_surface_text(value).startswith("confirmar transición")
+
+
+def _is_generic_care_intent_headline(value: Any) -> bool:
+    text = _normalize_surface_text(value)
+    if not text:
+        return False
+    return any(pattern in text for pattern in GENERIC_CARE_INTENT_PATTERNS)
+
+
+def _is_hard_care_intent_override(value: Any) -> bool:
+    text = _normalize_surface_text(value)
+    if not text:
+        return False
+    return any(pattern in text for pattern in HARD_CARE_INTENT_OVERRIDE_PATTERNS)
+
+
+def _decision_specificity_score(value: Any) -> int:
+    text = _normalize_surface_text(value)
+    if not text:
+        return 0
+    score = 0
+    for token in SPECIFIC_DECISION_TOKENS:
+        if token in text:
+            score += 2
+    if len(text.split()) >= 4:
+        score += 1
+    return score
+
+
+def _effective_state_display_label(state: str) -> str:
+    if state == "localized_initial":
+        return "Enfermedad localizada"
+    return str(STATE_DISPLAY_MAP.get(state) or state)
+
+
+def _should_prefer_resolved_stage_label(*, state: str, module_label: Any, resolved_stage_label: Any) -> bool:
+    module_text = _normalize_surface_text(module_label)
+    resolved_text = _normalize_surface_text(resolved_stage_label)
+    if not resolved_text:
+        return False
+    if not module_text:
+        return True
+    if module_text == resolved_text:
+        return False
+    return state in {"localized_initial", "recurrence_bcr", "post_radiotherapy_or_local_salvage"}
+
+
+def _canonicalize_surface_headline(
+    *,
+    state: str,
+    headline: Any,
+    structured_headline: Any = "",
+) -> str:
+    structured_title = str(structured_headline or "").strip()
+    canonical = str(headline or "").strip()
+    if state in ADVANCED_STATES and state != "m0_crpc" and structured_title and not _decision_titles_aligned(canonical, structured_title):
+        canonical = structured_title
+    normalized = _normalize_surface_text(canonical)
+    if state == "post_radiotherapy_or_local_salvage":
+        if "confirmar fallo post-rt" in normalized:
+            return "Confirmar fallo post-RT antes de salvage"
+        if "redirigir a secuencia sistemica y reestadificacion" in normalized:
+            return "Redirección sistémica / reestadificación"
+    if state == "recurrence_bcr" and (
+        "redirigir a intensificacion sistemica" in normalized
+        or "staging avanzado" in normalized
+    ):
+        return "Reestadificación sistémica post-PSMA"
+    return canonical
+
+
+def _structured_decision_candidate(raw_result: dict[str, Any] | None) -> dict[str, Any]:
+    raw_result = dict(raw_result or {})
+    candidates: list[dict[str, Any]] = []
+    preferred = dict(raw_result.get("preferred_frontline_regimen") or {})
+    if preferred:
+        candidates.append(preferred)
+    for item in raw_result.get("eligible_treatments") or []:
+        if isinstance(item, dict):
+            candidates.append(dict(item))
+
+    seen_names: set[str] = set()
+    for candidate in candidates:
+        regimen_name = str(
+            _first_nonempty(
+                candidate.get("name"),
+                candidate.get("display_label"),
+                candidate.get("regimen_label"),
+                candidate.get("molecule_or_backbone"),
+            )
+            or ""
+        ).strip()
+        if not regimen_name:
+            continue
+        normalized_name = _normalize_surface_text(regimen_name)
+        if normalized_name in seen_names:
+            continue
+        seen_names.add(normalized_name)
+        title = regimen_name if regimen_name.lower().startswith(("priorizar ", "activar ", "confirmar ", "mantener ", "sostener ", "redirigir ", "reevaluar ")) else f"Priorizar {regimen_name}"
+        notes = str(
+            _first_nonempty(
+                candidate.get("notes"),
+                candidate.get("description"),
+                " ".join(_as_list(candidate.get("selection_rationale"))[:2]),
+                " ".join(_as_list(candidate.get("why_this_rank"))[:2]),
+            )
+            or ""
+        ).strip()
+        family = _first_nonempty(
+            candidate.get("family_label"),
+            candidate.get("family_code"),
+            candidate.get("regimen_code"),
+            candidate.get("name"),
+        )
+        return {
+            "headline": title,
+            "supporting_text": notes,
+            "recommendation_family": family,
+            "source": "structured_regimen",
+        }
+    return {}
+
+
+def _refresh_runtime_assessment(
+    *,
+    patient: dict[str, Any],
+    raw_assessment: dict[str, Any] | None,
+    display_assessment: dict[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    refreshed_raw = dict(raw_assessment or {})
+    refreshed_display = dict(display_assessment or {})
+    module_id = str(refreshed_raw.get("module_id") or "").strip()
+    input_snapshot = dict(refreshed_raw.get("input_snapshot") or {})
+    if not module_id or not input_snapshot:
+        return refreshed_raw, refreshed_display
+    try:
+        from prostanet.application.module_registry import ModuleRegistry
+        from prostanet.domains.patient_tracking.event_graph import merge_record_into_assessment_payload
+        from prostanet.shared.presentation_text import humanize_assessment
+
+        merged_payload = merge_record_into_assessment_payload(input_snapshot, patient)
+        refreshed_result = ModuleRegistry().evaluate_module(module_id, merged_payload)
+        refreshed_state = refreshed_result.get("state", refreshed_raw.get("state"))
+        original_state = str(refreshed_raw.get("state") or "").strip()
+        if original_state in POSTLOCAL_STATES and refreshed_state not in POSTLOCAL_STATES:
+            refreshed_state = original_state
+            refreshed_result = {
+                **dict(refreshed_result or {}),
+                "state": refreshed_state,
+            }
+        refreshed_raw["state"] = refreshed_state
+        refreshed_raw["input_snapshot"] = merged_payload
+        refreshed_raw["result_snapshot"] = refreshed_result
+        refreshed_display = humanize_assessment(refreshed_raw)
+    except Exception:
+        return dict(raw_assessment or {}), dict(display_assessment or {})
+    return refreshed_raw, refreshed_display
+
+
+def _resolve_decision_copy(
+    *,
+    state: str,
+    action_title: Any,
+    action_rationale: Any,
+    action_family: Any,
+    care_headline: Any,
+    care_narrative: Any,
+    care_family: Any,
+    structured_headline: Any = "",
+    structured_supporting_text: Any = "",
+    structured_family: Any = "",
+) -> dict[str, Any]:
+    action_title_text = str(action_title or "").strip()
+    care_headline_text = str(care_headline or "").strip()
+    care_generic = _is_generic_care_intent_headline(care_headline_text)
+    care_transition = _is_transition_like_headline(care_headline_text)
+    care_hard_override = _is_hard_care_intent_override(care_headline_text)
+    aligned = _decision_titles_aligned(care_headline_text, action_title_text)
+    action_more_specific = _decision_specificity_score(action_title_text) > _decision_specificity_score(care_headline_text)
+    use_care_intent = bool(
+        care_headline_text
+        and not care_transition
+        and (
+            (aligned and not (care_generic and action_more_specific))
+            or (care_hard_override and not care_generic)
+        )
+    )
+
+    flags: list[str] = []
+    if care_headline_text and action_title_text and care_generic and state not in DIAGNOSTIC_STATES:
+        flags.append("care_intent_generic_for_closed_module")
+    if care_headline_text and action_title_text and care_generic and action_more_specific and state not in DIAGNOSTIC_STATES:
+        flags.append("decision_copy_masks_next_best_action")
+
+    headline = care_headline_text if use_care_intent else action_title_text
+    supporting_text = (
+        str(care_narrative or "").strip()
+        if use_care_intent and _is_present(care_narrative)
+        else str(action_rationale or "").strip()
+    )
+    recommendation_family = (
+        care_family
+        if use_care_intent and _is_present(care_family)
+        else action_family
+    )
+    structured_title_text = str(structured_headline or "").strip()
+    current_generic = _is_generic_care_intent_headline(headline) or _is_transition_like_headline(headline)
+    structured_more_specific = _decision_specificity_score(structured_title_text) > _decision_specificity_score(headline)
+    suppress_structured_for_nmcrpc_reclassification = (
+        state == "m0_crpc"
+        and any(
+            marker in _normalize_surface_text(candidate)
+            for candidate in (action_title_text, care_headline_text, headline)
+            for marker in (
+                "reclasificar fuera de nmcrpc",
+                "completar reestadificacion",
+            )
+        )
+    )
+    prefer_structured_for_advanced_state = (
+        state in ADVANCED_STATES
+        and state != "m0_crpc"
+        and structured_title_text
+        and not _decision_titles_aligned(headline, structured_title_text)
+    )
+    if (
+        structured_title_text
+        and not suppress_structured_for_nmcrpc_reclassification
+        and (not headline or current_generic or structured_more_specific or prefer_structured_for_advanced_state)
+    ):
+        if not _decision_titles_aligned(headline, structured_title_text) or current_generic or not headline:
+            headline = structured_title_text
+            supporting_text = str(structured_supporting_text or supporting_text or "").strip()
+            recommendation_family = structured_family or recommendation_family
+            flags.append("structured_regimen_promoted")
+    headline = _canonicalize_surface_headline(
+        state=state,
+        headline=headline,
+        structured_headline=structured_title_text,
+    )
+    return {
+        "headline": headline,
+        "supporting_text": supporting_text,
+        "recommendation_family": recommendation_family,
+        "source": "structured_regimen" if structured_title_text and "structured_regimen_promoted" in flags else ("care_intent_contract" if use_care_intent else "next_best_action"),
+        "aligned": aligned,
+        "care_intent_generic": care_generic,
+        "care_intent_transition_like": care_transition,
+        "care_intent_hard_override": care_hard_override,
+        "flags": flags,
+    }
+
+
 def _build_family_history_summary(entries: list[dict[str, Any]]) -> str:
     if not entries:
         return "Sin antecedente hereditario estructurado."
@@ -390,6 +820,26 @@ def _displayize_copy(value: Any, *, default: str = "") -> str:
     return _collapse_duplicate_phrase(text)
 
 
+def _displayize_recommendation_block_reason(value: Any) -> str:
+    text = _displayize_copy(value, default="")
+    if not text:
+        return ""
+    reason_prefixes = (
+        "Faltan datos críticos que cambian la conducta clínica:",
+        "La recomendación sigue abierta hasta cerrar datos decisionales:",
+        "Faltan PROs mínimos para modular intensidad terapéutica y decisión compartida:",
+    )
+    for prefix in reason_prefixes:
+        if not text.startswith(prefix):
+            continue
+        raw_tail = text[len(prefix):].strip()
+        raw_fields = [item.strip() for item in raw_tail.split(",") if item.strip()]
+        display_fields = normalize_field_list(raw_fields, limit=12)
+        if display_fields:
+            return f"{prefix} {', '.join(display_fields)}"
+    return text
+
+
 def _collapse_duplicate_phrase(value: Any) -> str:
     text = " ".join(str(value or "").split())
     if not text:
@@ -447,6 +897,8 @@ def _decorate_triplet_decision(decision: dict[str, Any]) -> dict[str, Any]:
         return {}
     clone = dict(decision)
     clone["display_missing_inputs"] = _displayize_field_list(decision.get("missing_inputs") or [], limit=8)
+    clone["display_cross_scope_explanation"] = _displayize_copy(decision.get("cross_scope_explanation"), default="")
+    clone["display_triplet_vs_global_preference_note"] = _displayize_copy(decision.get("triplet_vs_global_preference_note"), default="")
     return clone
 
 
@@ -463,7 +915,10 @@ def _decorate_copilot_sections(copilot: dict[str, Any]) -> dict[str, Any]:
         clone["display_message"] = message
         clone["display_recommended_action"] = _displayize_copy(clone.get("recommended_action"), default="")
         clone["display_guideline_reference"] = _displayize_copy(clone.get("guideline_reference"), default="")
-        clone["display_fields_to_capture"] = _displayize_field_list(clone.get("fields_to_capture") or [], limit=8)
+        clone["display_fields_to_capture"] = display_capture_field_summary(
+            clone.get("fields_to_capture") or [],
+            limit=8,
+        ) or _displayize_field_list(clone.get("fields_to_capture") or [], limit=8)
         clinical_alerts.append(clone)
     if clinical_alerts:
         decorated["clinical_alerts"] = clinical_alerts
@@ -502,6 +957,48 @@ def _decorate_patient_alerts(alerts: list[dict[str, Any]]) -> list[dict[str, Any
     return decorated
 
 
+def _decorate_agenda_items_for_display(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    decorated: list[dict[str, Any]] = []
+    for item in items or []:
+        clone = dict(item)
+        raw_required_inputs = list(clone.get("required_inputs") or [])
+        clone["display_required_inputs"] = (
+            display_capture_field_summary(
+                raw_required_inputs,
+                required_inputs=raw_required_inputs,
+                limit=8,
+            )
+            or normalize_field_list(raw_required_inputs, limit=8)
+        )
+        clone["display_fields_summary"] = (
+            list(clone.get("display_fields_summary") or [])
+            or display_capture_field_summary(
+                clone.get("raw_fields") or clone.get("fields") or raw_required_inputs,
+                required_inputs=raw_required_inputs,
+                limit=8,
+            )
+        )
+        decorated.append(clone)
+    return decorated
+
+
+def _decorate_blocking_input_groups(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    decorated: list[dict[str, Any]] = []
+    for group in groups or []:
+        clone = dict(group)
+        raw_required_fields = list(clone.get("required_fields") or [])
+        clone["display_required_fields"] = (
+            display_capture_field_summary(
+                raw_required_fields,
+                required_inputs=raw_required_fields,
+                limit=8,
+            )
+            or normalize_field_list(raw_required_fields, limit=8)
+        )
+        decorated.append(clone)
+    return decorated
+
+
 def _merge_longitudinal_runtime_context(
     patient: dict[str, Any],
     longitudinal_bundle: dict[str, Any] | None,
@@ -513,6 +1010,32 @@ def _merge_longitudinal_runtime_context(
     merged_signals = dict(context.get("latest_signal_snapshot") or {})
     merged_signals.update(dict(bundle.get("signals") or {}))
     for key in (
+        "decision_governance_bundle",
+        "recommendation_block_status",
+        "recommendation_block_reason",
+        "allowed_actions_while_blocked",
+        "decision_blocking_bundle",
+        "diagnostic_certainty_bundle",
+        "staging_certainty_bundle",
+        "minimum_decisive_dataset_bundle",
+        "therapeutic_window_bundle",
+        "clinician_decision_capture_bundle",
+        "state_transition_confirmation_bundle",
+        "adherence_tracking_bundle",
+        "tumor_board_outcome_bundle",
+        "pro_decision_bundle",
+        "shared_decision_bundle",
+        "ctdna_refinement_bundle",
+        "multimodal_imaging_concordance_bundle",
+        "precision_workflow_bundle",
+        "registry_core_bundle",
+        "endpoint_adjudication_bundle",
+        "data_certainty_bundle",
+        "ichom_compliance_bundle",
+        "treatment_adverse_event_bundle",
+        "population_survival_context_bundle",
+        "cost_access_context_bundle",
+        "score_interpretation_catalog_snapshot",
         "transition_resolution",
         "care_intent_contract",
         "palliative_transition_bundle",
@@ -534,6 +1057,13 @@ def _merge_longitudinal_runtime_context(
         "localized_surveillance_bundle",
         "post_rt_salvage_bundle",
         "post_rt_schedule_overlay",
+        "advanced_followup_bundle",
+        "staging_adjudication_bundle",
+        "clinical_kernel_snapshot",
+        "effective_state",
+        "effective_recommendation_family",
+        "surface_consistency_status",
+        "surface_consistency_flags",
         "blocking_inputs",
         "hard_blocking_inputs",
         "decision_blocking_inputs",
@@ -601,6 +1131,138 @@ def _build_psa_observability(patient: dict[str, Any], copilot: dict[str, Any]) -
     monitoring["points"] = points
     monitoring["treatment_bands"] = trajectory.get("treatment_bands") or []
     return monitoring
+
+
+def _normalize_readiness_capture_action(action: dict[str, Any]) -> dict[str, Any]:
+    raw_fields = list(action.get("raw_fields") or action.get("fields") or [])
+    return {
+        **dict(action or {}),
+        "raw_fields": raw_fields,
+        "fields": raw_fields,
+        "display_label": action.get("display_label") or action.get("title") or "Cerrar bloqueo terapéutico",
+        "display_group": action.get("display_group") or "Liberación terapéutica",
+        "display_cta": action.get("display_cta") or "Completar captura dirigida",
+        "display_why_now": action.get("display_why_now") or action.get("summary") or "Faltan datos estructurados para liberar la terapia visible.",
+        "display_impact": action.get("display_impact") or "Si se completa hoy, puede recalcular el readiness terapéutico.",
+        "display_fields_summary": list(action.get("display_fields_summary") or display_capture_field_summary(raw_fields, limit=24)),
+        "display_capture_target": action.get("display_capture_target") or normalize_capture_target_label(action.get("capture_target")),
+    }
+
+
+def _build_rt_toxicity_timeline(patient: dict[str, Any]) -> dict[str, Any]:
+    timeline: list[dict[str, Any]] = []
+    courses = (
+        patient.get("radiotherapy_courses_detailed")
+        or patient.get("rt_courses")
+        or patient.get("radiotherapy_courses")
+        or []
+    )
+    for course in courses:
+        if not isinstance(course, dict):
+            continue
+        for toxicity in course.get("toxicity") or []:
+            if not isinstance(toxicity, dict):
+                continue
+            timeline.append(
+                {
+                    "date": toxicity.get("onset_date") or course.get("rt_end_date") or course.get("rt_end_date") or course.get("rt_start_date") or "",
+                    "domain": str(toxicity.get("domain") or "").upper() or "RT",
+                    "phase": str(toxicity.get("phase") or "late"),
+                    "grade": toxicity.get("grade"),
+                    "details": toxicity.get("details") or "",
+                }
+            )
+    latest_followup = _latest_item(patient.get("follow_ups", []), "visit_date")
+    if latest_followup:
+        if _is_present(latest_followup.get("late_urinary_grade")):
+            timeline.append(
+                {
+                    "date": latest_followup.get("visit_date") or "",
+                    "domain": "GU",
+                    "phase": "late",
+                    "grade": latest_followup.get("late_urinary_grade"),
+                    "details": "Toxicidad urinaria tardía documentada en seguimiento.",
+                }
+            )
+        if _is_present(latest_followup.get("late_bowel_grade")):
+            timeline.append(
+                {
+                    "date": latest_followup.get("visit_date") or "",
+                    "domain": "GI",
+                    "phase": "late",
+                    "grade": latest_followup.get("late_bowel_grade"),
+                    "details": "Toxicidad intestinal tardía documentada en seguimiento.",
+                }
+            )
+    timeline = [item for item in timeline if item.get("date") or _is_present(item.get("grade"))]
+    timeline = sorted(timeline, key=lambda item: str(item.get("date") or ""), reverse=True)
+    return {"available": bool(timeline), "timeline": timeline[:12]}
+
+
+def _build_survivorship_checklist(patient: dict[str, Any], latest_signal_snapshot: dict[str, Any]) -> dict[str, Any]:
+    baseline = dict(patient.get("baseline") or {})
+    latest_followup = _latest_item(patient.get("follow_ups", []), "visit_date")
+    context = {**baseline, **dict(latest_followup or {}), **dict(latest_signal_snapshot or {})}
+
+    def _status(label: str, *, complete: bool, detail: str = "") -> dict[str, Any]:
+        return {
+            "label": label,
+            "status": "completo" if complete else "pendiente",
+            "detail": detail,
+            "tone": "success" if complete else "warning",
+        }
+
+    lipid_complete = any(_is_present(context.get(field)) for field in ["total_cholesterol", "triglycerides", "hdl_cholesterol", "hba1c"])
+    smoking_status = str(context.get("smoking_status") or "").strip()
+    items = [
+        _status("DXA", complete=_truthy(context.get("dxa_baseline_done")), detail=_format_date(context.get("dxa_date"))),
+        _status("Lípidos / metabólico", complete=lipid_complete, detail="Perfil metabólico y/o HbA1c documentados." if lipid_complete else ""),
+        _status("Riesgo cardiovascular", complete=_truthy(context.get("cv_risk_documented")), detail="Riesgo CV mayor documentado." if _truthy(context.get("cv_risk_documented")) else ""),
+        _status("Cesación tabáquica", complete=smoking_status.lower() not in {"activo", "current", "smoker"}, detail=smoking_status or "No documentado"),
+        _status("Calcio + Vitamina D", complete=_truthy(context.get("calcium_vitd_started")), detail="Suplementación activa." if _truthy(context.get("calcium_vitd_started")) else ""),
+        _status("Protección ósea", complete=_truthy(context.get("bone_protection_started")), detail="Antiresortivo / protección ósea activa." if _truthy(context.get("bone_protection_started")) else ""),
+    ]
+    return {"available": True, "items": items}
+
+
+def _build_post_rt_recurrence_profile(
+    *,
+    post_rt_failure_definition: dict[str, Any],
+    post_rt_transition_bundle: dict[str, Any],
+    readiness_actions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    failure = dict(post_rt_failure_definition or {})
+    if not failure:
+        return {"available": False}
+    points = [
+        {
+            "date": point.get("sample_date") or point.get("date") or "",
+            "value": point.get("value"),
+            "source": point.get("source") or "",
+        }
+        for point in list(failure.get("psa_history_points") or [])
+    ]
+    post_rt_actions = [
+        action
+        for action in list(readiness_actions or [])
+        if "post_rt" in str(action.get("focus") or "") or "salvage" in str(action.get("focus") or "")
+    ]
+    return {
+        "available": True,
+        "psa_points": points[-8:],
+        "psa_nadir": failure.get("psa_nadir"),
+        "psa_nadir_date": failure.get("psa_nadir_date"),
+        "phoenix_threshold": failure.get("phoenix_threshold"),
+        "phoenix_threshold_reached": failure.get("phoenix_threshold_reached"),
+        "phoenix_confirmation_status": failure.get("phoenix_confirmation_status"),
+        "bounce_suspected": failure.get("bounce_suspected"),
+        "psadt_months": failure.get("psadt_months"),
+        "salvage_release_status": failure.get("salvage_release_status"),
+        "transition_status": post_rt_transition_bundle.get("transition_status"),
+        "transition_reason": " ".join(post_rt_transition_bundle.get("trigger_reasons") or []),
+        "required_missing_fields": list(post_rt_transition_bundle.get("required_missing_fields") or failure.get("required_missing_fields") or []),
+        "capture_action": post_rt_actions[0] if post_rt_actions else {},
+    }
 
 
 def _build_clinical_journey_events(patient: dict[str, Any], state: str) -> list[dict[str, Any]]:
@@ -767,58 +1429,517 @@ def _build_profile_decision_view_model(
     *,
     clinical_compass: dict[str, Any],
     care_intent_contract: dict[str, Any],
+    next_best_action: dict[str, Any],
     management_track: str,
     state: str,
 ) -> dict[str, Any]:
+    resolved_decision = _resolve_decision_copy(
+        state=state,
+        action_title=_first_nonempty(
+            (next_best_action or {}).get("action_title"),
+            (next_best_action or {}).get("title"),
+            clinical_compass.get("primary_clinical_question"),
+            "Sin decisión prioritaria estructurada",
+        ),
+        action_rationale=_first_nonempty(
+            (next_best_action or {}).get("action_rationale"),
+            (next_best_action or {}).get("rationale"),
+            clinical_compass.get("recommended_direction"),
+            "El copiloto no ha emitido una narrativa adicional.",
+        ),
+        action_family=_first_nonempty(
+            (next_best_action or {}).get("recommendation_family"),
+            clinical_compass.get("recommendation_family"),
+        ),
+        care_headline=care_intent_contract.get("headline"),
+        care_narrative=care_intent_contract.get("narrative"),
+        care_family=care_intent_contract.get("recommendation_family"),
+        structured_headline=clinical_compass.get("structured_decision_headline"),
+        structured_supporting_text=clinical_compass.get("structured_decision_supporting_text"),
+        structured_family=clinical_compass.get("structured_decision_family"),
+    )
     canonical_headline = _first_nonempty(
-        care_intent_contract.get("headline"),
+        resolved_decision.get("headline"),
         clinical_compass.get("primary_clinical_question"),
         "Sin decisión prioritaria estructurada",
     )
     canonical_narrative = _first_nonempty(
-        care_intent_contract.get("narrative"),
+        resolved_decision.get("supporting_text"),
         clinical_compass.get("recommended_direction"),
         "El copiloto no ha emitido una narrativa adicional.",
     )
     canonical_family = _first_nonempty(
-        care_intent_contract.get("recommendation_family"),
-        care_intent_contract.get("headline"),
+        resolved_decision.get("recommendation_family"),
+        resolved_decision.get("headline"),
         canonical_headline,
         clinical_compass.get("recommendation_family"),
-        clinical_compass.get("current_stage_label"),
-        STATE_DISPLAY_MAP.get(state),
+        clinical_compass.get("effective_state_label"),
+        _effective_state_display_label(state),
         "No documentada",
     )
     last_decisive_data = normalize_last_decisive_data(clinical_compass.get("last_decisive_data"))
-    consistency_flags = []
+    consistency_flags = list(resolved_decision.get("flags") or [])
     if _is_present(clinical_compass.get("primary_clinical_question")) and str(clinical_compass.get("primary_clinical_question")).strip() != str(canonical_headline).strip():
         consistency_flags.append("headline_overridden_by_care_intent")
     if _is_present(clinical_compass.get("recommended_direction")) and str(clinical_compass.get("recommended_direction")).strip() != str(canonical_narrative).strip():
         consistency_flags.append("narrative_overridden_by_care_intent")
     if _is_present(clinical_compass.get("recommendation_family")) and str(clinical_compass.get("recommendation_family")).strip() != str(canonical_family).strip():
         consistency_flags.append("family_overridden_by_care_intent")
+    effective_state_label = _first_nonempty(
+        clinical_compass.get("effective_state_label"),
+        _effective_state_display_label(state),
+        state,
+    )
+    broader_stage_label = _first_nonempty(
+        clinical_compass.get("current_stage_label"),
+        clinical_compass.get("operational_module_label"),
+    )
+    if _is_present(broader_stage_label) and _normalize_surface_text(broader_stage_label) != _normalize_surface_text(effective_state_label):
+        consistency_flags.append("operational_state_headline_broader_than_effective_state")
     return {
         "headline": normalize_ui_value(canonical_headline),
         "narrative": normalize_ui_value(canonical_narrative),
         "recommendation_family": normalize_ui_value(canonical_family),
-        "effective_state": normalize_ui_value(clinical_compass.get("current_stage_label") or STATE_DISPLAY_MAP.get(state) or state),
+        "effective_state": normalize_ui_value(effective_state_label),
         "effective_management_track": normalize_ui_value(management_track or care_intent_contract.get("care_intent_key") or "No documentado"),
         "last_decisive_data": last_decisive_data,
-        "consistency_flags": consistency_flags,
+        "consistency_flags": list(dict.fromkeys(flag for flag in consistency_flags if flag)),
         "is_consistent": not consistency_flags,
     }
 
 
-def _merge_unique_text(primary: list[str], extra: list[str], *, limit: int = 6) -> list[str]:
-    merged: list[str] = []
-    for item in primary + extra:
-        if not _is_present(item):
+def _display_payload(
+    *,
+    headline: Any,
+    supporting_text: Any = "",
+    status: str = "",
+    scope: str = "",
+    source: str = "",
+    visible: bool = True,
+    **extra: Any,
+) -> dict[str, Any]:
+    payload = {
+        "headline": normalize_ui_value(headline),
+        "supporting_text": normalize_ui_value(supporting_text, default=""),
+        "status": normalize_ui_value(status, default=""),
+        "scope": normalize_ui_value(scope, default=""),
+        "source": normalize_ui_value(source, default=""),
+        "visible": bool(visible and _is_present(headline)),
+    }
+    payload.update(extra)
+    return payload
+
+
+def _build_local_adjuncts_visible(
+    *,
+    state: str,
+    signal_snapshot: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    signal_snapshot = dict(signal_snapshot or {})
+    adjuncts: list[dict[str, str]] = []
+
+    def add_adjunct(label: Any, rationale: Any, priority: str, source: str) -> None:
+        label_text = normalize_ui_value(label, default="")
+        rationale_text = normalize_ui_value(rationale, default="")
+        if not label_text:
+            return
+        if any(item.get("label") == label_text for item in adjuncts):
+            return
+        adjuncts.append(
+            {
+                "label": label_text,
+                "rationale": rationale_text,
+                "priority": normalize_ui_value(priority, default="candidate"),
+                "source": normalize_ui_value(source, default=""),
+            }
+        )
+
+    mhspc_bundle = dict(signal_snapshot.get("mhspc_copilot_bundle") or {})
+    if is_mhspc_state(state):
+        if bool(mhspc_bundle.get("rt_primary_candidate")):
+            add_adjunct(
+                "RT al primario",
+                "El fenotipo de bajo volumen mantiene visible el control local del tumor primario como adjunto al backbone sistémico.",
+                "candidate",
+                "mhspc_copilot_bundle",
+            )
+        if bool(mhspc_bundle.get("mdt_candidate")):
+            add_adjunct(
+                "MDT",
+                "La terapia dirigida a metástasis sigue visible como adjunto contextual y no reemplaza la intensificación sistémica principal.",
+                "candidate",
+                "mhspc_copilot_bundle",
+            )
+
+    for bundle_key, source_label in (
+        ("post_rp_salvage_bundle", "post_rp_salvage_bundle"),
+        ("post_rt_salvage_bundle", "post_rt_salvage_bundle"),
+    ):
+        bundle = dict(signal_snapshot.get(bundle_key) or {})
+        local_pathway = dict(bundle.get("local_salvage_pathway") or {})
+        if not bool(local_pathway.get("visible")):
             continue
-        text = str(item).strip()
-        if text and text not in merged:
-            merged.append(text)
-        if len(merged) >= limit:
-            break
+        add_adjunct(
+            _first_nonempty(
+                local_pathway.get("recommended_path"),
+                local_pathway.get("headline"),
+                "Ruta local de salvage",
+            ),
+            _first_nonempty(
+                local_pathway.get("rationale"),
+                local_pathway.get("supporting_text"),
+                local_pathway.get("reason"),
+            ),
+            "required" if str(local_pathway.get("applicability_badge") or "").strip() == "selected_candidate" else "candidate",
+            source_label,
+        )
+
+    return adjuncts
+
+
+def _build_clinical_copy_bundle(
+    *,
+    state: str,
+    clinical_compass: dict[str, Any],
+    diagnosis_context: dict[str, Any],
+    care_intent_contract: dict[str, Any],
+    next_best_action: dict[str, Any],
+    triplet_decision: dict[str, Any],
+    metastatic_state_bundle: dict[str, Any] | None = None,
+    signal_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    runtime_action = dict(next_best_action or {})
+    diagnosis_context = dict(diagnosis_context or {})
+    care_intent_contract = dict(care_intent_contract or {})
+    triplet_decision = dict(triplet_decision or {})
+    metastatic_state_bundle = dict(metastatic_state_bundle or {})
+    signal_snapshot = dict(signal_snapshot or {})
+
+    action_title = _first_nonempty(
+        runtime_action.get("action_title"),
+        runtime_action.get("title"),
+        clinical_compass.get("primary_clinical_question"),
+        "Sin decisión prioritaria estructurada",
+    )
+    action_rationale = _first_nonempty(
+        runtime_action.get("action_rationale"),
+        runtime_action.get("rationale"),
+        clinical_compass.get("recommended_direction"),
+        "El copiloto no ha emitido una dirección adicional.",
+    )
+    transition_pending = bool(runtime_action.get("transition_pending"))
+    transition_title = _first_nonempty(runtime_action.get("transition_title"), "")
+    transition_rationale = _first_nonempty(runtime_action.get("transition_rationale"), "")
+    care_headline = str(care_intent_contract.get("headline") or "").strip()
+    care_narrative = str(care_intent_contract.get("narrative") or "").strip()
+    resolved_decision = _resolve_decision_copy(
+        state=state,
+        action_title=action_title,
+        action_rationale=action_rationale,
+        action_family=runtime_action.get("recommendation_family") or clinical_compass.get("recommendation_family"),
+        care_headline=care_headline,
+        care_narrative=care_narrative,
+        care_family=care_intent_contract.get("recommendation_family"),
+        structured_headline=clinical_compass.get("structured_decision_headline"),
+        structured_supporting_text=clinical_compass.get("structured_decision_supporting_text"),
+        structured_family=clinical_compass.get("structured_decision_family"),
+    )
+
+    decision_headline = resolved_decision.get("headline") or action_title
+    decision_support = resolved_decision.get("supporting_text") or action_rationale
+    official_headline = _first_nonempty(
+        diagnosis_context.get("official_diagnosis"),
+        diagnosis_context.get("operational_diagnosis"),
+        clinical_compass.get("official_diagnosis"),
+        "Diagnóstico en consolidación",
+    )
+    official_status = diagnosis_context.get("official_diagnosis_display_status") or "operational_only"
+    effective_state_label = _first_nonempty(
+        clinical_compass.get("effective_state_label"),
+        _effective_state_display_label(state),
+        state,
+    )
+    broader_state_label = _first_nonempty(
+        clinical_compass.get("current_stage_label"),
+        clinical_compass.get("operational_module_label"),
+        effective_state_label,
+    )
+    operational_headline = effective_state_label
+    operational_support = ""
+    if _is_present(broader_state_label) and _normalize_surface_text(broader_state_label) != _normalize_surface_text(operational_headline):
+        operational_support = broader_state_label
+    elif clinical_compass.get("state_conflict_flag") and _is_present(clinical_compass.get("state_conflict_reason")):
+        operational_support = clinical_compass.get("state_conflict_reason")
+
+    consistency_flags: list[str] = list(resolved_decision.get("flags") or [])
+    if official_status == "confirmed" and state in DIAGNOSTIC_STATES:
+        consistency_flags.append("diagnostic_state_with_confirmed_official_copy")
+    if transition_pending and _is_transition_like_headline(decision_headline):
+        consistency_flags.append("decision_copy_overridden_by_transition")
+    if (
+        state == "post_negative_biopsy_followup"
+        and "mantener seguimiento" in str(decision_headline).lower()
+        and "reabr" in str(action_title).lower()
+    ):
+        consistency_flags.append("reopen_signal_hidden_by_passive_followup_copy")
+    if _is_present(broader_state_label) and _normalize_surface_text(broader_state_label) != _normalize_surface_text(operational_headline):
+        consistency_flags.append("operational_state_headline_broader_than_effective_state")
+
+    metastatic_stage_resolved = str(metastatic_state_bundle.get("metastatic_stage_resolved") or "M0").strip()
+    metastatic_stage_label = _first_nonempty(
+        metastatic_state_bundle.get("metastatic_stage_label"),
+        metastatic_stage_resolved,
+    )
+    metastatic_detection_basis = str(metastatic_state_bundle.get("metastatic_detection_basis") or "").strip()
+    metastatic_known = metastatic_stage_resolved not in {"", "M0"}
+    detection_basis_label = {
+        "conventional": "imagen convencional",
+        "psma_only": "PET PSMA",
+        "both": "PET PSMA e imagen convencional",
+        "unknown": "fuente de detección no documentada",
+    }.get(metastatic_detection_basis, "")
+    nmcrpc_eligible = metastatic_state_bundle.get("nmcrpc_eligible")
+    nmcrpc_ineligibility_reason = str(metastatic_state_bundle.get("nmcrpc_ineligibility_reason") or "").strip()
+    state_reclassification_reason = str(metastatic_state_bundle.get("state_reclassification_reason") or "").strip()
+    restaging_update_required = bool(metastatic_state_bundle.get("restaging_update_required"))
+    restaging_currentness_status = str(metastatic_state_bundle.get("restaging_currentness_status") or "").strip()
+    restaging_update_reason = str(metastatic_state_bundle.get("restaging_update_reason") or "").strip()
+    progression_verification_required = bool(metastatic_state_bundle.get("progression_verification_required"))
+    progression_missing_fields = _displayize_field_list(
+        list(metastatic_state_bundle.get("progression_verification_missing_fields") or []),
+        limit=8,
+    )
+    progression_target_if_confirmed = str(
+        metastatic_state_bundle.get("progression_verification_target_state_if_confirmed") or ""
+    ).strip()
+    progression_target_if_not_castrate = str(
+        metastatic_state_bundle.get("progression_verification_target_state_if_not_castrate") or ""
+    ).strip()
+
+    metastatic_support_bits: list[str] = []
+    if detection_basis_label:
+        if metastatic_detection_basis == "unknown":
+            metastatic_support_bits.append(f"Base de detección: {detection_basis_label}.")
+        else:
+            metastatic_support_bits.append(f"Documentado por {detection_basis_label}.")
+    if state_reclassification_reason:
+        metastatic_support_bits.append(state_reclassification_reason)
+    if restaging_update_required and restaging_update_reason:
+        metastatic_support_bits.append(restaging_update_reason)
+
+    metastatic_state_display = _display_payload(
+        headline=metastatic_stage_label if metastatic_known else "",
+        supporting_text=" ".join(bit for bit in metastatic_support_bits if bit).strip(),
+        status="documented" if metastatic_known else "",
+        scope="metastatic_state",
+        source="metastatic_state_bundle",
+        visible=metastatic_known,
+        detection_basis=normalize_ui_value(metastatic_detection_basis, default=""),
+    )
+
+    nmcrpc_eligibility_headline = ""
+    nmcrpc_eligibility_support = ""
+    nmcrpc_eligibility_status = ""
+    nmcrpc_eligibility_visible = False
+    if metastatic_known:
+        nmcrpc_eligibility_headline = "m0 CRPC ya no es elegible"
+        nmcrpc_eligibility_support = _first_nonempty(
+            nmcrpc_ineligibility_reason,
+            state_reclassification_reason,
+            "La enfermedad metastásica documentada excluye el carril no metastásico.",
+        )
+        nmcrpc_eligibility_status = "ineligible"
+        nmcrpc_eligibility_visible = True
+    elif state in {"m0_crpc", "adt_progression_verification"}:
+        nmcrpc_eligibility_visible = True
+        if nmcrpc_eligible is True:
+            nmcrpc_eligibility_headline = "m0 CRPC sigue siendo elegible"
+            nmcrpc_eligibility_support = "Sin metástasis documentadas; el carril nmCRPC puede competir cuando el resto del dataset esté completo."
+            nmcrpc_eligibility_status = "eligible"
+        else:
+            nmcrpc_eligibility_headline = "Elegibilidad nmCRPC pendiente"
+            nmcrpc_eligibility_support = _first_nonempty(
+                nmcrpc_ineligibility_reason,
+                "Aún falta cerrar si el caso sigue siendo no metastásico y resistente a la castración.",
+            )
+            nmcrpc_eligibility_status = "provisional"
+
+    progression_support_bits: list[str] = []
+    if progression_missing_fields:
+        progression_support_bits.append("Faltan: " + ", ".join(progression_missing_fields) + ".")
+    if progression_target_if_confirmed:
+        progression_support_bits.append(f"Si se confirma CRPC: {progression_target_if_confirmed}.")
+    if progression_target_if_not_castrate:
+        progression_support_bits.append(f"Si no está castrado: {progression_target_if_not_castrate}.")
+    if restaging_update_required and restaging_update_reason:
+        progression_support_bits.append(restaging_update_reason)
+    progression_verification_display = _display_payload(
+        headline=(
+            "M1 documentado; falta cerrar castración y progresión resistente"
+            if metastatic_known
+            else "Falta cerrar castración y progresión resistente"
+        ),
+        supporting_text=" ".join(bit for bit in progression_support_bits if bit).strip(),
+        status="required" if progression_verification_required else "",
+        scope="progression_verification",
+        source="metastatic_state_bundle",
+        visible=progression_verification_required,
+    )
+
+    restaging_update_display = _display_payload(
+        headline=(
+            "M1 documentado; requiere restadificación actualizada"
+            if metastatic_known
+            else "Restadificación actualizada pendiente"
+        ),
+        supporting_text=_first_nonempty(
+            restaging_update_reason,
+            "La extensión anatómica vigente necesita actualización antes de redirigir el curso clínico actual.",
+        ),
+        status=restaging_currentness_status or "required",
+        scope="restaging_update",
+        source="metastatic_state_bundle",
+        visible=restaging_update_required,
+    )
+
+    if metastatic_known and state == "m0_crpc":
+        consistency_flags.append("m1_documented_in_m0_crpc_lane")
+    if metastatic_known and nmcrpc_eligible is True:
+        consistency_flags.append("m1_documented_with_nmcrpc_eligibility")
+
+    recommendation_scope_display = _display_payload(
+        headline=_first_nonempty(
+            triplet_decision.get("overall_preferred_frontline_regimen_label"),
+            triplet_decision.get("preferred_frontline_regimen_label"),
+        ),
+        supporting_text=_first_nonempty(
+            triplet_decision.get("display_triplet_vs_global_preference_note"),
+            triplet_decision.get("display_cross_scope_explanation"),
+        ),
+        status=triplet_decision.get("cross_scope_alignment") or "",
+        scope="recommendation_scope",
+        source="mhspc_triplet_decision",
+        visible=is_mhspc_state(state) and any(
+            _is_present(
+                triplet_decision.get(key)
+            )
+            for key in (
+                "overall_preferred_frontline_regimen_label",
+                "preferred_frontline_regimen_label",
+                "preferred_triplet_candidate_label",
+            )
+        ),
+        overall_preferred_label=normalize_ui_value(
+            _first_nonempty(
+                triplet_decision.get("overall_preferred_frontline_regimen_label"),
+                triplet_decision.get("preferred_frontline_regimen_label"),
+            ),
+            default="",
+        ),
+        preferred_triplet_candidate_label=normalize_ui_value(
+            triplet_decision.get("preferred_triplet_candidate_label"),
+            default="",
+        ),
+        preferred_triplet_candidate_caption=normalize_ui_value(
+            "Si hoy se reabriera triplete"
+            if triplet_decision.get("triplet_candidate_only_if_reopened")
+            else "Mejor triplete si compite hoy",
+            default="",
+        ),
+    )
+    local_adjuncts_visible = _build_local_adjuncts_visible(
+        state=state,
+        signal_snapshot=signal_snapshot,
+    )
+    local_adjuncts_headline = " · ".join(
+        item.get("label", "")
+        for item in local_adjuncts_visible[:3]
+        if _is_present(item.get("label"))
+    )
+    local_adjuncts_support = " ".join(
+        item.get("rationale", "")
+        for item in local_adjuncts_visible[:2]
+        if _is_present(item.get("rationale"))
+    ).strip()
+
+    return {
+        "official_diagnosis_display": _display_payload(
+            headline=official_headline,
+            supporting_text=diagnosis_context.get("official_diagnosis_source_summary"),
+            status=official_status,
+            scope="official_diagnosis",
+            source=diagnosis_context.get("official_diagnosis_source_summary") or "clasificación operativa",
+            visible=True,
+        ),
+        "operational_state_display": _display_payload(
+            headline=operational_headline,
+            supporting_text=operational_support,
+            status="pending_confirmation" if clinical_compass.get("state_conflict_flag") else "reconciled",
+            scope="operational_state",
+            source="reconciled_state",
+            visible=True,
+        ),
+        "decision_today_display": _display_payload(
+            headline=decision_headline,
+            supporting_text=decision_support,
+            status=clinical_compass.get("management_intent_status") or "",
+            scope="decision_today",
+            source=resolved_decision.get("source") or "next_best_action",
+            visible=True,
+        ),
+        "next_best_action_display": _display_payload(
+            headline=decision_headline,
+            supporting_text=decision_support,
+            status=resolved_decision.get("recommendation_family") or clinical_compass.get("recommendation_family") or "",
+            scope="next_best_action",
+            source=resolved_decision.get("source") or "next_best_action",
+            visible=True,
+        ),
+        "transition_display": _display_payload(
+            headline=transition_title,
+            supporting_text=transition_rationale,
+            status="pending" if transition_pending else "",
+            scope="transition",
+            source="transition_proposal",
+            visible=transition_pending,
+            target_state=normalize_ui_value(runtime_action.get("transition_target_state"), default=""),
+        ),
+        "metastatic_state_display": metastatic_state_display,
+        "nmcrpc_eligibility_display": _display_payload(
+            headline=nmcrpc_eligibility_headline,
+            supporting_text=nmcrpc_eligibility_support,
+            status=nmcrpc_eligibility_status,
+            scope="nmcrpc_eligibility",
+            source="metastatic_state_bundle",
+            visible=nmcrpc_eligibility_visible,
+        ),
+        "progression_verification_display": progression_verification_display,
+        "restaging_update_display": restaging_update_display,
+        "recommendation_scope_display": recommendation_scope_display,
+        "local_adjuncts_display": _display_payload(
+            headline=local_adjuncts_headline,
+            supporting_text=local_adjuncts_support,
+            status="visible" if local_adjuncts_visible else "",
+            scope="local_adjuncts",
+            source="signal_snapshot",
+            visible=bool(local_adjuncts_visible),
+        ),
+        "local_adjuncts_visible": local_adjuncts_visible,
+        "copy_consistency_flags": list(dict.fromkeys(flag for flag in consistency_flags if flag)),
+    }
+
+
+def _merge_unique_text(*groups: list[str], limit: int = 6) -> list[str]:
+    merged: list[str] = []
+    for group in groups:
+        for item in group:
+            if not _is_present(item):
+                continue
+            text = str(item).strip()
+            if text and text not in merged:
+                merged.append(text)
+            if len(merged) >= limit:
+                return merged
     return merged
 
 
@@ -1016,6 +2137,7 @@ def _build_clinical_compass(
     truth_values = dict(truth_snapshot.get("field_values") or {})
     guideline_plan = dict(guideline_followup_plan or {})
     care_intent = dict(care_intent_contract or {})
+    structured_decision = _structured_decision_candidate(raw_result)
     runtime_signal_snapshot = dict(patient.get("latest_signal_snapshot") or {})
     runtime_post_rt_bundle = dict(
         patient.get("post_rt_salvage_bundle")
@@ -1036,16 +2158,26 @@ def _build_clinical_compass(
         or truth_snapshot.get("latest_clinically_decisive_visit")
         or (freshness[1] if state in DIAGNOSTIC_STATES and len(freshness) > 1 else freshness[0])
     )
-    current_diagnosis = diagnosis_context.get("official_diagnosis") or _first_nonempty(
+    current_diagnosis = diagnosis_context.get("operational_diagnosis") or _first_nonempty(
         display_assessment.get("module_label"),
         STATE_DISPLAY_MAP.get(state),
         "Diagnóstico en consolidación",
     )
+    official_diagnosis = diagnosis_context.get("official_diagnosis") or current_diagnosis
     operational_module_label = (
         resolved_stage_label
         if assessment_state_mismatch
-        else _first_nonempty(display_assessment.get("module_label"), resolved_stage_label, state)
+        else (
+            resolved_stage_label
+            if _should_prefer_resolved_stage_label(
+                state=state,
+                module_label=display_assessment.get("module_label"),
+                resolved_stage_label=resolved_stage_label,
+            )
+            else _first_nonempty(display_assessment.get("module_label"), resolved_stage_label, state)
+        )
     )
+    effective_state_label = normalize_ui_value(_effective_state_display_label(state))
     modifier_bundle = copilot_modifiers or {}
     what_could_change_course = _merge_unique_text(
         _as_list(display_result.get("decision_changing_inputs"))[:4] or _as_list(display_result.get("missing_critical_inputs"))[:4],
@@ -1077,12 +2209,37 @@ def _build_clinical_compass(
             runtime_action.get("rationale"),
         ).lower()
     )
+    resolved_decision = _resolve_decision_copy(
+        state=state,
+        action_title=_first_nonempty(
+            runtime_action.get("action_title"),
+            runtime_action.get("title"),
+            PRIMARY_QUESTION_MAP.get(state),
+        ),
+        action_rationale=_first_nonempty(
+            runtime_action.get("action_rationale"),
+            runtime_action.get("rationale"),
+            nccn.get("trayectoria_recomendada"),
+            nccn.get("recommendation"),
+            "Sin dirección priorizada",
+        ),
+        action_family=_first_nonempty(
+            runtime_action.get("recommendation_family"),
+            decision_quality.get("recommendation_family"),
+            raw_result.get("recommendation_family"),
+        ),
+        care_headline=care_intent.get("headline"),
+        care_narrative=care_intent.get("narrative"),
+        care_family=care_intent.get("recommendation_family"),
+        structured_headline=structured_decision.get("headline"),
+        structured_supporting_text=structured_decision.get("supporting_text"),
+        structured_family=structured_decision.get("recommendation_family"),
+    )
     recommended_direction = (
         "La etapa longitudinal reconciliada requiere confirmar transición y reemitir recomendación modular sobre el estado vigente."
         if state_conflict and not salvage_conflict_override
         else _first_nonempty(
-            care_intent.get("narrative"),
-            runtime_action.get("rationale"),
+            resolved_decision.get("supporting_text"),
             nccn.get("trayectoria_recomendada"),
             nccn.get("recommendation"),
             "Sin dirección priorizada",
@@ -1104,8 +2261,7 @@ def _build_clinical_compass(
         "Estado reconciliado por confirmar"
         if state_conflict and not salvage_conflict_override
         else _first_nonempty(
-            care_intent.get("recommendation_family"),
-            runtime_action.get("recommendation_family"),
+            resolved_decision.get("recommendation_family"),
             decision_quality.get("recommendation_family"),
             raw_result.get("recommendation_family"),
             "No documentada",
@@ -1171,18 +2327,20 @@ def _build_clinical_compass(
             ]
     return {
         "current_diagnosis": normalize_ui_value(current_diagnosis),
-        "official_diagnosis": normalize_ui_value(current_diagnosis),
+        "official_diagnosis": normalize_ui_value(official_diagnosis),
         "official_diagnosis_status": diagnosis_context.get("official_diagnosis_status", "missing"),
+        "official_diagnosis_display_status": diagnosis_context.get("official_diagnosis_display_status", "operational_only"),
         "official_diagnosis_missing_fields": diagnosis_context.get("official_diagnosis_missing_fields", []),
         "official_diagnosis_source_summary": normalize_ui_value(diagnosis_context.get("official_diagnosis_source_summary", ""), default=""),
         "operational_module_label": normalize_ui_value(operational_module_label),
+        "effective_state_label": effective_state_label,
         "current_stage_label": normalize_ui_value(resolved_stage_label if (state_conflict or assessment_state_mismatch) else operational_module_label),
         "explicit_stage_label": normalize_ui_value(_first_nonempty(STATE_DISPLAY_MAP.get(reconciliation.get("explicit_state")), reconciliation.get("explicit_state")), default=""),
         "state_conflict_flag": state_conflict,
         "state_conflict_reason": reconciliation.get("state_conflict_reason", ""),
         "management_intent_status": normalize_ui_value(_first_nonempty(latest_event.get("management_intent_status_label"), "Pendiente de confirmación")),
         "event_kind_label": normalize_ui_value(_first_nonempty(latest_event.get("event_kind_label"), "Recomendación generada")),
-        "primary_clinical_question": normalize_ui_value(_first_nonempty(care_intent.get("headline"), runtime_action.get("title"), PRIMARY_QUESTION_MAP.get(state), "¿Cuál es la siguiente mejor decisión clínica?")),
+        "primary_clinical_question": normalize_ui_value(_first_nonempty(resolved_decision.get("headline"), PRIMARY_QUESTION_MAP.get(state), "¿Cuál es la siguiente mejor decisión clínica?")),
         "recommended_direction": normalize_ui_value(recommended_direction),
         "why_this_now": why_this_now,
         "what_could_change_course": what_could_change_course,
@@ -1198,6 +2356,12 @@ def _build_clinical_compass(
         "active_modifiers": modifier_bundle.get("active_modifiers", []),
         "safety_modifiers": modifier_bundle.get("safety_modifiers", []),
         "longitudinal_truth_summary": truth_values,
+        "transition_pending": bool(runtime_action.get("transition_pending")),
+        "transition_title": normalize_ui_value(runtime_action.get("transition_title"), default=""),
+        "transition_rationale": normalize_ui_value(runtime_action.get("transition_rationale"), default=""),
+        "structured_decision_headline": normalize_ui_value(structured_decision.get("headline"), default=""),
+        "structured_decision_supporting_text": normalize_ui_value(structured_decision.get("supporting_text"), default=""),
+        "structured_decision_family": normalize_ui_value(structured_decision.get("recommendation_family"), default=""),
     }
 
 
@@ -1265,9 +2429,12 @@ def _localized_shared_decision_panel(patient: dict[str, Any], raw_assessment: di
     items = [
         {"label": "IPSS basal", "value": _first_nonempty(payload.get("ipss_score"), baseline_pro.get("ipss_total"), patient.get("demographics", {}).get("ipss_score"), "No documentado")},
         {"label": "IIEF-5 basal", "value": _first_nonempty(payload.get("iief5_score"), baseline_pro.get("iief5_score"), patient.get("demographics", {}).get("iief5_score"), "No documentado")},
-        {"label": "QoL urinaria basal", "value": _first_nonempty(payload.get("baseline_urinary_qol"), "No documentada")},
-        {"label": "QoL sexual basal", "value": _first_nonempty(payload.get("baseline_sexual_qol"), "No documentada")},
-        {"label": "QoL intestinal basal", "value": _first_nonempty(payload.get("baseline_bowel_qol"), "No documentada")},
+        {"label": "EPIC-26 urinario: incontinencia", "value": _first_nonempty(payload.get("epic26_urinary_incontinence_domain"), baseline_pro.get("epic26_urinary_incontinence_domain"), payload.get("epic26_urinary_domain"), baseline_pro.get("epic26_urinary_domain"), "No documentado")},
+        {"label": "EPIC-26 urinario: irritativo/obstructivo", "value": _first_nonempty(payload.get("epic26_urinary_irritative_domain"), baseline_pro.get("epic26_urinary_irritative_domain"), payload.get("epic26_urinary_domain"), baseline_pro.get("epic26_urinary_domain"), "No documentado")},
+        {"label": "EPIC-26 sexual", "value": _first_nonempty(payload.get("epic26_sexual_domain"), baseline_pro.get("epic26_sexual_domain"), "No documentado")},
+        {"label": "EPIC-26 intestinal", "value": _first_nonempty(payload.get("epic26_bowel_domain"), baseline_pro.get("epic26_bowel_domain"), "No documentado")},
+        {"label": "EPIC-26 hormonal", "value": _first_nonempty(payload.get("epic26_hormonal_domain"), baseline_pro.get("epic26_hormonal_domain"), "No documentado")},
+        {"label": "EPIC-26 molestia urinaria global", "value": _first_nonempty(payload.get("epic26_overall_urinary_bother"), baseline_pro.get("epic26_overall_urinary_bother"), "No documentado")},
     ]
     delta_bullets = _build_pro_delta_summary(pros)
     return {
@@ -1275,6 +2442,108 @@ def _localized_shared_decision_panel(patient: dict[str, Any], raw_assessment: di
         "subtitle": "Base funcional y de beneficio absoluto antes de definir cirugía, radioterapia o vigilancia.",
         "items": items,
         "bullets": delta_bullets or _as_list(display_result.get("nccn_primary", {}).get("mensaje_para_toma_de_decisiones_compartida")) or _as_list(display_result.get("supportive_evidence_context"))[:2],
+    }
+
+
+def _localized_epic26_panel(
+    patient: dict[str, Any],
+    raw_assessment: dict[str, Any],
+    display_result: dict[str, Any],
+    raw_result: dict[str, Any],
+) -> dict[str, Any]:
+    display_scores = list(display_result.get("epic26_domain_scores") or [])
+    if not display_scores:
+        payload = dict((raw_assessment or {}).get("input_snapshot") or {})
+        pros = list(patient.get("pros") or [])
+        baseline_pro = dict(pros[0] or {}) if pros else {}
+        merged_scores = dict(baseline_pro)
+        merged_scores.update({key: value for key, value in payload.items() if value not in (None, "")})
+        display_scores = extract_epic26_domain_scorecards(build_score_interpretation_snapshot(merged_scores))
+    items = [
+        {
+            "label": score.get("score_label_es") or "",
+            "value": score.get("score_value", "No documentado"),
+            "detail": " · ".join(
+                part
+                for part in (
+                    score.get("score_grade_es"),
+                    score.get("clinical_equivalence_es"),
+                    f"Rango {score.get('band_range')}" if score.get("band_range") else "",
+                )
+                if part
+            ),
+        }
+        for score in display_scores
+    ]
+    localized_bundle = dict(raw_result.get("localized_modality_fitness_bundle") or {})
+    bullets = []
+    tradeoff_summary = str((raw_result.get("localized_tradeoff_bundle") or {}).get("tradeoff_summary") or "")
+    epic26_role_summary = str(localized_bundle.get("epic26_role_summary") or "")
+    epic26_guardrail = str(
+        (localized_bundle.get("epic26_governance_contract") or {}).get("governance_guardrail") or ""
+    )
+    if tradeoff_summary:
+        bullets.append(tradeoff_summary)
+    if epic26_role_summary:
+        bullets.append(epic26_role_summary)
+    if epic26_guardrail:
+        bullets.append(epic26_guardrail)
+    bullets.extend(list(localized_bundle.get("epic26_shared_decision_signals") or [])[:4])
+    if not items:
+        return {}
+    return {
+        "title": "EPIC-26 basal interpretado",
+        "subtitle": "Dominios oficiales del cuestionario licenciado en español usados como línea basal funcional, comparación de toxicidad y apoyo de decisión compartida.",
+        "items": items,
+        "bullets": list(dict.fromkeys(item for item in bullets if item)),
+    }
+
+
+def _localized_modality_panel(
+    localized_modality_fitness_bundle: dict[str, Any],
+    localized_tradeoff_bundle: dict[str, Any],
+    patient_priority_profile: dict[str, Any],
+) -> dict[str, Any]:
+    dominant_modality = str(localized_modality_fitness_bundle.get("dominant_modality") or "")
+    rp_candidacy_profile = dict(localized_modality_fitness_bundle.get("radical_prostatectomy_candidacy_profile") or {})
+    survival_context_bundle = dict(localized_modality_fitness_bundle.get("localized_survival_context_bundle") or {})
+    modality_label = {
+        "active_surveillance": "Vigilancia activa",
+        "surgery": "Cirugía",
+        "radiotherapy": "Radioterapia",
+        "observation": "Observación clínica",
+        "multimodal_local": "Control local multimodal",
+    }.get(dominant_modality, "Sin modalidad dominante cerrada")
+    items = [
+        {"label": "Modalidad dominante hoy", "value": modality_label},
+        {"label": "Estado de aptitud", "value": _first_nonempty(localized_modality_fitness_bundle.get("modality_fitness_status"), "No documentado")},
+        {"label": "Candidato a RP", "value": _first_nonempty(rp_candidacy_profile.get("candidate_status"), "No documentado")},
+        {"label": "Cirugía", "value": _first_nonempty(localized_modality_fitness_bundle.get("surgery_status"), "No documentado")},
+        {"label": "Radioterapia", "value": _first_nonempty(localized_modality_fitness_bundle.get("radiotherapy_status"), "No documentado")},
+        {"label": "Vigilancia activa", "value": _first_nonempty(localized_modality_fitness_bundle.get("active_surveillance_status"), "No documentado")},
+    ]
+    bullets = _merge_unique_text(
+        [rp_candidacy_profile.get("candidate_summary")],
+        list(rp_candidacy_profile.get("oncologic_reasons") or [])[:2],
+        list(rp_candidacy_profile.get("fitness_reasons") or [])[:2],
+        [survival_context_bundle.get("summary")],
+        [localized_modality_fitness_bundle.get("dominance_reason")],
+        [localized_tradeoff_bundle.get("tradeoff_summary")],
+        [
+            "Prioridades del paciente: " + ", ".join(patient_priority_profile.get("priorities") or [])
+            if patient_priority_profile.get("available")
+            else "Faltan prioridades explícitas del paciente cuando hoy compiten modalidades oncológicamente cercanas."
+        ],
+        list(localized_modality_fitness_bundle.get("why_not_surgery") or [])[:1],
+        list(localized_modality_fitness_bundle.get("why_not_radiotherapy") or [])[:1],
+        list(localized_modality_fitness_bundle.get("why_not_active_surveillance") or [])[:1],
+        limit=6,
+    )
+    return {
+        "title": "Aptitud por modalidad local",
+        "subtitle": "Qué modalidad domina hoy y qué trade-off funcional o preferencial explica la diferencia.",
+        "items": items,
+        "bullets": bullets,
     }
 
 
@@ -1320,12 +2589,36 @@ def _diagnostic_panel(patient: dict[str, Any], raw_assessment: dict[str, Any]) -
     ]
 
 
-def _localized_panels(patient: dict[str, Any], raw_assessment: dict[str, Any], display_result: dict[str, Any], raw_result: dict[str, Any]) -> list[dict[str, Any]]:
+def _localized_panels(
+    patient: dict[str, Any],
+    raw_assessment: dict[str, Any],
+    display_result: dict[str, Any],
+    raw_result: dict[str, Any],
+    *,
+    localized_modality_fitness_bundle: dict[str, Any] | None = None,
+    localized_tradeoff_bundle: dict[str, Any] | None = None,
+    patient_priority_profile: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    localized_modality_fitness_bundle = dict(localized_modality_fitness_bundle or {})
+    localized_tradeoff_bundle = dict(localized_tradeoff_bundle or {})
+    patient_priority_profile = dict(patient_priority_profile or {})
     panels = [
         _localized_decision_board(raw_result),
         _localized_context_panel(patient, raw_assessment),
         _localized_shared_decision_panel(patient, raw_assessment, display_result),
     ]
+    epic26_panel = _localized_epic26_panel(patient, raw_assessment, display_result, raw_result)
+    if epic26_panel.get("items"):
+        panels.insert(2, epic26_panel)
+    if localized_modality_fitness_bundle:
+        panels.insert(
+            1,
+            _localized_modality_panel(
+                localized_modality_fitness_bundle,
+                localized_tradeoff_bundle,
+                patient_priority_profile,
+            ),
+        )
     eligible_names = {item.get("name") for item in raw_result.get("eligible_treatments", [])}
     if "Prostatectomía radical" in eligible_names or "Radical prostatectomy" in eligible_names:
         panels.insert(
@@ -1721,6 +3014,60 @@ def _build_advanced_panel_context(
             formatter=lambda value: value if str(value).lower() in {"alto", "intermedio", "bajo"} else _yes_no(value),
             drives_eligibility=False,
         ),
+        # EPIC 9 Group A (GAPs 1,2,3) — exposición oficial del bundle
+        # cardiológico/geriátrico que discrimina molécula ARPI en mHSPC/mCRPC:
+        # edad (STAMPEDE >75 subanálisis), QTc (ENZAMET FDA §5.4), NYHA y LVEF
+        # (COU-AA-302 excluyó NYHA III/IV).
+        _resolved_item(
+            label="Edad (discriminador ARPI)",
+            field_name="patient_age",
+            candidates=[
+                _verified_candidate("patient_age"),
+                _visit_candidate("patient_age"),
+                _assessment_candidate("patient_age"),
+                _visit_candidate("age"),
+                _assessment_candidate("age"),
+                _candidate(baseline.get("age"), "clinical_baseline", patient.get("identity", {}).get("diagnosis_date"), "captured") if _is_present(baseline.get("age")) else None,
+            ],
+            formatter=lambda value: f"{_safe_int(value) or value} años" if _is_present(value) else "No documentada",
+            drives_eligibility=True,
+        ),
+        _resolved_item(
+            label="QTc basal",
+            field_name="qtc_baseline_ms",
+            candidates=[
+                _verified_candidate("qtc_baseline_ms"),
+                _visit_candidate("qtc_baseline_ms"),
+                _assessment_candidate("qtc_baseline_ms"),
+                _verified_candidate("qtc_ms"),
+                _visit_candidate("qtc_ms"),
+                _assessment_candidate("qtc_ms"),
+            ],
+            formatter=lambda value: f"{_safe_float(value):.0f} ms" if _safe_float(value) is not None else str(value),
+            drives_eligibility=True,
+        ),
+        _resolved_item(
+            label="Clase funcional NYHA",
+            field_name="nyha_class",
+            candidates=[
+                _verified_candidate("nyha_class"),
+                _visit_candidate("nyha_class"),
+                _assessment_candidate("nyha_class"),
+            ],
+            formatter=lambda value: f"NYHA {value}" if value and str(value).upper() in {"I", "II", "III", "IV"} else str(value or ""),
+            drives_eligibility=True,
+        ),
+        _resolved_item(
+            label="LVEF basal",
+            field_name="lvef_percent",
+            candidates=[
+                _verified_candidate("lvef_percent"),
+                _visit_candidate("lvef_percent"),
+                _assessment_candidate("lvef_percent"),
+            ],
+            formatter=lambda value: f"{_safe_float(value):.0f} %" if _safe_float(value) is not None else str(value),
+            drives_eligibility=True,
+        ),
         {
             "label": "Bundle óseo",
             "field_name": "bone_bundle",
@@ -1736,8 +3083,10 @@ def _build_advanced_panel_context(
         },
         _resolved_item(
             label="Interacciones y overlays",
-            field_name="drug_interaction_reviewed",
+            field_name="ddi_review_status",
             candidates=[
+                _verified_candidate("ddi_review_status"),
+                _visit_candidate("ddi_review_status"),
                 _verified_candidate("drug_interaction_reviewed"),
                 _visit_candidate("drug_interaction_reviewed"),
                 _candidate(
@@ -1891,13 +3240,24 @@ def _build_stage_specific_panels(
     raw_assessment: dict[str, Any],
     display_assessment: dict[str, Any],
     copilot_modifiers: dict[str, Any] | None = None,
+    localized_modality_fitness_bundle: dict[str, Any] | None = None,
+    localized_tradeoff_bundle: dict[str, Any] | None = None,
+    patient_priority_profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     raw_result = (raw_assessment or {}).get("result_snapshot", {}) if raw_assessment else {}
     display_result = (display_assessment or {}).get("display_result", {}) if display_assessment else {}
     if state in DIAGNOSTIC_STATES:
         panels = _diagnostic_panel(patient, raw_assessment)
     elif state in LOCALIZED_STATES:
-        panels = _localized_panels(patient, raw_assessment, display_result, raw_result)
+        panels = _localized_panels(
+            patient,
+            raw_assessment,
+            display_result,
+            raw_result,
+            localized_modality_fitness_bundle=localized_modality_fitness_bundle,
+            localized_tradeoff_bundle=localized_tradeoff_bundle,
+            patient_priority_profile=patient_priority_profile,
+        )
     elif state in POSTLOCAL_STATES:
         panels = _postlocal_panels(patient, raw_assessment, display_result)
     elif state in ADVANCED_STATES:
@@ -2094,6 +3454,435 @@ def _build_triplet_decision_for_profile(
         payload,
         docetaxel_bundle=raw_result.get("docetaxel_fitness"),
     )
+
+
+# ── Faubot 2026-04-25 (VIII) — UI card pivotal_contraindication_gates ─
+
+
+def _build_pivotal_contraindication_gates_panel(
+    raw_assessment: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Construye el panel UI de los gates pivotal disparados por el paciente.
+
+    Faubot 2026-04-25 (VIII) — Hace visible al clínico la cadena de
+    razonamiento (CÓMO + POR QUÉ) que hasta ahora vivía oculta en el
+    `result_snapshot.pivotal_contraindication_gates`. Replica el patrón
+    de `_build_pivotal_panel` pero adaptado al rastro estructurado de
+    los 18 gates centralizados.
+
+    Faubot 2026-04-25 (XVII) — Extensión cross-alert badges por gate:
+    cada gate ahora se enriquece con su lista de DDI cross-alerts (si
+    `current_medications` está poblado en el input_snapshot). Cierra
+    100% la dimensión CÓMO al traer el razonamiento cruzado al perfil
+    individual del paciente, sin necesidad de consultar el dashboard
+    poblacional o el endpoint `/api/decision-audit/`.
+
+    Cada gate viene del backend con: code, severity, message, evidence_tag,
+    trial_refs. El panel agrupa por:
+      - severity (hard_block, soft, etc.)
+      - clase farmacológica deducida del code prefix:
+          * radium223_*    → "Radio-223"
+          * lutetium177_*  → "Lutetium-177-PSMA"
+          * parp_inhibitor_* → "PARP inhibitors"
+          * qtc_*, lvef_*, severe_heart_failure_*, uncontrolled_hypertension → "ARPI cardiotox"
+          * resto → "Otros"
+
+    Retorna un dict con métricas agregadas + lista enriquecida lista para
+    Jinja:
+      {
+        "has_gates": bool,
+        "total": int,
+        "hard_block_count": int,
+        "by_class": {clase: count, ...},
+        "gates": [{code, severity, message, evidence_tag, trial_refs,
+                   class_label, severity_color,
+                   # Faubot XVII:
+                   cross_alerts: [{drug_a, drug_b, severity, category,
+                                   action, reference, message, color}],
+                   has_cross_alerts: bool,
+                   meds_capture_gap: bool,
+                   cross_alerts_count: int}, ...],
+        "summary_text": str,
+        # Faubot XVII — Métricas agregadas:
+        "total_cross_alerts": int,
+        "gates_with_cross_alerts_count": int,
+        "meds_capture_gap_count": int,
+        "has_medications_captured": bool,
+      }
+    """
+    raw_result = (raw_assessment or {}).get("result_snapshot", {}) if raw_assessment else {}
+    raw_gates = list(raw_result.get("pivotal_contraindication_gates") or [])
+    if not raw_gates:
+        return {
+            "has_gates": False,
+            "total": 0,
+            "hard_block_count": 0,
+            "by_class": {},
+            "gates": [],
+            "summary_text": "Sin contraindicaciones pivote activas.",
+            # Faubot XVII — defaults para forward-compat
+            "total_cross_alerts": 0,
+            "gates_with_cross_alerts_count": 0,
+            "meds_capture_gap_count": 0,
+            "has_medications_captured": False,
+        }
+
+    # Mapping clase farmacológica por prefix de gate code.
+    def _classify(code: str) -> str:
+        """Faubot 2026-04-25 (XXXVI / XLII) — Auditoría #45 + #45.1: extendido para
+        cubrir los 11 gates añadidos en #38-#44 (gates 20-30). Cada gate
+        nuevo recibe class_label específico para que el UI panel
+        agrupe cards por categoría clínica clara.
+
+        Faubot XLII (Auditoría #45.1) — añade class_labels para gates 29-30
+        (olaparib_renal_dysfunction_grade3 + lutetium177_fatigue_grade3) que
+        antes caían en class_label genérico (snake_case técnico para gate 29,
+        prefix-match "Lu-177-PSMA" indiferenciado para gate 30). Los nuevos
+        labels permiten al clínico identificar visualmente la dimensión
+        safety afectada (renal vs fatigue) sin abrir devtools.
+        """
+        c = (code or "").lower()
+        # Faubot XXXVI — Specific exact-matches MUST be checked BEFORE prefix matches
+        # Gates 19+20 ARSI safety profile (specific differentiated)
+        if c == "arsi_in_cognitive_decline_grade2":
+            return "ARSI deterioro cognitivo"
+        if c == "arsi_in_seizure_history_grade3":
+            return "ARSI convulsiones"
+        # Faubot XXVI — Gate 21 abiraterona hepatotox
+        if c == "abiraterone_hepatotoxicity_grade3":
+            return "Hepatotoxicidad abiraterona"
+        # Faubot XXXIV — Gate 28 abiraterona adrenal axis
+        if c == "abiraterone_adrenal_insufficiency":
+            return "Adrenal axis abiraterona"
+        # Faubot XXVII — Gate 24 docetaxel longitudinal
+        if c == "docetaxel_neuropathy_longitudinal_grade2_post_4_cycles":
+            return "Taxanes neuropathy longitudinal"
+        # Faubot XXXIII — Gate 25 PI3K/AKT inhibitors
+        if c == "ipatasertib_hyperglycemia_grade3":
+            return "PI3K/AKT metabólico"
+        # Faubot XXXIV — Gate 26 cabazitaxel hipersensibilidad histamine-mediated
+        if c == "cabazitaxel_hypersensitivity_grade3":
+            return "Hipersensibilidad cabazitaxel"
+        # Faubot XXXIV — Gate 27 Ra-223 + FRAX score (BEFORE radium223_ prefix)
+        if c == "radium223_high_fracture_risk_frax":
+            return "Hueso (FRAX score)"
+        # Faubot XLII (#45.1) — Gate 29 olaparib renal G3 (BEFORE general
+        # creatinine_clearance_lt_30 que es para rucaparib gate 10)
+        if c == "olaparib_renal_dysfunction_grade3":
+            return "Renal olaparib (PROfound + Lynparza §2.3)"
+        # Faubot XLII (#45.1) — Gate 30 Lu-177 fatigue G3 (BEFORE lutetium177_
+        # prefix general, mismo patrón que gate 27 antes de radium223_ prefix)
+        if c == "lutetium177_fatigue_grade3":
+            return "Fatigue Lu-177 (VISION + Pluvicto §6)"
+        # Faubot XLIII (#46) — Gate 31 enzalutamida cognitive elderly
+        # (BEFORE qtc_/lvef_ prefixes para ARPI cardiotox; gate 31 NO empieza
+        # con esos prefixes pero documentamos el orden defensivo)
+        if c == "enzalutamide_cognitive_decline_elderly":
+            return "Enzalutamida cognitive elderly (UCSF 2024 + Marcum JAMA Oncol)"
+        # Faubot XLIV (#47) — Gate 32 darolutamida hepatotox G3 hepatocelular
+        # (distinto del patrón colestásico de gate 21 abiraterona)
+        if c == "darolutamide_hepatotoxicity_grade3":
+            return "Hepatotox darolutamida (ARANOTE/ARASENS + Nubeqa §6)"
+        # Faubot XLVII (#48) — Gate 33 niraparib caída rápida plt longitudinal
+        # (BEFORE niraparib_ prefix general gates 22-23; este es signal
+        # longitudinal vs gates 22-23 que son baseline absoluto)
+        if c == "niraparib_thrombocytopenia_rapid_drop":
+            return "Niraparib caída plt longitudinal (MAGNITUDE Chi NEJM 2023)"
+        # Faubot XLVIII (#49) — Gate 34 docetaxel caída ANC longitudinal
+        if c == "docetaxel_neutropenia_rapid_drop":
+            return "Docetaxel caída ANC longitudinal (TAX-327 + STAMPEDE Arm C)"
+        # Faubot XLIX (#56) — Gate 35 ARSI/abi VTE risk
+        if c == "arsi_abiraterone_vte_risk_high":
+            return "TEV ARSI/abiraterona (COU-AA-302 + LATITUDE + Klil-Drori 2019)"
+        # Faubot L (#60) — Gate 36 triplete frailty G8
+        if c == "triplete_frailty_g8_low":
+            return "Triplete + frailty G8 ≤14 (PEACE-1/ARASENS elderly subset)"
+        # Faubot LI (#53) — Gates 37+38 Sipuleucel-T immunoterapia
+        if c == "sipuleucel_t_severe_irr":
+            return "Sipuleucel-T IRR severo (IMPACT + Provenge §5.1)"
+        if c == "sipuleucel_t_febrile_neutropenia_post_leukapheresis":
+            return "Sipuleucel-T febrile neutropenia (IMPACT + Provenge §5.2)"
+        # Faubot LIII (#50) — Gate 39 abiraterona ALP rise longitudinal colestásico
+        if c == "abiraterone_alp_rapid_rise_longitudinal":
+            return "ALP rise abiraterona longitudinal (LATITUDE + Zytiga §5.1)"
+        # Faubot LIV (#51) — Gate 40 Lu-177 Hb drop longitudinal anemia
+        # (BEFORE lutetium177_ prefix general gates 13-14)
+        if c == "lutetium177_hb_rapid_drop_longitudinal":
+            return "Hb drop Lu-177 longitudinal (VISION supplementary + Pluvicto §6)"
+        # Faubot LV (#52) — Gate 41 cabazitaxel Hb drop longitudinal anemia
+        if c == "cabazitaxel_hb_rapid_drop_longitudinal":
+            return "Hb drop cabazitaxel longitudinal (TROPIC + CARD + Jevtana §6)"
+        # Faubot LVI (#57) — Gate 42 apalutamida SJS/TEN (PRIMER gate
+        # dermatológico del catálogo + PRIMER gate sin override por
+        # contraindicación absoluta irreversible per Erleada §5.2)
+        if c == "apalutamide_severe_rash_sjs_ten":
+            return "SJS/TEN apalutamida (Erleada §5.2 + SPARTAN/TITAN)"
+        # Faubot LVII (#54) — Gates 43-46 Checkpoint inhibitors irAE
+        # (2da clase IO post Sipuleucel-T, KEYNOTE-365/921 + NCCN IO Toxicity 2024)
+        if c == "checkpoint_inhibitor_pneumonitis_grade2_plus":
+            return "Pneumonitis IO (KEYNOTE + NCCN §PNEU-1)"
+        if c == "checkpoint_inhibitor_hepatitis_grade3_plus":
+            return "Hepatitis IO (KEYNOTE/CheckMate + NCCN §HEP-1)"
+        if c == "checkpoint_inhibitor_colitis_grade3_plus":
+            return "Colitis IO (KEYNOTE/CheckMate + NCCN §GI-1)"
+        if c == "checkpoint_inhibitor_endocrinopathy_new_onset":
+            return "Endocrinopatías IO (KEYNOTE/Sznol + NCCN §END-1)"
+        # Faubot LVIII (#62) — Gate 47 PSA flare ARPI (informacional/soft_warning)
+        if c == "psa_flare_arpi_pseudoprogression":
+            return "PSA flare ARPI (PCWG3 2016 — anti-misinterpretation)"
+        # Faubot LIX (#58) — Gate 48 enzalutamida hyponatremia/SIADH
+        # (PRIMER gate electrólitos críticos del catálogo)
+        if c == "enzalutamide_hyponatremia_siadh":
+            return "Hiponatremia/SIADH enzalutamida (PREVAIL+AFFIRM + Bartter-Schwartz)"
+        # Faubot LX (#59) — Gate 49 abiraterona hipokalemia/pseudo-aldosteronismo
+        # (SEGUNDO gate electrólitos críticos — completa eje Na+K)
+        if c == "abiraterone_hypokalemia_grade3":
+            return "Hipokalemia abiraterona (COU-AA-302+LATITUDE + pseudo-aldosteronismo CYP17)"
+        # Faubot LXI (#64) — Gate 50 hipocalcemia EXTENDIDA bone-targeted
+        # (extiende gate 12 Ra-223 a clase entera: bisfosfonatos+denosumab+Lu-177)
+        if c == "bone_targeted_hypocalcemia_extended":
+            return "Hipocalcemia bone-targeted EXTENDIDA (ASCO Bone Health 2024 + Henry/Fizazi 2011)"
+        # Faubot LXII (#65) — Gate 51 ONJ post-bisfos+denosumab (AAOMS 2022)
+        # (2do gate categoría bone-targeted post #64; reusa REGIMEN_CODES_BONE_TARGETED)
+        if c == "bone_targeted_osteonecrosis_jaw":
+            return "ONJ bone-targeted (AAOMS 2022 + ASCO Bone Health 2024)"
+        # Faubot LXIII (#66) — Gate 52 PARP MDS/AML longitudinal emergente
+        # (6° gate longitudinal del catálogo; cubre MDS/AML EMERGENTE
+        # durante tratamiento PARPi vs gate 16 que cubre history pre-tx)
+        if c == "parp_inhibitor_mds_aml_longitudinal":
+            return "MDS/AML PARP longitudinal (MAGNITUDE+PROfound + WHO 2022)"
+        # Faubot LXIV (#63A) — Gates 53/54/55 PSA Kinetics (post-RP/RT/m0CRPC)
+        # 3 gates informacionales/anti-misinterpretation soft_warning
+        if c == "psa_velocity_bcr_aggressive":
+            return "BCR agresivo post-RP (Stephenson JCO 2009 + RTOG-9601)"
+        if c == "psa_bounce_post_rt_pseudoprogression":
+            return "PSA bounce post-RT (Crook IJROBP 2010 + Phoenix 2006 — anti-misinterpretation)"
+        if c == "psa_doubling_time_progressive":
+            return "PSADT progresivo m0CRPC → ARPI (SPARTAN/PROSPER/ARAMIS pivotal)"
+        # Now general prefix matches (after specific exact matches above)
+        if c.startswith("radium223_"):
+            return "Radio-223"
+        if c.startswith("lutetium177_"):
+            return "Lu-177-PSMA"
+        if c.startswith("parp_inhibitor_"):
+            return "PARP inhibitors"
+        # Faubot XXVI — Gates 22-23 niraparib específico (clase distinta de PARPi general)
+        if c.startswith("niraparib_"):
+            return "PARPi específico niraparib"
+        # Faubot XIII-XIV — Gates 17, 18 ARPI cardiotox prefix-based
+        if c.startswith("qtc_") or c.startswith("lvef_"):
+            return "ARPI cardiotoxicidad"
+        if c == "severe_heart_failure_nyha_iii_iv":
+            return "Cardiotoxicidad genérica"
+        if c == "uncontrolled_hypertension":
+            return "Cardiotoxicidad genérica"
+        if c == "uncontrolled_diabetes":
+            return "Metabólicas"
+        if c == "severe_neuropathy_grade3":
+            return "Neurológicas"
+        if c == "no_bone_protective_agent":
+            return "Hueso"
+        if c == "ecog_2_or_more_for_triplets":
+            return "Performance status"
+        if c == "creatinine_clearance_lt_30":
+            return "Renal"
+        if c.endswith("_hypersensitivity"):
+            return "Hipersensibilidad"
+        if c == "prior_arpi_exposure_mhspc":
+            return "Exposición previa"
+        return "Otros"
+
+    def _severity_color(severity: str) -> str:
+        # Tailwind classes para color-coding
+        s = (severity or "").lower()
+        if s == "hard_block":
+            return "rose"  # rojo intenso
+        if s == "soft":
+            return "amber"
+        if s == "high":
+            return "orange"
+        return "slate"
+
+    # Faubot 2026-04-25 (XVII) — Pre-compute cross-alerts per gate.
+    # Re-ejecutamos el cross-check con el input_snapshot para obtener
+    # la lista de cross-alerts DDI por cada gate triggered. Si el input
+    # no tiene `current_medications`/`concomitant_medications`, el
+    # cross-check retorna vacío (sin falsos positivos).
+    raw_input = (raw_assessment or {}).get("input_snapshot", {}) if raw_assessment else {}
+    cross_alerts_by_gate: dict[str, list[dict[str, Any]]] = {}
+    has_meds_captured = False
+    try:
+        from prostanet.shared.gates_ddi_cross_check import (
+            cross_check_gates_with_ddi,
+        )
+        from prostanet.shared.gates_coverage_aggregator import (
+            _has_medications, _MEDICATION_FIELDS,
+        )
+        # Determinar si hay alguna medicación capturada (cualquiera de
+        # los 3 alias `current_medications`/`concomitant_medications`/
+        # `medications`).
+        input_keys = {
+            k for k, v in (raw_input or {}).items()
+            if v not in (None, "", [], {})
+        }
+        has_meds_captured = _has_medications(input_keys, raw_input or {})
+        # Ejecutar cross-check para todos los gates a la vez.
+        all_cross = cross_check_gates_with_ddi(raw_gates, raw_input or {})
+        for alert in all_cross:
+            gc = str(alert.get("gate_code") or "")
+            if not gc:
+                continue
+            cross_alerts_by_gate.setdefault(gc, []).append(alert)
+    except ImportError:
+        # Degradación graciosa: si los helpers no están disponibles,
+        # el panel sigue funcionando sin DDI enrichment.
+        pass
+
+    def _ddi_severity_color(sev: str) -> str:
+        s = (sev or "").lower()
+        if s == "contraindicated":
+            return "rose"
+        if s == "major":
+            return "orange"
+        if s == "moderate":
+            return "amber"
+        return "slate"
+
+    def _ddi_severity_label(sev: str) -> str:
+        s = (sev or "").lower()
+        return {
+            "contraindicated": "Contraindicado",
+            "major": "Mayor",
+            "moderate": "Moderado",
+        }.get(s, sev.title() if sev else "—")
+
+    def _format_cross_alert(alert: dict[str, Any]) -> dict[str, Any]:
+        """Normaliza un cross_alert para consumo Jinja."""
+        ddi = alert.get("ddi_alert") or {}
+        sev = str(alert.get("severity") or "")
+        return {
+            "drug_a": str(ddi.get("drug_a") or "—"),
+            "drug_b": str(ddi.get("drug_b") or "—"),
+            "category": str(alert.get("category") or "—"),
+            "severity": sev,
+            "severity_label": _ddi_severity_label(sev),
+            "severity_color": _ddi_severity_color(sev),
+            "mechanism": str(ddi.get("mechanism") or ""),
+            "clinical_impact": str(ddi.get("clinical_impact") or ""),
+            "action": str(ddi.get("recommended_action") or ""),
+            "alternative": str(ddi.get("alternative") or ""),
+            "reference": str(ddi.get("reference") or ""),
+            "cross_message": str(alert.get("cross_message") or ""),
+        }
+
+    enriched: list[dict[str, Any]] = []
+    by_class: dict[str, int] = {}
+    hard_block_count = 0
+    total_cross_alerts = 0
+    gates_with_cross_alerts_count = 0
+    meds_capture_gap_count = 0
+    for gate in raw_gates:
+        code = str(gate.get("code") or "")
+        severity = str(gate.get("severity") or "")
+        message = str(gate.get("message") or "")
+        evidence_tag = str(gate.get("evidence_tag") or "")
+        trial_refs = list(gate.get("trial_refs") or [])
+        cls = _classify(code)
+        by_class[cls] = by_class.get(cls, 0) + 1
+        if severity == "hard_block":
+            hard_block_count += 1
+        # Faubot XVII — cross_alerts per gate
+        gate_cross_alerts = [
+            _format_cross_alert(a) for a in cross_alerts_by_gate.get(code, [])
+        ]
+        has_cross = len(gate_cross_alerts) > 0
+        if has_cross:
+            gates_with_cross_alerts_count += 1
+            total_cross_alerts += len(gate_cross_alerts)
+        # Meds capture gap: gate triggered + sin medicaciones capturadas
+        meds_gap = not has_meds_captured
+        if meds_gap:
+            meds_capture_gap_count += 1
+        # Faubot 2026-04-25 (LXXI) — Auditoría #65B
+        # Per-gate evidence drill-down: enriquecer cada gate con URLs live
+        # para PMID/NCT/DOI/trial_name + evidence_tag (NCCN/EAU). Reusa
+        # _build_per_gate_evidence_drill_down de #65A backend.
+        evidence_drill_down: dict[str, Any] = {}
+        try:
+            from prostanet.shared.decision_audit_builder import (
+                _build_per_gate_evidence_drill_down,
+            )
+            evidence_drill_down = _build_per_gate_evidence_drill_down(gate)
+        except Exception:
+            # Defensive: si falla helper, no rompe panel UI
+            evidence_drill_down = {
+                "trial_refs_with_links": [],
+                "evidence_tag_link": {},
+                "citation_count": 0,
+            }
+
+        enriched.append({
+            "code": code,
+            "severity": severity,
+            "severity_label": (
+                "Bloqueo absoluto" if severity == "hard_block"
+                else "Precaución" if severity == "soft"
+                else severity.title() if severity else "—"
+            ),
+            "severity_color": _severity_color(severity),
+            "message": message,
+            "evidence_tag": evidence_tag,
+            "trial_refs": trial_refs,
+            "trial_refs_label": " · ".join(trial_refs) if trial_refs else "—",
+            "class_label": cls,
+            # Faubot XVII — DDI enrichment per gate
+            "cross_alerts": gate_cross_alerts,
+            "has_cross_alerts": has_cross,
+            "cross_alerts_count": len(gate_cross_alerts),
+            "meds_capture_gap": meds_gap,
+            # Faubot LXXI #65B — Per-gate evidence drill-down
+            "trial_refs_with_links": evidence_drill_down.get("trial_refs_with_links", []),
+            "evidence_tag_link": evidence_drill_down.get("evidence_tag_link", {}),
+            "citation_count": evidence_drill_down.get("citation_count", 0),
+        })
+
+    # Ordenar: hard_block primero, luego por clase
+    enriched.sort(
+        key=lambda g: (
+            0 if g["severity"] == "hard_block" else 1,
+            g["class_label"],
+            g["code"],
+        )
+    )
+
+    summary_parts: list[str] = []
+    if hard_block_count:
+        summary_parts.append(
+            f"{hard_block_count} bloqueo{'s' if hard_block_count != 1 else ''} absoluto{'s' if hard_block_count != 1 else ''}"
+        )
+    other_count = len(enriched) - hard_block_count
+    if other_count:
+        summary_parts.append(f"{other_count} precaución/otra{'s' if other_count != 1 else ''}")
+    # Faubot XVII — Append DDI summary
+    if total_cross_alerts:
+        summary_parts.append(
+            f"{total_cross_alerts} alerta{'s' if total_cross_alerts != 1 else ''} DDI cruzada{'s' if total_cross_alerts != 1 else ''}"
+        )
+    summary_text = " · ".join(summary_parts) if summary_parts else "Sin contraindicaciones pivote activas."
+
+    return {
+        "has_gates": True,
+        "total": len(enriched),
+        "hard_block_count": hard_block_count,
+        "by_class": by_class,
+        "gates": enriched,
+        "summary_text": summary_text,
+        # Faubot XVII — Métricas DDI agregadas
+        "total_cross_alerts": total_cross_alerts,
+        "gates_with_cross_alerts_count": gates_with_cross_alerts_count,
+        "meds_capture_gap_count": meds_capture_gap_count,
+        "has_medications_captured": has_meds_captured,
+    }
 
 
 def _build_pivotal_panel(matches: list[dict[str, Any]], *, state: str = "") -> dict[str, Any]:
@@ -2831,16 +4620,68 @@ def _build_copilot_sections(patient: dict[str, Any], state: str, management_trac
 
         ddi_data["institution"] = institution
         ddi_raw = DDIEngine.full_review(ddi_data)
-        # Normalize keys for template
+
+        # EPIC 4.5 — agregar families summary + regimen matrix para UI.
+        interactions_list = ddi_raw.get("ddi_alerts", []) or []
+        families_summary: dict[str, int] = {}
+        alerts_by_family: dict[str, list[dict[str, Any]]] = {}
+        for interaction in interactions_list:
+            family = str(interaction.get("alert_family") or "").strip().lower()
+            if not family:
+                severity = str(interaction.get("severity") or "").strip().lower()
+                family = {
+                    "contraindicated": "ddi_critical",
+                    "major": "ddi_major",
+                    "moderate": "ddi_moderate",
+                }.get(severity, "ddi_moderate")
+            families_summary[family] = families_summary.get(family, 0) + 1
+            alerts_by_family.setdefault(family, []).append(interaction)
+
+        # Matriz por régimen candidato si el normalizador corrió.
+        regimen_matrix_raw = ddi_data.get("ddi_regimen_matrix") or {}
+        regimen_matrix_summary: list[dict[str, Any]] = []
+        if isinstance(regimen_matrix_raw, dict):
+            for regimen_code, bundle in regimen_matrix_raw.items():
+                if not isinstance(bundle, dict):
+                    continue
+                regimen_matrix_summary.append({
+                    "regimen_code": regimen_code,
+                    "status": bundle.get("status", "none"),
+                    "alert_count": int(bundle.get("alert_count") or 0),
+                    "major_count": int(bundle.get("major_count") or 0),
+                    "contraindicated_count": int(bundle.get("contraindicated_count") or 0),
+                    "families": list(bundle.get("families") or []),
+                })
+            # Orden: peor primero (contraindicated > major > caution > none).
+            severity_rank_ui = {"contraindicated": 3, "major": 2, "caution": 1, "none": 0}
+            regimen_matrix_summary.sort(
+                key=lambda row: (-severity_rank_ui.get(str(row.get("status") or "none"), 0), row.get("regimen_code", "")),
+            )
+
+        review_status = str(ddi_data.get("ddi_review_status") or "").strip().lower() or (
+            "completed" if interactions_list or ddi_data.get("normalized_medication_list") else "not_started"
+        )
+        review_source = "engine_realtime" if ddi_data.get("normalized_medication_list") else "legacy_full_review"
+
         copilot["ddi_review"] = {
-            "interactions": ddi_raw.get("ddi_alerts", []),
+            "interactions": interactions_list,
             "formulary": ddi_raw.get("formulary", []),
             "has_interactions": ddi_raw.get("ddi_count", 0) > 0,
             "has_formulary": len(ddi_raw.get("formulary", [])) > 0,
+            "families_summary": families_summary,
+            "alerts_by_family": alerts_by_family,
+            "regimen_matrix": regimen_matrix_summary,
+            "review_status": review_status,
+            "review_source": review_source,
+            "contraindicated_count": int(ddi_raw.get("contraindicated_count") or 0),
         }
     except Exception as exc:
         copilot_logger.debug("Copilot DDI review error: %s", exc)
-        copilot["ddi_review"] = {"interactions": [], "formulary": [], "has_interactions": False, "has_formulary": False}
+        copilot["ddi_review"] = {
+            "interactions": [], "formulary": [], "has_interactions": False, "has_formulary": False,
+            "families_summary": {}, "alerts_by_family": {}, "regimen_matrix": [],
+            "review_status": "not_started", "review_source": "unavailable", "contraindicated_count": 0,
+        }
 
     # ── Response visualization (waterfall, spider, swimmer) ──
     try:
@@ -2904,6 +4745,9 @@ def _build_copilot_sections(patient: dict[str, Any], state: str, management_trac
     # ── Active surveillance protocol section ──
     try:
         from prostanet.domains.patient_tracking.active_surveillance import ActiveSurveillanceService
+        from prostanet.domains.patient_tracking.active_surveillance_longitudinal import (
+            LongitudinalASService,
+        )
         if management_track == "active_surveillance" or state == "localized_initial":
             as_data: dict[str, Any] = {}
             as_data.update(identity)
@@ -2911,8 +4755,26 @@ def _build_copilot_sections(patient: dict[str, Any], state: str, management_trac
             as_data.update(prior)
             if followups:
                 as_data.update(followups[-1])
+            # Inyectar listas longitudinales accesibles al engine serial (fallback
+            # por fecha sobre psa_history + biopsies + mri_facts + pro_assessments).
+            for key in ("psa_history", "biopsies", "mri_facts", "pro_assessments",
+                        "active_surveillance_snapshots"):
+                if key not in as_data and patient.get(key):
+                    as_data[key] = patient.get(key)
             as_protocol = ActiveSurveillanceService.build_as_protocol(as_data, state)
-            copilot["active_surveillance"] = ActiveSurveillanceService.build_as_summary_for_profile(as_protocol)
+            as_summary = ActiveSurveillanceService.build_as_summary_for_profile(as_protocol)
+
+            # EPIC 5 — "Vigilancia activa longitudinal": reporte serial sobre
+            # ≥2 snapshots. Si no hay historia serial, el reporte llega con
+            # `snapshots_evaluated<2` y la UI muestra notas explicativas.
+            longitudinal_report = LongitudinalASService.evaluate(as_data)
+            as_summary["longitudinal"] = longitudinal_report.to_dict()
+            # Elevar tono del card si el engine serial detecta banda alta.
+            if longitudinal_report.probability_band == "high" and as_summary.get("tone") == "success":
+                as_summary["tone"] = "danger"
+            elif longitudinal_report.probability_band == "moderate" and as_summary.get("tone") == "success":
+                as_summary["tone"] = "warning"
+            copilot["active_surveillance"] = as_summary
         else:
             copilot["active_surveillance"] = {"has_data": False}
     except Exception as exc:
@@ -2971,9 +4833,9 @@ def _build_copilot_sections(patient: dict[str, Any], state: str, management_trac
     if ai_flags.get("ENABLE_AI_STATE_PREDICTION"):
         try:
             from prostanet.ai.inference.prediction_service import PredictionService
-            from prostanet.ai.inference.model_registry import ModelRegistry
-            reg = ModelRegistry()
-            reg.load_model("state_transition")
+            from prostanet.ai.inference.runtime_registry import get_runtime_model_registry
+
+            reg = get_runtime_model_registry()
             service = PredictionService(model_registry=reg)
             pid = patient.get("identity", {}).get("id", 0)
             transition = service.predict_state_transition(pid, patient)
@@ -2986,9 +4848,9 @@ def _build_copilot_sections(patient: dict[str, Any], state: str, management_trac
     if ai_flags.get("ENABLE_AI_SURVIVAL_MODEL"):
         try:
             from prostanet.ai.inference.prediction_service import PredictionService
-            from prostanet.ai.inference.model_registry import ModelRegistry
-            reg = ModelRegistry()
-            reg.load_model("deep_surv")
+            from prostanet.ai.inference.runtime_registry import get_runtime_model_registry
+
+            reg = get_runtime_model_registry()
             service = PredictionService(model_registry=reg)
             pid = patient.get("identity", {}).get("id", 0)
             survival_ai = service.predict_survival(pid, patient)
@@ -3001,9 +4863,9 @@ def _build_copilot_sections(patient: dict[str, Any], state: str, management_trac
     if ai_flags.get("ENABLE_AI_ANOMALY_DETECTION"):
         try:
             from prostanet.ai.inference.prediction_service import PredictionService
-            from prostanet.ai.inference.model_registry import ModelRegistry
-            reg = ModelRegistry()
-            reg.load_model("anomaly_detector")
+            from prostanet.ai.inference.runtime_registry import get_runtime_model_registry
+
+            reg = get_runtime_model_registry()
             service = PredictionService(model_registry=reg)
             pid = patient.get("identity", {}).get("id", 0)
             anomalies = service.predict_anomalies(pid, patient)
@@ -3076,8 +4938,26 @@ def build_patient_profile_view_model(
     longitudinal_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     patient = _merge_longitudinal_runtime_context(patient, longitudinal_bundle)
-    assessment = latest_assessment or {}
-    raw_assessment = latest_assessment_raw or {}
+    raw_assessment = dict(latest_assessment_raw or {})
+    assessment = dict(latest_assessment or {})
+    raw_assessment, assessment = _refresh_runtime_assessment(
+        patient=patient,
+        raw_assessment=raw_assessment,
+        display_assessment=assessment,
+    )
+    # Auditoría #21 (cierre OOS-10): cuando el raw_assessment persistido no
+    # incluye `state` (p. ej. módulos que sólo emiten `input_snapshot`/`result_snapshot`)
+    # pero el display_assessment sí lo trae, hay que retro-popular el state para
+    # que `patient["latest_assessment"]` no destruya la etiqueta de estado al
+    # pasarla a `build_reconciled_state`. Sin este backfill, el reconciliador
+    # cae en `diagnostic_workup` y, con evidencia de metástasis ya
+    # documentada (p. ej. `baseline.metastasis_site="Visceral"`), reasigna
+    # erróneamente a `localized_initial`, ocultando la elegibilidad mHSPC.
+    if raw_assessment and not raw_assessment.get("state") and assessment.get("state"):
+        raw_assessment["state"] = assessment["state"]
+    if raw_assessment:
+        patient = dict(patient)
+        patient["latest_assessment"] = raw_assessment
     reconciliation_input = dict(raw_assessment)
     for key, value in assessment.items():
         if value not in (None, "", [], {}):
@@ -3094,7 +4974,28 @@ def build_patient_profile_view_model(
         or patient.get("transition_resolution")
         or {}
     )
-    if bundle_transition_resolution.get("policy") == "auto_applied":
+    auto_transition_target = str(bundle_transition_resolution.get("target_state") or "")
+    bundle_postlocal_state = str(
+        bundle_signals.get("reconciled_state")
+        or bundle_signals.get("effective_state_final")
+        or bundle_signals.get("effective_state")
+        or ""
+    )
+    suppress_postlocal_auto_transition = (
+        bundle_transition_resolution.get("policy") == "auto_applied"
+        and (
+            (
+                reconciliation.get("reconciled_state") in POSTLOCAL_STATES
+                and auto_transition_target not in POSTLOCAL_STATES
+            )
+            or (
+                bundle_postlocal_state in POSTLOCAL_STATES
+                and auto_transition_target in POSTLOCAL_STATES
+                and auto_transition_target != bundle_postlocal_state
+            )
+        )
+    )
+    if bundle_transition_resolution.get("policy") == "auto_applied" and not suppress_postlocal_auto_transition:
         if bundle_transition_resolution.get("target_state"):
             reconciliation["reconciled_state"] = bundle_transition_resolution.get("target_state")
         if bundle_transition_resolution.get("target_management_track"):
@@ -3133,7 +5034,15 @@ def build_patient_profile_view_model(
     operational_module_label = (
         resolved_state_label
         if assessment_state and assessment_state != state
-        else _first_nonempty(assessment.get("module_label"), resolved_state_label, state)
+        else (
+            resolved_state_label
+            if _should_prefer_resolved_stage_label(
+                state=state,
+                module_label=assessment.get("module_label"),
+                resolved_stage_label=resolved_state_label,
+            )
+            else _first_nonempty(assessment.get("module_label"), resolved_state_label, state)
+        )
     )
     diagnosis_context = build_official_diagnosis_context(
         patient=patient,
@@ -3180,6 +5089,11 @@ def build_patient_profile_view_model(
         if item["completed_at"] and str(item.get("status") or "") not in {"cancelled", "superseded"}:
             item["status"] = "completed"
     persisted_agenda_items.sort(key=longitudinal_item_sort_key)
+    persisted_agenda_items = prioritize_items_for_window_worklist(
+        persisted_agenda_items,
+        (longitudinal_bundle or {}).get("window_worklist_bundle") or {},
+    )
+    persisted_agenda_items = _decorate_agenda_items_for_display(persisted_agenda_items)
     active_agenda_items = [item for item in persisted_agenda_items if item.get("status") not in {"completed", "superseded", "cancelled"}]
     archived_agenda_items = [item for item in persisted_agenda_items if item.get("status") in {"completed", "superseded", "cancelled"}]
     next_due_items = [item for item in active_agenda_items if item.get("status") in {"due", "due_today"}][:4]
@@ -3228,6 +5142,15 @@ def build_patient_profile_view_model(
     latest_signal_snapshot.setdefault("critical_missing", [])
     latest_signal_snapshot.setdefault("awaiting_review", [])
     latest_signal_snapshot.setdefault("active_safety", [])
+    latest_signal_snapshot["display_critical_missing"] = normalize_field_list(
+        latest_signal_snapshot.get("critical_missing") or []
+    )
+    latest_signal_snapshot["display_awaiting_review"] = normalize_field_list(
+        latest_signal_snapshot.get("awaiting_review") or []
+    )
+    latest_signal_snapshot["display_active_safety"] = normalize_field_list(
+        latest_signal_snapshot.get("active_safety") or []
+    )
     if longitudinal_bundle and longitudinal_bundle.get("next_best_action"):
         latest_signal_snapshot["next_best_action"] = dict(longitudinal_bundle.get("next_best_action") or {})
     if longitudinal_bundle and longitudinal_bundle.get("transition_resolution"):
@@ -3365,6 +5288,201 @@ def build_patient_profile_view_model(
         or patient.get("care_intent_contract")
         or {}
     )
+    decision_governance_bundle = dict(
+        longitudinal_bundle.get("decision_governance_bundle")
+        or patient.get("decision_governance_bundle")
+        or latest_signal_snapshot.get("decision_governance_bundle")
+        or {}
+    )
+    recommendation_block_status = (
+        longitudinal_bundle.get("recommendation_block_status")
+        or patient.get("recommendation_block_status")
+        or latest_signal_snapshot.get("recommendation_block_status")
+        or ""
+    )
+    recommendation_block_reason = (
+        longitudinal_bundle.get("recommendation_block_reason")
+        or patient.get("recommendation_block_reason")
+        or latest_signal_snapshot.get("recommendation_block_reason")
+        or ""
+    )
+    display_recommendation_block_reason = _displayize_recommendation_block_reason(
+        recommendation_block_reason
+    )
+    allowed_actions_while_blocked = list(
+        longitudinal_bundle.get("allowed_actions_while_blocked")
+        or patient.get("allowed_actions_while_blocked")
+        or latest_signal_snapshot.get("allowed_actions_while_blocked")
+        or []
+    )
+    decision_blocking_bundle = dict(
+        longitudinal_bundle.get("decision_blocking_bundle")
+        or patient.get("decision_blocking_bundle")
+        or latest_signal_snapshot.get("decision_blocking_bundle")
+        or {}
+    )
+    diagnostic_certainty_bundle = dict(
+        longitudinal_bundle.get("diagnostic_certainty_bundle")
+        or patient.get("diagnostic_certainty_bundle")
+        or latest_signal_snapshot.get("diagnostic_certainty_bundle")
+        or {}
+    )
+    staging_certainty_bundle = dict(
+        longitudinal_bundle.get("staging_certainty_bundle")
+        or patient.get("staging_certainty_bundle")
+        or latest_signal_snapshot.get("staging_certainty_bundle")
+        or {}
+    )
+    minimum_decisive_dataset_bundle = dict(
+        longitudinal_bundle.get("minimum_decisive_dataset_bundle")
+        or patient.get("minimum_decisive_dataset_bundle")
+        or latest_signal_snapshot.get("minimum_decisive_dataset_bundle")
+        or {}
+    )
+    decision_evidence_currentness_bundle = dict(
+        longitudinal_bundle.get("decision_evidence_currentness_bundle")
+        or patient.get("decision_evidence_currentness_bundle")
+        or latest_signal_snapshot.get("decision_evidence_currentness_bundle")
+        or {}
+    )
+    therapeutic_window_bundle = dict(
+        longitudinal_bundle.get("therapeutic_window_bundle")
+        or patient.get("therapeutic_window_bundle")
+        or latest_signal_snapshot.get("therapeutic_window_bundle")
+        or {}
+    )
+    therapeutic_readiness_bundle = dict(
+        longitudinal_bundle.get("therapeutic_readiness_bundle")
+        or patient.get("therapeutic_readiness_bundle")
+        or latest_signal_snapshot.get("therapeutic_readiness_bundle")
+        or {}
+    )
+    window_worklist_bundle = dict(
+        longitudinal_bundle.get("window_worklist_bundle")
+        or patient.get("window_worklist_bundle")
+        or latest_signal_snapshot.get("window_worklist_bundle")
+        or {}
+    )
+    clinician_decision_capture_bundle = dict(
+        longitudinal_bundle.get("clinician_decision_capture_bundle")
+        or patient.get("clinician_decision_capture_bundle")
+        or latest_signal_snapshot.get("clinician_decision_capture_bundle")
+        or {}
+    )
+    state_transition_confirmation_bundle = dict(
+        longitudinal_bundle.get("state_transition_confirmation_bundle")
+        or patient.get("state_transition_confirmation_bundle")
+        or latest_signal_snapshot.get("state_transition_confirmation_bundle")
+        or {}
+    )
+    adherence_tracking_bundle = dict(
+        longitudinal_bundle.get("adherence_tracking_bundle")
+        or patient.get("adherence_tracking_bundle")
+        or latest_signal_snapshot.get("adherence_tracking_bundle")
+        or {}
+    )
+    tumor_board_outcome_bundle = dict(
+        longitudinal_bundle.get("tumor_board_outcome_bundle")
+        or patient.get("tumor_board_outcome_bundle")
+        or latest_signal_snapshot.get("tumor_board_outcome_bundle")
+        or {}
+    )
+    pro_decision_bundle = dict(
+        longitudinal_bundle.get("pro_decision_bundle")
+        or patient.get("pro_decision_bundle")
+        or latest_signal_snapshot.get("pro_decision_bundle")
+        or {}
+    )
+    shared_decision_bundle = dict(
+        longitudinal_bundle.get("shared_decision_bundle")
+        or patient.get("shared_decision_bundle")
+        or latest_signal_snapshot.get("shared_decision_bundle")
+        or {}
+    )
+    localized_modality_fitness_bundle = dict(
+        longitudinal_bundle.get("localized_modality_fitness_bundle")
+        or patient.get("localized_modality_fitness_bundle")
+        or latest_signal_snapshot.get("localized_modality_fitness_bundle")
+        or {}
+    )
+    localized_tradeoff_bundle = dict(
+        longitudinal_bundle.get("localized_tradeoff_bundle")
+        or patient.get("localized_tradeoff_bundle")
+        or latest_signal_snapshot.get("localized_tradeoff_bundle")
+        or {}
+    )
+    patient_priority_profile = dict(
+        longitudinal_bundle.get("patient_priority_profile")
+        or patient.get("patient_priority_profile")
+        or latest_signal_snapshot.get("patient_priority_profile")
+        or {}
+    )
+    ctdna_refinement_bundle = dict(
+        longitudinal_bundle.get("ctdna_refinement_bundle")
+        or patient.get("ctdna_refinement_bundle")
+        or latest_signal_snapshot.get("ctdna_refinement_bundle")
+        or {}
+    )
+    multimodal_imaging_concordance_bundle = dict(
+        longitudinal_bundle.get("multimodal_imaging_concordance_bundle")
+        or patient.get("multimodal_imaging_concordance_bundle")
+        or latest_signal_snapshot.get("multimodal_imaging_concordance_bundle")
+        or {}
+    )
+    precision_workflow_bundle = dict(
+        longitudinal_bundle.get("precision_workflow_bundle")
+        or patient.get("precision_workflow_bundle")
+        or latest_signal_snapshot.get("precision_workflow_bundle")
+        or {}
+    )
+    registry_core_bundle = dict(
+        longitudinal_bundle.get("registry_core_bundle")
+        or patient.get("registry_core_bundle")
+        or latest_signal_snapshot.get("registry_core_bundle")
+        or {}
+    )
+    endpoint_adjudication_bundle = dict(
+        longitudinal_bundle.get("endpoint_adjudication_bundle")
+        or patient.get("endpoint_adjudication_bundle")
+        or latest_signal_snapshot.get("endpoint_adjudication_bundle")
+        or {}
+    )
+    data_certainty_bundle = dict(
+        longitudinal_bundle.get("data_certainty_bundle")
+        or patient.get("data_certainty_bundle")
+        or latest_signal_snapshot.get("data_certainty_bundle")
+        or {}
+    )
+    ichom_compliance_bundle = dict(
+        longitudinal_bundle.get("ichom_compliance_bundle")
+        or patient.get("ichom_compliance_bundle")
+        or latest_signal_snapshot.get("ichom_compliance_bundle")
+        or {}
+    )
+    treatment_adverse_event_bundle = dict(
+        longitudinal_bundle.get("treatment_adverse_event_bundle")
+        or patient.get("treatment_adverse_event_bundle")
+        or latest_signal_snapshot.get("treatment_adverse_event_bundle")
+        or {}
+    )
+    population_survival_context_bundle = dict(
+        longitudinal_bundle.get("population_survival_context_bundle")
+        or patient.get("population_survival_context_bundle")
+        or latest_signal_snapshot.get("population_survival_context_bundle")
+        or {}
+    )
+    cost_access_context_bundle = dict(
+        longitudinal_bundle.get("cost_access_context_bundle")
+        or patient.get("cost_access_context_bundle")
+        or latest_signal_snapshot.get("cost_access_context_bundle")
+        or {}
+    )
+    score_interpretation_catalog_snapshot = dict(
+        longitudinal_bundle.get("score_interpretation_catalog_snapshot")
+        or patient.get("score_interpretation_catalog_snapshot")
+        or latest_signal_snapshot.get("score_interpretation_catalog_snapshot")
+        or {}
+    )
     palliative_transition_bundle = dict(
         longitudinal_bundle.get("palliative_transition_bundle")
         or patient.get("palliative_transition_bundle")
@@ -3388,6 +5506,226 @@ def build_patient_profile_view_model(
         or patient.get("survivorship_monitoring_package")
         or latest_signal_snapshot.get("survivorship_monitoring_package")
         or {}
+    )
+    fallback_decision_input_requirements = dict(
+        longitudinal_bundle.get("decision_input_requirements")
+        or patient.get("decision_input_requirements")
+        or {}
+    )
+    advanced_followup_bundle = dict(
+        longitudinal_bundle.get("advanced_followup_bundle")
+        or patient.get("advanced_followup_bundle")
+        or latest_signal_snapshot.get("advanced_followup_bundle")
+        or {}
+    )
+    if not advanced_followup_bundle:
+        advanced_followup_bundle = build_advanced_followup_bundle(
+            patient_record=patient,
+            state=state,
+            latest_assessment=raw_assessment,
+            longitudinal_bundle=longitudinal_bundle,
+            decision_input_requirements=fallback_decision_input_requirements,
+            signals=latest_signal_snapshot,
+        )
+    staging_adjudication_bundle = dict(
+        longitudinal_bundle.get("staging_adjudication_bundle")
+        or patient.get("staging_adjudication_bundle")
+        or latest_signal_snapshot.get("staging_adjudication_bundle")
+        or {}
+    )
+    if not staging_adjudication_bundle:
+        staging_adjudication_bundle = build_staging_adjudication_bundle(
+            patient_record=patient,
+            state=state,
+            latest_assessment=raw_assessment,
+            longitudinal_bundle=longitudinal_bundle,
+            therapeutic_readiness_bundle=therapeutic_readiness_bundle,
+            decision_input_requirements=fallback_decision_input_requirements,
+            signals=latest_signal_snapshot,
+        )
+    fallback_decision_input_requirements = merge_staging_adjudication_into_requirements(
+        fallback_decision_input_requirements,
+        staging_adjudication_bundle,
+    )
+    advanced_release_gate = dict(
+        longitudinal_bundle.get("advanced_release_gate")
+        or patient.get("advanced_release_gate")
+        or {}
+    )
+    if not advanced_release_gate:
+        advanced_release_gate = build_advanced_release_gate(
+            state=state,
+            next_best_action=dict(latest_signal_snapshot.get("next_best_action") or {}),
+            decision_input_requirements=fallback_decision_input_requirements,
+            advanced_followup_bundle=advanced_followup_bundle,
+            staging_adjudication_bundle=staging_adjudication_bundle,
+            signals=dict(latest_signal_snapshot or {}),
+        )
+    fallback_decision_input_requirements = merge_advanced_release_gate_into_requirements(
+        fallback_decision_input_requirements,
+        advanced_release_gate,
+    )
+    supportive_care_toxicity_readiness_bundle = dict(
+        longitudinal_bundle.get("supportive_care_toxicity_readiness_bundle")
+        or patient.get("supportive_care_toxicity_readiness_bundle")
+        or latest_signal_snapshot.get("supportive_care_toxicity_readiness_bundle")
+        or {}
+    )
+    if not supportive_care_toxicity_readiness_bundle:
+        supportive_care_toxicity_readiness_bundle = build_supportive_care_toxicity_readiness_bundle(
+            patient_record=patient,
+            state=state,
+            management_track=management_track,
+            latest_assessment=raw_assessment,
+            clinical_fact_bundle=dict(
+                longitudinal_bundle.get("clinical_fact_bundle")
+                or patient.get("clinical_fact_bundle")
+                or {}
+            ),
+            decision_input_requirements=fallback_decision_input_requirements,
+            palliative_transition_bundle=palliative_transition_bundle,
+            palliative_monitoring_package=palliative_monitoring_package,
+            survivorship_transition_bundle=survivorship_transition_bundle,
+            survivorship_monitoring_package=survivorship_monitoring_package,
+        )
+    snapshot_therapeutic_readiness_bundle = dict(
+        latest_signal_snapshot.get("therapeutic_readiness_bundle") or {}
+    )
+    if snapshot_therapeutic_readiness_bundle:
+        therapeutic_readiness_bundle = snapshot_therapeutic_readiness_bundle
+    if not therapeutic_readiness_bundle:
+        assessment_result_snapshot = dict((raw_assessment.get("result_snapshot", {}) if raw_assessment else {}) or {})
+        clinical_fact_bundle = dict(
+            longitudinal_bundle.get("clinical_fact_bundle")
+            or patient.get("clinical_fact_bundle")
+            or resolve_patient_clinical_facts(patient)
+        )
+        therapeutic_readiness_bundle = build_therapeutic_readiness_bundle(
+            state=state,
+            phenotype_state=str(latest_signal_snapshot.get("phenotype_state") or state or ""),
+            preferred_regimen=dict(assessment_result_snapshot.get("preferred_frontline_regimen") or {}),
+            next_best_action=dict(latest_signal_snapshot.get("next_best_action") or {}),
+            decision_input_requirements=fallback_decision_input_requirements,
+            comparative_eligibility_matrix=dict(
+                patient.get("comparative_eligibility_matrix")
+                or assessment_result_snapshot.get("comparative_eligibility_matrix")
+                or {}
+            ),
+            systemic_regimen_scope_contract=dict(
+                patient.get("systemic_regimen_scope_contract")
+                or assessment_result_snapshot.get("systemic_regimen_scope_contract")
+                or {}
+            ),
+            care_intent_contract=care_intent_contract,
+            palliative_transition_bundle=palliative_transition_bundle,
+            survivorship_transition_bundle=survivorship_transition_bundle,
+            therapeutic_window_bundle=therapeutic_window_bundle,
+            active_regimen_monitoring_package=dict(patient.get("active_regimen_monitoring_package") or {}),
+            recommendation_block_status=recommendation_block_status,
+            recommendation_block_reason=recommendation_block_reason,
+            allowed_actions_while_blocked=allowed_actions_while_blocked,
+            signals=dict(latest_signal_snapshot or {}),
+            advanced_followup_bundle=advanced_followup_bundle,
+            staging_adjudication_bundle=staging_adjudication_bundle,
+            supportive_care_toxicity_readiness_bundle=supportive_care_toxicity_readiness_bundle,
+            advanced_release_gate=advanced_release_gate,
+            clinical_fact_bundle=clinical_fact_bundle,
+        )
+    therapeutic_readiness_bundle["display_required_to_release"] = (
+        list(therapeutic_readiness_bundle.get("display_required_to_release") or [])
+        or display_capture_field_summary(therapeutic_readiness_bundle.get("required_to_release") or [], limit=24)
+        or normalize_field_list(therapeutic_readiness_bundle.get("required_to_release") or [], limit=24)
+    )
+    therapeutic_readiness_bundle["display_release_blockers"] = list(
+        therapeutic_readiness_bundle.get("display_release_blockers")
+        or therapeutic_readiness_bundle.get("display_required_to_release")
+        or []
+    )
+    therapeutic_readiness_bundle["display_safety_blockers"] = list(
+        therapeutic_readiness_bundle.get("display_safety_blockers")
+        or normalize_field_list(
+            list(therapeutic_readiness_bundle.get("safety_blockers") or [])
+            + list(therapeutic_readiness_bundle.get("safety_watchouts") or []),
+            limit=24,
+        )
+    )
+    therapeutic_readiness_bundle["capture_actions"] = [
+        _normalize_readiness_capture_action(dict(action or {}))
+        for action in list(therapeutic_readiness_bundle.get("capture_actions") or [])
+    ]
+    therapeutic_readiness_bundle["display_release_actions"] = [
+        {
+            **dict(action),
+            "display_fields_summary": list(action.get("display_fields_summary") or []),
+        }
+        for action in list(therapeutic_readiness_bundle.get("capture_actions") or [])
+    ]
+    surface_projection = build_surface_consistency_projection(
+        patient,
+        longitudinal_bundle,
+        latest_assessment=raw_assessment,
+        recommendations=recommendations or {},
+        therapeutic_readiness_bundle=therapeutic_readiness_bundle,
+    )
+    clinical_kernel_snapshot = dict(surface_projection.get("clinical_kernel_snapshot") or {})
+    effective_state = str(surface_projection.get("effective_state") or state)
+    effective_recommendation_family = str(
+        surface_projection.get("effective_recommendation_family")
+        or therapeutic_readiness_bundle.get("candidate_family")
+        or ""
+    )
+    surface_consistency_status = str(
+        surface_projection.get("surface_consistency_status") or "consistent"
+    )
+    surface_consistency_flags = list(surface_projection.get("surface_consistency_flags") or [])
+    legacy_recommendation_panel = dict(
+        surface_projection.get("legacy_recommendation_panel") or {}
+    )
+    decision_blocking_fields = (
+        decision_blocking_bundle.get("hard_blocking_inputs")
+        or decision_blocking_bundle.get("decision_blocking_inputs")
+        or []
+    )
+    decision_blocking_bundle["display_decision_blocking_inputs"] = (
+        display_capture_field_summary(decision_blocking_fields, limit=24)
+        or normalize_field_list(decision_blocking_fields, limit=24)
+    )
+    decision_governance_bundle["display_recommendation_block_reason"] = (
+        display_recommendation_block_reason
+    )
+    palliative_monitoring_package["display_required_visit_fields"] = (
+        display_capture_field_summary(palliative_monitoring_package.get("required_visit_fields") or [], limit=40)
+        or normalize_field_list(palliative_monitoring_package.get("required_visit_fields") or [], limit=40)
+    )
+    palliative_monitoring_package["display_missing_inputs"] = normalize_field_list(
+        palliative_monitoring_package.get("missing_inputs") or palliative_monitoring_package.get("stale_inputs") or [],
+        limit=40,
+    )
+    survivorship_monitoring_package["display_required_visit_fields"] = (
+        display_capture_field_summary(survivorship_monitoring_package.get("required_visit_fields") or [], limit=40)
+        or normalize_field_list(survivorship_monitoring_package.get("required_visit_fields") or [], limit=40)
+    )
+    survivorship_monitoring_package["display_missing_inputs"] = normalize_field_list(
+        survivorship_monitoring_package.get("missing_inputs") or survivorship_monitoring_package.get("stale_inputs") or [],
+        limit=40,
+    )
+    rt_toxicity_timeline = _build_rt_toxicity_timeline(patient)
+    survivorship_checklist = _build_survivorship_checklist(patient, latest_signal_snapshot)
+    top_active_window = dict(window_worklist_bundle.get("top_active_window") or {})
+    top_window_missing_fields = list(top_active_window.get("missing_decisive_fields") or [])
+    top_active_window["display_missing_decisive_fields"] = (
+        display_capture_field_summary(top_window_missing_fields, limit=24)
+        or normalize_field_list(top_window_missing_fields, limit=24)
+    )
+    window_worklist_bundle["top_active_window"] = top_active_window
+    window_blocking_fields = list(
+        window_worklist_bundle.get("blocking_dataset_fields")
+        or top_window_missing_fields
+        or []
+    )
+    window_worklist_bundle["display_blocking_dataset_fields"] = (
+        display_capture_field_summary(window_blocking_fields, limit=24)
+        or normalize_field_list(window_blocking_fields, limit=24)
     )
     late_effects_profile = dict(
         longitudinal_bundle.get("late_effects_profile")
@@ -3465,6 +5803,18 @@ def build_patient_profile_view_model(
         or latest_signal_snapshot.get("post_rt_salvage_bundle")
         or {}
     )
+    for vertical_bundle in (
+        crpc_copilot_bundle,
+        post_rp_salvage_bundle,
+        mhspc_copilot_bundle,
+        diagnostic_biopsy_bundle,
+        localized_surveillance_bundle,
+        post_rt_salvage_bundle,
+    ):
+        if isinstance(vertical_bundle.get("blocking_inputs"), list):
+            vertical_bundle["blocking_inputs"] = _decorate_blocking_input_groups(
+                vertical_bundle.get("blocking_inputs") or []
+            )
     _, active_copilot_bundle = select_primary_vertical_bundle(
         {
             "crpc_copilot_bundle": crpc_copilot_bundle,
@@ -3475,6 +5825,18 @@ def build_patient_profile_view_model(
             "post_rt_salvage_bundle": post_rt_salvage_bundle,
         }
     )
+    post_rt_failure_definition = dict(
+        post_rt_salvage_bundle.get("post_rt_recurrence_bundle")
+        or post_rt_salvage_bundle.get("post_rt_failure_definition")
+        or {}
+    )
+    post_rt_transition_bundle = dict(post_rt_salvage_bundle.get("post_rt_transition_bundle") or {})
+    post_rt_recurrence_profile = _build_post_rt_recurrence_profile(
+        post_rt_failure_definition=post_rt_failure_definition,
+        post_rt_transition_bundle=post_rt_transition_bundle,
+        readiness_actions=list(therapeutic_readiness_bundle.get("capture_actions") or []),
+    )
+    latest_signal_snapshot["post_rt_recurrence_profile"] = post_rt_recurrence_profile
     laboratory_intelligence_profile = dict(
         longitudinal_bundle.get("laboratory_intelligence_profile")
         or patient.get("laboratory_intelligence_profile")
@@ -3499,6 +5861,37 @@ def build_patient_profile_view_model(
         from prostanet.domains.patient_tracking.psa_forecast import build_psa_forecast
 
         psa_forecast = build_psa_forecast(patient, state=state)
+
+    # Faubot 2026-04-25 (LXIX) — Auditoría #64B
+    # Wire backend #64A: forecast per-line + cohort overlay + combined timeline
+    # Estos enrichments se exponen al template patient_profile.html para
+    # render en drill-down panel #63D + chart overlay + combined timeline UI.
+    psa_forecast_per_line: dict = {}
+    psa_cohort_reference: dict = {}
+    psa_combined_timeline: dict = {}
+    try:
+        from prostanet.domains.patient_tracking.psa_forecast import (
+            build_psa_forecast_per_line,
+            build_psa_cohort_reference_overlay,
+            build_combined_patient_timeline,
+        )
+        psa_forecast_per_line = build_psa_forecast_per_line(patient)
+        psa_cohort_reference = build_psa_cohort_reference_overlay(patient)
+        # Pasar clinical_journey_events si están disponibles para auto-asignación
+        # de events a treatment lines en combined timeline.
+        # NOTA: clinical_journey_events se construye más abajo en este mismo
+        # método; aquí pasamos None porque aún no está construido. El template
+        # puede combinar manualmente o usar journey_events del bundle ya
+        # entregado. Para una integración 100% E2E del timeline, ver #64C.
+        psa_combined_timeline = build_combined_patient_timeline(
+            patient,
+            clinical_events=None,
+        )
+    except Exception:
+        # Defensive: si falla cualquier helper, no romper el flujo del bundle
+        # (estos son enrichments visuales, no bloqueantes para decisiones)
+        pass
+
     if not live_benchmark:
         live_benchmark, snapshot_reliability = resolve_live_benchmark_from_snapshot(
             patient,
@@ -3538,6 +5931,46 @@ def build_patient_profile_view_model(
         prognostic_impact_bundle["backbone_alignment"] = backbone_alignment
     latest_signal_snapshot.update(
         {
+            "decision_governance_bundle": decision_governance_bundle,
+            "recommendation_block_status": recommendation_block_status,
+            "recommendation_block_reason": recommendation_block_reason,
+            "display_recommendation_block_reason": display_recommendation_block_reason,
+            "allowed_actions_while_blocked": allowed_actions_while_blocked,
+            "decision_blocking_bundle": decision_blocking_bundle,
+            "diagnostic_certainty_bundle": diagnostic_certainty_bundle,
+            "staging_certainty_bundle": staging_certainty_bundle,
+            "minimum_decisive_dataset_bundle": minimum_decisive_dataset_bundle,
+            "therapeutic_window_bundle": therapeutic_window_bundle,
+            "therapeutic_readiness_bundle": therapeutic_readiness_bundle,
+            "readiness_status": therapeutic_readiness_bundle.get("readiness_status", ""),
+            "release_blockers": therapeutic_readiness_bundle.get("release_blockers", []),
+            "safety_blockers": therapeutic_readiness_bundle.get("safety_blockers", []),
+            "required_to_release": therapeutic_readiness_bundle.get("required_to_release", []),
+            "display_release_actions": therapeutic_readiness_bundle.get("display_release_actions", []),
+            "therapeutic_capture_actions": therapeutic_readiness_bundle.get("capture_actions", []),
+            "next_best_action_if_not_ready": therapeutic_readiness_bundle.get("next_best_action_if_not_ready", {}),
+            "competing_intent": therapeutic_readiness_bundle.get("competing_intent", {}),
+            "window_worklist_bundle": window_worklist_bundle,
+            "clinician_decision_capture_bundle": clinician_decision_capture_bundle,
+            "state_transition_confirmation_bundle": state_transition_confirmation_bundle,
+            "adherence_tracking_bundle": adherence_tracking_bundle,
+            "tumor_board_outcome_bundle": tumor_board_outcome_bundle,
+            "pro_decision_bundle": pro_decision_bundle,
+            "shared_decision_bundle": shared_decision_bundle,
+            "localized_modality_fitness_bundle": localized_modality_fitness_bundle,
+            "localized_tradeoff_bundle": localized_tradeoff_bundle,
+            "patient_priority_profile": patient_priority_profile,
+            "ctdna_refinement_bundle": ctdna_refinement_bundle,
+            "multimodal_imaging_concordance_bundle": multimodal_imaging_concordance_bundle,
+            "precision_workflow_bundle": precision_workflow_bundle,
+            "registry_core_bundle": registry_core_bundle,
+            "endpoint_adjudication_bundle": endpoint_adjudication_bundle,
+            "data_certainty_bundle": data_certainty_bundle,
+            "ichom_compliance_bundle": ichom_compliance_bundle,
+            "treatment_adverse_event_bundle": treatment_adverse_event_bundle,
+            "population_survival_context_bundle": population_survival_context_bundle,
+            "cost_access_context_bundle": cost_access_context_bundle,
+            "score_interpretation_catalog_snapshot": score_interpretation_catalog_snapshot,
             "outcome_events_summary": adjudication_snapshot.get("outcome_events_summary", {}),
             "pending_adjudications": adjudication_snapshot.get("pending_adjudications", []),
             "current_response_state": adjudication_snapshot.get("current_response_state", {}),
@@ -3553,16 +5986,26 @@ def build_patient_profile_view_model(
             "cadence_adjusted_by": prognostic_impact_bundle.get("cadence_adjusted_by", []),
             "psa_forecast": psa_forecast,
             "forecast_reliability": forecast_reliability,
+            # Faubot 2026-04-25 (LXIX) — Auditoría #64B
+            # Wire backend #64A → frontend bundle:
+            #   - psa_forecast_per_line: forecasts independientes por treatment line
+            #   - psa_cohort_reference: curva de referencia poblacional (medianas pivotales)
+            #   - psa_combined_timeline: estructura unificada PSA+treatment+events
+            "psa_forecast_per_line": psa_forecast_per_line,
+            "psa_cohort_reference": psa_cohort_reference,
+            "psa_combined_timeline": psa_combined_timeline,
             "live_benchmark": live_benchmark,
             "benchmark_reliability": benchmark_reliability,
             "palliative_transition_bundle": palliative_transition_bundle,
             "palliative_monitoring_package": palliative_monitoring_package,
             "survivorship_transition_bundle": survivorship_transition_bundle,
             "survivorship_monitoring_package": survivorship_monitoring_package,
+            "survivorship_checklist": survivorship_checklist,
             "late_effects_profile": late_effects_profile,
             "functional_recovery_profile": functional_recovery_profile,
             "survivorship_schedule_overlay": survivorship_schedule_overlay,
             "survivorship_plan": survivorship_plan,
+            "rt_toxicity_timeline": rt_toxicity_timeline,
             "symptom_burden_profile": longitudinal_bundle.get("symptom_burden_profile") or patient.get("symptom_burden_profile") or {},
             "advance_care_planning_status": longitudinal_bundle.get("advance_care_planning_status") or patient.get("advance_care_planning_status") or {},
             "hospice_eligibility": longitudinal_bundle.get("hospice_eligibility") or patient.get("hospice_eligibility") or {},
@@ -3602,6 +6045,9 @@ def build_patient_profile_view_model(
         raw_assessment=raw_assessment,
         display_assessment=assessment,
         copilot_modifiers=copilot_modifiers,
+        localized_modality_fitness_bundle=localized_modality_fitness_bundle,
+        localized_tradeoff_bundle=localized_tradeoff_bundle,
+        patient_priority_profile=patient_priority_profile,
     )
     if state in ADVANCED_STATES:
         stage_specific_panels, advanced_panel_context, missing_inputs_by_panel = _advanced_panels(
@@ -3614,6 +6060,152 @@ def build_patient_profile_view_model(
         modifier_panel = _copilot_orientation_panel(copilot_modifiers or {})
         if modifier_panel:
             stage_specific_panels.append(modifier_panel)
+    # EPIC 2 — Tarjetas clínicas universales (renal, Halabi, ADT, viscerales,
+    # genomic classifiers, germline/somatic, medicamentos estructurados).
+    # Se exponen en una sección dedicada del perfil para no mezclar datos
+    # transversales con paneles específicos de etapa.
+    epic2_clinical_cards = build_epic2_clinical_cards(patient, state=state)
+    # EPIC 6 — Bundles universales (bone health NCCN PROS-I, germline NCCN
+    # PROS-H y captura CTCAE v5 estructurada). Se construyen en todas las
+    # etapas con defaults tolerantes; tone/summary alimentan tarjetas en UI.
+    try:
+        _epic6_patient = dict(patient)
+        if state and not _epic6_patient.get("current_state"):
+            _epic6_patient["current_state"] = state
+        bone_health_bundle = build_bone_health_recommendation(_epic6_patient).to_dict()
+    except Exception:
+        bone_health_bundle = {
+            "tone": "info",
+            "summary": "Bone health bundle no disponible",
+            "alerts": [],
+            "missing_inputs": [],
+        }
+    try:
+        germline_recommendation_bundle = should_offer_germline_testing(_epic6_patient).to_dict()
+    except Exception:
+        germline_recommendation_bundle = {
+            "should_offer": False,
+            "priority": "not_indicated",
+            "reasons": [],
+            "triggers_matched": [],
+        }
+    try:
+        ctcae_capture_bundle = capture_ctcae_events(_epic6_patient).to_dict()
+    except Exception:
+        ctcae_capture_bundle = {
+            "events": [],
+            "burden": {},
+            "narrative": "CTCAE no disponible",
+            "tone": "info",
+            "alerts": [],
+            "legacy_fields_imported": [],
+            "validation_errors": [],
+        }
+    # EPIC 7 — Bundles SDM (tradeoffs × prioridades), trial matching
+    # (catálogo curado local) y elicitación Likert de preferencias.
+    # Tolerantes a falta de datos: si no hay prioridades, la matriz igual
+    # entrega outcomes por 100 pacientes para todas las modalidades
+    # aplicables al grupo de riesgo NCCN.
+    try:
+        _epic7_patient = dict(_epic6_patient)
+        if state and not _epic7_patient.get("state"):
+            _epic7_patient["state"] = state
+        sdm_tradeoff_bundle = build_tradeoff_matrix(_epic7_patient).to_dict()
+    except Exception:
+        sdm_tradeoff_bundle = {
+            "risk_group_applied": "",
+            "life_expectancy_band": "unknown",
+            "priorities_active": [],
+            "priorities_labels": [],
+            "rows": [],
+            "top_recommendation": "",
+            "top_recommendation_reason": "Matriz SDM no disponible",
+            "missing_inputs": [],
+            "evidence_citations": [],
+        }
+    try:
+        trial_matching_bundle = build_trial_matching_bundle(_epic7_patient)
+    except Exception:
+        trial_matching_bundle = {
+            "total_trials_in_catalog": 0,
+            "positive_match_count": 0,
+            "matches": [],
+            "ineligible": [],
+            "catalog_source": "local_curated_v1",
+            "disclaimer": "Matching de ensayos no disponible.",
+        }
+    try:
+        _elicitation_answers = dict(patient.get("sdm_elicitation_answers") or {})
+        sdm_elicitation_bundle = {
+            "form": build_elicitation_form(),
+            "result": score_elicitation(_elicitation_answers).to_dict(),
+        }
+    except Exception:
+        sdm_elicitation_bundle = {
+            "form": [],
+            "result": {
+                "items_evaluated": [],
+                "priority_weights": {},
+                "ranked_priorities": [],
+                "unresolved_items": [],
+                "narrative": "Elicitación SDM no disponible",
+            },
+        }
+    # EPIC 8 — Bundles de screening poblacional (NCCN Early Detection v2.2026)
+    # y terapia focal selectiva (NCCN PROS-C cat 2B). Los copilots se activan
+    # sólo cuando el estado clínico corresponde (screening / focal_therapy /
+    # localized_initial con señal focal) y devuelven un bundle latente en
+    # otros carriles para que el template pueda renderizar placeholders.
+    try:
+        from prostanet.domains.patient_tracking.screening_copilot_service import (
+            ScreeningCopilotService,
+        )
+        _screening_copilot = ScreeningCopilotService()
+        screening_bundle = _screening_copilot.evaluate(
+            dict(_epic7_patient),
+            effective_state=state,
+            latest_assessment=patient.get("latest_assessment"),
+        )
+    except Exception:
+        screening_bundle = {
+            "service_id": "screening_copilot",
+            "status": "not_applicable",
+            "state": state,
+            "summary": "",
+            "recommendation": "",
+            "risk_group": "",
+            "category": "",
+            "interval_months": None,
+            "start_age_recommended": None,
+            "derive_to_workup": False,
+            "workup_reasons": [],
+            "evaluation": {},
+        }
+    try:
+        from prostanet.domains.patient_tracking.focal_therapy_copilot_service import (
+            FocalTherapyCopilotService,
+        )
+        _focal_copilot = FocalTherapyCopilotService()
+        focal_therapy_bundle = _focal_copilot.evaluate(
+            dict(_epic7_patient),
+            effective_state=state,
+            latest_assessment=patient.get("latest_assessment"),
+        )
+    except Exception:
+        focal_therapy_bundle = {
+            "service_id": "focal_therapy_copilot",
+            "status": "not_applicable",
+            "state": state,
+            "summary": "",
+            "recommendation": "",
+            "eligible": False,
+            "risk_group": "",
+            "modality_recommended": "",
+            "cautions": [],
+            "contraindications": [],
+            "durations_and_conditions": [],
+            "evaluation": {},
+        }
     if diagnosis_context.get("official_diagnosis_missing_fields_raw"):
         missing_inputs_by_panel["official_diagnosis"] = diagnosis_context.get("official_diagnosis_missing_fields_raw", [])
     pivotal_panel = _build_pivotal_panel(patient.get("pivotal_matches", []), state=state)
@@ -3730,13 +6322,98 @@ def build_patient_profile_view_model(
     profile_decision_view_model = _build_profile_decision_view_model(
         clinical_compass=clinical_compass,
         care_intent_contract=care_intent_contract,
+        next_best_action=latest_signal_snapshot.get("next_best_action", {}),
         management_track=management_track,
         state=state,
     )
+    clinical_copy_bundle = _build_clinical_copy_bundle(
+        state=state,
+        clinical_compass=clinical_compass,
+        diagnosis_context=diagnosis_context,
+        care_intent_contract=care_intent_contract,
+        next_best_action=latest_signal_snapshot.get("next_best_action", {}),
+        triplet_decision=triplet_decision,
+        metastatic_state_bundle=longitudinal_bundle.get("metastatic_state_bundle", {}),
+        signal_snapshot=latest_signal_snapshot,
+    )
+    advanced_therapy_decision_panel = build_advanced_therapy_decision_panel(
+        state=state,
+        therapeutic_readiness_bundle=therapeutic_readiness_bundle,
+        active_copilot_bundle=active_copilot_bundle,
+        local_adjuncts_visible=list(clinical_copy_bundle.get("local_adjuncts_visible") or []),
+    )
+    decision_evidence_currentness_bundle["display_refresh_actions"] = list(
+        decision_evidence_currentness_bundle.get("display_refresh_actions")
+        or decision_evidence_currentness_bundle.get("refresh_actions")
+        or []
+    )
+    decision_evidence_currentness_bundle["display_stale_evidence_fields"] = _displayize_field_list(
+        decision_evidence_currentness_bundle.get("stale_evidence_fields") or [],
+        limit=8,
+    )
+    decision_evidence_currentness_bundle["display_aging_evidence_fields"] = _displayize_field_list(
+        decision_evidence_currentness_bundle.get("aging_evidence_fields") or [],
+        limit=8,
+    )
+    decision_evidence_currentness_bundle["display_traceability_gaps"] = _displayize_field_list(
+        decision_evidence_currentness_bundle.get("traceability_gaps") or [],
+        limit=8,
+    )
+    staging_adjudication_bundle["display_discordant_fields"] = _displayize_field_list(
+        staging_adjudication_bundle.get("discordant_fields") or [],
+        limit=8,
+    )
+    staging_adjudication_bundle["display_superseded_evidence"] = _displayize_field_list(
+        staging_adjudication_bundle.get("superseded_evidence") or [],
+        limit=8,
+    )
+    staging_adjudication_bundle["display_current_context_basis"] = normalize_field_list(
+        staging_adjudication_bundle.get("current_context_basis") or [],
+        limit=6,
+    )
+    supportive_care_toxicity_readiness_bundle["display_required_support_actions"] = normalize_field_list(
+        supportive_care_toxicity_readiness_bundle.get("required_support_actions") or [],
+        limit=8,
+    )
+    supportive_care_toxicity_readiness_bundle["display_missing_support_inputs"] = _displayize_field_list(
+        supportive_care_toxicity_readiness_bundle.get("missing_support_inputs") or [],
+        limit=8,
+    )
+    supportive_care_toxicity_readiness_bundle["display_stale_support_inputs"] = _displayize_field_list(
+        supportive_care_toxicity_readiness_bundle.get("stale_support_inputs") or [],
+        limit=8,
+    )
+    latest_signal_snapshot["advanced_therapy_decision_panel"] = advanced_therapy_decision_panel
+    latest_signal_snapshot["decision_evidence_currentness_bundle"] = decision_evidence_currentness_bundle
+    latest_signal_snapshot["staging_adjudication_bundle"] = staging_adjudication_bundle
+    latest_signal_snapshot["supportive_care_toxicity_readiness_bundle"] = supportive_care_toxicity_readiness_bundle
+    clinical_compass["display_decision_changing_inputs"] = normalize_field_list(
+        clinical_compass.get("decision_changing_inputs") or [],
+        limit=8,
+    )
+    surface_consistency_flags = list(
+        dict.fromkeys(
+            [
+                *surface_consistency_flags,
+                *list(clinical_copy_bundle.get("copy_consistency_flags") or []),
+                *list(profile_decision_view_model.get("consistency_flags") or []),
+            ]
+        )
+    )
+    if surface_consistency_flags:
+        surface_consistency_status = "requires_review"
     profile_decision_consistency = {
         "is_consistent": bool(profile_decision_view_model.get("is_consistent", True)),
         "flags": list(profile_decision_view_model.get("consistency_flags") or []),
     }
+    systemic_regimen_scope_contract = dict(
+        longitudinal_bundle.get("systemic_regimen_scope_contract")
+        or (raw_assessment.get("result_snapshot", {}) if raw_assessment else {}).get("systemic_regimen_scope_contract")
+        or build_systemic_regimen_scope_contract(
+            state,
+            (raw_assessment.get("result_snapshot", {}) if raw_assessment else {}) or {},
+        )
+    )
     identity_summary = {
         "baseline_psa_display": normalize_numeric_with_unit(
             patient.get("baseline", {}).get("baseline_psa"),
@@ -3769,8 +6446,27 @@ def build_patient_profile_view_model(
         "state_conflict_flag": reconciliation.get("state_conflict_flag", False),
         "state_conflict_reason": reconciliation.get("state_conflict_reason", ""),
         "clinical_compass": clinical_compass,
+        "clinical_copy_bundle": clinical_copy_bundle,
+        "metastatic_state_bundle": longitudinal_bundle.get("metastatic_state_bundle", {}),
+        "metastatic_stage_resolved": longitudinal_bundle.get("metastatic_stage_resolved", ""),
+        "metastatic_stage_label": longitudinal_bundle.get("metastatic_stage_label", ""),
+        "metastatic_detection_basis": longitudinal_bundle.get("metastatic_detection_basis", ""),
+        "nmcrpc_eligible": longitudinal_bundle.get("nmcrpc_eligible"),
+        "nmcrpc_ineligibility_reason": longitudinal_bundle.get("nmcrpc_ineligibility_reason", ""),
+        "restaging_update_required": longitudinal_bundle.get("restaging_update_required", False),
+        "restaging_currentness_status": longitudinal_bundle.get("restaging_currentness_status", ""),
+        "restaging_update_reason": longitudinal_bundle.get("restaging_update_reason", ""),
+        "progression_verification_required": longitudinal_bundle.get("progression_verification_required", False),
+        "progression_verification_missing_fields": longitudinal_bundle.get("progression_verification_missing_fields", []),
         "profile_decision_view_model": profile_decision_view_model,
         "profile_decision_consistency": profile_decision_consistency,
+        "systemic_regimen_scope": (
+            longitudinal_bundle.get("systemic_regimen_scope")
+            or (raw_assessment.get("result_snapshot", {}) if raw_assessment else {}).get("systemic_regimen_scope")
+            or systemic_regimen_scope_contract.get("scope")
+            or "not_applicable"
+        ),
+        "systemic_regimen_scope_contract": systemic_regimen_scope_contract,
         "identity_summary": identity_summary,
         "ui_normalized_labels": {
             "psa_forecast_status": psa_forecast.get("status_label", ""),
@@ -3798,6 +6494,15 @@ def build_patient_profile_view_model(
         "triplet_decision": triplet_decision,
         "triplet_decision_card": triplet_decision,
         "stage_specific_panels": stage_specific_panels,
+        "epic2_clinical_cards": epic2_clinical_cards,
+        "bone_health_bundle": bone_health_bundle,
+        "germline_recommendation_bundle": germline_recommendation_bundle,
+        "ctcae_capture_bundle": ctcae_capture_bundle,
+        "sdm_tradeoff_bundle": sdm_tradeoff_bundle,
+        "trial_matching_bundle": trial_matching_bundle,
+        "sdm_elicitation_bundle": sdm_elicitation_bundle,
+        "screening_bundle": screening_bundle,
+        "focal_therapy_bundle": focal_therapy_bundle,
         "algorithm_panels": _build_algorithm_panels(
             state=state,
             raw_assessment=raw_assessment,
@@ -3805,6 +6510,12 @@ def build_patient_profile_view_model(
         ),
         "module_data_contracts": _module_data_contracts(),
         "pivotal_panel": pivotal_panel,
+        # Faubot 2026-04-25 (VIII) — UI card de gates pivotal disparados.
+        # Hace visible al clínico la cadena de razonamiento (CÓMO + POR QUÉ)
+        # de los 18 gates centralizados en `pivotal_contraindication_gates.py`.
+        "pivotal_contraindication_gates_panel": _build_pivotal_contraindication_gates_panel(
+            raw_assessment
+        ),
         "evidence_applicability": evidence_applicability,
         "advanced_panel_context": advanced_panel_context,
         "therapy_catalog_options": therapy_select_options(state=state, management_track=management_track, include_empty=True),
@@ -3826,15 +6537,72 @@ def build_patient_profile_view_model(
         "longitudinal_truth_snapshot": longitudinal_truth_snapshot,
         "decision_recalculation_trace": decision_recalculation_trace,
         "transition_resolution": transition_resolution,
+        "decision_governance_bundle": decision_governance_bundle,
+        "recommendation_block_status": recommendation_block_status,
+        "recommendation_block_reason": recommendation_block_reason,
+        "display_recommendation_block_reason": display_recommendation_block_reason,
+        "allowed_actions_while_blocked": allowed_actions_while_blocked,
+        "decision_blocking_bundle": decision_blocking_bundle,
+        "diagnostic_certainty_bundle": diagnostic_certainty_bundle,
+        "staging_certainty_bundle": staging_certainty_bundle,
+        "minimum_decisive_dataset_bundle": minimum_decisive_dataset_bundle,
+        "decision_evidence_currentness_bundle": decision_evidence_currentness_bundle,
+        "therapeutic_window_bundle": therapeutic_window_bundle,
+        "therapeutic_readiness_bundle": therapeutic_readiness_bundle,
+        "advanced_therapy_decision_panel": advanced_therapy_decision_panel,
+        "readiness_status": therapeutic_readiness_bundle.get("readiness_status", ""),
+        "release_blockers": therapeutic_readiness_bundle.get("release_blockers", []),
+        "safety_blockers": therapeutic_readiness_bundle.get("safety_blockers", []),
+        "supportive_readiness_status": therapeutic_readiness_bundle.get("supportive_readiness_status", ""),
+        "required_support_actions": therapeutic_readiness_bundle.get("required_support_actions", []),
+        "hard_support_blockers": therapeutic_readiness_bundle.get("hard_support_blockers", []),
+        "required_to_release": therapeutic_readiness_bundle.get("required_to_release", []),
+        "therapeutic_capture_actions": therapeutic_readiness_bundle.get("capture_actions", []),
+        "next_best_action_if_not_ready": therapeutic_readiness_bundle.get("next_best_action_if_not_ready", {}),
+        "competing_intent": therapeutic_readiness_bundle.get("competing_intent", {}),
+        "advanced_followup_bundle": advanced_followup_bundle,
+        "staging_adjudication_bundle": staging_adjudication_bundle,
+        "supportive_care_toxicity_readiness_bundle": supportive_care_toxicity_readiness_bundle,
+        "window_worklist_bundle": window_worklist_bundle,
+        "localized_modality_fitness_bundle": localized_modality_fitness_bundle,
+        "localized_tradeoff_bundle": localized_tradeoff_bundle,
+        "patient_priority_profile": patient_priority_profile,
+        "clinician_decision_capture_bundle": clinician_decision_capture_bundle,
+        "state_transition_confirmation_bundle": state_transition_confirmation_bundle,
+        "adherence_tracking_bundle": adherence_tracking_bundle,
+        "tumor_board_outcome_bundle": tumor_board_outcome_bundle,
+        "pro_decision_bundle": pro_decision_bundle,
+        "shared_decision_bundle": shared_decision_bundle,
+        "ctdna_refinement_bundle": ctdna_refinement_bundle,
+        "multimodal_imaging_concordance_bundle": multimodal_imaging_concordance_bundle,
+        "precision_workflow_bundle": precision_workflow_bundle,
+        "registry_core_bundle": registry_core_bundle,
+        "endpoint_adjudication_bundle": endpoint_adjudication_bundle,
+        "data_certainty_bundle": data_certainty_bundle,
+        "ichom_compliance_bundle": ichom_compliance_bundle,
+        "treatment_adverse_event_bundle": treatment_adverse_event_bundle,
+        "population_survival_context_bundle": population_survival_context_bundle,
+        "cost_access_context_bundle": cost_access_context_bundle,
+        "score_interpretation_catalog_snapshot": score_interpretation_catalog_snapshot,
+        **build_profile_support_projection(patient, longitudinal_bundle),
+        "profile_read_model_version": surface_projection.get("profile_read_model_version", ""),
+        "clinical_kernel_snapshot": clinical_kernel_snapshot,
+        "effective_state": effective_state,
+        "effective_recommendation_family": effective_recommendation_family,
+        "surface_consistency_status": surface_consistency_status,
+        "surface_consistency_flags": surface_consistency_flags,
+        "legacy_recommendation_panel": legacy_recommendation_panel,
         "care_intent_contract": care_intent_contract,
         "palliative_transition_bundle": palliative_transition_bundle,
         "palliative_monitoring_package": palliative_monitoring_package,
         "survivorship_transition_bundle": survivorship_transition_bundle,
         "survivorship_monitoring_package": survivorship_monitoring_package,
+        "survivorship_checklist": survivorship_checklist,
         "late_effects_profile": late_effects_profile,
         "functional_recovery_profile": functional_recovery_profile,
         "survivorship_schedule_overlay": survivorship_schedule_overlay,
         "survivorship_plan": survivorship_plan,
+        "rt_toxicity_timeline": rt_toxicity_timeline,
         "symptom_burden_profile": longitudinal_bundle.get("symptom_burden_profile") or patient.get("symptom_burden_profile") or {},
         "advance_care_planning_status": longitudinal_bundle.get("advance_care_planning_status") or patient.get("advance_care_planning_status") or {},
         "hospice_eligibility": longitudinal_bundle.get("hospice_eligibility") or patient.get("hospice_eligibility") or {},
@@ -3852,9 +6620,11 @@ def build_patient_profile_view_model(
         "localized_surveillance_bundle": localized_surveillance_bundle,
         "localized_copilot_status": localized_surveillance_bundle.get("status", "not_applicable"),
         "post_rt_salvage_bundle": post_rt_salvage_bundle,
-        "post_rt_failure_definition": post_rt_salvage_bundle.get("post_rt_failure_definition", {}),
+        "post_rt_failure_definition": post_rt_failure_definition,
+        "post_rt_recurrence_bundle": post_rt_failure_definition,
+        "post_rt_recurrence_profile": post_rt_recurrence_profile,
         "post_rt_local_salvage_ranking": post_rt_salvage_bundle.get("post_rt_local_salvage_ranking", []),
-        "post_rt_transition_bundle": post_rt_salvage_bundle.get("post_rt_transition_bundle", {}),
+        "post_rt_transition_bundle": post_rt_transition_bundle,
         "post_rt_copilot_status": post_rt_salvage_bundle.get("status", "not_applicable"),
         "salvage_window_status": post_rp_salvage_bundle.get("salvage_window_status", ""),
         "salvage_window_reason": post_rp_salvage_bundle.get("salvage_window_reason", ""),

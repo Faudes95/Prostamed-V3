@@ -1,0 +1,214 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 65: msi_mmr_reflex_testing_lynch_family
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXVI) — Auditoría #67B — Genomic Critical Gates.
+#
+# Razón clínica:
+#   Pacientes con Lynch syndrome family history (MMR-related cancers en
+#   familiares 1°/2°: colorrectal, endometrial, urotelial, ovárico,
+#   gástrico, sebaceous, glioblastoma) tienen elevated risk de
+#   prostate cancer Lynch-associated:
+#     - Prostate cancer Lynch-associated prevalence: 7-15% (vs 4% baseline)
+#     - MSI-H/dMMR enrichment: 15-25% en Lynch-PCa (vs 1-3% sporadic)
+#     - dMMR = Mismatch Repair deficiency (loss MLH1/MSH2/MSH6/PMS2)
+#     - MSI-H = Microsatellite Instability High
+#
+#   Decisión clínica activada:
+#     1. **MSI/MMR testing reflex obligatorio** cuando Lynch family hx:
+#        - IHC MMR proteins (MLH1, MSH2, MSH6, PMS2)
+#        - MSI PCR analysis (BAT-25, BAT-26, NR-21, NR-24, NR-27)
+#        - NGS-based MSI score
+#     2. **Si MSI-H/dMMR confirmado**:
+#        - Pembrolizumab eligible (KEYNOTE-158, KEYNOTE-199)
+#        - tissue-agnostic FDA approval
+#        - Response rate 30-40% en dMMR mCRPC
+#     3. **Germline MMR testing** (Lynch confirmation):
+#        - Family cascade testing
+#        - Genetic counselor referral
+#
+#   Severity: informational — alerta clínico para REFLEX TEST (no
+#   bloquea ningún tratamiento, abre opción immunotherapy).
+#
+#   Co-interaction: gate 61 (HRR test required for PARP), 64 (HRD
+#   comprehensive). Gate 65 ES SEPARATE pathway (MMR vs HRR).
+#
+#   Override: ninguno — gate informacional siempre relevante.
+# ──────────────────────────────────────────────────────────────────────
+
+code: msi_mmr_reflex_testing_lynch_family
+title: "Lynch family hx → MSI/MMR reflex testing obligatorio (pembrolizumab eligibility)"
+faubot_added_in: "2026-04-25 LXXVI"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: family hx Lynch-related cancers (cualquier signal)
+    - type: string_contains_any
+      field: family_history_detail
+      alias_fields:
+        - family_history
+        - family_cancer_history
+        - antecedentes_familiares
+        - family_history_tokens
+      patterns:
+        - colorectal
+        - colorrectal
+        - colon_cancer
+        - lynch
+        - hnpcc
+        - endometrial
+        - endometrio
+        - urothelial_lynch
+        - urotelial_lynch
+        - ovarian_lynch
+        - sebaceous_neoplasm
+        - small_bowel_cancer
+    # Path B: explicit Lynch syndrome flag
+    - type: truthy_flag
+      field: lynch_syndrome_family_documented
+      alias_fields:
+        - sindrome_lynch_familiar
+        - lynch_family_history_flag
+        - amsterdam_criteria_met
+        - bethesda_criteria_met
+    # Path C: previous MMR test pending or mentioned
+    - type: truthy_flag
+      field: msi_mmr_testing_recommended_clinically
+      alias_fields:
+        - test_msi_mmr_recomendado
+        - reflex_msi_testing_due
+    # Path D: MSI-H detected → triggers immunotherapy eligibility info
+    - type: string_match
+      field: msi_status
+      alias_fields:
+        - estado_msi
+        - microsatellite_instability_status
+      patterns:
+        - "MSI-H"
+        - MSI_H
+        - msi_high
+    # Path E: dMMR detected → triggers immunotherapy eligibility info
+    - type: string_match
+      field: mmr_deficient_status
+      alias_fields:
+        - estado_mmr
+        - mmr_status
+      patterns:
+        - "dMMR"
+        - dmmr
+        - mmr_deficient
+    # Path F: lynch germline test indicated
+    - type: truthy_flag
+      field: lynch_germline_test_indicated
+      alias_fields:
+        - germline_lynch_panel_indicated
+        - test_germline_lynch_indicado
+
+regimen_codes: []  # Gate informacional — abre opción immunotherapy
+
+keywords:
+  - Lynch syndrome
+  - sindrome Lynch
+  - MMR
+  - mismatch repair
+  - MSI
+  - microsatellite instability
+  - dMMR
+
+message: |
+  📊 INFORMATIVO: Family history sugerente de Lynch syndrome detectada
+  → MSI/MMR REFLEX TESTING obligatorio (NCCN cat 2A) para evaluar
+  elegibilidad checkpoint inhibitor (pembrolizumab).
+
+  🧬 RAZÓN CLÍNICA:
+  - Prostate cancer Lynch-associated prevalence: 7-15% (vs 4% baseline)
+  - MSI-H/dMMR enrichment en Lynch-PCa: 15-25% (vs 1-3% sporadic)
+  - dMMR = Mismatch Repair deficiency (loss MLH1/MSH2/MSH6/PMS2 IHC)
+  - MSI-H = Microsatellite Instability High (≥30% markers unstable)
+  - dMMR/MSI-H → tumor agnostic immunotherapy eligible
+
+  🎯 ACCIÓN OBLIGATORIA — MSI/MMR REFLEX TESTING:
+
+  **Testing requerido** (en orden de preferencia):
+  1. **IHC MMR proteins** (tissue):
+     - MLH1, MSH2, MSH6, PMS2 nuclear staining
+     - Loss = "deficient" (dMMR)
+     - Most accessible + faster (24-48h)
+  2. **MSI PCR analysis** (tissue/blood):
+     - 5-marker panel (BAT-25, BAT-26, NR-21, NR-24, NR-27)
+     - ≥2/5 unstable = MSI-H
+     - Sensitivity 90-95% vs IHC
+  3. **NGS-based MSI score** (FoundationOne CDx, MSK-IMPACT):
+     - Computational MSI calling from NGS
+     - Quantitative score
+     - Useful if NGS already planned
+
+  **Germline MMR testing** (Lynch confirmation):
+  4. **Hereditary cancer panel** (Color, Invitae, Myriad MyRisk):
+     - MLH1, MSH2, MSH6, PMS2, EPCAM germline
+     - Required para Lynch syndrome clinical diagnosis
+     - Cascade testing for first-degree relatives
+
+  📈 IF dMMR/MSI-H CONFIRMED — IMMUNOTHERAPY OPCIONES:
+
+  **Pembrolizumab** (FDA-approved tissue-agnostic dMMR/MSI-H):
+  - 200 mg IV cada 3 sem o 400 mg IV cada 6 sem
+  - **KEYNOTE-158** (Marabelle Lancet Oncol 2020): ORR 30-40% en
+    dMMR/MSI-H solid tumors
+  - **KEYNOTE-199** (Antonarakis JCO 2020): mCRPC dMMR subset
+    → ORR 13-25% en mCRPC (consistent solid tumor)
+  - Continuar hasta progresión, toxicidad o 24 meses (label)
+  - Monitoring: gates 41-42 (irAE checkpoint) + endocrinopathies
+
+  **Nivolumab + ipilimumab** (CheckMate 650):
+  - Combination en mCRPC (incluyendo dMMR subset)
+  - Mayor toxicidad pero higher response rate
+  - Considerar en CDK12+ + dMMR (gate 63 + 65 coexistencia)
+
+  🔬 EVIDENCIA CIENTÍFICA:
+  - **Antonarakis JCO 2020** — pembrolizumab mCRPC dMMR
+  - **Marabelle Lancet Oncol 2020** — KEYNOTE-158 tumor agnostic
+    dMMR/MSI-H
+  - **Le NEJM 2015** — initial proof-of-concept dMMR + pembrolizumab
+    (colorrectal)
+  - **Nava Rodrigues Eur Urol 2018** — dMMR prevalence en mCRPC
+  - **NCCN Prostate v5.2026 PROS-H** — Lynch family hx → MMR testing
+    category 2A
+  - **EAU 2026 §6.5.5** — MMR testing recommended en advanced prostate
+  - **FDA tumor agnostic approval pembrolizumab** dMMR/MSI-H 2017
+
+  🧪 LYNCH SYNDROME CRITERIA (para germline testing):
+  - **Amsterdam II criteria**: 3 family members con Lynch-cancer +
+    ≥2 generations + 1 case <50 años
+  - **Bethesda criteria revised**: less strict, more sensitivity
+  - **PREMM5 model**: probability >5% → germline testing recommended
+
+  🎯 CONDUCTA CLÍNICA:
+  1. **Documentar family hx exhaustiva** (3-generation pedigree)
+  2. **Reflex MSI/MMR testing** automático en mCRPC con Lynch family
+  3. **Si dMMR/MSI-H** → pembrolizumab eligible + germline testing
+  4. **Genetic counselor referral** para Lynch confirmation
+  5. **Cascade testing** family members si germline confirmed
+  6. **Lynch surveillance** for patient + family (colorectal, endometrial,
+     urothelial cancers)
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `family_history_detail`: tokens family cancer history
+  - `lynch_syndrome_family_documented`: explicit flag
+  - `msi_status`: MSS / MSI-L / MSI-H / No testado
+  - `mmr_status`: pMMR / dMMR / No testado
+  - `mmr_proteins_lost`: MLH1 / MSH2 / MSH6 / PMS2 / multiple
+  - `germline_mmr_test_done`: flag
+
+evidence_tag: keynote_158_marabelle_2020_antonarakis_2020_nccn_pros_h_lynch_msi
+trial_refs:
+  - "KEYNOTE-158 (Marabelle Lancet Oncol 2020)"
+  - "KEYNOTE-199 (Antonarakis JCO 2020 mCRPC dMMR)"
+  - "Le NEJM 2015 (proof-of-concept dMMR pembrolizumab)"
+  - "Nava Rodrigues Eur Urol 2018 (dMMR mCRPC)"
+  - "NCCN Prostate v5.2026 PROS-H (category 2A Lynch testing)"
+  - "EAU 2026 §6.5.5"
+  - "FDA pembrolizumab tumor agnostic dMMR/MSI-H approval 2017"
+  - "Amsterdam II + Bethesda Lynch criteria"

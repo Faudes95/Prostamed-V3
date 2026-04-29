@@ -9,5 +9,11 @@ __pycache__/
 *.log
 *.sqlite
 *.db
+*.db-wal
+*.db-shm
+.fuse_hidden*
+tmp/
+test-results/
+output/faubot/
 debug_output*.txt
 curl_final_output.json

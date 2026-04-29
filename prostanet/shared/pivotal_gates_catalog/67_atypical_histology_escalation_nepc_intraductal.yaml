@@ -1,0 +1,227 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 67: atypical_histology_escalation_nepc_intraductal
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXVII) — Auditoría #67C — Atypical histology.
+#
+# Razón clínica:
+#   Histologías atípicas en cáncer de próstata tienen pronóstico
+#   sustancialmente PEOR que adenocarcinoma convencional + requieren
+#   manejo específico:
+#
+#   1. **Neuroendocrine Prostate Cancer (NEPC)**:
+#      - Pure NEPC: 1-2% al diagnóstico inicial
+#      - Treatment-emergent NEPC (post-ARPI/ADT): 15-20% mCRPC tarde
+#      - Markers: chromogranin A, synaptophysin, NSE, AR loss
+#      - LDH típicamente >400 U/L (high turnover)
+#      - Visceral metástasis prominent (liver, lung)
+#      - Survival mediano: 7-12 meses (vs 24-36m adenocarcinoma)
+#      - **Tratamiento**: platinum-based chemo (carboplatin + etoposide)
+#        EP regimen — NO ARPI (sin response)
+#
+#   2. **Intraductal Carcinoma (IDC)**:
+#      - Prevalence: 10-20% biopsias high-grade
+#      - IDC = aggressive variant adenocarcinoma
+#      - Pathologic upstaging frequent
+#      - PSADT acelerado
+#      - **Tratamiento**: NCCN — clasificar como very-high-risk localized
+#        (treatment intensification, no AS/observation)
+#
+#   3. **Cribriform Pattern**:
+#      - Independent adverse prognostic factor
+#      - BCR-FS shorter
+#      - Lethal phenotype enrichment
+#      - **Tratamiento**: similar very-high-risk + multimodal
+#
+#   Severity: hard_block — bloquea active surveillance + recommends
+#   immediate intensified treatment pathway. NEPC también bloquea
+#   ARPI monotherapy (futile, requiere platinum chemo).
+#
+#   Override: ninguno para NEPC (siempre platinum), AS/observation
+#   bloqueada para intraductal/cribriform sin escape.
+#
+#   Coexistencia: gate puede coexistir con gate 66 (metastatic biopsy
+#   pathway), gates kinetics 53/54/55 si paciente tiene PSA elevado.
+# ──────────────────────────────────────────────────────────────────────
+
+code: atypical_histology_escalation_nepc_intraductal
+title: "Histología atípica (NEPC/intraductal/cribriform) → escalation obligatoria + bloqueo AS"
+faubot_added_in: "2026-04-25 LXXVII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: NEPC histología confirmada
+    - type: any_of
+      triggers:
+        - type: truthy_flag
+          field: nepc_confirmed_histology
+          alias_fields:
+            - nepc_confirmed
+            - neuroendocrine_prostate_cancer_documented
+            - cancer_neuroendocrino_confirmado
+        - type: string_match
+          field: histology_subtype
+          alias_fields:
+            - histologia_subtipo
+            - histologic_variant
+          patterns:
+            - neuroendocrine
+            - small_cell
+            - small_cell_neuroendocrine
+            - "small cell"
+            - NEPC
+            - mixed_adeno_neuroendocrine
+    # Path B: Intraductal carcinoma documentada
+    - type: any_of
+      triggers:
+        - type: truthy_flag
+          field: intraductal_carcinoma_present
+          alias_fields:
+            - intraductal_documented
+            - carcinoma_intraductal
+            - IDC_present
+        - type: string_match
+          field: histology_subtype
+          alias_fields:
+            - histologia_subtipo
+          patterns:
+            - intraductal
+            - intraductal_carcinoma
+            - IDC
+    # Path C: Cribriform pattern + Gleason ≥7
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: cribriform_pattern_present
+          alias_fields:
+            - cribriform_documented
+            - patron_cribiforme
+        - type: numeric_above
+          field: gleason_score
+          alias_fields:
+            - gleason_total
+          threshold: 6  # ≥7 = numeric_above 6
+    # Path D: Treatment-emergent NEPC sospecha (LDH elevation + post-ARPI)
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: ldh_value
+          alias_fields:
+            - LDH
+            - ldh_serum
+            - lactato_deshidrogenasa
+          threshold: 399  # ≥400 = numeric_above 399
+        - type: truthy_flag
+          field: treatment_emergent_nepc_suspected
+          alias_fields:
+            - nepc_post_arpi_suspected
+            - sospecha_nepc_post_tratamiento
+
+regimen_codes:
+  - REGIMEN_CODES_OBSERVATION_ONLY
+  - REGIMEN_CODES_ARPI  # NEPC bloquea ARPI (no response)
+
+keywords:
+  - vigilancia activa
+  - active surveillance
+  - observación
+  - watchful waiting
+  - ARPI monotherapy
+
+message: |
+  ⛔ HARD BLOCK: Histología atípica detectada (NEPC / intraductal /
+  cribriform Gleason ≥7) → ESCALATION OBLIGATORIA + bloqueo de
+  active surveillance + ARPI monotherapy (NEPC).
+
+  📊 HISTOLOGÍAS ATÍPICAS DETECTADAS:
+
+  **1. NEPC (Neuroendocrine Prostate Cancer)** — el más letal:
+  - Survival mediano: 7-12 meses (vs 24-36m adenocarcinoma)
+  - Markers: chromogranin A, synaptophysin, NSE elevation
+  - LDH típicamente >400 U/L
+  - Visceral metástasis prominent
+  - **Treatment**: PLATINUM-BASED CHEMO (NO ARPI, futile)
+    - **EP regimen** (cisplatin/carboplatin + etoposide)
+      Carboplatin AUC 5 D1 + Etoposide 100 mg/m² D1-3 cada 3 sem × 4-6 ciclos
+    - PSA response variable (NEPC menos PSA-dependiente)
+    - Imaging response es key endpoint
+  - **Trial enrollment**: priorizar NEPC trials (rare disease)
+
+  **2. Intraductal Carcinoma (IDC)** — aggressive variant:
+  - 10-20% biopsias high-grade
+  - Reclasificar como very-high-risk localized
+  - **Treatment**: multimodal intensified
+    - RP + extended PLND + adyuvant ADT/RT
+    - O RT IMRT 78-80 Gy + ADT 24-36 meses
+  - **NO AS** (gate 67 bloquea)
+
+  **3. Cribriform Pattern** — adverse prognostic factor:
+  - Independent predictor BCR + lethal phenotype
+  - **Treatment**: similar very-high-risk + multimodal
+  - **NO AS** si Gleason ≥7
+
+  🎯 CONDUCTA CLÍNICA OBLIGATORIA:
+
+  **Para NEPC**:
+  1. Confirmar histología con segunda opinión patológica
+  2. NSE + chromogranin A + AR IHC en tejido
+  3. CT thorax/abdomen/pelvis para extension visceral
+  4. PSMA-PET (puede ser negative en NEPC pure)
+  5. Iniciar **EP regimen** (carboplatin AUC 5 + etoposide 100 mg/m²)
+     o cisplatin alternativo
+  6. Considerar trial enrollment (rare disease, evidence limited)
+  7. Multidisciplinaria (oncology + uro + palliative early)
+
+  **Para Intraductal/Cribriform**:
+  1. Reclasificar como very-high-risk
+  2. NO active surveillance (gate 67 bloquea)
+  3. Treatment intensification:
+     - RP + extended PLND + adyuvant if pathologic findings
+     - O RT IMRT 78-80 Gy + ADT 24-36 meses (long-term)
+  4. Genomic counseling (intraductal enriched HRR alterations)
+  5. Family history evaluation (germline BRCA testing)
+
+  ⚠️ NO EXCEPCIÓN:
+  Gate 67 NO tiene override — histología atípica SIEMPRE requires
+  escalation. Active surveillance bloqueada para todos los 3 subtipos.
+
+  🔬 EVIDENCIA CIENTÍFICA:
+
+  **NEPC**:
+  - Aparicio Eur Urol 2024 — NEPC characterization + treatment
+  - Beltran JCO 2018 — molecular landscape NEPC
+  - **NCCN Prostate v5.2026 PROS-A**: NEPC pathway separate
+  - **EAU 2026 §6.6**: NEPC management guidelines
+
+  **Intraductal**:
+  - Kweldam Eur Urol 2017 — IDC adverse prognostic
+  - Risbridger Nat Rev Cancer 2018 — IDC molecular characterization
+  - **NCCN Prostate v5.2026 PROS-1**: IDC = adverse feature
+
+  **Cribriform**:
+  - Kweldam Histopathology 2015 — cribriform independent prognostic
+  - Iczkowski Mod Pathol 2018 — cribriform reclassification
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `nepc_confirmed_histology`: flag NEPC documentado
+  - `intraductal_carcinoma_present`: flag IDC documentado
+  - `cribriform_pattern_present`: flag cribriform documentado
+  - `histology_subtype`: text/select (adenocarcinoma/intraductal/cribriform/NEPC/etc)
+  - `ldh_value`: LDH serum en U/L
+  - `treatment_emergent_nepc_suspected`: flag NEPC post-tratamiento
+
+  Este gate es **HARD BLOCK** absoluto sin override — histología
+  atípica requires manejo específico no-standard.
+
+evidence_tag: aparicio_eur_urol_2024_beltran_jco_2018_kweldam_2017_nepc_intraductal
+trial_refs:
+  - "Aparicio Eur Urol 2024 (NEPC management)"
+  - "Beltran JCO 2018 (NEPC molecular landscape)"
+  - "Kweldam Eur Urol 2017 (IDC adverse prognostic)"
+  - "Kweldam Histopathology 2015 (cribriform pattern)"
+  - "Risbridger Nat Rev Cancer 2018 (IDC molecular)"
+  - "NCCN Prostate v5.2026 PROS-A (NEPC pathway)"
+  - "NCCN Prostate v5.2026 PROS-1 (IDC adverse feature)"
+  - "EAU 2026 §6.6 (NEPC management)"

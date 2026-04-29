@@ -1,0 +1,45 @@
+# Change Request Log — ProstaMed
+# Per SOP-CCG-002 Change Control Procedure
+
+document: "Change Request Log"
+faubot_release: "2026-04-27 LXXXVIII"
+last_updated: "2026-04-27"
+
+change_requests:
+  - id: CR-2026-001
+    title: "Bootstrap CDE Auditable real (8 bugs raíz)"
+    description: "Iteración LXXXVI #67F: recompute hook + 19 keys compass + transition_proposals UI + Stage-Aware intake + What-if simulator"
+    impact_clinical: "ALTO — convierte motor backend en accesible al clínico"
+    impact_regulatory: "Habilita 5/5 ⭐⭐⭐⭐⭐ CDE Auditable scorecard"
+    risk_assessment_link: "regulatory/risk/fmea-prostanet-2026.yaml#MIT-001 to MIT-005"
+    status: closed
+    opened_at: "2026-04-27"
+    merged_at: "2026-04-27"
+    merge_commit_sha: "(LXXXVI release)"
+    approver: "auto-merged via Faubot iteration LXXXVI"
+
+  - id: CR-2026-002
+    title: "Faubot Agentic Loop bootstrap (Fase 6 plan #67F)"
+    description: "Iteración LXXXVII: prostanet/agentic/ package + 4 safety gates + rollback engine + 8-fase orquestador + GitHub Actions cron daily 06:00 UTC + 40 tests dedicados (H.G2841-H.G2880)"
+    impact_clinical: "BAJO — bootstrap infra; no decisiones clínicas afectadas"
+    impact_regulatory: "MEDIO — habilita auto-merge gateado por safety nets"
+    risk_assessment_link: "regulatory/risk/fmea-prostanet-2026.yaml#MIT-016"
+    status: closed
+    opened_at: "2026-04-27"
+    merged_at: "2026-04-27"
+    merge_commit_sha: "(LXXXVII release)"
+    approver: "manual review + 1627/1627 sweep PASS"
+
+  - id: CR-2026-003
+    title: "FDA SaMD Compliance Closure Loop (LXXXVIII bootstrap)"
+    description: "compliance_scorer + 7 pillars + gap_prioritizer + dhf_matrix + dashboard /fda-samd-compliance + retro validator scaffold + 7 regulatory seeds (IMDRF + CDS + IEC 62304 + intended_use + 4 SOPs + FMEA + STRIDE + SBOM + traceability)"
+    impact_clinical: "BAJO — auditing infra; no decisiones clínicas modificadas"
+    impact_regulatory: "ALTO — sube compliance baseline 13.3% → ~50%+ targeted"
+    risk_assessment_link: "regulatory/risk/fmea-prostanet-2026.yaml#MIT-017"
+    status: in_progress
+    opened_at: "2026-04-27"
+    merged_at: null
+    approver: "pending bump to LXXXVIII release"
+
+# Future auto-merged CRs from Faubot loop will be appended here automatically
+# with controlled_change=true flag pointing to SOP-CCG-002.

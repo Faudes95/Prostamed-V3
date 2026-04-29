@@ -1,0 +1,146 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 21: abiraterone_hepatotoxicity_grade3
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XXVI) — Gate YAML-NATIVE (Tier 2/3 E).
+#
+# Razón clínica:
+#   Abiraterona (Zytiga) tiene WARNING en label §5.1 sobre hepatotoxicidad
+#   severa. Datos de COU-AA-301/302 + LATITUDE + STAMPEDE:
+#     - AST/ALT >5× ULN: ~3-4% en monoterapia abiraterona+pred
+#     - Casos fatales documentados (~0.2%)
+#     - CTCAE v5 grado 3 = AST/ALT 5-20× ULN (asociado a sintomatología)
+#     - Mecanismo: inhibición CYP17 + idiosincrasia hepática
+#
+#   Threshold canónico (Zytiga FDA prescribing information §5.1):
+#     - AST o ALT >5× ULN basal → suspensión de inicio
+#     - Bilirubina total >3× ULN → contraindicación
+#     - AST o ALT >20× ULN → contraindicación absoluta
+#
+#   Asumiendo ULN AST/ALT ≈ 40 IU/L (variable según lab):
+#     - Grado 3 = >200 IU/L
+#     - Grado 4 = >800 IU/L
+#
+#   Override: hepatic_function_recovered_for_abiraterone=Sí (tras
+#   normalización <2.5× ULN documentada en bioquímica seguimiento).
+#
+#   Bloquea: TODOS los regímenes con abiraterona (incluye combos
+#   PARP+abi: NIRAPARIB_ABIRATERONE/ABIRATERONE_OLAPARIB que tienen
+#   exposición simultánea hepática).
+# ──────────────────────────────────────────────────────────────────────
+
+code: abiraterone_hepatotoxicity_grade3
+title: "Abiraterona × hepatotoxicidad grado 3 (CTCAE v5: AST/ALT >5× ULN)"
+faubot_added_in: "2026-04-25 XXVI"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1. AST > 200 IU/L (≈ >5× ULN típico de 40)
+    - type: numeric_above
+      field: ast_value
+      alias_fields:
+        - ast_iu_l
+        - ast_baseline
+        - ast_serum
+        - sgot
+      threshold: 200
+    # 2. ALT > 200 IU/L (≈ >5× ULN típico de 40)
+    - type: numeric_above
+      field: alt_value
+      alias_fields:
+        - alt_iu_l
+        - alt_baseline
+        - alt_serum
+        - sgpt
+      threshold: 200
+    # 3. Bilirubina total > 3× ULN (≈ >3 mg/dL típico)
+    - type: numeric_above
+      field: bilirubin_total_mg_dl
+      alias_fields:
+        - total_bilirubin
+        - bilirubin_total
+      threshold: 3.0
+    # 4. CTCAE v5 grado ≥3 hepatotox documentado
+    - type: numeric_threshold
+      field: hepatotoxicity_ctcae_grade
+      threshold: 3
+    # 5. Flag explícito
+    - type: truthy_flag
+      field: hepatotoxicity_grade3_for_abiraterone
+      alias_fields:
+        - severe_hepatic_dysfunction
+        - liver_failure_active
+
+# Override: tras normalización bioquímica documentada
+override:
+  type: truthy_flag
+  field: hepatic_function_recovered_for_abiraterone
+
+regimen_codes:
+  - REGIMEN_CODES_ABIRATERONE
+
+keywords:
+  - KEYWORDS_ABIRATERONE
+
+message: |
+  Abiraterona (Zytiga, Yonsa) NO debe iniciarse o continuarse con
+  hepatotoxicidad grado ≥3 (CTCAE v5: AST o ALT >5× ULN, bilirubina
+  total >3× ULN, o disfunción hepática documentada). Zytiga FDA
+  prescribing information §5.1 establece este threshold como criterio
+  de suspensión obligatoria; AST/ALT >20× ULN = contraindicación
+  absoluta con riesgo de falla hepática fulminante.
+
+  Evidencia regulatoria:
+    - Zytiga FDA §5.1 — AST/ALT >5× ULN o bilirubina >3× ULN
+      requieren suspensión inmediata; reintroducción solo tras
+      normalización <2.5× ULN.
+    - COU-AA-301 (de Bono NEJM 2011;364:1995) — Hepatotox grado 3
+      en 3.5% (vs 0.7% placebo).
+    - COU-AA-302 (Ryan NEJM 2013;368:138) — Hepatotox grado 3
+      en 3.7% (vs 0.7% placebo).
+    - LATITUDE (Fizazi NEJM 2017;377:352) — Vigilancia obligatoria
+      AST/ALT cada 2 semanas primeros 3 meses, mensual después.
+
+  Conducta clínica:
+  1. Suspender abiraterona inmediatamente.
+  2. Descartar causas alternativas (DILI con DDIs hepatotóxicas,
+     viral hepatitis A/B/C, autoinmune, NAFLD, alcoholic, biliary
+     obstruction).
+  3. Optimizar: suspender DDIs hepatotóxicas concomitantes
+     (rifampin, statins, paracetamol >3g/día, isoniazid).
+  4. Vigilancia bioquímica semanal hasta normalización.
+  5. Reintroducción solo con `hepatic_function_recovered_for_abiraterone=Sí`
+     tras AST/ALT <2.5× ULN documentado + bilirubina <1.5× ULN.
+  6. Considerar terapia alternativa NO-abiraterona:
+     - Enzalutamida (sin metabolismo hepático prominente)
+     - Apalutamida (similar a enzalutamida)
+     - Docetaxel si fitness permite (sin hepatotox idiosincrásica)
+     - Lu-177-PSMA-617 si elegible
+
+  Notar: combos PARP+abiraterona (NIRAPARIB_ABIRATERONE/ABIRATERONE_OLAPARIB)
+  también bloqueados por mismo mecanismo (PARPi+abi exposición simultánea
+  hepática multiplica riesgo).
+
+evidence_tag: zytiga_label_couaa_latitude_ctcae_v5
+trial_refs:
+  - "COU-AA-301"
+  - "COU-AA-302"
+  - LATITUDE
+  - STAMPEDE
+  - "Zytiga label §5.1"
+  - "CTCAE v5"
+
+references:
+  - "Zytiga (abiraterone) FDA prescribing information §5.1 (Hepatotoxicity)."
+  - "de Bono JS et al. COU-AA-301. NEJM 2011;364:1995-2005."
+  - "Ryan CJ et al. COU-AA-302. NEJM 2013;368:138-148."
+  - "Fizazi K et al. LATITUDE. NEJM 2017;377:352-360."
+  - "James ND et al. STAMPEDE arm G. NEJM 2017;377:338-351."
+  - "Fizazi K et al. — Abiraterone hepatotoxicity safety analysis."
+  - "CTCAE v5.0 — AST/ALT/bilirubin grading."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Abiraterone hepatic monitoring"
+  eau_section: "EAU 2026 §6.5.5 — Abiraterone hepatotoxicity precaution"

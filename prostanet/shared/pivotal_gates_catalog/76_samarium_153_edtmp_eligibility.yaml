@@ -1,0 +1,191 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 76: samarium_153_edtmp_eligibility
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXIX) — Auditoría #67E — Sm-153 EDTMP eligibility.
+#
+# Razón clínica:
+#   **Samarium-153-EDTMP (Quadramet®)** es radiofármaco beta-emisor
+#   FDA-approved (1997) para palliación bone pain en mCRPC widespread:
+#
+#   1. **Mecanismo**: localiza en hidroxiapatita ósea + emite beta
+#      penetración 0.5-3 mm
+#   2. **Indicación**: bone pain refractario + multifocal bone mets
+#   3. **Dosis**: 1.0 mCi/kg IV single dose (puede repetirse cada 3m)
+#   4. **Eficacia**: 60-80% mejoran dolor en 1-4 semanas
+#      Duración respuesta: 1-4 meses
+#   5. **Pre-requisitos**:
+#      - ANC ≥1500/µL
+#      - Plaquetas ≥100,000/µL (idealmente ≥150K)
+#      - Hemoglobin ≥9 g/dL
+#      - Creatinine clearance >30 mL/min
+#      - Bone scan multi-foci positive
+#      - Esperanza vida ≥3 meses
+#
+#   Severity: informational — gate alerta opción terapéutica radiofármaco
+#   beta-emisor para palliación bone pain.
+#
+#   Coexistencia: gate 76 puede coexistir con gates 13/14 (Ra-223), gate 73
+#   (BPI pain), gate 9 (BMA prophylaxis).
+# ──────────────────────────────────────────────────────────────────────
+
+code: samarium_153_edtmp_eligibility
+title: "Samarium-153-EDTMP eligibility → palliación bone pain widespread mCRPC (1.0 mCi/kg IV)"
+faubot_added_in: "2026-04-26 LXXIX"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: bone pain widespread + multi-foci + adecuados counts
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: bpi_worst_pain_score
+          alias_fields:
+            - bpi_peor_dolor
+            - pain_worst_nrs
+          threshold: 3  # ≥4
+        - type: truthy_flag
+          field: widespread_bone_metastases_documented
+          alias_fields:
+            - bone_mets_widespread
+            - metastasis_oseas_extensas
+        - type: numeric_above
+          field: anc
+          alias_fields:
+            - absolute_neutrophil_count
+            - neutrophils_absolute
+          threshold: 1499  # ≥1500
+        - type: numeric_above
+          field: platelets
+          alias_fields:
+            - plaquetas
+            - platelet_count
+          threshold: 99999  # ≥100K
+    # Path B: clinical flag explicit Sm-153 candidate
+    - type: truthy_flag
+      field: samarium_153_edtmp_candidate
+      alias_fields:
+        - sm153_edtmp_candidate
+        - candidato_samario_153
+        - quadramet_candidate
+
+regimen_codes: []  # Gate informativo — abre opción radiofármaco
+
+keywords:
+  - Samarium-153
+  - Sm-153
+  - EDTMP
+  - Quadramet
+  - radiofármaco beta
+  - palliación dolor óseo
+
+message: |
+  📊 INFORMATIVO: Paciente candidato a **Samarium-153-EDTMP (Quadramet®)**
+  para palliación bone pain widespread mCRPC.
+
+  🔬 Sm-153-EDTMP CARACTERÍSTICAS:
+
+  **Mecanismo**: beta-emisor (T½ 1.9 días) localizado en hidroxiapatita
+  ósea por chelator EDTMP. Penetración 0.5-3 mm + alta affinity bone-tumor
+  interface.
+
+  **Eficacia** (Sartor JCO 2004; Quadramet label):
+  - 60-80% mejoran dolor en 1-4 semanas
+  - Duración respuesta: 1-4 meses
+  - Repetibilidad: cada 3 meses si respuesta + counts adecuados
+
+  **Comparación radiofármacos beta** (vs Sr-89, Re-186, Lu-177):
+  | Agente | Type | T½ | Penetración | FDA |
+  |--------|------|-----|-------------|-----|
+  | **Sm-153-EDTMP** | β | 1.9d | 0.5-3mm | 1997 |
+  | Sr-89-Cl | β | 50d | 2-7mm | 1993 |
+  | Re-186-HEDP | β | 3.7d | 0.5-3mm | No (off-label) |
+  | Lu-177-PSMA | β | 6.7d | 0.6-2mm | 2022 (PSMA-targeted) |
+  | **Ra-223** | α | 11.4d | 0.1mm | 2013 (alpha — gates 13/14) |
+
+  🎯 PRE-REQUISITOS Sm-153 (NCCN Prostate v5.2026 + Quadramet label):
+
+  **Hematológicos**:
+  - ANC ≥1500/µL (idealmente ≥2000)
+  - Plaquetas ≥100,000/µL (idealmente ≥150K)
+  - Hemoglobin ≥9 g/dL (transfundir si <9 pre-Sm)
+
+  **Renal**:
+  - Creatinine clearance >30 mL/min
+  - Sin obstrucción urinaria
+
+  **Imaging**:
+  - Bone scan Tc-99m MDP múltiples foci positive (≥2 sitios)
+  - Lesiones osteoblastic (Sm-153 más útil que osteolytic)
+  - PSMA-PET correlacionable
+
+  **Clínico**:
+  - Bone pain BPI worst ≥4 sostenido
+  - Esperanza vida ≥3 meses
+  - ECOG 0-3 (Sm-153 manejable ECOG 3)
+  - Sin SCC activo (gate 68 priority — RT primero)
+
+  🎯 DOSIS + ADMINISTRACIÓN:
+  - **1.0 mCi/kg (37 MBq/kg) IV single dose**
+  - Infusión lenta 1-2 minutos
+  - Premeds: hidratación 500 mL NS pre-administration
+  - Onset: 1-4 semanas
+  - Repetir cada 3 meses si respuesta + counts adecuados
+  - Maximum 4-6 dosis lifetime
+
+  🎯 MONITOREO:
+  - CBC seriada: día 7, 14, 21, 28
+  - Nadir típico: día 14-21 (myelosuppression transient)
+  - Hb stable, ANC nadir 1000-1200, plaquetas nadir 80-100K
+  - Recovery típica día 28-42
+
+  ⚠️ TOXICIDAD ESPERADA:
+  - Myelosuppression transient (todos pacientes)
+  - Pain flare 24-48h post-infusion (10-15% pacientes — pre-medicar
+    con AINEs + opioides)
+  - Náusea/vómito leve
+  - Fatigue (días 1-7)
+
+  🎯 INTEGRACIÓN PALLIATIVE PATHWAY:
+
+  **Sm-153 vs alternativas**:
+  - **Sm-153 vs RT externa**: Sm-153 ventaja en multi-sitio widespread
+    (RT externa mejor para sitio focal severo)
+  - **Sm-153 vs Ra-223**: Sm-153 beta (penetración mayor + dolor más
+    rápido), Ra-223 alpha (survival benefit ALSYMPCA)
+  - **Sm-153 vs Lu-177-PSMA**: Lu-177-PSMA si PSMA-positive +
+    función renal preserved (más complejo + costoso)
+
+  **Ranking palliative bone pain mCRPC** (NCCN PROS-O):
+  1. RT externa focal (8 Gy single fraction) si sitio único severo
+  2. Sm-153 EDTMP si multi-foci + ANC/plaquetas OK
+  3. Ra-223 si bone-only + survival benefit (gate 13/14)
+  4. Lu-177-PSMA si PSMA-positive + función renal OK
+  5. Bisfosfonatos/denosumab adyuvante (gate 9 BMA)
+
+  🔬 EVIDENCIA:
+  - **Sartor JCO 2004;22:2869**: Sm-153-EDTMP randomized vs placebo
+    pain response 65% vs 34%, p<0.001
+  - **Quadramet FDA label 1997**: 1.0 mCi/kg approval
+  - **NCCN Prostate v5.2026 PROS-O**: Sm-153 cat 2A para palliation
+  - **EAU 2026 §10.3**: bone-targeted radiopharm review
+  - **ASCO 2018 Bone-Targeted Therapy guidelines**: Sm-153 inclusion
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `samarium_153_edtmp_candidate`: flag clínico
+  - `bone_pain_widespread_documented`: flag bone pain extenso
+  - `bone_scan_multifoci_positive`: flag bone scan multi-sitio
+  - `osteoblastic_lesions_predominant`: flag patrón osteoblastic
+  - `samarium_153_dose_planned_mci_kg`: 1.0 default
+  - `samarium_153_administration_date`: fecha planeada
+  - `samarium_153_prior_administrations_count`: lifetime count
+
+evidence_tag: sm153_edtmp_sartor_jco_2004_quadramet_fda_1997_nccn_pros_o_palliation
+trial_refs:
+  - "Sartor JCO 2004;22:2869 (Sm-153 randomized)"
+  - "Quadramet FDA label 1997"
+  - "NCCN Prostate v5.2026 PROS-O"
+  - "EAU 2026 §10.3 (bone-targeted radiopharm)"
+  - "ASCO 2018 Bone-Targeted Therapy guidelines"

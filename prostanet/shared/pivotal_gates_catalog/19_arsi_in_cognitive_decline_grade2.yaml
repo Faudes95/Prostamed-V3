@@ -1,0 +1,113 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 19: arsi_in_cognitive_decline_grade2
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XIV) — Primer gate YAML-NATIVE del catálogo.
+# Diseñado directamente como YAML declarativo, SIN pasar por Python
+# primero. Demuestra que el loader es suficientemente expresivo para
+# añadir gates clínicos nuevos sin tocar código.
+#
+# Razón clínica:
+#   ARSI (enzalutamida especialmente, en >80 años) puede acelerar
+#   deterioro cognitivo según UCSF cohort 2024 + post-marketing
+#   surveillance Xtandi. El triángulo de toxicidad ARSI específica:
+#     - Gate 17 QTc enzalutamida (Xtandi label §5.4)
+#     - Gate 18 LVEF apalutamida (Erleada label cardiac dysfunction)
+#     - Gate 19 cognitive decline (UCSF + SIOG geriatric oncology) — NUEVO
+#
+#   Activación si CUALQUIERA:
+#     - CTCAE v5 cognitive_disturbance grado ≥2
+#     - Caída MMSE ≥2 puntos desde basal
+#     - Caída MoCA ≥2 puntos desde basal
+#     - Flag explícito cognitive_decline_grade2_documented
+#
+#   Override: cognitive_recovered_for_arpi=Sí (tras suspender ARSI
+#   temporalmente y documentar recuperación neurológica formal).
+#
+#   Bloquea: TODOS los ARSI (enzalutamida, apalutamida, darolutamida)
+#   por consistency clínica — UCSF incluyó los 3.
+# ──────────────────────────────────────────────────────────────────────
+
+code: arsi_in_cognitive_decline_grade2
+title: "ARSI × deterioro cognitivo grado ≥2 (CTCAE v5 + MMSE/MoCA delta)"
+faubot_added_in: "2026-04-25 XIV"
+faubot_yaml_native: true     # primer gate diseñado directamente en YAML
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1. Flag explícito CTCAE v5 grado ≥2
+    - type: numeric_threshold
+      field: cognitive_disturbance_ctcae_grade
+      threshold: 2
+    # 2. Caída MMSE ≥2 desde basal (MMSE_baseline - MMSE_current ≥ 2)
+    #    Usamos numeric_baseline_delta_above con threshold=1 (delta > 1)
+    #    porque MMSE/MoCA son enteros y delta>1 == delta≥2 efectivamente.
+    - type: numeric_baseline_delta_above
+      baseline_field: mmse_baseline
+      current_field: mmse_current
+      threshold: 1
+    # 3. Caída MoCA ≥2 desde basal
+    - type: numeric_baseline_delta_above
+      baseline_field: moca_baseline
+      current_field: moca_current
+      threshold: 1
+    # 4. Flag explícito documentado por neurología
+    - type: truthy_flag
+      field: cognitive_decline_grade2_documented
+      alias_fields:
+        - cognitive_decline_documented
+
+# Override: tras suspender ARSI temporalmente y documentar recuperación
+override:
+  type: truthy_flag
+  field: cognitive_recovered_for_arpi
+
+regimen_codes:
+  - REGIMEN_CODES_ARSI
+
+keywords:
+  - KEYWORDS_ARSI
+
+message: |
+  ARSI (enzalutamida, apalutamida, darolutamida) NO debe iniciarse o
+  continuarse con deterioro cognitivo grado ≥2 (CTCAE v5) o caída ≥2 puntos
+  en MMSE/MoCA desde basal. UCSF cohort 2024 + post-marketing surveillance
+  Xtandi documentaron aceleración de deterioro cognitivo en pacientes >80
+  años con enzalutamida. SIOG (International Society of Geriatric Oncology)
+  recomienda evaluación neurocognitiva basal + seguimiento en pacientes
+  ≥75 años antes de iniciar ARSI.
+
+  Conducta clínica:
+  1. Suspender ARSI inmediatamente.
+  2. Evaluación neurológica formal + descartar causas reversibles
+     (medicamentos anticolinérgicos, depresión, delirium, hipotiroidismo,
+     deficiencia B12/folato).
+  3. Considerar darolutamida (menor penetración SNC) o terapia alternativa
+     no-ARSI (docetaxel si fitness lo permite, abiraterona si LVEF/cardio
+     OK, Lu-177 PSMA-617 si elegible).
+  4. Reevaluar (`cognitive_recovered_for_arpi=Sí`) tras retorno a basal
+     documentado por neurología antes de considerar reintroducción.
+
+  Notar: aunque el riesgo individual es heterogéneo entre ARSI (enzalutamida
+  > apalutamida > darolutamida en penetración SNC), el gate cubre la clase
+  completa por consistency clínica con UCSF cohort que incluyó los 3.
+
+evidence_tag: ucsf_cohort_2024_siog_geriatric_oncology
+trial_refs:
+  - "UCSF Cohort 2024"
+  - "SIOG Geriatric Oncology Guidelines"
+  - "Xtandi label post-marketing"
+  - "CTCAE v5"
+
+references:
+  - "UCSF Prostate Cancer Cohort 2024 — Cognitive decline with ARSI."
+  - "SIOG (International Society of Geriatric Oncology) — Cognitive assessment in elderly cancer patients."
+  - "Xtandi (enzalutamide) FDA prescribing information — Falls + cognitive disturbance."
+  - "CTCAE v5.0 — Cognitive disturbance grading."
+  - "Folstein MF et al. MMSE original. J Psychiatr Res 1975;12:189-198."
+  - "Nasreddine ZS et al. MoCA. J Am Geriatr Soc 2005;53:695-699."
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Geriatric assessment + ARSI"
+  eau_section: "EAU 2026 §6.5.7 — Elderly considerations for ARSI"
+  siog_section: "SIOG 2024 — Cognitive assessment in elderly with ARSI"

@@ -42,6 +42,10 @@ class PageChrome:
     footer_text: str = "ProstaMed 2026 · Salud · Diagnóstico · Precisión"
     requires_charts: bool = False
     accent_profile: AccentProfile = field(default_factory=AccentProfile)
+    # Faubot LXXX #67E — v2 shell flag: cuando True, base_clinical.html omite
+    # top_nav legacy + footer y deja que el contenido provea su propio
+    # pm2-app-shell con sidebar v2 (resuelve el bug de UI mezclada legacy+v2).
+    uses_v2_shell: bool = False
 
 
 DEFAULT_NAV = (
@@ -64,6 +68,7 @@ def build_page_chrome(
     header_actions: list[PageAction] | tuple[PageAction, ...] | None = None,
     primary_action: PageAction | None = None,
     accent_profile: AccentProfile | None = None,
+    uses_v2_shell: bool = False,
 ) -> PageChrome:
     nav_items = tuple(
         NavItem(label=label, href=href, active=(key == page_key))
@@ -89,4 +94,5 @@ def build_page_chrome(
         show_page_header=show_page_header,
         requires_charts=requires_charts,
         accent_profile=accent_profile or AccentProfile(),
+        uses_v2_shell=uses_v2_shell,
     )

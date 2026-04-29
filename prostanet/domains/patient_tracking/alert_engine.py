@@ -17,8 +17,34 @@ from typing import Any
 from prostanet.domains.patient_tracking.laboratory_intelligence.alert_engine import (
     build_laboratory_alerts,
 )
+from prostanet.shared.phoenix import evaluate_phoenix
 
 logger = logging.getLogger(__name__)
+
+
+def _detect_post_rt_context(patient: dict[str, Any]) -> bool:
+    """Detecta si el paciente tiene contexto post-RT para evaluar Phoenix.
+
+    Reconoce tokens ES/EN en los campos que indican radioterapia previa como
+    tratamiento primario (EBRT, braquiterapia, IMRT, protones, radioterapia).
+    """
+    management_track = str(patient.get("management_track") or "").strip().lower()
+    if management_track in {"post_rt", "post_radiotherapy", "rt_primary"}:
+        return True
+    prior_radiation = patient.get("prior_radiation") or patient.get("rt_primary_received")
+    if str(prior_radiation or "").strip().lower() in {"1", "true", "yes", "si", "sí"}:
+        return True
+    treatment_tokens = " ".join([
+        str(patient.get("current_treatment") or ""),
+        str(patient.get("treatment_received") or ""),
+        str(patient.get("primary_treatment") or ""),
+        str(patient.get("rt_modality") or ""),
+    ]).lower()
+    rt_tokens = (
+        "ebrt", "braqui", "brachytherapy", "imrt", "sbrt", "proton",
+        "radioter", "radiotherapy", "rt primary", "rt_primary",
+    )
+    return any(token in treatment_tokens for token in rt_tokens)
 
 
 @dataclass
@@ -133,6 +159,75 @@ class ClinicalAlertEngine:
                     ))
             except (ValueError, TypeError):
                 pass
+
+        # EPIC 1 FIX-ALERT-1: Phoenix post-RT (PSA ≥ nadir + 2 ng/mL).
+        # Roach IJROBP 2006 / NCCN PROS-10 / EAU 2026 §6.3.2 (category 1).
+        # Se evalúa con el helper canónico evaluate_phoenix() para unificar
+        # el umbral y el tratamiento de nadir no evaluable.
+        if _detect_post_rt_context(patient):
+            phoenix_eval = evaluate_phoenix(patient)
+            if phoenix_eval.assessable and phoenix_eval.threshold_reached:
+                nadir_txt = (
+                    f"{phoenix_eval.nadir:.2f}" if phoenix_eval.nadir is not None else "?"
+                )
+                current_txt = (
+                    f"{phoenix_eval.current:.2f}" if phoenix_eval.current is not None else "?"
+                )
+                threshold_txt = (
+                    f"{phoenix_eval.threshold:.2f}"
+                    if phoenix_eval.threshold is not None
+                    else "?"
+                )
+                delta_txt = (
+                    f"{phoenix_eval.delta:.2f}"
+                    if phoenix_eval.delta is not None
+                    else "?"
+                )
+                alerts.append(ClinicalAlert(
+                    patient_id=patient_id,
+                    alert_type="phoenix_bcr_post_rt",
+                    severity="warning",
+                    category="psa_kinetics",
+                    title="Phoenix cumplido — recurrencia bioquímica post-RT",
+                    message=(
+                        f"PSA actual {current_txt} ng/mL ≥ nadir {nadir_txt} + 2.0 = "
+                        f"{threshold_txt} ng/mL (delta {delta_txt}). "
+                        "Criterio Phoenix RTOG-ASTRO 2006 cumplido."
+                    ),
+                    recommended_action=(
+                        "Confirmar con repetición de PSA. Evaluar re-estadificación "
+                        "con PSMA-PET, descartar recurrencia local con mpMRI y "
+                        "valorar rescate local (salvage RP o braquiterapia) vs. "
+                        "ADT ± ARPI según contexto."
+                    ),
+                    guideline_reference=(
+                        "Roach M IJROBP 2006;65:965 / NCCN PROS-10 v5.2026 cat 1 / "
+                        "EAU 2026 §6.3.2"
+                    ),
+                    triggering_value=f"{current_txt} ng/mL (Δ={delta_txt})",
+                    threshold=f"nadir + 2.0 = {threshold_txt} ng/mL",
+                ))
+            elif _detect_post_rt_context(patient) and not phoenix_eval.assessable:
+                # Post-RT con nadir no documentado: info suave para recuperar dato.
+                alerts.append(ClinicalAlert(
+                    patient_id=patient_id,
+                    alert_type="phoenix_unassessable",
+                    severity="info",
+                    category="psa_kinetics",
+                    title="Phoenix no evaluable — nadir post-RT no documentado",
+                    message=(
+                        "PSA nadir post-RT ausente: no se puede aplicar el criterio "
+                        "Phoenix (nadir + 2.0 ng/mL). Documentar el nadir histórico "
+                        "para habilitar vigilancia BCR estandarizada."
+                    ),
+                    recommended_action=(
+                        "Recuperar valor mínimo de PSA post-RT en historia (≥6 meses) "
+                        "y registrarlo en psa_nadir."
+                    ),
+                    guideline_reference="Roach IJROBP 2006 / NCCN PROS-10 v5.2026",
+                    triggering_value="psa_nadir: ausente",
+                    threshold="dato requerido",
+                ))
 
         return alerts
 
@@ -468,6 +563,327 @@ class ClinicalAlertEngine:
 
         return alerts
 
+    @staticmethod
+    def evaluate_ddi_alerts(patient_id: int, patient: dict[str, Any]) -> list[ClinicalAlert]:
+        """
+        EPIC 4.4 — Alertas derivadas del motor DDI.
+
+        Familias emitidas como ``category``:
+            * ``ddi_critical``  — interacción contraindicada (severity=critical)
+            * ``ddi_major``     — interacción mayor (severity=warning)
+            * ``ddi_moderate``  — interacción moderada / caution (severity=info)
+            * ``ddi_qtc``       — prolongación QTc (severity según gravedad)
+            * ``ddi_seizure``   — umbral convulsivo (severity según gravedad)
+            * ``ddi_bone_health`` — remodelación ósea (Ra-223 + zoledronato/denosumab)
+
+        Lee ``ddi_regimen_matrix`` (producido por
+        ``advanced_support_normalizer.build_ddi_regimen_matrix`` o
+        ``DDIEngine.compute_regimen_ddi_matrix`` en tiempo real) y
+        ``ddi_alert_bundle`` (alertas sobre el régimen activo) del payload
+        del paciente.
+
+        Alert fatigue guard: deduplica por (drug_a, drug_b, category).
+        """
+        alerts: list[ClinicalAlert] = []
+        severity_rank = {"info": 0, "warning": 1, "critical": 2}
+
+        def _severity_from_ddi(ddi_severity: str) -> str:
+            raw = str(ddi_severity or "").strip().lower()
+            if raw == "contraindicated":
+                return "critical"
+            if raw == "major":
+                return "warning"
+            return "info"
+
+        seen: dict[tuple[str, str, str], ClinicalAlert] = {}
+
+        def _emit(alert_dict: dict[str, Any], *, regimen_code: str = "", regimen_lbl: str = "") -> None:
+            drug_a = str(alert_dict.get("drug_a") or "").strip()
+            drug_b = str(alert_dict.get("drug_b") or "").strip()
+            category = str(alert_dict.get("alert_family") or "").strip().lower()
+            if not category:
+                # Fallback: si el alert_family no viene seteado, derivar de severity.
+                sev = str(alert_dict.get("severity") or "").strip().lower()
+                category = {
+                    "contraindicated": "ddi_critical",
+                    "major": "ddi_major",
+                    "moderate": "ddi_moderate",
+                }.get(sev, "ddi_moderate")
+            severity = _severity_from_ddi(alert_dict.get("severity") or "")
+            key = (drug_a.lower(), drug_b.lower(), category)
+            # Alert fatigue guard: conservar sólo la de mayor severidad por clave.
+            existing = seen.get(key)
+            if existing and severity_rank.get(severity, 0) <= severity_rank.get(existing.severity, 0):
+                return
+            title_prefix = ""
+            if regimen_lbl:
+                title_prefix = f"[{regimen_lbl}] "
+            title = f"{title_prefix}DDI {drug_a} ↔ {drug_b}".strip()
+            mechanism = str(alert_dict.get("mechanism") or "").strip()
+            impact = str(alert_dict.get("clinical_impact") or alert_dict.get("impact") or "").strip()
+            action = str(alert_dict.get("recommended_action") or alert_dict.get("action") or "").strip()
+            alternative = str(alert_dict.get("alternative") or "").strip()
+            if alternative:
+                action = (action + f" Alternativa: {alternative}.").strip()
+            reference = str(alert_dict.get("reference") or "").strip()
+            message_bits = [bit for bit in (mechanism, impact) if bit]
+            message = " — ".join(message_bits) or f"Interacción {drug_a} ↔ {drug_b}."
+            alert = ClinicalAlert(
+                patient_id=patient_id,
+                alert_type=f"ddi_{category.replace('ddi_', '')}".lower() or "ddi_interaction",
+                severity=severity,
+                category=category,
+                title=title,
+                message=message,
+                recommended_action=action,
+                guideline_reference=reference,
+                triggering_value=f"{drug_a} + {drug_b}",
+                threshold=f"regimen={regimen_code}" if regimen_code else "",
+            )
+            # Sustituir si ya existía con menor severidad.
+            seen[key] = alert
+
+        # 1) Alertas sobre el régimen activo (ddi_alert_bundle.alerts)
+        active_bundle = dict(patient.get("ddi_alert_bundle") or {})
+        for entry in active_bundle.get("alerts") or []:
+            if isinstance(entry, dict):
+                _emit(entry)
+
+        # 2) Matriz de candidatos (ddi_regimen_matrix) — alertas por régimen.
+        regimen_matrix = dict(patient.get("ddi_regimen_matrix") or {})
+        try:
+            from prostanet.domains.patient_tracking.therapy_catalog import regimen_label as _regimen_label
+        except Exception:  # pragma: no cover
+            _regimen_label = lambda code: code  # noqa: E731
+
+        for regimen_code, bundle in regimen_matrix.items():
+            if not isinstance(bundle, dict):
+                continue
+            lbl = ""
+            try:
+                lbl = _regimen_label(regimen_code) or regimen_code
+            except Exception:
+                lbl = regimen_code
+            for entry in bundle.get("alerts") or []:
+                if isinstance(entry, dict):
+                    _emit(entry, regimen_code=regimen_code, regimen_lbl=lbl)
+
+        alerts.extend(seen.values())
+        # Ordenar por severidad descendente para surface consistente.
+        alerts.sort(key=lambda a: (-severity_rank.get(a.severity, 0), a.category, a.title))
+        return alerts
+
+    # ── EPIC 6 — Bone health, germline triggers, CTCAE ────────────────────
+    # Familias emitidas:
+    #   bone_dxa_missing_mandatory, bone_bma_initiate, bone_bma_switch_renal,
+    #   bone_hypocalcemia_before_bma  (NCCN PROS-I, Fizazi 2011, Smith 2009/2014)
+    #   germline_testing_offer, germline_family_counseling
+    #     (NCCN PROS-H, Giri JCO 2020, Pritchard NEJM 2016)
+    #   ctcae_grade3_no_action, ctcae_critical, ctcae_agent_overburden
+    #     (CTCAE v5.0, NCI 2017)
+
+    @staticmethod
+    def evaluate_bone_health_alerts(patient_id: int, patient: dict[str, Any]) -> list[ClinicalAlert]:
+        """EPIC 6 — Salud ósea: DXA, BMA (denosumab/zoledronato), Ca/vit D.
+
+        Reutiliza ``build_bone_health_recommendation`` si el bundle ya fue
+        computado por ``profile_compass`` (``bone_health_bundle``); en caso
+        contrario lo evalúa bajo demanda con lazy import.
+        """
+        alerts: list[ClinicalAlert] = []
+        bundle = patient.get("bone_health_bundle")
+        if bundle is None:
+            try:
+                from prostanet.domains.patient_tracking.bone_health_engine import (
+                    build_bone_health_recommendation,
+                )
+                bundle = build_bone_health_recommendation(patient).to_dict()
+            except Exception:
+                logger.exception("bone_health_engine unavailable — omitiendo alertas óseas")
+                return alerts
+
+        raw_alerts = (bundle or {}).get("alerts") or []
+        evidence = " / ".join((bundle or {}).get("evidence_tags") or []) or (
+            "NCCN PROS-I v5.2026; Fizazi Lancet 2011 (denosumab); "
+            "Smith JAMA 2014 HALT-ZA; Smith NEJM 2009 HALT"
+        )
+        for entry in raw_alerts:
+            if not isinstance(entry, dict):
+                continue
+            a_type = str(entry.get("type") or "bone_health_alert").strip()
+            severity = str(entry.get("severity") or "info").strip().lower()
+            if severity not in {"info", "warning", "critical"}:
+                severity = "info"
+            message = str(entry.get("message") or "")
+            action = str(entry.get("action") or "")
+            title_map = {
+                "bone_dxa_missing_mandatory": "DXA basal requerido — ADT ≥12 meses sin DXA documentado",
+                "bone_bma_initiate": "Iniciar agente óseo (BMA)",
+                "bone_bma_switch_renal": "Switch BMA por función renal — zoledronato contraindicado",
+                "bone_hypocalcemia_before_bma": "Hipocalcemia — corregir antes de BMA",
+            }
+            title = title_map.get(a_type, a_type.replace("_", " ").title())
+            alerts.append(ClinicalAlert(
+                patient_id=patient_id,
+                alert_type=a_type,
+                severity=severity,
+                category="bone_health",
+                title=title,
+                message=message,
+                recommended_action=action,
+                guideline_reference=evidence,
+                triggering_value=str((bundle or {}).get("bone_category") or ""),
+                threshold=str((bundle or {}).get("fracture_risk") or ""),
+            ))
+        return alerts
+
+    @staticmethod
+    def evaluate_germline_alerts(patient_id: int, patient: dict[str, Any]) -> list[ClinicalAlert]:
+        """EPIC 6 — Germline testing triggers NCCN PROS-H.
+
+        Emite:
+            * ``germline_testing_offer`` si ``should_offer=True``.
+            * ``germline_family_counseling`` cuando la variante patogénica
+              germinal ya está confirmada y obliga a consejería familiar.
+        """
+        alerts: list[ClinicalAlert] = []
+        bundle = patient.get("germline_recommendation_bundle")
+        if bundle is None:
+            try:
+                from prostanet.shared.germline_testing_triggers import (
+                    should_offer_germline_testing,
+                )
+                bundle = should_offer_germline_testing(patient).to_dict()
+            except Exception:
+                logger.exception("germline_testing_triggers no disponible — omitiendo")
+                return alerts
+
+        if not isinstance(bundle, dict):
+            return alerts
+
+        evidence = " / ".join(bundle.get("evidence_tags") or []) or (
+            "NCCN Prostate v5.2026 PROS-H; Giri VN JCO 2020; Pritchard NEJM 2016"
+        )
+        priority = str(bundle.get("priority") or "").strip().lower()
+        reasons = bundle.get("reasons") or []
+        triggers = bundle.get("triggers_matched") or []
+
+        if bundle.get("should_offer"):
+            severity = "warning" if priority == "category_2a" else "info"
+            trigger_ids = [str(t.get("id")) for t in triggers if isinstance(t, dict)]
+            reasons_txt = " · ".join(str(r) for r in reasons)
+            alerts.append(ClinicalAlert(
+                patient_id=patient_id,
+                alert_type="germline_testing_offer",
+                severity=severity,
+                category="germline_testing",
+                title=(
+                    "Ofrecer testing germinal — criterio NCCN PROS-H "
+                    f"({priority or 'consider'})"
+                ),
+                message=reasons_txt or "Paciente cumple criterio NCCN PROS-H para testing germinal.",
+                recommended_action=(
+                    "Derivar a consejería genética. Solicitar panel germinal "
+                    "BRCA1/BRCA2/ATM/PALB2/CHEK2 + panel MMR (MSH2/MLH1/MSH6/PMS2)."
+                ),
+                guideline_reference=evidence,
+                triggering_value=", ".join(trigger_ids) or "nccn_pros_h",
+                threshold=priority or "category_2A",
+            ))
+
+        if bundle.get("family_counseling_recommended"):
+            variant = bundle.get("known_pathogenic_variant") or "variante germinal"
+            alerts.append(ClinicalAlert(
+                patient_id=patient_id,
+                alert_type="germline_family_counseling",
+                severity="warning",
+                category="germline_testing",
+                title=f"Consejería familiar — variante patogénica confirmada ({variant})",
+                message=(
+                    f"Variante patogénica germinal {variant} confirmada. "
+                    "Familiares de primer grado deben recibir consejería genética "
+                    "y testing cascada."
+                ),
+                recommended_action=(
+                    "Referir a asesoría genética para familiares de primer grado; "
+                    "considerar testing cascada en parientes de riesgo."
+                ),
+                guideline_reference=evidence,
+                triggering_value=str(variant),
+                threshold="family_counseling",
+            ))
+
+        return alerts
+
+    @staticmethod
+    def evaluate_ctcae_alerts(patient_id: int, patient: dict[str, Any]) -> list[ClinicalAlert]:
+        """EPIC 6 — Toxicidad estructurada CTCAE v5.0.
+
+        Reutiliza ``capture_ctcae_events`` (bundle ``ctcae_capture_bundle``)
+        y convierte alertas raw a ``ClinicalAlert``.
+        """
+        alerts: list[ClinicalAlert] = []
+        bundle = patient.get("ctcae_capture_bundle")
+        if bundle is None:
+            try:
+                from prostanet.domains.patient_tracking.ctcae_capture_engine import (
+                    capture_ctcae_events,
+                )
+                bundle = capture_ctcae_events(patient).to_dict()
+            except Exception:
+                logger.exception("ctcae_capture_engine no disponible — omitiendo")
+                return alerts
+
+        if not isinstance(bundle, dict):
+            return alerts
+
+        raw_alerts = bundle.get("alerts") or []
+        burden = bundle.get("burden") or {}
+        max_grade = burden.get("max_grade")
+        for entry in raw_alerts:
+            if not isinstance(entry, dict):
+                continue
+            a_type = str(entry.get("type") or "ctcae_event").strip()
+            raw_severity = str(entry.get("severity") or "info").strip().lower()
+            severity = "critical" if raw_severity == "critical" else (
+                "warning" if raw_severity == "warning" else "info"
+            )
+            term = str(entry.get("term") or "")
+            grade = entry.get("grade")
+            agent = str(entry.get("agent") or "")
+            count = entry.get("count")
+            title_map = {
+                "ctcae_grade3_no_action": (
+                    f"CTCAE grado {grade} sin modificación — {term or 'toxicidad'}"
+                ),
+                "ctcae_critical": (
+                    f"CTCAE crítico grado {grade} — {term or 'toxicidad'} potencialmente hospitalario"
+                ),
+                "ctcae_agent_overburden": (
+                    f"{agent}: {count} eventos adversos — sobrecarga terapéutica"
+                ),
+            }
+            title = title_map.get(a_type, a_type.replace("_", " ").title())
+            alerts.append(ClinicalAlert(
+                patient_id=patient_id,
+                alert_type=a_type,
+                severity=severity,
+                category="ctcae_toxicity",
+                title=title,
+                message=str(entry.get("message") or ""),
+                recommended_action=str(entry.get("recommended_action") or ""),
+                guideline_reference="CTCAE v5.0 NCI 2017 / NCCN toxicity management",
+                triggering_value=str(term or agent or ""),
+                threshold=(
+                    f"grade>={grade}" if grade is not None else (
+                        f"events>={count}" if count is not None else (
+                            f"max_grade={max_grade}" if max_grade is not None else ""
+                        )
+                    )
+                ),
+            ))
+        return alerts
+
     @classmethod
     def run_all(cls, patient_id: int, patient: dict[str, Any]) -> list[ClinicalAlert]:
         """Ejecuta todos los evaluadores de alertas y retorna alertas combinadas."""
@@ -477,6 +893,11 @@ class ClinicalAlertEngine:
         alerts.extend(cls.evaluate_ecog_alerts(patient_id, patient))
         alerts.extend(cls.evaluate_treatment_milestones(patient_id, patient))
         alerts.extend(cls.evaluate_genomic_alerts(patient_id, patient))
+        alerts.extend(cls.evaluate_ddi_alerts(patient_id, patient))
+        # EPIC 6 — bone health, germline triggers, CTCAE
+        alerts.extend(cls.evaluate_bone_health_alerts(patient_id, patient))
+        alerts.extend(cls.evaluate_germline_alerts(patient_id, patient))
+        alerts.extend(cls.evaluate_ctcae_alerts(patient_id, patient))
 
         # PRO-driven alerts (Salto 3)
         try:
@@ -608,10 +1029,9 @@ class ClinicalAlertEngine:
         try:
             from prostanet.shared.feature_flags import resolve_feature_flags
             if resolve_feature_flags().get("ENABLE_AI_ANOMALY_DETECTION"):
-                from prostanet.ai.inference.model_registry import ModelRegistry
-                from pathlib import Path
-                models_dir = Path("output/models")
-                reg = ModelRegistry(models_dir=models_dir)
+                from prostanet.ai.inference.runtime_registry import get_runtime_model_registry
+
+                reg = get_runtime_model_registry()
                 anomaly_model = reg.get("anomaly_detector")
                 if anomaly_model:
                     anomaly_result = anomaly_model.predict(patient)

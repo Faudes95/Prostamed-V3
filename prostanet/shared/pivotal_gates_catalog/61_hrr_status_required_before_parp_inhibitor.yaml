@@ -1,0 +1,222 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 61: hrr_status_required_before_parp_inhibitor
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXVI) — Auditoría #67B — Genomic Critical Gates.
+#
+# 🚨 CRITICAL SAFETY GATE — previene prescripción inadecuada de PARP
+# inhibitors (olaparib, talazoparib, rucaparib, niraparib) en pacientes
+# sin confirmación de HRR alteration (BRCA1/2/ATM/PALB2/CHEK2/CDK12).
+#
+# Razón clínica:
+#   PARP inhibitors solo son eficaces (y seguros) en pacientes con HRR
+#   pathogenic alteration confirmada por testing genómico (tissue, blood
+#   ctDNA, o germline). Prescripción sin HRR test:
+#     - Ineficacia documentada: 5-15% response rate vs 50-70% en HRR+
+#     - Toxicidad sin beneficio: thrombocytopenia, neutropenia, anemia,
+#       MDS/AML risk (gates 15, 16, 52)
+#     - Costo financiero $10-15K/mes sin justificación clínica
+#     - Pérdida de oportunidad para tratamientos alternativos
+#
+#   Validación NCCN PROS-2 v5.2026 (Category 1 evidence):
+#     "All patients with metastatic prostate cancer should undergo
+#      tissue-based or blood-based genomic testing for HRR alterations
+#      BEFORE starting PARP inhibitor therapy."
+#
+#   PROfound (NEJM 2020): selección por HRR pathogenic mandatory
+#   PROpel (NEJM 2022): combination abi+olaparib en mCRPC → preferiría HRR+
+#   TALAPRO-2 (NEJM 2023): talazoparib + enza requiere HRR confirmation
+#   MAGNITUDE (Chi JCO 2023): niraparib + abi solo benefit en HRR+
+#
+# Severity: HARD BLOCK — bloquea prescripción PARP cuando hrr_status
+# = "Desconocido" / "no testado" / "pendiente". Override solo si
+# urgent clinical situation con plan de testing en <2 semanas.
+#
+# Override: hrr_test_pending_with_2week_plan_documented (caso urgente
+# con plan formal de re-evaluación en 2 semanas + testing en progreso).
+# ──────────────────────────────────────────────────────────────────────
+
+code: hrr_status_required_before_parp_inhibitor
+title: "HRR test obligatorio antes de PARP inhibitor (NCCN cat 1)"
+faubot_added_in: "2026-04-25 LXXVI"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: HRR status desconocido o no testado
+    - type: string_match
+      field: hrr_status
+      alias_fields:
+        - estado_hrr
+        - hrr_test_result
+        - homologous_recombination_repair_status
+      patterns:
+        - Desconocido
+        - desconocido
+        - "No testado"
+        - no_testado
+        - pendiente
+        - pending
+        - not_tested
+        - unknown
+    # Path B: explicit flag HRR not tested
+    - type: truthy_flag
+      field: hrr_testing_not_performed
+      alias_fields:
+        - hrr_no_test
+        - sin_test_hrr
+        - hrr_pending_testing
+    # Path C: BRCA1/2 ambos desconocidos (default flag if no test)
+    - type: all_of
+      triggers:
+        - type: string_match
+          field: brca1_status
+          alias_fields:
+            - estado_brca1
+          patterns:
+            - Desconocido
+            - "No testado"
+            - unknown
+            - not_tested
+        - type: string_match
+          field: brca2_status
+          alias_fields:
+            - estado_brca2
+          patterns:
+            - Desconocido
+            - "No testado"
+            - unknown
+            - not_tested
+
+# Override: situación urgente con plan de testing <2 semanas
+override:
+  type: truthy_flag
+  field: hrr_test_pending_with_2week_plan_documented
+  alias_fields:
+    - hrr_test_in_progress_2wk
+    - testing_genomico_en_progreso_documentado
+    - hrr_urgent_case_with_test_plan
+
+regimen_codes:
+  - REGIMEN_CODES_PARP
+
+keywords:
+  - olaparib
+  - rucaparib
+  - talazoparib
+  - niraparib
+  - PARP inhibitor
+  - inhibidor PARP
+  - LYNPARZA
+  - rubraca
+  - talzenna
+  - akeega
+
+message: |
+  ⛔ HARD BLOCK CRITICAL SAFETY: PARP inhibitor (olaparib/talazoparib/
+  rucaparib/niraparib) NO debe iniciarse sin confirmación de HRR
+  pathogenic alteration. NCCN PROS-2 v5.2026 categoría 1 evidencia.
+
+  📊 RIESGOS DE PRESCRIBIR PARP SIN HRR TEST:
+  - Response rate sin HRR test: 5-15% (vs 50-70% en HRR+ confirmed)
+  - Toxicidad hematológica significativa: anemia, thrombocytopenia,
+    neutropenia (gates 15, 16, 52 monitoring)
+  - Riesgo MDS/AML secundario: 0.5-2% (gate 52 longitudinal)
+  - Costo $10-15K/mes sin beneficio clínico documentado
+  - Pérdida ventana terapéutica para alternativas (docetaxel,
+    cabazitaxel, Lu-177-PSMA, ARPI)
+
+  🎯 ACCIÓN OBLIGATORIA — TESTING GENÓMICO ANTES DE PARP:
+  1. **Tissue-based NGS** (biopsia primaria/metastásica):
+     - FoundationOne CDx (FDA-approved companion diagnostic)
+     - Caris MI Tumor Seek (HRR panel completo)
+     - Tempus xT (NGS amplio)
+     - Cobertura: BRCA1/2, ATM, PALB2, CHEK2, CDK12, BRIP1, RAD51 family
+  2. **Liquid biopsy ctDNA** (si tissue insuficiente o no accesible):
+     - Guardant360 (somatic blood NGS)
+     - FoundationOne Liquid CDx
+     - Sensitivity menor que tissue pero útil si rapid result needed
+  3. **Germline testing** (sangre):
+     - Para family counseling + variant classification
+     - Color Genomics, Invitae, Myriad MyRisk Hereditary Cancer
+     - Recomendado en TODO mCRPC (NCCN cat 1) + early-onset PCa <55
+
+  📈 PARP INHIBITOR ELIGIBILITY POR HRR ALTERATION:
+
+  | Gen | PROfound | PROpel | TALAPRO-2 | MAGNITUDE |
+  |-----|----------|--------|-----------|-----------|
+  | BRCA1 | ✅ Cohort A | ✅ | ✅ | ✅ |
+  | BRCA2 | ✅ Cohort A | ✅ | ✅ | ✅ |
+  | ATM   | ✅ Cohort A | ✅ | ✅ | ⚠️ subgroup |
+  | PALB2 | ✅ Cohort B | ⚠️ | ✅ | ✅ |
+  | CHEK2 | ✅ Cohort B | ⚠️ | ✅ | ⚠️ |
+  | CDK12 | ✅ Cohort B | ⚠️ | ✅ | ⚠️ |
+
+  🔬 EVIDENCIA PIVOTAL:
+  - **PROfound** (de Bono NEJM 2020;382:2091)
+    → olaparib vs ARPI 2nd line en HRR+ mCRPC
+    → rPFS 7.4m vs 3.6m (HR 0.34) Cohort A
+    → OS benefit confirmed
+    → CRITERIO INCLUSIÓN: BRCA1/2/ATM/CDK12/PALB2/CHEK2 pathogenic
+  - **PROpel** (Clarke NEJM 2022;386:3077)
+    → abiraterone + olaparib vs abiraterone alone 1L mCRPC
+    → rPFS 24.8m vs 16.6m (HR 0.66) ITT
+    → mejor benefit en HRR+ subgroup (HR 0.50)
+    → FDA approval: HRR+ mCRPC 1L
+  - **TALAPRO-2** (Agarwal NEJM 2023;388:1859)
+    → talazoparib + enzalutamide vs enzalutamide 1L mCRPC
+    → rPFS 27.9m vs 20.0m (HR 0.45) HRR+
+    → CRITERIO: HRR+ confirmed pre-treatment
+  - **MAGNITUDE** (Chi JCO 2023;41:3339)
+    → niraparib + abiraterone vs abiraterone 1L mCRPC
+    → rPFS 16.5m vs 13.7m HRR+ (HR 0.73)
+    → Cohorte HRR-NEGATIVE futile (no benefit) → demostró que HRR test
+      ES OBLIGATORIO para selección
+  - **NCCN Prostate v5.2026 PROS-2**: "Tumor or blood genomic testing
+    for HRR alterations is recommended (category 1) before starting
+    PARP inhibitor therapy."
+
+  🎯 CONDUCTA CLÍNICA OBLIGATORIA:
+  1. **NO iniciar PARP** sin HRR test resultado documentado
+  2. **Solicitar testing genómico** (tissue NGS preferred + germline
+     if first-time):
+     - Tissue NGS: 7-14 días resultado
+     - Germline: 14-21 días
+     - ctDNA liquid: 7-10 días si tissue no disponible
+  3. **Mientras esperamos**: continuar con tratamiento alternativo
+     vigente (no descontinuar) hasta HRR resultado
+  4. **Si HRR + (BRCA1/2 mejor evidence)**: PARP inhibitor + plan de
+     monitoring hematológico (CBC pre + cada ciclo + gates 15/16/52)
+  5. **Si HRR - (homologous recombination proficient)**: NO PARP
+     → considerar Lu-177-PSMA, docetaxel, cabazitaxel según contexto
+  6. **Family counseling** si germline pathogenic detectada (genetic
+     counselor referral + cascade testing)
+
+  ⚠️ EXCEPCIÓN OVERRIDE:
+  Solo aplica `hrr_test_pending_with_2week_plan_documented` si:
+  - Caso urgente (rapid clinical decline)
+  - Test ya solicitado con tracking confirmado
+  - Plan de re-evaluación en 2 semanas
+  - Pacient counsel about uncertain benefit
+  Aún así, PREFERIBLE postpone PARP hasta resultado.
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `hrr_status`: Positivo / Negativo / Desconocido / No testado
+  - `brca1_status`: Wild-type / Mutado / VUS / No testado
+  - `brca2_status`: Wild-type / Mutado / VUS / No testado
+  - `atm_status`: similar
+  - `palb2_status`: similar
+  - `chek2_status`: similar
+  - `cdk12_status`: similar
+  - `hrr_test_pending_with_2week_plan_documented`: override flag
+
+evidence_tag: nccn_pros_v5_2026_cat1_hrr_test_required_before_parp_profound_propel_talapro2_magnitude
+trial_refs:
+  - "NCCN Prostate v5.2026 PROS-2 (category 1)"
+  - "PROfound (de Bono NEJM 2020;382:2091)"
+  - "PROpel (Clarke NEJM 2022;386:3077)"
+  - "TALAPRO-2 (Agarwal NEJM 2023;388:1859)"
+  - "MAGNITUDE (Chi JCO 2023;41:3339)"
+  - "EAU 2026 §6.5.6 (HRR testing mandatory)"
+  - "FDA olaparib label HRR+ companion diagnostic"

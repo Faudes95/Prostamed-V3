@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ProstaMed · Clinical Decision Engine — UI Concept v1 (Faubot LXX)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Sans:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.2.1/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+:root {
+  /* Mayo-Epic clinical palette */
+  --c-primary:        #0B3D70;   /* Mayo deep blue */
+  --c-primary-600:    #0B5394;
+  --c-primary-500:    #1E88E5;
+  --c-accent:         #00A9A5;   /* teal accent */
+  --c-accent-soft:    #E0F4F3;
+  --c-bg:             #F5F7FB;
+  --c-surface:        #FFFFFF;
+  --c-surface-2:      #FAFBFE;
+  --c-border:         #E3E8F0;
+  --c-border-strong:  #C9D2E0;
+  --c-text:           #0F1E32;
+  --c-text-2:         #4A5A73;
+  --c-text-3:         #7A8AA3;
+  /* Severity (3-tier severity model #62) */
+  --c-hard:           #C0292B;   /* hard_block */
+  --c-hard-bg:        #FCEBEC;
+  --c-soft:           #D97706;   /* soft_warning */
+  --c-soft-bg:        #FEF3E0;
+  --c-info:           #2563EB;   /* informational */
+  --c-info-bg:        #E5EEFF;
+  --c-success:        #088561;
+  --c-success-bg:     #DEF7EC;
+  --c-cohort:         #7C3AED;   /* purple — cohort overlay */
+  --c-cohort-bg:      #EFE6FF;
+  --shadow-sm:        0 1px 2px rgba(15,30,50,0.04);
+  --shadow-md:        0 4px 14px rgba(15,30,50,0.06);
+  --shadow-lg:        0 10px 30px rgba(15,30,50,0.10);
+  --radius:           14px;
+  --radius-sm:        10px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4 { font-family: 'IBM Plex Sans', 'Inter', sans-serif; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+.mono { font-family: 'JetBrains Mono', monospace; }
+
+/* ===== TOP BAR ===== */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; gap: 24px;
+  height: 60px; padding: 0 24px;
+  background: linear-gradient(90deg, #0B3D70 0%, #0B5394 100%);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(11,61,112,0.15);
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-mark {
+  width: 36px; height: 36px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #fff 0%, #E0F4F3 100%);
+  display: grid; place-items: center;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4);
+}
+.brand-mark svg { width: 22px; height: 22px; }
+.brand-text { display: flex; flex-direction: column; line-height: 1; }
+.brand-text .name { font-family: 'IBM Plex Sans', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 0.2px; }
+.brand-text .tag { font-size: 10.5px; opacity: 0.78; letter-spacing: 1.2px; text-transform: uppercase; margin-top: 3px; }
+
+.global-search {
+  flex: 1; max-width: 540px;
+  position: relative;
+}
+.global-search input {
+  width: 100%;
+  height: 38px; padding: 0 14px 0 38px;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.20);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 13.5px;
+  outline: none;
+  transition: background 0.18s, border-color 0.18s;
+}
+.global-search input::placeholder { color: rgba(255,255,255,0.65); }
+.global-search input:focus { background: rgba(255,255,255,0.20); border-color: rgba(255,255,255,0.45); }
+.global-search .icon { position: absolute; top: 50%; left: 12px; transform: translateY(-50%); width: 16px; height: 16px; opacity: 0.85; }
+
+.topbar-actions { display: flex; align-items: center; gap: 14px; margin-left: auto; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 11.5px; font-weight: 500;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.20);
+}
+.chip .dot { width: 7px; height: 7px; border-radius: 50%; background: #6EE7B7; box-shadow: 0 0 6px #6EE7B7; }
+.user-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: linear-gradient(135deg, #00A9A5, #0B5394);
+  display: grid; place-items: center;
+  font-weight: 600; color: #fff; font-size: 12.5px;
+  border: 2px solid rgba(255,255,255,0.3);
+}
+
+/* ===== APP SHELL ===== */
+.shell { display: grid; grid-template-columns: 232px 1fr; min-height: calc(100vh - 60px); }
+
+/* ===== SIDEBAR ===== */
+.sidebar {
+  background: var(--c-surface);
+  border-right: 1px solid var(--c-border);
+  padding: 18px 12px;
+  position: sticky; top: 60px; height: calc(100vh - 60px);
+  overflow-y: auto;
+}
+.nav-section-title {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 1.1px;
+  text-transform: uppercase; color: var(--c-text-3);
+  padding: 14px 12px 6px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  font-size: 13px; font-weight: 500;
+  color: var(--c-text-2);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+  position: relative;
+}
+.nav-item svg { width: 17px; height: 17px; flex-shrink: 0; }
+.nav-item:hover { background: var(--c-surface-2); color: var(--c-primary-600); }
+.nav-item.active {
+  background: var(--c-accent-soft);
+  color: var(--c-primary);
+  font-weight: 600;
+}
+.nav-item.active::before {
+  content: ''; position: absolute; left: 0; top: 8px; bottom: 8px;
+  width: 3px; border-radius: 0 3px 3px 0; background: var(--c-accent);
+}
+.nav-item .badge {
+  margin-left: auto;
+  font-size: 10.5px; font-weight: 600;
+  padding: 2px 7px; border-radius: 10px;
+  background: var(--c-border); color: var(--c-text-2);
+}
+.nav-item.active .badge { background: var(--c-primary-500); color: #fff; }
+
+/* ===== MAIN ===== */
+.main { padding: 22px 28px 80px; max-width: 1500px; }
+
+/* ===== PATIENT BANNER ===== */
+.patient-banner {
+  background: var(--c-surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--c-border);
+  box-shadow: var(--shadow-sm);
+  padding: 18px 22px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 22px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.patient-avatar {
+  width: 56px; height: 56px; border-radius: 14px;
+  background: linear-gradient(135deg, #1E88E5, #00A9A5);
+  display: grid; place-items: center;
+  color: #fff; font-weight: 700; font-size: 18px;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+.patient-meta h1 { font-size: 20px; }
+.patient-meta .submeta {
+  display: flex; gap: 16px; margin-top: 6px;
+  font-size: 12.5px; color: var(--c-text-2);
+}
+.patient-meta .submeta span strong { color: var(--c-text); font-weight: 600; }
+.state-badge {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 12px; border-radius: 999px;
+  background: linear-gradient(135deg, #EE5A5A, #C0292B);
+  color: #fff; font-size: 12px; font-weight: 600;
+  letter-spacing: 0.3px;
+  box-shadow: 0 4px 12px rgba(192,41,43,0.25);
+}
+.state-badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #fff; }
+
+.banner-actions { display: flex; gap: 8px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 36px; padding: 0 14px;
+  border-radius: 9px;
+  font-size: 12.5px; font-weight: 600;
+  border: 1px solid var(--c-border-strong);
+  background: var(--c-surface);
+  color: var(--c-text);
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.btn:hover { background: var(--c-surface-2); border-color: var(--c-primary-500); color: var(--c-primary-600); }
+.btn.primary {
+  background: var(--c-primary-600); color: #fff; border-color: var(--c-primary-600);
+}
+.btn.primary:hover { background: var(--c-primary); border-color: var(--c-primary); color: #fff; }
+.btn svg { width: 14px; height: 14px; }
+
+/* ===== KPI CARDS ROW ===== */
+.kpi-row {
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 12px; margin-bottom: 18px;
+}
+.kpi {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+  position: relative; overflow: hidden;
+}
+.kpi::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--c-primary-500);
+}
+.kpi.k-soft::after { background: var(--c-soft); }
+.kpi.k-hard::after { background: var(--c-hard); }
+.kpi.k-cohort::after { background: var(--c-cohort); }
+.kpi.k-success::after { background: var(--c-success); }
+.kpi .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--c-text-3); font-weight: 600; }
+.kpi .value { font-size: 22px; font-weight: 700; margin-top: 6px; font-family: 'IBM Plex Sans'; }
+.kpi .delta { font-size: 11.5px; margin-top: 4px; color: var(--c-text-2); }
+.kpi .delta.up { color: var(--c-hard); }
+.kpi .delta.down { color: var(--c-success); }
+
+/* ===== GRID LAYOUTS ===== */
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+.col-span-2 { grid-column: span 2; }
+
+/* ===== PANEL ===== */
+.panel {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+.panel-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-surface-2);
+}
+.panel-header h3 { font-size: 14.5px; }
+.panel-header .sub {
+  font-size: 11.5px; color: var(--c-text-3);
+  margin-left: 6px;
+}
+.panel-header .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.panel-body { padding: 18px; }
+.panel-tabs {
+  display: flex; gap: 2px;
+  border-bottom: 1px solid var(--c-border);
+  padding: 0 18px;
+  background: var(--c-surface);
+}
+.panel-tab {
+  padding: 10px 14px;
+  font-size: 12.5px; font-weight: 500;
+  color: var(--c-text-2);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.18s;
+  margin-bottom: -1px;
+}
+.panel-tab:hover { color: var(--c-primary-600); }
+.panel-tab.active { color: var(--c-primary); border-bottom-color: var(--c-primary-500); font-weight: 600; }
+
+/* ===== CHART CANVAS ===== */
+.chart-wrap { padding: 14px 18px 18px; }
+.chart-meta {
+  display: flex; gap: 18px; flex-wrap: wrap;
+  font-size: 11.5px; color: var(--c-text-2);
+  padding: 8px 18px 0;
+}
+.chart-meta .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.chart-meta .swatch { width: 14px; height: 4px; border-radius: 2px; }
+.chart-meta .swatch.dashed {
+  height: 0; border-top: 2px dashed currentColor; width: 18px;
+}
+
+/* ===== GATES LIST ===== */
+.gate-filters {
+  display: flex; gap: 6px;
+  padding: 12px 18px; border-bottom: 1px solid var(--c-border);
+  background: var(--c-surface-2);
+  flex-wrap: wrap;
+}
+.filter-pill {
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 11.5px; font-weight: 500;
+  background: var(--c-surface); color: var(--c-text-2);
+  border: 1px solid var(--c-border-strong);
+  cursor: pointer; transition: all 0.18s;
+}
+.filter-pill.active {
+  background: var(--c-primary); color: #fff; border-color: var(--c-primary);
+}
+.filter-pill .count { opacity: 0.7; margin-left: 4px; font-size: 10.5px; }
+
+.gate-list { max-height: 460px; overflow-y: auto; }
+.gate-item {
+  display: grid; grid-template-columns: auto 1fr auto;
+  gap: 12px; align-items: flex-start;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--c-border);
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.gate-item:hover { background: var(--c-surface-2); }
+.gate-item:last-child { border-bottom: none; }
+.severity-badge {
+  display: inline-flex; align-items: center;
+  width: 32px; height: 32px; border-radius: 8px;
+  justify-content: center;
+  font-size: 11px; font-weight: 700;
+  font-family: 'JetBrains Mono';
+}
+.severity-badge.hard { background: var(--c-hard-bg); color: var(--c-hard); }
+.severity-badge.soft { background: var(--c-soft-bg); color: var(--c-soft); }
+.severity-badge.info { background: var(--c-info-bg); color: var(--c-info); }
+.gate-name { font-size: 13px; font-weight: 600; color: var(--c-text); margin-bottom: 3px; }
+.gate-desc { font-size: 12px; color: var(--c-text-2); line-height: 1.45; }
+.gate-evidence-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; padding: 2px 7px; border-radius: 999px;
+  background: var(--c-info-bg); color: var(--c-info);
+  margin-right: 4px; margin-top: 6px;
+  font-weight: 500;
+}
+.gate-status {
+  font-size: 10.5px; font-weight: 600;
+  padding: 4px 8px; border-radius: 6px;
+  white-space: nowrap;
+}
+.gate-status.fired { background: var(--c-hard-bg); color: var(--c-hard); }
+.gate-status.warn  { background: var(--c-soft-bg); color: var(--c-soft); }
+.gate-status.ok    { background: var(--c-success-bg); color: var(--c-success); }
+.gate-status.over  { background: var(--c-info-bg); color: var(--c-info); }
+
+/* ===== KINETICS DRILL-DOWN ===== */
+.kinetics-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.kinetics-stat {
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.kinetics-stat .lbl { font-size: 10.5px; color: var(--c-text-3); text-transform: uppercase; letter-spacing: 0.7px; font-weight: 600; }
+.kinetics-stat .val { font-size: 19px; font-weight: 700; font-family: 'IBM Plex Sans'; margin-top: 5px; }
+.kinetics-stat .ctx { font-size: 11px; color: var(--c-text-2); margin-top: 3px; }
+.kinetics-classification {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  font-size: 12px; font-weight: 600;
+  margin-bottom: 14px;
+}
+.kc-response   { background: var(--c-success-bg); color: var(--c-success); }
+.kc-partial    { background: #FFF3CD; color: #8F6500; }
+.kc-stable     { background: var(--c-info-bg); color: var(--c-info); }
+.kc-progression{ background: var(--c-soft-bg); color: var(--c-soft); }
+.kc-refractory { background: var(--c-hard-bg); color: var(--c-hard); }
+.kc-insufficient { background: #EEE; color: #555; }
+
+/* ===== TREATMENT TIMELINE LANES ===== */
+.timeline-lane {
+  display: grid; grid-template-columns: 100px 1fr;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--c-border);
+}
+.lane-label { font-size: 11.5px; color: var(--c-text-2); font-weight: 500; padding-top: 6px; }
+.lane-bar {
+  position: relative; height: 22px;
+  background: linear-gradient(90deg, #DCE7F5, #B6CDEB);
+  border-radius: 6px;
+  display: flex; align-items: center; padding: 0 10px;
+  font-size: 10.5px; color: var(--c-primary); font-weight: 600;
+}
+.lane-bar.l2 { background: linear-gradient(90deg, #E5DCF5, #C7B6EB); color: #5B3FA0; }
+.lane-bar.l3 { background: linear-gradient(90deg, #F5E0DC, #EBB6B6); color: #8B2D2D; }
+
+/* ===== EVIDENCE PANEL ===== */
+.evidence-list { display: flex; flex-direction: column; gap: 10px; }
+.evidence-item {
+  display: grid; grid-template-columns: 28px 1fr auto;
+  gap: 11px; align-items: center;
+  padding: 12px 14px;
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  text-decoration: none; color: inherit;
+  transition: all 0.18s;
+  cursor: pointer;
+}
+.evidence-item:hover {
+  background: #fff; border-color: var(--c-primary-500);
+  box-shadow: var(--shadow-md); transform: translateY(-1px);
+}
+.evidence-icon {
+  width: 28px; height: 28px; border-radius: 7px;
+  background: linear-gradient(135deg, var(--c-primary-500), var(--c-primary-600));
+  display: grid; place-items: center;
+  color: #fff; font-size: 11px; font-weight: 700;
+}
+.ev-trial { font-size: 12.5px; font-weight: 600; color: var(--c-text); }
+.ev-source { font-size: 11px; color: var(--c-text-3); margin-top: 2px; font-family: 'JetBrains Mono'; }
+.ev-cta { font-size: 11px; color: var(--c-primary-600); font-weight: 500; }
+
+/* ===== COHORT TABLE ===== */
+.cohort-table { width: 100%; border-collapse: collapse; }
+.cohort-table th {
+  text-align: left; font-size: 10.5px;
+  color: var(--c-text-3); text-transform: uppercase; letter-spacing: 0.7px;
+  padding: 10px 12px; border-bottom: 2px solid var(--c-border-strong);
+  font-weight: 600;
+}
+.cohort-table td {
+  padding: 11px 12px; font-size: 12.5px;
+  border-bottom: 1px solid var(--c-border);
+}
+.cohort-table tr:hover td { background: var(--c-surface-2); }
+.cohort-table .pat { font-weight: 600; color: var(--c-primary); }
+.cohort-table .ref { color: var(--c-cohort); font-weight: 500; }
+.cohort-table .delta-pos { color: var(--c-success); font-weight: 600; }
+.cohort-table .delta-neg { color: var(--c-hard); font-weight: 600; }
+.cohort-trial-tag {
+  display: inline-block;
+  font-size: 10px; padding: 2px 6px; border-radius: 4px;
+  background: var(--c-cohort-bg); color: var(--c-cohort);
+  font-family: 'JetBrains Mono'; font-weight: 500;
+}
+
+/* ===== VERSIONING DASHBOARD FOOTER ===== */
+.version-strip {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 16px 22px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 22px;
+  align-items: center;
+  margin-top: 10px;
+}
+.version-mark {
+  width: 42px; height: 42px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #0B3D70, #00A9A5);
+  display: grid; place-items: center;
+  color: #fff;
+}
+.version-mark svg { width: 22px; height: 22px; }
+.version-info .release {
+  font-family: 'JetBrains Mono'; font-size: 13px;
+  font-weight: 600; color: var(--c-primary);
+}
+.version-info .meta {
+  font-size: 11.5px; color: var(--c-text-3); margin-top: 3px;
+}
+.version-counts { display: flex; gap: 22px; }
+.version-counts .vc-item .n { font-size: 18px; font-weight: 700; font-family: 'IBM Plex Sans'; color: var(--c-primary); }
+.version-counts .vc-item .l { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--c-text-3); font-weight: 600; }
+
+/* ===== FAB FOR DECISION AUDIT ===== */
+.fab {
+  position: fixed; right: 28px; bottom: 28px; z-index: 60;
+  height: 52px; padding: 0 22px;
+  border-radius: 26px;
+  background: linear-gradient(135deg, var(--c-primary-600), var(--c-accent));
+  color: #fff; font-weight: 600; font-size: 13.5px;
+  display: inline-flex; align-items: center; gap: 9px;
+  box-shadow: 0 10px 30px rgba(11,83,148,0.30);
+  cursor: pointer;
+  border: none;
+  transition: transform 0.18s, box-shadow 0.18s;
+}
+.fab:hover { transform: translateY(-2px); box-shadow: 0 14px 36px rgba(11,83,148,0.38); }
+.fab svg { width: 18px; height: 18px; }
+
+/* ===== UTILS ===== */
+.hr-text {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 11px; color: var(--c-text-3); text-transform: uppercase; letter-spacing: 1.2px;
+  margin: 16px 0 10px;
+}
+.hr-text::before, .hr-text::after { content: ''; flex: 1; height: 1px; background: var(--c-border); }
+
+.alert-banner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 16px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #FCEBEC, #FFFFFF);
+  border-left: 4px solid var(--c-hard);
+  margin-bottom: 16px;
+  font-size: 12.5px;
+}
+.alert-banner svg { width: 18px; height: 18px; color: var(--c-hard); flex-shrink: 0; }
+.alert-banner b { color: var(--c-hard); }
+.alert-banner .alert-cta {
+  margin-left: auto; font-size: 11.5px; color: var(--c-hard); font-weight: 600; cursor: pointer;
+  padding: 5px 10px; border-radius: 6px; border: 1px solid var(--c-hard);
+  background: rgba(255,255,255,0.6);
+}
+
+/* Concept callout */
+.concept-banner {
+  background: linear-gradient(90deg, #0B3D70, #1E88E5);
+  color: #fff;
+  padding: 14px 28px;
+  font-size: 12.5px;
+  display: flex; gap: 14px; align-items: center;
+}
+.concept-banner b { font-weight: 700; }
+.concept-banner code {
+  background: rgba(255,255,255,0.16);
+  padding: 2px 7px; border-radius: 5px;
+  font-family: 'JetBrains Mono'; font-size: 11.5px;
+}
+@media (max-width: 1100px) {
+  .grid-3 { grid-template-columns: 1fr 1fr; }
+  .col-span-2 { grid-column: span 1; }
+  .kpi-row { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 820px) {
+  .shell { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .grid-3, .grid-2 { grid-template-columns: 1fr; }
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- Concept ribbon -->
+<div class="concept-banner">
+  <span style="font-size: 17px;">🧪</span>
+  <span><b>Concept Mockup:</b> ProstaMed UI v2 — Mayo-Epic clinic style. Demuestra <b>todo</b> el backend Faubot LXX expuesto: <code>55 gates</code> · <code>per-line kinetics</code> · <code>cohort overlay</code> · <code>combined timeline</code> · <code>evidence drill-down</code> · <code>versioning</code>.</span>
+</div>
+
+<!-- ============= TOP BAR ============= -->
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">
+      <!-- Placeholder logo: drop your /static/img/logo.svg here -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="#0B3D70" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/>
+        <path d="M9 12l2 2 4-4"/>
+      </svg>
+    </div>
+    <div class="brand-text">
+      <span class="name">ProstaMed</span>
+      <span class="tag">Clinical Decision Engine</span>
+    </div>
+  </div>
+
+  <div class="global-search">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    <input placeholder="Buscar paciente, gate, regimen, trial (PMID/NCT)…" />
+  </div>
+
+  <div class="topbar-actions">
+    <span class="chip"><span class="dot"></span> Faubot LXX · OK</span>
+    <span class="chip">55 gates · 3660 tests</span>
+    <div class="user-avatar">DR</div>
+  </div>
+</header>
+
+<!-- ============= APP SHELL ============= -->
+<div class="shell">
+
+  <!-- ============= SIDEBAR ============= -->
+  <aside class="sidebar">
+    <div class="nav-section-title">Vista paciente</div>
+    <div class="nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h7l3-9 4 18 3-9h4"/></svg>
+      Compass clínico
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-7"/></svg>
+      PSA & Kinetics
+      <span class="badge">3</span>
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+      Timeline combinado
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11V7a3 3 0 0 1 6 0v4"/><rect x="5" y="11" width="14" height="10" rx="2"/></svg>
+      Pivotal Gates
+      <span class="badge">55</span>
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/></svg>
+      Plan terapéutico
+    </div>
+
+    <div class="nav-section-title">Inteligencia</div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h20v14H2z"/><path d="M8 21h8M12 17v4"/></svg>
+      Cohort comparison
+      <span class="badge">11</span>
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      Evidence Hub
+      <span class="badge">37</span>
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+      Decision Audit
+    </div>
+
+    <div class="nav-section-title">Sistema</div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+      Versioning
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4"/></svg>
+      Configuración
+    </div>
+  </aside>
+
+  <!-- ============= MAIN ============= -->
+  <main class="main">
+
+    <!-- PATIENT BANNER -->
+    <section class="patient-banner">
+      <div class="patient-avatar">JM</div>
+      <div class="patient-meta">
+        <h1>Juan Martínez · <span style="color:var(--c-text-3); font-weight: 500; font-size: 14px;">ID #PM-00342</span></h1>
+        <div class="submeta">
+          <span><strong>71 a</strong> · varón</span>
+          <span>Dx: <strong>2024-06-01</strong> · Adenocarcinoma próstata</span>
+          <span>Gleason <strong>4+5=9</strong> · ISUP 5</span>
+          <span>PSA basal: <strong>45.0 ng/mL</strong></span>
+          <span class="state-badge">mHSPC · de novo</span>
+        </div>
+      </div>
+      <div class="banner-actions">
+        <button class="btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Exportar
+        </button>
+        <button class="btn primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Run decision audit
+        </button>
+      </div>
+    </section>
+
+    <!-- CRITICAL ALERT -->
+    <div class="alert-banner">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+      <span><b>Gate 55 ACTIVO:</b> PSADT &lt; 10 m + m0CRPC progressive. Recomendación: iniciar ARPI (apalutamida/enzalutamida/darolutamida). <span class="mono" style="color:var(--c-text-3);">SPARTAN/PROSPER/ARAMIS · NEJM 2018-2019</span></span>
+      <span class="alert-cta">Ver evidencia →</span>
+    </div>
+
+    <!-- KPI ROW -->
+    <section class="kpi-row">
+      <div class="kpi">
+        <div class="label">PSA actual</div>
+        <div class="value">8.3 <span style="font-size:13px; color:var(--c-text-3); font-weight:500;">ng/mL</span></div>
+        <div class="delta down">↓ 81.6% vs basal</div>
+      </div>
+      <div class="kpi k-success">
+        <div class="label">Nadir alcanzado</div>
+        <div class="value">2.1 <span style="font-size:13px; color:var(--c-text-3); font-weight:500;">ng/mL</span></div>
+        <div class="delta down">en 5.2 meses</div>
+      </div>
+      <div class="kpi k-soft">
+        <div class="label">PSADT</div>
+        <div class="value">7.8 <span style="font-size:13px; color:var(--c-text-3); font-weight:500;">meses</span></div>
+        <div class="delta up">⚠ &lt; 10m · gate 55</div>
+      </div>
+      <div class="kpi k-hard">
+        <div class="label">Gates activos</div>
+        <div class="value">4 <span style="font-size:13px; color:var(--c-text-3); font-weight:500;">/55</span></div>
+        <div class="delta">1 hard · 3 soft</div>
+      </div>
+      <div class="kpi k-cohort">
+        <div class="label">vs Cohort PEACE-1</div>
+        <div class="value">+1.4×</div>
+        <div class="delta">PSA por debajo de mediana</div>
+      </div>
+    </section>
+
+    <!-- MAIN GRID 2: Combined timeline + Kinetics drill-down -->
+    <div class="grid-2">
+
+      <!-- COMBINED TIMELINE PANEL -->
+      <section class="panel">
+        <header class="panel-header">
+          <h3>Timeline combinado</h3>
+          <span class="sub">PSA + treatment lanes + clinical events · backend <code class="mono">build_combined_patient_timeline()</code></span>
+          <div class="actions">
+            <button class="btn" style="height:30px; padding:0 10px; font-size:11.5px;">3M</button>
+            <button class="btn primary" style="height:30px; padding:0 10px; font-size:11.5px;">12M</button>
+            <button class="btn" style="height:30px; padding:0 10px; font-size:11.5px;">24M</button>
+            <button class="btn" style="height:30px; padding:0 10px; font-size:11.5px;">All</button>
+          </div>
+        </header>
+        <div class="panel-tabs">
+          <div class="panel-tab active">PSA + lanes</div>
+          <div class="panel-tab">Per-line forecast</div>
+          <div class="panel-tab">Cohort overlay</div>
+          <div class="panel-tab">Eventos clínicos</div>
+        </div>
+        <div class="chart-meta">
+          <span class="legend-item"><span class="swatch" style="background:#0B5394;"></span>PSA paciente</span>
+          <span class="legend-item"><span class="swatch dashed" style="color:#0B5394;"></span>Forecast log-linear (CI)</span>
+          <span class="legend-item"><span class="swatch" style="background:#7C3AED;"></span>Cohort PEACE-1 (mediana)</span>
+          <span class="legend-item"><span class="swatch" style="background:#C0292B;"></span>Línea 1: ADT+APA</span>
+          <span class="legend-item"><span class="swatch" style="background:#7C3AED;"></span>Línea 2: ADT+DOC</span>
+          <span class="legend-item">▲ Eventos: BCR · imaging · biopsia</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="psaCombinedTimeline" height="220"></canvas>
+        </div>
+        <!-- Treatment lanes -->
+        <div style="padding: 0 18px 18px;">
+          <div class="hr-text">Treatment lanes</div>
+          <div class="timeline-lane">
+            <div class="lane-label">Línea 1</div>
+            <div class="lane-bar" style="width: 45%;">ADT + Apalutamida · 2024-06 → 2025-04</div>
+          </div>
+          <div class="timeline-lane">
+            <div class="lane-label">Línea 2</div>
+            <div class="lane-bar l2" style="width: 35%; margin-left: 45%;">ADT + Docetaxel · 2025-04 → 2026-01</div>
+          </div>
+          <div class="timeline-lane">
+            <div class="lane-label">Línea 3 (actual)</div>
+            <div class="lane-bar l3" style="width: 18%; margin-left: 80%;">ARPI switch (en eval.)</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PER-LINE KINETICS DRILL-DOWN -->
+      <section class="panel">
+        <header class="panel-header">
+          <h3>Per-line Kinetics</h3>
+          <span class="sub">Línea 2 seleccionada</span>
+        </header>
+        <div class="panel-body">
+          <div class="kinetics-classification kc-progression">
+            ⚠ Classification: PROGRESSION (gate 55)
+          </div>
+          <div class="kinetics-grid">
+            <div class="kinetics-stat">
+              <div class="lbl">Time to nadir</div>
+              <div class="val">5.2 <span style="font-size:11px; color:var(--c-text-3);">m</span></div>
+              <div class="ctx">desde inicio L2</div>
+            </div>
+            <div class="kinetics-stat">
+              <div class="lbl">Duration response</div>
+              <div class="val">7.1 <span style="font-size:11px; color:var(--c-text-3);">m</span></div>
+              <div class="ctx">PSA &lt; 50% basal</div>
+            </div>
+            <div class="kinetics-stat">
+              <div class="lbl">PSADT (progression)</div>
+              <div class="val">7.8 <span style="font-size:11px; color:var(--c-text-3);">m</span></div>
+              <div class="ctx" style="color:var(--c-soft); font-weight:600;">⚠ &lt; 10m</div>
+            </div>
+            <div class="kinetics-stat">
+              <div class="lbl">PSA velocity</div>
+              <div class="val">+1.2 <span style="font-size:11px; color:var(--c-text-3);">ng/mL/m</span></div>
+              <div class="ctx">post-nadir</div>
+            </div>
+          </div>
+
+          <div class="hr-text">Forecast 3 / 6 / 12 m</div>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom:14px;">
+            <div class="kinetics-stat" style="padding: 9px 11px;">
+              <div class="lbl">+3m</div>
+              <div class="val" style="font-size: 16px;">12.4 <span style="font-size:10px;">ng/mL</span></div>
+              <div class="ctx" style="font-size:10px;">CI: 9.8–15.6</div>
+            </div>
+            <div class="kinetics-stat" style="padding: 9px 11px;">
+              <div class="lbl">+6m</div>
+              <div class="val" style="font-size: 16px;">19.7 <span style="font-size:10px;">ng/mL</span></div>
+              <div class="ctx" style="font-size:10px;">CI: 14.5–26.7</div>
+            </div>
+            <div class="kinetics-stat" style="padding: 9px 11px;">
+              <div class="lbl">+12m</div>
+              <div class="val" style="font-size: 16px; color:var(--c-soft);">49.2</div>
+              <div class="ctx" style="font-size:10px;">CI baja conf.</div>
+            </div>
+          </div>
+
+          <div class="hr-text">vs Cohort referencia</div>
+          <div style="font-size: 12px; color: var(--c-text-2); line-height: 1.6;">
+            Cohort: <b>mCRPC + ADT+TAXANE</b> (PEACE-1, n=583)<br/>
+            Mediana PSA a 12m: <b style="color:var(--c-cohort);">22.8 ng/mL</b> · paciente: <b>49.2</b><br/>
+            <span style="color:var(--c-hard); font-weight: 600;">Δ +115% sobre mediana cohort</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- GATES + EVIDENCE GRID -->
+    <div class="grid-2">
+
+      <!-- PIVOTAL GATES -->
+      <section class="panel">
+        <header class="panel-header">
+          <h3>Pivotal Gates · 55 catalogados</h3>
+          <span class="sub">YAML-native · 3-tier severity (#62)</span>
+          <div class="actions">
+            <span class="chip" style="background:var(--c-surface-2); color: var(--c-text-2); border-color: var(--c-border);">
+              SHA <span class="mono" style="color:var(--c-primary);">a3f8e2b</span>
+            </span>
+          </div>
+        </header>
+        <div class="gate-filters">
+          <span class="filter-pill active">Todos<span class="count">55</span></span>
+          <span class="filter-pill" style="background:var(--c-hard-bg); color:var(--c-hard); border-color:var(--c-hard);">Hard block<span class="count">1</span></span>
+          <span class="filter-pill" style="background:var(--c-soft-bg); color:var(--c-soft); border-color:var(--c-soft);">Soft warning<span class="count">3</span></span>
+          <span class="filter-pill">Informational<span class="count">0</span></span>
+          <span class="filter-pill">Override<span class="count">0</span></span>
+        </div>
+        <div class="gate-list">
+
+          <div class="gate-item">
+            <div class="severity-badge soft">55</div>
+            <div>
+              <div class="gate-name">PSA doubling time progressive (m0CRPC)</div>
+              <div class="gate-desc">PSADT 7.8m &lt; 10m con PSA &gt; 2 ng/mL en m0CRPC. Indicación ARPI según SPARTAN/PROSPER/ARAMIS.</div>
+              <span class="gate-evidence-tag">📚 NEJM 2018</span>
+              <span class="gate-evidence-tag">🔗 NCT01946204</span>
+              <span class="gate-evidence-tag">PMID 29420164</span>
+            </div>
+            <span class="gate-status warn">FIRED</span>
+          </div>
+
+          <div class="gate-item">
+            <div class="severity-badge soft">53</div>
+            <div>
+              <div class="gate-name">PSA velocity BCR aggressive</div>
+              <div class="gate-desc">Velocity +1.2 ng/mL/mes post-RP. Considerar salvage temprano (Stephenson JCO 2009).</div>
+              <span class="gate-evidence-tag">📚 JCO 2009</span>
+              <span class="gate-evidence-tag">RTOG-9601</span>
+            </div>
+            <span class="gate-status warn">FIRED</span>
+          </div>
+
+          <div class="gate-item">
+            <div class="severity-badge soft">47</div>
+            <div>
+              <div class="gate-name">PSA flare ARPI pseudoprogression</div>
+              <div class="gate-desc">Anti-misinterpretation: subida PSA inicial post-ARPI puede ser flare, no progresión real.</div>
+              <span class="gate-evidence-tag">⚠ no bloquea tx</span>
+            </div>
+            <span class="gate-status warn">INFO</span>
+          </div>
+
+          <div class="gate-item">
+            <div class="severity-badge hard">12</div>
+            <div>
+              <div class="gate-name">Docetaxel + significant cardiac dysfunction</div>
+              <div class="gate-desc">FEVI &lt; 40% contraindica taxano. Evaluar regimen alternativo (cabazitaxel/ARPI mono).</div>
+              <span class="gate-evidence-tag">📚 NCCN PROS-G</span>
+            </div>
+            <span class="gate-status fired">BLOCK</span>
+          </div>
+
+          <div class="gate-item">
+            <div class="severity-badge info">28</div>
+            <div>
+              <div class="gate-name">DDI: Apalutamida + warfarina</div>
+              <div class="gate-desc">CYP3A4/2C9 induction. Monitorizar INR semanal x 4 sem. Considerar DOAC.</div>
+              <span class="gate-evidence-tag">FDA label 2024</span>
+            </div>
+            <span class="gate-status ok">OK</span>
+          </div>
+
+          <div class="gate-item">
+            <div class="severity-badge soft">54</div>
+            <div>
+              <div class="gate-name">PSA bounce post-RT pseudoprogression</div>
+              <div class="gate-desc">Subida transitoria PSA hasta 18m post-RT puede ser bounce. Phoenix 2006.</div>
+              <span class="gate-evidence-tag">📚 IJROBP 2010</span>
+            </div>
+            <span class="gate-status ok">N/A</span>
+          </div>
+
+          <div class="gate-item">
+            <div class="severity-badge info">31</div>
+            <div>
+              <div class="gate-name">BRCA mutation → PARP inhibitor</div>
+              <div class="gate-desc">BRCA1/2/ATM mutado en mCRPC. Olaparib/rucaparib indicado (PROfound).</div>
+              <span class="gate-evidence-tag">📚 NEJM 2020</span>
+              <span class="gate-evidence-tag">NCT02987543</span>
+            </div>
+            <span class="gate-status ok">OK</span>
+          </div>
+
+          <div class="gate-item">
+            <div class="severity-badge info">42</div>
+            <div>
+              <div class="gate-name">PSMA PET → 177Lu-PSMA-617 eligibility</div>
+              <div class="gate-desc">PSMA+ post-ARPI+TAXANE. Indicación VISION trial criteria.</div>
+              <span class="gate-evidence-tag">📚 NEJM 2021</span>
+              <span class="gate-evidence-tag">VISION</span>
+            </div>
+            <span class="gate-status ok">OK</span>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- EVIDENCE PANEL -->
+      <section class="panel">
+        <header class="panel-header">
+          <h3>Evidence drill-down</h3>
+          <span class="sub">37 trials · auto-resolución PMID/NCT/DOI</span>
+        </header>
+        <div class="panel-body">
+          <div class="evidence-list">
+            <a class="evidence-item" href="#">
+              <div class="evidence-icon">P</div>
+              <div>
+                <div class="ev-trial">PEACE-1 — ADT + ABI + DOC en mHSPC</div>
+                <div class="ev-source">Lancet 2022 · PMID 35405085 · NCT01957436</div>
+              </div>
+              <span class="ev-cta">→ PubMed</span>
+            </a>
+            <a class="evidence-item" href="#">
+              <div class="evidence-icon">S</div>
+              <div>
+                <div class="ev-trial">SPARTAN — Apalutamida en m0CRPC</div>
+                <div class="ev-source">NEJM 2018 · PMID 29420164 · NCT01946204</div>
+              </div>
+              <span class="ev-cta">→ ClinicalTrials</span>
+            </a>
+            <a class="evidence-item" href="#">
+              <div class="evidence-icon">A</div>
+              <div>
+                <div class="ev-trial">ARASENS — Darolutamida + ADT + DOC en mHSPC</div>
+                <div class="ev-source">NEJM 2022 · DOI 10.1056/NEJMoa2119115</div>
+              </div>
+              <span class="ev-cta">→ DOI</span>
+            </a>
+            <a class="evidence-item" href="#">
+              <div class="evidence-icon">V</div>
+              <div>
+                <div class="ev-trial">VISION — 177Lu-PSMA-617 en mCRPC</div>
+                <div class="ev-source">NEJM 2021 · PMID 34161051 · NCT03511664</div>
+              </div>
+              <span class="ev-cta">→ PubMed</span>
+            </a>
+            <a class="evidence-item" href="#">
+              <div class="evidence-icon">P</div>
+              <div>
+                <div class="ev-trial">PROfound — Olaparib en mCRPC HRR-mut</div>
+                <div class="ev-source">NEJM 2020 · PMID 32343890 · NCT02987543</div>
+              </div>
+              <span class="ev-cta">→ PubMed</span>
+            </a>
+            <a class="evidence-item" href="#">
+              <div class="evidence-icon">C</div>
+              <div>
+                <div class="ev-trial">CHAARTED — ADT ± DOC en mHSPC volumen alto</div>
+                <div class="ev-source">NEJM 2015 · PMID 26244877</div>
+              </div>
+              <span class="ev-cta">→ PubMed</span>
+            </a>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- COHORT COMPARISON -->
+    <section class="panel">
+      <header class="panel-header">
+        <h3>Cohort comparison · paciente vs medianas pivotales</h3>
+        <span class="sub">11 combos COHORT_PSA_REFERENCES (#64A)</span>
+        <div class="actions">
+          <button class="btn" style="height:30px; padding:0 10px; font-size:11.5px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-7"/></svg>
+            Plot side-by-side
+          </button>
+        </div>
+      </header>
+      <div class="panel-body" style="padding: 0;">
+        <table class="cohort-table">
+          <thead>
+            <tr>
+              <th>Trial / Cohort</th>
+              <th>Estado</th>
+              <th>Regimen class</th>
+              <th>n</th>
+              <th>PSA mediana 6m</th>
+              <th>PSA paciente 6m</th>
+              <th>Δ vs mediana</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="cohort-trial-tag">PEACE-1</span> ADT+ABI+DOC</td>
+              <td>mHSPC de novo</td>
+              <td>ADT+ARPI+TAXANE</td>
+              <td>583</td>
+              <td><span class="ref">3.8 ng/mL</span></td>
+              <td><span class="pat">2.1 ng/mL</span></td>
+              <td><span class="delta-pos">↓ 45% (mejor)</span></td>
+            </tr>
+            <tr>
+              <td><span class="cohort-trial-tag">CHAARTED</span> ADT+DOC</td>
+              <td>mHSPC alto vol.</td>
+              <td>ADT+TAXANE</td>
+              <td>397</td>
+              <td><span class="ref">5.1 ng/mL</span></td>
+              <td><span class="pat">2.1 ng/mL</span></td>
+              <td><span class="delta-pos">↓ 59% (mejor)</span></td>
+            </tr>
+            <tr>
+              <td><span class="cohort-trial-tag">ARASENS</span> ADT+DAR+DOC</td>
+              <td>mHSPC</td>
+              <td>ADT+ARPI+TAXANE</td>
+              <td>651</td>
+              <td><span class="ref">4.2 ng/mL</span></td>
+              <td><span class="pat">2.1 ng/mL</span></td>
+              <td><span class="delta-pos">↓ 50% (mejor)</span></td>
+            </tr>
+            <tr>
+              <td><span class="cohort-trial-tag">SPARTAN</span> Apalutamida</td>
+              <td>m0CRPC</td>
+              <td>ARPI mono</td>
+              <td>806</td>
+              <td><span class="ref">1.2 ng/mL</span></td>
+              <td>—</td>
+              <td><span style="color:var(--c-text-3);">N/A en este state</span></td>
+            </tr>
+            <tr>
+              <td><span class="cohort-trial-tag">VISION</span> Lu-PSMA</td>
+              <td>mCRPC post-ARPI+TAX</td>
+              <td>RADIOLIGAND</td>
+              <td>551</td>
+              <td><span class="ref">12.4 ng/mL</span></td>
+              <td>—</td>
+              <td><span style="color:var(--c-text-3);">candidato 4ª línea</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- VERSIONING / AUDIT FOOTER -->
+    <section class="version-strip">
+      <div class="version-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+      </div>
+      <div class="version-info">
+        <div class="release">FAUBOT_RELEASE · 2026-04-25 LXX</div>
+        <div class="meta">
+          5 dimensiones CDE Auditable: <b>5/5 ⭐⭐⭐⭐⭐</b> ·
+          Catálogo SHA <code class="mono">a3f8e2b9</code> ·
+          Última auditoría: <b>#65A</b> ·
+          Próxima propuesta: <b>#65B</b> ·
+          Skills bundled: <b>10</b> (xlsx, pdf, docx, pptx, api-design, clinical-reports, pubmed, fda-medtech, continuous-learning, iterative-retrieval)
+        </div>
+      </div>
+      <div class="version-counts">
+        <div class="vc-item">
+          <div class="n">55</div>
+          <div class="l">Gates activos</div>
+        </div>
+        <div class="vc-item">
+          <div class="n">3660</div>
+          <div class="l">Tests dedicados</div>
+        </div>
+        <div class="vc-item">
+          <div class="n">38</div>
+          <div class="l">Regimen codes</div>
+        </div>
+        <div class="vc-item">
+          <div class="n">11</div>
+          <div class="l">Cohort combos</div>
+        </div>
+        <div class="vc-item">
+          <div class="n">37</div>
+          <div class="l">Trials reconocidos</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+</div>
+
+<!-- Floating action: Decision audit -->
+<button class="fab" title="Run full Decision Audit (5 dimensiones)">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+  Decision Audit · 5D
+</button>
+
+<script>
+// ====== PSA Combined Timeline (mock data faithful to backend shape) ======
+Chart.register(window['chartjs-plugin-annotation']);
+
+const months = ['Jun-24','Jul','Aug','Sep','Oct','Nov','Dec','Ene-25','Feb','Mar','Abr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Ene-26','Feb','Mar','Abr'];
+
+// Patient PSA observed (line 1 ADT+APA → line 2 ADT+DOC → projecting line 3)
+const patientPSA = [45, 28, 18, 12, 7.5, 4.2, 3.0, 2.4, 2.1, 2.5, 3.1, 4.2, 5.6, 6.8, 7.4, 8.0, 8.3, null, null, null, null, null, null];
+
+// Forecast log-linear (after current point)
+const forecast = [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null, 8.3, 9.7, 11.2, 13.4, 16.1, 19.4, 23.5];
+
+// Forecast CI bands
+const forecastUpper = [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null, 8.3, 11.0, 14.5, 18.7, 24.2, 31.5, 42.8];
+const forecastLower = [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null, 8.3, 8.6, 9.2, 10.5, 12.1, 14.0, 16.4];
+
+// Cohort PEACE-1 reference (median trajectory)
+const cohortRef = [45, 32, 22, 16, 11, 7.8, 5.4, 4.2, 3.8, 4.0, 4.6, 5.4, 6.7, 8.4, 10.5, 12.9, 15.5, 18.1, 20.5, 22.4, 23.8, 24.9, 25.9];
+
+const ctx = document.getElementById('psaCombinedTimeline').getContext('2d');
+
+new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: months,
+    datasets: [
+      {
+        label: 'PSA paciente',
+        data: patientPSA,
+        borderColor: '#0B5394',
+        backgroundColor: '#0B5394',
+        borderWidth: 2.5,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        tension: 0.25,
+        spanGaps: false,
+        segment: {
+          // Segment color by treatment line: first 11 = L1, next 6 = L2
+          borderColor: ctx => {
+            const i = ctx.p1DataIndex;
+            if (i <= 10) return '#C0292B'; // L1 ADT+APA
+            return '#7C3AED'; // L2 ADT+DOC
+          }
+        }
+      },
+      {
+        label: 'Forecast log-linear',
+        data: forecast,
+        borderColor: '#0B5394',
+        borderWidth: 2,
+        borderDash: [6, 4],
+        pointRadius: 3,
+        pointStyle: 'rectRot',
+        backgroundColor: 'transparent',
+        tension: 0.25
+      },
+      {
+        label: 'Forecast CI upper',
+        data: forecastUpper,
+        borderColor: 'transparent',
+        backgroundColor: 'rgba(11,83,148,0.10)',
+        pointRadius: 0,
+        fill: '+1',
+        tension: 0.25
+      },
+      {
+        label: 'Forecast CI lower',
+        data: forecastLower,
+        borderColor: 'transparent',
+        backgroundColor: 'rgba(11,83,148,0.10)',
+        pointRadius: 0,
+        fill: false,
+        tension: 0.25
+      },
+      {
+        label: 'Cohort PEACE-1 (mediana)',
+        data: cohortRef,
+        borderColor: '#7C3AED',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [3, 3],
+        pointRadius: 0,
+        tension: 0.3
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { intersect: false, mode: 'index' },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#0F1E32',
+        titleFont: { family: 'IBM Plex Sans', weight: '600' },
+        bodyFont: { family: 'Inter', size: 12 },
+        padding: 10,
+        boxPadding: 4,
+        callbacks: {
+          afterBody: (items) => {
+            const i = items[0]?.dataIndex ?? 0;
+            return [`Línea: ${i <= 10 ? '1 (ADT+APA)' : i <= 16 ? '2 (ADT+DOC)' : '3 (forecast)'}`];
+          }
+        }
+      },
+      annotation: {
+        annotations: {
+          bcrLine: {
+            type: 'line', yMin: 0.2, yMax: 0.2,
+            borderColor: '#D97706', borderWidth: 1.5, borderDash: [4,4],
+            label: { display: true, content: 'BCR threshold (0.2)', position: 'start', backgroundColor: 'rgba(217,119,6,0.9)', color: '#fff', font: { size: 10 } }
+          },
+          crpcLine: {
+            type: 'line', yMin: 2, yMax: 2,
+            borderColor: '#2563EB', borderWidth: 1, borderDash: [2,3],
+            label: { display: true, content: 'CRPC baseline (2.0)', position: 'end', backgroundColor: 'rgba(37,99,235,0.9)', color: '#fff', font: { size: 10 } }
+          },
+          progressionBox: {
+            type: 'box', xMin: 12, xMax: 16,
+            backgroundColor: 'rgba(217,119,6,0.07)',
+            borderColor: 'rgba(217,119,6,0.3)', borderWidth: 1,
+            label: { display: true, content: 'PSADT 7.8m · gate 55', position: { x: 'center', y: 'start' }, color: '#D97706', font: { size: 10, weight: '600' } }
+          },
+          eventBCR: {
+            type: 'point', xValue: 12, yValue: 5.6,
+            backgroundColor: '#C0292B', borderColor: '#fff', borderWidth: 2, radius: 7,
+            label: { display: true, content: 'BCR confirmado', position: 'top', backgroundColor: '#C0292B', color: '#fff', font: { size: 10 } }
+          },
+          eventImg: {
+            type: 'point', xValue: 14, yValue: 7.4,
+            backgroundColor: '#2563EB', borderColor: '#fff', borderWidth: 2, radius: 6,
+          }
+        }
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: false,
+        type: 'logarithmic',
+        title: { display: true, text: 'PSA (ng/mL · log)', font: { size: 11, weight: '600' }, color: '#4A5A73' },
+        grid: { color: '#EEF2F7' },
+        ticks: { color: '#7A8AA3', font: { size: 10.5 } }
+      },
+      x: {
+        grid: { display: false },
+        ticks: { color: '#7A8AA3', font: { size: 10.5 }, maxRotation: 0, autoSkip: true }
+      }
+    }
+  }
+});
+
+// Filter pill toggle (mock interactivity)
+document.querySelectorAll('.filter-pill').forEach(p => {
+  p.addEventListener('click', () => {
+    document.querySelectorAll('.filter-pill').forEach(x => x.classList.remove('active'));
+    p.classList.add('active');
+  });
+});
+document.querySelectorAll('.panel-tab').forEach(t => {
+  t.addEventListener('click', (e) => {
+    const parent = e.target.closest('.panel-tabs');
+    parent.querySelectorAll('.panel-tab').forEach(x => x.classList.remove('active'));
+    e.target.classList.add('active');
+  });
+});
+document.querySelectorAll('.nav-item').forEach(n => {
+  n.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
+    n.classList.add('active');
+  });
+});
+</script>
+</body>
+</html>

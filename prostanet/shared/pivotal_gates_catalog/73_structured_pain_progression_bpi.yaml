@@ -1,0 +1,177 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 73: structured_pain_progression_bpi
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXVIII) — Auditoría #67D — BPI pain progression.
+#
+# Razón clínica:
+#   **Brief Pain Inventory (BPI)** es la herramienta estándar para
+#   medición pain en oncología (Cleeland 1991). Captura:
+#
+#   1. **Pain at worst** (peor dolor 24h): 0-10 NRS
+#   2. **Pain at least** (mejor dolor 24h): 0-10 NRS
+#   3. **Pain on average** (promedio): 0-10 NRS
+#   4. **Pain right now** (actual): 0-10 NRS
+#   5. **Pain interference** (interferencia 7 ítems):
+#      - Actividad general, mood, ambulación, trabajo, relaciones,
+#        sueño, disfrute de vida (cada 0-10)
+#
+#   Cutoffs clínicos:
+#   - **BPI worst ≥4**: dolor moderado-severo, requiere optimización
+#   - **BPI worst ≥7**: dolor severo, escalación urgente opioides
+#   - **BPI interference average ≥4**: impacto funcional significativo
+#
+#   PCWG3 PAIN PROGRESSION:
+#   - Aumento ≥30% en BPI worst pain sostenido ≥4 semanas
+#   - O nueva necesidad de opioides en paciente previamente sin
+#   - O escalación dosis opioides ≥30% sostenida
+#
+#   Severity: informational/soft_warning — alerta optimización analgésica
+#   + considerar SCC (gate 68) + bone-targeted therapy.
+#
+#   Coexistencia: gate 73 + gate 68 (SCC suspect) si dolor + neurológico.
+# ──────────────────────────────────────────────────────────────────────
+
+code: structured_pain_progression_bpi
+title: "BPI pain progression sostenida → optimizar analgesia + SCC workup + bone-targeted"
+faubot_added_in: "2026-04-26 LXXVIII"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: BPI worst pain ≥4 + sostenido ≥4 semanas
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: bpi_worst_pain_score
+          alias_fields:
+            - bpi_peor_dolor
+            - pain_worst_nrs
+            - peor_dolor_24h
+          threshold: 3  # ≥4 = numeric_above 3
+        - type: numeric_above
+          field: bpi_pain_persistent_weeks
+          alias_fields:
+            - dolor_persistente_semanas
+            - duration_pain_weeks
+          threshold: 3  # ≥4 semanas
+    # Path B: BPI worst pain SEVERO ≥7 (urgent)
+    - type: numeric_above
+      field: bpi_worst_pain_score
+      alias_fields:
+        - bpi_peor_dolor
+        - pain_worst_nrs
+      threshold: 6  # ≥7 = numeric_above 6
+    # Path C: BPI interference promedio ≥4 (functional impact)
+    - type: numeric_above
+      field: bpi_interference_average
+      alias_fields:
+        - bpi_interferencia_promedio
+        - pain_interference_avg
+      threshold: 3  # ≥4
+    # Path D: PCWG3 pain progression — escalación ≥30%
+    - type: numeric_above
+      field: bpi_worst_pain_increase_percent
+      alias_fields:
+        - cambio_bpi_porcentaje
+      threshold: 29  # ≥30% PCWG3 progression
+    # Path E: nueva necesidad opioides (PCWG3)
+    - type: truthy_flag
+      field: new_opioid_requirement_for_cancer_pain
+      alias_fields:
+        - nueva_necesidad_opioides
+        - opioids_initiated_for_pain
+
+regimen_codes: []  # Gate informativo — alerta optimización
+
+keywords:
+  - dolor
+  - pain
+  - BPI
+  - Brief Pain Inventory
+  - escala dolor
+  - opioides
+  - analgesia
+
+message: |
+  📊 ALERTA: BPI pain progression detectada → optimizar analgesia +
+  considerar SCC workup (gate 68) + bone-targeted therapy intensification.
+
+  🔬 INTERPRETACIÓN BPI:
+
+  **Cutoffs clínicos**:
+  - **BPI worst 0-3**: dolor leve, manejo simple (acetaminofén/AINEs)
+  - **BPI worst 4-6**: dolor moderado, requiere optimización +
+    considerar opioides débiles (tramadol/codeína)
+  - **BPI worst 7-10**: dolor severo, opioides fuertes (morfina/oxicodona)
+    + considerar consulta palliative care urgente
+
+  **PCWG3 Pain Progression** (formal endpoint):
+  - Aumento ≥30% BPI worst sostenido ≥4 semanas
+  - Nueva necesidad opioides en paciente previamente sin
+  - Escalación dosis opioides ≥30% sostenida
+
+  🎯 ACCIÓN OBLIGATORIA:
+
+  **1. SCC suspicion ruling-out** (gate 68 hard_block):
+  - Back pain agudo + radiculopatía + debilidad MMII + retención = SCC
+  - RM columna emergency <24h
+  - Dexametasona 16mg IV load si sospecha activa
+
+  **2. Optimización analgésica**:
+  - Step-up WHO ladder: AINEs → opioides débiles → opioides fuertes
+  - Adyuvantes: pregabalin 75-300mg/d (neuropático), dexametasona
+    4-16mg/d (compresión raíz), bisfosfonatos (bone pain)
+  - Considerar metadona 5-10mg q8h (NMDA-mediated, equianalgesic)
+
+  **3. Bone-targeted therapy intensification**:
+  - Si bajo zoledronate 4mg IV q4sem → mantener
+  - Si sin BMA: iniciar zoledronate o denosumab 120mg SC q4sem
+  - Considerar Ra-223 si bone-only sintomático (gate 13/14)
+
+  **4. Imaging confirmación**:
+  - PSMA-PET/CT para nuevas lesiones (gate 71 trigger)
+  - MRI sitio dolor focal si sospecha SCC
+  - CT thorax/abdomen/pelvis si visceral suspicion
+
+  **5. Palliative RT consideration** (futuro gate 83):
+  - Bone pain localizada → 8 Gy single fraction (Hartsell JNCI 2005)
+  - Múltiples sitios → 30 Gy/10 fx
+  - SCC → 30 Gy/10 fx urgente
+
+  **6. ESAS evaluation** (futuro gate 80):
+  - Pain como component ESAS multi-síntoma
+  - Si pain ≥4 + 1 más síntoma ≥4 → palliative care referral
+
+  ⚠️ INTEGRACIÓN COMPOSITE:
+  Si gate 73 fires + gate 71 (PSMA progression) + gate 53/55 (PSA prog)
+  → gate 75 composite rPFS event "clinical progression" PCWG3 → reroute
+  línea + intensificar palliative care.
+
+  🔬 EVIDENCIA:
+  - **BPI Cleeland Ann Acad Med Singapore 1994;23:129**: validation
+  - **PCWG3 (Scher JCO 2016;34:1402)**: pain progression criteria
+  - **NCCN Pain v2.2026**: WHO ladder + cancer pain management
+  - **Hartsell JNCI 2005**: 8 Gy single fraction palliative bone
+  - **NCCN Prostate v5.2026 PROS-O**: pain assessment in mCRPC
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `bpi_worst_pain_score`: 0-10 (peor dolor 24h)
+  - `bpi_least_pain_score`: 0-10 (mejor dolor 24h)
+  - `bpi_average_pain_score`: 0-10 (promedio 24h)
+  - `bpi_current_pain_score`: 0-10 (actual)
+  - `bpi_interference_average`: 0-10 promedio 7 items
+  - `bpi_pain_persistent_weeks`: semanas dolor sostenido
+  - `bpi_worst_pain_baseline`: comparator baseline
+  - `bpi_worst_pain_increase_percent`: cambio % calculado
+  - `new_opioid_requirement_for_cancer_pain`: flag PCWG3
+  - `current_opioid_morphine_equivalent_mg_day`: MED actual
+
+evidence_tag: bpi_cleeland_1994_pcwg3_pain_progression_nccn_pain_v2_2026
+trial_refs:
+  - "BPI Cleeland Ann Acad Med Singapore 1994;23:129"
+  - "PCWG3 (Scher JCO 2016;34:1402)"
+  - "NCCN Pain v2.2026"
+  - "Hartsell JNCI 2005;97:798"
+  - "NCCN Prostate v5.2026 PROS-O"

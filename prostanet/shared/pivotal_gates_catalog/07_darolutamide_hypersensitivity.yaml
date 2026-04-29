@@ -1,0 +1,56 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 7: darolutamide_hypersensitivity
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XI) — Migrado a YAML declarativo.
+#
+# Razón clínica:
+#   Hipersensibilidad documentada a darolutamida o componente del
+#   producto Nubeqa → contraindicación absoluta de cualquier régimen
+#   con darolutamida (mono o triplete ARASENS).
+#   Etiquetas EMA y FDA: darolutamida está contraindicada en pacientes
+#   con hipersensibilidad documentada al principio activo o cualquier
+#   excipiente del producto.
+# ──────────────────────────────────────────────────────────────────────
+
+code: darolutamide_hypersensitivity
+title: "Hipersensibilidad documentada a darolutamida"
+faubot_added_in: "2026-04-23 I"
+faubot_migrated_to_yaml_in: "2026-04-25 XI"
+severity: hard_block
+
+trigger:
+  type: truthy_flag
+  field: darolutamide_hypersensitivity
+  alias_fields: []
+
+# Sin override clínico — la hipersensibilidad documentada NO es reversible.
+override: null
+
+regimen_codes:
+  - REGIMEN_CODES_DAROLUTAMIDE
+
+keywords:
+  - KEYWORDS_DAROLUTAMIDE
+
+message: |
+  Darolutamida (mono o triplete ARASENS) contraindicada por hipersensibilidad
+  documentada al principio activo o componente de Nubeqa (lactosa monohidrato,
+  croscarmelosa sódica, povidona K30, estearato de magnesio). Considerar
+  enzalutamida o apalutamida como alternativas ARPI con perfil distinto, o
+  abiraterona si el paciente no es candidato ARPI. Etiquetas EMA y FDA
+  (Bayer Nubeqa prescribing information) listan hipersensibilidad como
+  contraindicación absoluta.
+
+evidence_tag: nubeqa_label_aramis_arasens
+trial_refs:
+  - ARAMIS
+  - ARASENS
+  - "Nubeqa label"
+
+references:
+  - "Fizazi K, et al. ARAMIS. NEJM 2019;380:1235-1246."
+  - "Smith MR, et al. ARASENS. NEJM 2022;386:1132-1142."
+  - "Bayer Nubeqa (darolutamide) prescribing information 2024."
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Darolutamida en m0CRPC y mHSPC alto-volumen"
+  eau_section: "EAU 2026 §6.6.4.3 — ARASENS triplete"

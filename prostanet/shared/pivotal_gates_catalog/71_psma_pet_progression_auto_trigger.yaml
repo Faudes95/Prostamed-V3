@@ -1,0 +1,147 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 71: psma_pet_progression_auto_trigger
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXVIII) — Auditoría #67D — PSMA-PET progression.
+#
+# Razón clínica:
+#   PSMA-PET/CT (Ga-68 o F-18 PSMA-1007/DCFPyL) es el imaging standard
+#   para detección progresión PCa. PCWG3 + RECIST 1.1 + PERCIST 1.0
+#   definen criterios:
+#
+#   1. **Nuevas lesiones PSMA-positive** (≥1 lesión nueva):
+#      - Bone, lymph node, visceral
+#      - Validación con CT/MRI confirmatoria
+#      - SUVmax ≥3 + correlación anatómica
+#
+#   2. **Aumento SUVmax en lesiones existentes**:
+#      - Δ SUVmax ≥30% (PERCIST 1.0)
+#      - Comparación con PSMA-PET basal
+#      - PSMA total tumor volume (PSMA-TTV) progression ≥30%
+#
+#   3. **PSMA-PET progression INDEPENDIENTE de PSA**:
+#      - PSMA progression puede preceder PSA rise (sensibilidad mayor)
+#      - PSA stable + PSMA progression = considerar NEPC (gate 67)
+#
+#   Severity: soft_warning — alerta progresión radiográfica + dispara
+#   rPFS event marker auto + considerar cambio línea terapéutica.
+#
+#   Coexistencia: gate puede coexistir con gate 75 (composite progression)
+#   y disparar reroute next-line si combina con PSA progression (gate 53/55).
+# ──────────────────────────────────────────────────────────────────────
+
+code: psma_pet_progression_auto_trigger
+title: "PSMA-PET progression detected → auto-disparo rPFS event + cambio línea"
+faubot_added_in: "2026-04-26 LXXVIII"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: nuevas lesiones PSMA-positive
+    - type: numeric_above
+      field: psma_new_lesion_count
+      alias_fields:
+        - psma_pet_new_lesions
+        - new_psma_positive_lesions
+        - lesiones_nuevas_psma
+      threshold: 0  # ≥1 nueva lesión
+    # Path B: aumento SUVmax ≥30% en lesiones existentes
+    - type: numeric_above
+      field: psma_suvmax_increase_percent
+      alias_fields:
+        - psma_suvmax_change_pct
+        - cambio_suvmax_psma_porcentaje
+      threshold: 29  # ≥30% PERCIST progression
+    # Path C: PSMA total tumor volume increase ≥30%
+    - type: numeric_above
+      field: psma_total_tumor_volume_increase_percent
+      alias_fields:
+        - psma_ttv_increase_pct
+        - cambio_ttv_psma_porcentaje
+      threshold: 29
+    # Path D: clinical flag explicit
+    - type: truthy_flag
+      field: psma_pet_progression_documented
+      alias_fields:
+        - progresion_psma_documentada
+        - psma_progression_confirmed_by_radiology
+
+regimen_codes: []  # Gate informativo — dispara rPFS event auto
+
+keywords:
+  - PSMA-PET
+  - PSMA PET/CT
+  - Ga-68 PSMA
+  - F-18 PSMA
+  - PSMA progression
+  - PERCIST
+
+message: |
+  📊 ALERTA: PSMA-PET progression detectada → auto-disparo **rPFS event
+  marker** + considerar cambio línea terapéutica.
+
+  🔬 CRITERIOS PSMA-PET PROGRESSION:
+
+  **Path A — Nuevas lesiones PSMA-positive** (≥1):
+  - Validación obligatoria: SUVmax ≥3 + correlación anatómica CT/MRI
+  - Sitios: bone (axial > appendicular), lymph node, visceral
+  - Considerar NEPC si visceral nuevo + AR signaling loss (gate 67)
+
+  **Path B — Aumento SUVmax ≥30%** (PERCIST 1.0):
+  - Comparación con PSMA-PET basal (mismo radiotrazador)
+  - SUVmax promedio top 5 lesiones más ávidas
+  - Validar con PSA trend + síntomas clínicos
+
+  **Path C — PSMA-TTV (Total Tumor Volume) increase ≥30%**:
+  - Calcular PSMA-TTV en lesiones evaluable
+  - Mayor sensibilidad que SUVmax single-lesion
+  - Útil en mCRPC heavily pre-treated
+
+  🎯 ACCIÓN OBLIGATORIA:
+  1. **Documentar rPFS event** — fecha PSMA progression como event marker
+     formal (PCWG3 endpoint)
+  2. **Reevaluar línea actual**:
+     - Si bajo ARPI: considerar switch taxane (docetaxel/cabazitaxel)
+     - Si bajo taxane: considerar Lu-177-PSMA (VISION trial)
+     - Si HRR+: considerar PARP (PROfound/MAGNITUDE)
+  3. **CT thorax/abdomen/pelvis** confirmatoria (RECIST 1.1)
+  4. **PSA simultáneo** — si PSA stable + PSMA progresses → sospechar
+     NEPC (gate 67) o variant histology
+  5. **MDT review** — confirmar reroute clínico antes de switch
+  6. **Considerar radioligand therapy**:
+     - Lu-177-PSMA si PSMA-positive bulk + adecuada función renal
+     - Ra-223 si bone-only progression sintomático
+
+  ⚠️ INTEGRACIÓN COMPOSITE:
+  Si gate 71 fires + gate 53/55 (PSA progression) fires simultáneamente
+  → activa gate 75 (composite progression rPFS reroute) — switch línea
+  obligatorio + documentar PCWG3 composite progression event.
+
+  🔬 EVIDENCIA:
+  - **PCWG3 (Scher JCO 2016;34:1402)**: criterios PSA + radiographic + clinical
+  - **PERCIST 1.0 (Wahl JNM 2009;50:122S)**: PET response criteria
+  - **RECIST 1.1 (Eisenhauer EJC 2009;45:228)**: solid tumor response
+  - **PROMISE (Hofman Lancet 2020;395:1208)**: PSMA-PET vs CT/bone scan staging
+  - **VISION (Sartor NEJM 2021;385:1091)**: Lu-177-PSMA based on PSMA-PET
+  - **NCCN Prostate v5.2026 PROS-O**: PSMA imaging criteria
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `psma_new_lesion_count`: número nuevas lesiones PSMA-positive (int)
+  - `psma_suvmax_current`: SUVmax actual (float)
+  - `psma_suvmax_baseline`: SUVmax basal (float, comparator)
+  - `psma_suvmax_increase_percent`: cambio % calculado
+  - `psma_total_tumor_volume_current`: PSMA-TTV actual
+  - `psma_total_tumor_volume_baseline`: PSMA-TTV basal
+  - `psma_total_tumor_volume_increase_percent`: cambio % calculado
+  - `psma_progression_date`: fecha PSMA-PET progression (rPFS event)
+  - `psma_pet_progression_documented`: flag clínico
+
+evidence_tag: pcwg3_psma_pet_promise_2020_vision_2021_percist_recist
+trial_refs:
+  - "PCWG3 (Scher JCO 2016;34:1402)"
+  - "PERCIST 1.0 (Wahl JNM 2009;50:122S)"
+  - "RECIST 1.1 (Eisenhauer EJC 2009;45:228)"
+  - "PROMISE (Hofman Lancet 2020;395:1208)"
+  - "VISION (Sartor NEJM 2021;385:1091)"
+  - "NCCN Prostate v5.2026 PROS-O"

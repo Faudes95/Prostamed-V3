@@ -262,6 +262,60 @@ class DecisionAidService:
             })
         return result
 
+    @classmethod
+    def build_tradeoff_visualization(
+        cls,
+        patient: dict[str, Any],
+        elicitation_answers: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """EPIC 7 — Construye visualización SDM integral (tradeoff + trial + elicitación).
+
+        Orquesta los tres nuevos motores:
+        - ``tradeoff_engine.build_tradeoff_matrix`` → outcomes × prioridades.
+        - ``trial_matching_engine.build_trial_matching_bundle`` → ensayos.
+        - ``sdm_preference_elicitation.score_elicitation`` → elicitación Likert.
+
+        Si la elicitación aporta prioridades, se fusionan con las explícitas
+        del paciente antes de calcular la matriz (sin mutar el paciente).
+
+        Returns:
+            dict con keys: ``tradeoff_matrix``, ``trial_matching_bundle``,
+            ``elicitation_result``, ``elicitation_form``.
+        """
+
+        from prostanet.domains.patient_tracking.tradeoff_engine import build_tradeoff_matrix
+        from prostanet.domains.research_intelligence.trial_matching_engine import (
+            build_trial_matching_bundle,
+        )
+        from prostanet.domains.reporting.sdm_preference_elicitation import (
+            build_elicitation_form,
+            merge_elicited_with_free_text,
+            score_elicitation,
+        )
+
+        elicitation_result = score_elicitation(elicitation_answers or {})
+
+        patient_for_matrix = dict(patient or {})
+        if elicitation_result.ranked_priorities:
+            raw = patient_for_matrix.get("patient_priority_profile") or patient_for_matrix.get("priority_profile") or ""
+            if isinstance(raw, list):
+                tokens = [str(x).strip() for x in raw if str(x).strip()]
+            else:
+                tokens = [tok.strip() for tok in str(raw).replace(";", ",").split(",") if tok.strip()]
+            merged = merge_elicited_with_free_text(elicitation_result, tokens)
+            patient_for_matrix["patient_priority_profile"] = ",".join(merged)
+
+        tradeoff_matrix = build_tradeoff_matrix(patient_for_matrix)
+        trial_bundle = build_trial_matching_bundle(patient_for_matrix)
+
+        return {
+            "tradeoff_matrix": tradeoff_matrix.to_dict(),
+            "trial_matching_bundle": trial_bundle,
+            "elicitation_result": elicitation_result.to_dict(),
+            "elicitation_form": build_elicitation_form(),
+            "source_framework": "Ottawa Decision Support Framework + NCCN PROS-A v5.2026",
+        }
+
     @staticmethod
     def _align_priorities(options: list[str], priorities: list[str]) -> list[dict[str, str]]:
         """Alinea opciones de tratamiento con prioridades del paciente."""

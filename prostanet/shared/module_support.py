@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from prostanet.shared.advanced_support_normalizer import normalize_advanced_support_payload
 from prostanet.shared.contracts import CareOverlay, MonitoringPlan, StateTransition
 
 
@@ -86,6 +87,7 @@ def apply_support_bundle(
 
 
 def support_bundle_for_module(module_id: str, payload: dict[str, Any], result: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+    payload = normalize_advanced_support_payload(payload or {}, state=module_id)
     state_label = result.get("nccn_primary", {}).get("label", result.get("state", module_id))
     source_citations = evidence.get("source_citations", [])
     survivorship_risks: list[str] = []
@@ -423,7 +425,7 @@ def support_bundle_for_module(module_id: str, payload: dict[str, Any], result: d
         ]
         decision_changing_inputs = [
             "No escalar a triplete o doblete intensivo sin documentar fragilidad, riesgo cardiovascular e interacciones farmacológicas.",
-            "Capturar calidad de vida basal antes de elegir intensificación sostenida.",
+            "Capturar PROs validados basales antes de elegir intensificación sostenida.",
             "Documentar DXA, calcio/vitamina D y protección ósea antes de normalizar secuencias prolongadas en enfermedad metastásica.",
         ]
         supportive_evidence_context = [
@@ -432,8 +434,8 @@ def support_bundle_for_module(module_id: str, payload: dict[str, Any], result: d
         ]
         benchmarking_flags = [
             benchmark_flag("Riesgo cardiovascular documentado", "complete" if _is_true(payload.get("cv_risk_documented")) or _is_true(payload.get("comorbidity_cardio")) else "missing", "Base mínima para cardio-oncología al usar ARPI o abiraterona."),
-            benchmark_flag("Revisión de interacciones", "complete" if _is_true(payload.get("drug_interaction_reviewed")) else "missing", "Evita toxicidad oculta por polifarmacia."),
-            benchmark_flag("PRO basal", "complete" if not _missing(payload.get("baseline_qol")) else "missing", "Benchmark de seguimiento funcional en enfermedad avanzada."),
+            benchmark_flag("Revisión de interacciones", "complete" if str(payload.get("ddi_review_status") or "") == "completed" else "missing", "Evita toxicidad oculta por polifarmacia."),
+            benchmark_flag("PRO basal", "complete" if str((payload.get("advanced_pro_bundle") or {}).get("status") or "missing") in {"complete", "partial"} else "missing", "Benchmark de seguimiento funcional en enfermedad avanzada."),
             benchmark_flag("DXA basal", "complete" if _is_true(payload.get("dxa_baseline_done")) else "missing", "Hace visible la prevención ósea temprana."),
             benchmark_flag("Calcio y vitamina D", "complete" if _is_true(payload.get("calcium_vitd_started")) else "missing", "Bundle mínimo de salud ósea."),
             benchmark_flag("Protección ósea iniciada", "complete" if _is_true(payload.get("bone_protection_started")) else "missing", "Mide qué tan cerca está la práctica real del soporte óseo esperado."),
@@ -450,9 +452,9 @@ def support_bundle_for_module(module_id: str, payload: dict[str, Any], result: d
                 care_overlay(
                     "rehab_qol",
                     "Rehabilitación y calidad de vida",
-                    "pendiente" if _missing(payload.get("baseline_qol")) else "monitoreado",
+                    "pendiente" if str((payload.get("advanced_pro_bundle") or {}).get("status") or "missing") == "missing" else "monitoreado",
                     ["La calidad de vida basal debe acompañar la selección de intensificación sistémica."],
-                    ["Capturar FACT-P, EQ-5D o EPIC-26 basal y repetir en visitas seriadas."],
+                    ["Capturar FACT-P, EQ-5D, BPI y fatiga basal y repetirlos en visitas seriadas."],
                 ),
             ]
         )
@@ -488,7 +490,7 @@ def support_bundle_for_module(module_id: str, payload: dict[str, Any], result: d
         benchmarking_flags = [
             benchmark_flag("Confirmación de castración", "complete" if _is_true(payload.get("castrate_testosterone_confirmed")) else "missing", "Evita clasificar erróneamente un estado no resistente."),
             benchmark_flag("Riesgo cardiovascular documentado", "complete" if _is_true(payload.get("cv_risk_documented")) else "missing", "Refuerza cardio-oncología antes de ARPI."),
-            benchmark_flag("Interacciones revisadas", "complete" if _is_true(payload.get("drug_interaction_reviewed")) else "missing", "Evita toxicidad farmacológica prevenible."),
+            benchmark_flag("Interacciones revisadas", "complete" if str(payload.get("ddi_review_status") or "") == "completed" else "missing", "Evita toxicidad farmacológica prevenible."),
         ]
     elif module_id == "m1_crpc":
         monitoring = monitoring_plan(
@@ -533,8 +535,8 @@ def support_bundle_for_module(module_id: str, payload: dict[str, Any], result: d
             benchmark_flag("HRR trazable", "complete" if not _missing(payload.get("hrr_gene")) and not _missing(payload.get("biomarker_source")) else "missing", "Necesario antes de PARP."),
             benchmark_flag("Elegibilidad PSMA documentada", "complete" if _is_true(payload.get("psma_positive")) and not _is_true(payload.get("psma_negative_dominant_lesions")) else "missing", "Necesario antes de radioligando dirigido."),
             benchmark_flag("Riesgo cardiovascular documentado", "complete" if _is_true(payload.get("cv_risk_documented")) else "missing", "Seguridad basal para secuencias prolongadas."),
-            benchmark_flag("Revisión de interacciones", "complete" if _is_true(payload.get("drug_interaction_reviewed")) else "missing", "Reduce polifarmacia de alto riesgo."),
-            benchmark_flag("Bundle hepático basal", "complete" if _is_true(payload.get("hepatic_risk_factors")) or str(payload.get("child_pugh_score", "A")) != "A" else "incomplete", "Permite vigilar hepatotoxicidad si se usa abiraterona."),
+            benchmark_flag("Revisión de interacciones", "complete" if str(payload.get("ddi_review_status") or "") == "completed" else "missing", "Reduce polifarmacia de alto riesgo."),
+            benchmark_flag("Bundle hepático basal", "complete" if bool(payload.get("hepatic_safety_bundle")) else "incomplete", "Permite vigilar hepatotoxicidad si se usa abiraterona."),
             benchmark_flag("Castración confirmada", "complete" if _is_true(payload.get("castrate_testosterone_confirmed")) else "missing", "Evita reclasificar erróneamente el estado clínico."),
             benchmark_flag("Contexto de línea mCRPC", "complete" if not _missing(payload.get("mcrpc_line_context")) else "missing", "Ordena rutas pre-taxano, post-taxano y PARP de primera línea."),
             benchmark_flag("Informe molecular fechado", "complete" if not _missing(payload.get("molecular_report_date")) else "missing", "Mejora trazabilidad clínica y regulatoria."),
@@ -558,7 +560,7 @@ def support_bundle_for_module(module_id: str, payload: dict[str, Any], result: d
                 care_overlay(
                     "drug_interaction_review",
                     "Revisión de interacciones farmacológicas",
-                    "pendiente" if not _is_true(payload.get("drug_interaction_reviewed")) else "activo",
+                    "pendiente" if str(payload.get("ddi_review_status") or "") != "completed" else "activo",
                     ["La polifarmacia modifica exposición a ARPI y toxicidad."],
                     ["Revisar CYP, anticoagulantes, anticonvulsivos y tratamientos cardiovasculares antes de iniciar o secuenciar ARPI."],
                 ),
@@ -579,9 +581,9 @@ def support_bundle_for_module(module_id: str, payload: dict[str, Any], result: d
                 care_overlay(
                     "rehab_qol",
                     "Rehabilitación y calidad de vida",
-                    "pendiente" if _missing(payload.get("baseline_qol")) else "activo",
+                    "pendiente" if str((payload.get("advanced_pro_bundle") or {}).get("status") or "missing") == "missing" else "activo",
                     ["El monitoreo funcional y la calidad de vida deben acompañar cualquier secuencia avanzada prolongada."],
-                    ["Capturar FACT-P o EQ-5D basal y repetirlo durante progresión o cambio de línea."],
+                    ["Capturar FACT-P, EQ-5D, BPI y fatiga basal y repetirlos durante progresión o cambio de línea."],
                 ),
                 care_overlay(
                     "palliative_care",

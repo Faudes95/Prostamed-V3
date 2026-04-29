@@ -187,6 +187,54 @@ def build_runtime_payload(
             prior_therapy.append(scheme)
     if prior_therapy:
         payload["prior_therapy"] = prior_therapy
+    if not is_present(payload.get("prior_prostatectomy")):
+        payload["prior_prostatectomy"] = 1 if patient.get("surgery") else 0
+    if not is_present(payload.get("prior_radiation")):
+        payload["prior_radiation"] = 1 if patient.get("radiation") else 0
+    if not is_present(payload.get("radiation_date")) and patient.get("radiation"):
+        latest_radiation = patient.get("radiation")[-1]
+        payload["radiation_date"] = latest_radiation.get("rt_date") or ""
+    if not is_present(payload.get("prior_rt_modality")) and patient.get("radiation"):
+        latest_radiation = patient.get("radiation")[-1]
+        payload["prior_rt_modality"] = latest_radiation.get("rt_technique") or ""
+    if not is_present(payload.get("psa_history")) and patient.get("psa_series"):
+        payload["psa_history"] = [
+            {
+                "value": point.get("value"),
+                "date": point.get("sample_date") or "",
+                "unit": point.get("unit") or "ng/mL",
+                "context": point.get("context") or "",
+                "source": point.get("source") or point.get("entry_origin") or "",
+                "line_of_therapy_number": point.get("line_of_therapy_number"),
+                "line_of_therapy_context": point.get("line_of_therapy_context") or "",
+            }
+            for point in list(patient.get("psa_series") or [])
+            if is_present(point.get("sample_date")) and point.get("value") not in (None, "")
+        ]
+    if not is_present(payload.get("psa_current")) and payload.get("psa_history"):
+        latest_psa_point = list(payload.get("psa_history") or [])[-1]
+        if is_present(latest_psa_point.get("value")):
+            payload["psa_current"] = latest_psa_point.get("value")
+        if not is_present(payload.get("psa_current_date")) and is_present(latest_psa_point.get("date")):
+            payload["psa_current_date"] = latest_psa_point.get("date")
+    if not is_present(payload.get("testosterone_history")) and patient.get("testosterone_series"):
+        payload["testosterone_history"] = [
+            {
+                "value": point.get("value"),
+                "date": point.get("sample_date") or "",
+                "unit": point.get("unit") or "ng/dL",
+                "context": point.get("context") or "",
+                "source": point.get("source") or point.get("entry_origin") or "",
+                "line_of_therapy_number": point.get("line_of_therapy_number"),
+                "line_of_therapy_context": point.get("line_of_therapy_context") or "",
+            }
+            for point in list(patient.get("testosterone_series") or [])
+            if is_present(point.get("sample_date")) and point.get("value") not in (None, "")
+        ]
+    if not is_present(payload.get("testosterone")) and payload.get("testosterone_history"):
+        latest_testosterone_point = list(payload.get("testosterone_history") or [])[-1]
+        if is_present(latest_testosterone_point.get("value")):
+            payload["testosterone"] = latest_testosterone_point.get("value")
     payload["effective_state"] = effective_state
     return payload
 
@@ -468,6 +516,8 @@ def build_decision_delta_since_last_visit(
     final_presented_recommendation: dict[str, Any] | None,
     blocking_groups: list[dict[str, Any]] | None = None,
     blocked_by_overlay: list[dict[str, Any]] | None = None,
+    current_pivotal_gates: list[dict[str, Any]] | None = None,
+    previous_pivotal_gates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     fallback_followup = dict(
         patient.get("latest_follow_up")
@@ -505,7 +555,24 @@ def build_decision_delta_since_last_visit(
             for field in fallback_candidates
             if fallback_followup.get(field) not in (None, "", [], {})
         ]
-    if not decisive_visit and not changed_fields:
+    # Faubot 2026-04-25 (IX) — Delta longitudinal de gates pivotal.
+    # Incluso cuando no hay decisive_visit (sin cambios clínicos clásicos),
+    # PUEDE haber cambios en gates pivotal (override clínico documentado).
+    # Por eso el cómputo del delta de gates va ANTES del early return.
+    from prostanet.shared.pivotal_gate_delta import (
+        compute_pivotal_gates_delta,
+        build_pivotal_gates_delta_summary,
+    )
+    pivotal_gates_delta = compute_pivotal_gates_delta(
+        current_pivotal_gates, previous_pivotal_gates
+    )
+    pivotal_gates_delta_summary = build_pivotal_gates_delta_summary(pivotal_gates_delta)
+    has_pivotal_gate_change = (
+        pivotal_gates_delta.get("available")
+        and pivotal_gates_delta.get("total_change_count", 0) > 0
+    )
+
+    if not decisive_visit and not changed_fields and not has_pivotal_gate_change:
         return {
             "available": False,
             "summary": "",
@@ -514,6 +581,8 @@ def build_decision_delta_since_last_visit(
             "next_best_action_today": normalize_text((final_presented_recommendation or {}).get("recommended_action")),
             "could_change_with_missing_data": [],
             "blocked_today": bool(blocked_by_overlay),
+            "pivotal_gates_delta": pivotal_gates_delta,
+            "pivotal_gates_delta_summary": pivotal_gates_delta_summary,
         }
 
     phenotype_keys = {
@@ -554,6 +623,16 @@ def build_decision_delta_since_last_visit(
         summary = f"El caso permanece en {phenotype_label} sin un cambio longitudinal dominante adicional."
     summary = summary.rstrip(".") + "."
 
+    # Faubot 2026-04-25 (IX) — Si el delta de gates aporta info adicional,
+    # promueve la classification a "safety_gate_or_blocker" o enriquece el
+    # summary con el resumen del delta.
+    if has_pivotal_gate_change and change_classification == "stable":
+        change_classification = "safety_gate_or_blocker"
+        summary = (
+            f"Cambio en gates pivotal desde la visita previa: "
+            f"{pivotal_gates_delta_summary}."
+        )
+
     return {
         "available": True,
         "visit_date": normalize_text(decisive_visit.get("visit_date") or decisive_visit.get("date")),
@@ -572,6 +651,9 @@ def build_decision_delta_since_last_visit(
             if normalize_text(field)
         ],
         "blocked_today": bool(blocked_by_overlay),
+        # Faubot 2026-04-25 (IX) — Delta longitudinal de gates pivotal.
+        "pivotal_gates_delta": pivotal_gates_delta,
+        "pivotal_gates_delta_summary": pivotal_gates_delta_summary,
     }
 
 

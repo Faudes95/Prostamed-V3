@@ -2997,11 +2997,22 @@ def docetaxel_fitness(patient: dict[str, Any]) -> dict[str, Any]:
     ecog = _to_int(patient.get("ecog_score", patient.get("ecog")))
     neuropathy = _to_int(patient.get("peripheral_neuropathy_grade"))
     frailty = str(patient.get("frailty_status", "") or "").strip().lower()
+    g8_score = _to_float(patient.get("g8_score") or patient.get("g8_geriatric_score") or patient.get("geriatric_g8_screening") or patient.get("bellera_g8"))
+    mini_cog_score = _to_float(patient.get("mini_cog_score") or patient.get("mini_cog") or patient.get("minicog_score"))
     child_pugh = str(patient.get("child_pugh_score", "A") or "A").strip().upper()
     cv_risk = _truthy(patient.get("cv_risk_documented")) or _truthy(patient.get("comorbidity_cardio"))
     ddi_reviewed = _truthy(patient.get("drug_interaction_reviewed"))
     performance_status_driver = _performance_status_driver()
     bone_pain = _truthy(patient.get("bone_pain")) or _truthy(patient.get("osseous_pain"))
+    geriatric_clearance_for_triplet = any(
+        _truthy(patient.get(field))
+        for field in (
+            "geriatric_clearance_for_triplete",
+            "geriatric_endorsement_for_triplet",
+            "geriatric_endorsement_for_triplete",
+            "comprehensive_geriatric_assessment_fit",
+        )
+    )
     anc_fields_present = any(field in patient for field in ("anc", "anc_current", "absolute_neutrophil_count"))
     platelet_fields_present = any(field in patient for field in ("platelets", "platelets_current", "platelet_count"))
     anc = _to_float(patient.get("anc") or patient.get("anc_current") or patient.get("absolute_neutrophil_count"))
@@ -3071,8 +3082,35 @@ def docetaxel_fitness(patient: dict[str, Any]) -> dict[str, Any]:
         reason = "Fragilidad clínica Frail"
         hard_stop_reasons.append(reason)
         clinical_block_reasons.append(reason)
+    elif frailty == "vulnerable":
+        caution_reasons.append("Fragilidad clínica Vulnerable: requiere evaluación geriátrica antes de priorizar triplete con docetaxel")
     elif not frailty:
         missing_inputs.append("frailty_status")
+
+    geriatric_default_block = False
+    geriatric_screen_status = "not_documented"
+    geriatric_cautions: list[str] = []
+    if frailty == "frail":
+        geriatric_screen_status = "adapted_treatment_required"
+    elif frailty == "vulnerable":
+        geriatric_screen_status = "requires_cga"
+        geriatric_cautions.append("frailty_status")
+    if g8_score is not None:
+        if g8_score <= 14:
+            geriatric_screen_status = "requires_cga"
+            geriatric_cautions.append("g8_score")
+            caution_reasons.append("G8 ≤14: tamiz geriátrico vulnerable; no priorizar triplete con docetaxel sin CGA/clearance")
+        elif geriatric_screen_status == "not_documented":
+            geriatric_screen_status = "fit"
+    if mini_cog_score is not None:
+        if mini_cog_score <= 3:
+            geriatric_screen_status = "unresolved_impairment"
+            geriatric_cautions.append("mini_cog_score")
+            caution_reasons.append("Mini-Cog ≤3: vulnerabilidad cognitiva; preferir doblete hasta aclarar seguridad del triplete")
+        elif geriatric_screen_status == "not_documented":
+            geriatric_screen_status = "fit"
+    if geriatric_cautions and not geriatric_clearance_for_triplet:
+        geriatric_default_block = True
 
     if child_pugh == "C":
         reason = "Child-Pugh C"
@@ -3122,7 +3160,15 @@ def docetaxel_fitness(patient: dict[str, Any]) -> dict[str, Any]:
         missing_inputs.append("ast")
     if docetaxel_required_now and alt is None:
         missing_inputs.append("alt")
-    if docetaxel_required_now and alp is None:
+    ast_limit = 1.5 * DOCETAXEL_LAB_ULN["ast"]
+    alt_limit = 1.5 * DOCETAXEL_LAB_ULN["alt"]
+    ast_alt_incomplete_or_elevated = (
+        ast is None
+        or alt is None
+        or ast > ast_limit
+        or alt > alt_limit
+    )
+    if docetaxel_required_now and alp is None and ast_alt_incomplete_or_elevated:
         missing_inputs.append("alp")
 
     if bilirubin is not None and bilirubin > DOCETAXEL_LAB_ULN["bilirubin"]:
@@ -3131,8 +3177,6 @@ def docetaxel_fitness(patient: dict[str, Any]) -> dict[str, Any]:
         label_block_reasons.append(reason)
         label_safety_reasons.append(reason)
     elif all(value is not None for value in (ast, alt, alp)):
-        ast_limit = 1.5 * DOCETAXEL_LAB_ULN["ast"]
-        alt_limit = 1.5 * DOCETAXEL_LAB_ULN["alt"]
         alp_limit = 2.5 * DOCETAXEL_LAB_ULN["alp"]
         if ((ast is not None and ast > ast_limit) or (alt is not None and alt > alt_limit)) and alp > alp_limit:
             reason = "AST/ALT >1.5x ULN con ALP >2.5x ULN institucional"
@@ -3194,6 +3238,8 @@ def docetaxel_fitness(patient: dict[str, Any]) -> dict[str, Any]:
 
     if hard_stop_reasons:
         default_intensification = "no"
+    elif geriatric_default_block:
+        default_intensification = "no"
     elif force_docetaxel_verification and not high_volume_triplet_state:
         if base_eligibility == "eligible" and verification_status == "verified":
             default_intensification = "yes"
@@ -3250,6 +3296,13 @@ def docetaxel_fitness(patient: dict[str, Any]) -> dict[str, Any]:
         "missing_inputs": missing_inputs,
         "docetaxel_missing_inputs": missing_inputs,
         "docetaxel_stale_inputs": sorted(dict.fromkeys(stale_inputs)),
+        "g8_score": g8_score,
+        "mini_cog_score": mini_cog_score,
+        "cognitive_risk": bool(mini_cog_score is not None and mini_cog_score <= 3),
+        "cognitive_risk_source": "mini_cog_score" if mini_cog_score is not None and mini_cog_score <= 3 else "",
+        "geriatric_screen_status": geriatric_screen_status,
+        "geriatric_default_block": geriatric_default_block,
+        "geriatric_caution_inputs": sorted(dict.fromkeys(geriatric_cautions)),
         "performance_status_driver": performance_status_driver,
         "docetaxel_candidate_now": force_docetaxel_verification,
         "docetaxel_context": docetaxel_context,

@@ -1,0 +1,184 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 81: phq9_depression_referral
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXIX) — Auditoría #67E — PHQ-9 depression.
+#
+# Razón clínica:
+#   **PHQ-9 (Patient Health Questionnaire-9)** es screening tool standard
+#   para depresión (Kroenke 2001) — más usado en oncología:
+#
+#   9 ítems (cada 0-3, total 0-27):
+#   1. Anhedonia (poco interés/placer en cosas)
+#   2. Depressed mood (decaído, deprimido, sin esperanza)
+#   3. Sleep problems (dificultad sueño)
+#   4. Fatigue (cansancio, poca energía)
+#   5. Appetite changes (apetito disminuido o exceso)
+#   6. Worthlessness (sentirse mal contigo mismo, fracaso)
+#   7. Concentration difficulties
+#   8. Psychomotor changes (lento o agitado)
+#   9. Suicidal ideation (pensamientos muerte/auto-daño)
+#
+#   CUTOFFS PHQ-9:
+#   - 0-4: minimal
+#   - 5-9: mild depression (consider follow-up)
+#   - **10-14: moderate depression (referral indicated)**
+#   - 15-19: moderately severe (treatment indicated)
+#   - **20-27: severe depression (urgent treatment + psych)**
+#   - **Ítem 9 ≥1: ANY suicidal ideation → emergency assessment**
+#
+#   Severity: informational/soft_warning — alerta depresión moderate-severe
+#   + recomienda psych referral + farmacoterapia.
+# ──────────────────────────────────────────────────────────────────────
+
+code: phq9_depression_referral
+title: "PHQ-9 ≥10 (depression moderate-severe) → psych referral + farmacoterapia consideration"
+faubot_added_in: "2026-04-26 LXXIX"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: PHQ-9 score ≥10 (moderate-severe)
+    - type: numeric_above
+      field: phq9_total_score
+      alias_fields:
+        - phq9_score
+        - patient_health_questionnaire_9
+      threshold: 9  # ≥10
+    # Path B: Item 9 PHQ-9 (suicidal ideation) ≥1
+    - type: numeric_above
+      field: phq9_item_9_suicidal_ideation
+      alias_fields:
+        - phq9_item9
+        - ideacion_suicida_phq9
+      threshold: 0  # ≥1 ANY ideation
+    # Path C: clinical depression flag explicit
+    - type: truthy_flag
+      field: clinical_depression_documented
+      alias_fields:
+        - depresion_clinica_documentada
+        - depression_diagnosed
+
+regimen_codes: []  # Gate informativo — recomienda psych referral
+
+keywords:
+  - depresión
+  - depression
+  - PHQ-9
+  - Patient Health Questionnaire
+  - psiquiatra
+  - antidepresivo
+
+message: |
+  📊 ALERTA: **PHQ-9 ≥10 (depression moderate-severe)** detectada →
+  psych referral + farmacoterapia antidepresiva consideration.
+
+  🔬 PHQ-9 INTERPRETACIÓN:
+
+  **Score Total** (0-27):
+  | Score | Severidad | Acción |
+  |-------|-----------|--------|
+  | 0-4 | Minimal | Sin acción |
+  | 5-9 | Mild | Follow-up 4 sem + psicoeducación |
+  | **10-14** | **Moderate** | **Referral psych + considerar SSRI** |
+  | 15-19 | Moderately severe | Treatment indicated + SSRI/SNRI |
+  | **20-27** | **Severe** | **Urgent psych + farmacoterapia agresiva** |
+
+  **Ítem 9 (Suicidal Ideation)** — INDEPENDIENTE del score total:
+  - Score 0: nunca
+  - Score 1: varios días
+  - Score 2: más de la mitad de días
+  - Score 3: casi todos los días
+  - **CUALQUIER score ≥1 = EMERGENCY ASSESSMENT**
+
+  🎯 ACCIÓN OBLIGATORIA:
+
+  **PHQ-9 ≥10 (moderate-severe)**:
+  1. **Psych referral** (psicología o psiquiatría)
+  2. **Farmacoterapia antidepresiva**:
+     - **Mirtazapine 15-30 mg HS** (preferred en oncología):
+       * Combina: antidepresivo + apetito + sleep
+       * Útil cachexia (gate 85) + insomnia
+       * Pocos efectos GI
+     - **Sertraline 25-100 mg/d** (SSRI standard):
+       * Bien tolerado, pocas interacciones
+       * Considerar interacción tamoxifeno (PCa raro)
+     - **Citalopram 10-40 mg/d**:
+       * Cuidado QTc prolongation (max 20 mg ≥60 años)
+       * Evitar si QTc >450 ms (gate 17/18 ARPI cardiotox)
+     - **Bupropion 150-300 mg/d**:
+       * Activador (útil fatigue prominent)
+       * Evitar convulsiones, anorexia severa
+     - **Duloxetine 30-60 mg/d** (SNRI):
+       * Útil pain neuropático coexistente
+  3. **Counseling/CBT** (cognitive-behavioral therapy)
+  4. **Re-evaluar PHQ-9** cada 2-4 semanas
+
+  **PHQ-9 ≥20 (severe) o ítem 9 ≥1 (suicidal ideation)**:
+  1. **EMERGENCY psych assessment** (mismo día)
+  2. Considerar hospitalización psiquiátrica si plan suicida
+  3. Family/caregiver involvement obligatorio
+  4. Remove access medios (medicamentos, armas)
+  5. Safety contract si outpatient
+  6. Crisis hotline 988 (US) o equivalente país
+
+  🎯 ANTIDEPRESIVOS EN PCa — CONSIDERACIONES:
+
+  **Interacciones drug-drug**:
+  - **Abiraterone**: minimal interacción antidepresivos
+  - **Enzalutamide**: induce CYP3A4 → reduce niveles SSRI
+  - **Apalutamide**: induce CYP3A4 → similar enzalutamide
+  - **Darolutamide**: minimal CYP interactions (preferred si depresión severa)
+
+  **Efecto secundario relevante**:
+  - SSRIs: hipoactividad sexual (puede empeorar libido baja por ADT)
+  - Mirtazapine: weight gain (positivo si cachexia, negativo si HBP)
+  - Bupropion: insomnia (evitar HS), reducción appetite
+
+  **Bone-targeted considerations**:
+  - SSRIs asociados con riesgo fractura (small)
+  - Considerar denosumab/zoledronate adyuvante (gate 9)
+
+  🎯 FACTORS DE RIESGO DEPRESIÓN EN PCa:
+
+  - Diagnóstico oncológico reciente
+  - mCRPC late line (peor pronóstico)
+  - ADT crónico (efecto en testosterona libre)
+  - Pain crónico no-controlado (gate 73)
+  - ECOG decline (gate 74)
+  - Aislamiento social
+  - History depresión previa
+  - Family hx suicidio
+  - Substance abuse coexistente
+
+  🔬 EVIDENCIA:
+  - **Kroenke JGIM 2001;16:606**: PHQ-9 validation original
+  - **Cipriani Lancet 2018;391:1357**: meta-análisis antidepresivos
+  - **NCCN Distress Management v3.2026**: PHQ-9 thresholds + treatment
+  - **ASCO 2014 Depression in Cancer Patients**: management guidelines
+  - **EAU 2026 §10**: psychosocial support PCa
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `phq9_total_score`: 0-27 sum
+  - `phq9_item_1_anhedonia`: 0-3
+  - `phq9_item_2_depressed_mood`: 0-3
+  - `phq9_item_3_sleep_problems`: 0-3
+  - `phq9_item_4_fatigue`: 0-3
+  - `phq9_item_5_appetite_changes`: 0-3
+  - `phq9_item_6_worthlessness`: 0-3
+  - `phq9_item_7_concentration_difficulties`: 0-3
+  - `phq9_item_8_psychomotor_changes`: 0-3
+  - `phq9_item_9_suicidal_ideation`: 0-3 (CRITICAL)
+  - `phq9_assessment_date`: fecha
+  - `clinical_depression_documented`: flag confirmed depression
+  - `antidepressant_initiated`: flag treatment iniciado
+  - `psych_referral_completed`: flag referral
+
+evidence_tag: phq9_kroenke_2001_cipriani_2018_nccn_distress_depression_management
+trial_refs:
+  - "Kroenke JGIM 2001;16:606 (PHQ-9 validation)"
+  - "Cipriani Lancet 2018;391:1357 (antidepressants meta)"
+  - "NCCN Distress Management v3.2026"
+  - "ASCO 2014 Depression in Cancer Patients"
+  - "EAU 2026 §10"

@@ -1,0 +1,47 @@
+# Faubot 2026-04-25 (XVIII) — Gate 12 migrado de Python a YAML.
+# Originalmente en `pivotal_contraindication_gates.detect_radium223_in_hypocalcemia`.
+# Activo en Faubot 2026-04-24 IV (gates 11-12 Ra-223 × emergencias).
+
+code: radium223_in_hypocalcemia
+title: "Ra-223 con hipocalcemia no corregida"
+faubot_added_in: "2026-04-24 IV"
+faubot_migrated_to_yaml_in: "2026-04-25 XVIII"
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1) Flag explícito de hipocalcemia
+    - type: truthy_flag
+      field: hypocalcemia
+    # 2) Calcio total corregido < 8.5 mg/dL (con alias)
+    - type: numeric_below
+      field: corrected_calcium
+      alias_fields:
+        - calcium_level
+        - serum_calcium
+      threshold: 8.5
+    # 3) Calcio iónico < 4.5 mg/dL
+    - type: numeric_below
+      field: ionized_calcium
+      threshold: 4.5
+
+override:
+  type: truthy_flag
+  field: hypocalcemia_corrected
+
+regimen_codes:
+  - REGIMEN_CODES_RADIUM223
+keywords:
+  - KEYWORDS_RADIUM223
+
+message: |
+  Radio-223 NO debe iniciarse con hipocalcemia no corregida (calcio total <8.5 mg/dL, calcio iónico <4.5 mg/dL, o flag explícito). Xofigo (Ra-223) prescribing information requiere corregir la hipocalcemia ANTES de la primera dosis: el alfa-emisor deposita en hueso de alto turnover y puede agravar el desbalance, induciendo tetania, arritmias o paro cardíaco. Pacientes en denosumab/zoledronato concomitante (requisito PEACE-3) tienen riesgo basal elevado. Corregir con calcio elemental 1-2 g/d + vitamina D3 1000-2000 UI/d hasta calcio total ≥8.5 mg/dL + iónico ≥4.5 mg/dL y reevaluar (`hypocalcemia_corrected=Sí`).
+
+evidence_tag: xofigo_label_hypocalcemia
+trial_refs:
+  - ALSYMPCA
+  - Xofigo label
+references:
+  - Xofigo (Ra-223) FDA prescribing information. Bayer 2024.
+  - PEACE-3 safety amendment (denosumab/zoledronato obligatorio).

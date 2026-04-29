@@ -3,11 +3,13 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from prostanet.domains.patient_tracking.capture_surface import display_capture_field_summary
 from prostanet.shared.contracts import (
     MasterFollowupPlan,
     ScenarioCadenceRule,
     ScheduleAnchorAssessment,
 )
+from prostanet.shared.ui_value_normalizer import normalize_field_list
 
 
 PLAN_VERSION = "2026.1"
@@ -135,6 +137,106 @@ SCENARIO_FOLLOWUP_MATRIX: dict[str, dict[str, Any]] = {
 }
 
 
+# EPIC 9 Group F (GAP-15 / OOS-11+OOS-12) — Conjuntos de estados donde el
+# `therapeutic_readiness_bundle` puede llegar vacío en `latest_signal_snapshot`
+# cuando la reconciliación PSMA/Phoenix aún no materializó el bundle, pero donde
+# sí existen señales adyacentes (staging_adjudication_bundle, advanced_followup_bundle,
+# supportive_care_toxicity_readiness_bundle) que permiten derivar un status de
+# respaldo en lugar de mostrar la celda en blanco en el summary del plan maestro.
+_RESTAGING_BLOCK_STATES = {
+    "m0_crpc",
+    "m1_crpc",
+    "adt_progression_verification",
+    "recurrence_bcr",
+    "post_radiotherapy_or_local_salvage",
+    "post_rt_local_salvage",
+    "post_prostatectomy",
+}
+
+_BLOCKED_STATUSES = {"blocked_by_missing_data", "conditional_pending_closure"}
+
+
+def _compute_readiness_fallback_status(
+    state: str,
+    therapeutic_readiness_bundle: dict[str, Any],
+    staging_adjudication_bundle: dict[str, Any],
+    advanced_followup_bundle: dict[str, Any],
+    supportive_care_bundle: dict[str, Any],
+    signals: dict[str, Any],
+) -> tuple[str, str, str]:
+    """EPIC 9 Group F (GAP-15) — Fallback para `therapeutic_readiness_status`.
+
+    Cuando el `therapeutic_readiness_bundle` llega vacío desde `latest_signal_snapshot`
+    (p. ej. m0_crpc PSMA-only upstaging antes de que se materialice la adjudicación
+    en el snapshot persistido), deriva `readiness_status` / `adjudication_gate_status`
+    / `monitoring_gate_status` desde los bundles adyacentes y desde señales de
+    `critical_missing`/`awaiting_review`. Cierra OOS-11 (BCR/post-RT) y OOS-12
+    (m0_crpc PSMA) sin duplicar la lógica en cada consumidor downstream.
+
+    Contrato defensivo: un bundle **completamente vacío** en un estado de decisión
+    implica que la capa longitudinal aún no materializó la readiness — mostrar la
+    celda del summary en blanco es peor que documentar `blocked_by_missing_data`
+    (el usuario clínico debe saber que falta la decisión, no que "todo está bien").
+
+    Retorna tupla (readiness_status, monitoring_gate_status, adjudication_gate_status).
+    """
+    readiness = str(therapeutic_readiness_bundle.get("readiness_status") or "")
+    monitoring = str(therapeutic_readiness_bundle.get("monitoring_gate_status") or "")
+    adjudication = str(therapeutic_readiness_bundle.get("adjudication_gate_status") or "")
+    if readiness and adjudication:
+        return readiness, monitoring, adjudication
+
+    # Señales adyacentes que, si están pobladas con status bloqueado, propagan
+    # directamente al readiness summary.
+    adjudication_release = str(
+        staging_adjudication_bundle.get("adjudication_release_status") or ""
+    )
+    advanced_missing = list(advanced_followup_bundle.get("display_missing_inputs") or [])
+    advanced_confidence = str(
+        advanced_followup_bundle.get("confidence_status") or ""
+    )
+    supportive_status = str(supportive_care_bundle.get("supportive_readiness_status") or "")
+
+    # Señales de falta de datos materializadas en el snapshot persistido
+    # (`latest_signal_snapshot.critical_missing` / `awaiting_review`).
+    critical_missing = list(signals.get("critical_missing") or [])
+    awaiting_review = list(signals.get("awaiting_review") or [])
+    ready_to_restage = signals.get("ready_to_restage")
+    restaging_required = bool(signals.get("restaging_update_required"))
+    psma_only_upstaging = bool(signals.get("psma_only_upstaging")) or str(
+        signals.get("metastatic_detection_basis") or ""
+    ) == "psma_only"
+    restaging_state_ambiguous = state in _RESTAGING_BLOCK_STATES and (
+        restaging_required or psma_only_upstaging or bool(ready_to_restage)
+    )
+
+    # Contrato: bundle completamente vacío en estado decisional ⇒ blocked.
+    bundle_entirely_empty = not therapeutic_readiness_bundle
+    empty_bundle_in_decision_state = bundle_entirely_empty and state in _RESTAGING_BLOCK_STATES
+
+    blocked_conditions = any(
+        (
+            adjudication_release in _BLOCKED_STATUSES,
+            bool(advanced_missing) or advanced_confidence in _BLOCKED_STATUSES,
+            supportive_status in _BLOCKED_STATUSES,
+            restaging_state_ambiguous,
+            bool(critical_missing) and state in _RESTAGING_BLOCK_STATES,
+            bool(awaiting_review) and state in _RESTAGING_BLOCK_STATES,
+            empty_bundle_in_decision_state,
+        )
+    )
+    if not blocked_conditions:
+        return readiness, monitoring, adjudication
+
+    if not readiness:
+        readiness = "blocked_by_missing_data"
+    if not adjudication:
+        adjudication = adjudication_release or "blocked_by_missing_data"
+    if not monitoring:
+        monitoring = "supported"
+    return readiness, monitoring, adjudication
+
+
 def _unique_preserving(values: list[Any]) -> list[Any]:
     ordered: list[Any] = []
     seen: set[str] = set()
@@ -198,6 +300,12 @@ def _scenario_rule(state: str, management_track: str) -> dict[str, Any]:
 
 
 def _summarize_item(item: dict[str, Any]) -> dict[str, Any]:
+    required_inputs = list(item.get("required_inputs") or [])
+    display_required_inputs = display_capture_field_summary(
+        required_inputs,
+        required_inputs=required_inputs,
+        limit=8,
+    )
     return {
         "agenda_key": item.get("agenda_key", ""),
         "title": item.get("title", ""),
@@ -205,11 +313,14 @@ def _summarize_item(item: dict[str, Any]) -> dict[str, Any]:
         "due_at": item.get("due_at", ""),
         "item_type": item.get("item_type", ""),
         "summary": item.get("summary", ""),
-        "required_inputs": list(item.get("required_inputs") or []),
+        "required_inputs": required_inputs,
+        "display_required_inputs": display_required_inputs,
+        "display_fields_summary": list(item.get("display_fields_summary") or display_required_inputs),
     }
 
 
 def _summarize_alert(alert: dict[str, Any]) -> dict[str, Any]:
+    display_fields = display_capture_field_summary(alert.get("fields_to_capture") or [], limit=8)
     return {
         "alert_key": alert.get("alert_key", ""),
         "title": alert.get("title", ""),
@@ -219,6 +330,7 @@ def _summarize_alert(alert: dict[str, Any]) -> dict[str, Any]:
         "recommended_action": alert.get("recommended_action", ""),
         "action_type": alert.get("action_type", ""),
         "fields_to_capture": list(alert.get("fields_to_capture") or []),
+        "display_fields_to_capture": display_fields,
     }
 
 
@@ -284,6 +396,24 @@ def build_master_followup_plan(
     cadence_adjusted_by = [str(item) for item in list(signals.get("cadence_adjusted_by") or []) if str(item or "").strip()]
     palliative_bundle = dict(signals.get("palliative_transition_bundle") or {})
     survivorship_bundle = dict(signals.get("survivorship_transition_bundle") or {})
+    decision_evidence_currentness_bundle = dict(signals.get("decision_evidence_currentness_bundle") or {})
+    therapeutic_readiness_bundle = dict(signals.get("therapeutic_readiness_bundle") or {})
+    advanced_followup_bundle = dict(signals.get("advanced_followup_bundle") or {})
+    staging_adjudication_bundle = dict(signals.get("staging_adjudication_bundle") or {})
+    supportive_care_toxicity_readiness_bundle = dict(
+        signals.get("supportive_care_toxicity_readiness_bundle") or {}
+    )
+    therapeutic_capture_actions = [dict(item) for item in list(therapeutic_readiness_bundle.get("capture_actions") or []) if isinstance(item, dict)]
+    advanced_capture_actions = [
+        dict(item)
+        for item in list(advanced_followup_bundle.get("capture_actions") or [])
+        if isinstance(item, dict)
+    ]
+    adjudication_capture_actions = [
+        dict(item)
+        for item in list(staging_adjudication_bundle.get("capture_actions") or [])
+        if isinstance(item, dict)
+    ]
     prognostic_rationale = [
         {
             "title": str(item.get("title") or item.get("modifier_key") or "Impacto pronóstico"),
@@ -333,28 +463,82 @@ def build_master_followup_plan(
         + [str(item) for item in list(survivorship_bundle.get("recommended_interventions") or [])[:3]]
         + [f"Referencia: {item}" for item in list(survivorship_bundle.get("recommended_referrals") or [])[:3]]
         + [str(item) for item in list(palliative_bundle.get("recommended_interventions") or [])[:3]]
+        + [str(item) for item in list(decision_evidence_currentness_bundle.get("refresh_actions") or [])[:2]]
+        + [str(item) for item in list(staging_adjudication_bundle.get("recommended_adjudication_actions") or [])[:2]]
+        + [str((therapeutic_readiness_bundle.get("next_best_action_if_not_ready") or {}).get("title") or "")]
+        + [str(item) for item in list(supportive_care_toxicity_readiness_bundle.get("required_support_actions") or [])[:3]]
+        + [str(item.get("display_label") or item.get("title") or "") for item in therapeutic_capture_actions[:3]]
+        + [str(item.get("display_label") or item.get("title") or "") for item in advanced_capture_actions[:2]]
+        + [str(item.get("display_label") or item.get("title") or "") for item in adjudication_capture_actions[:2]]
     )[:8]
     gaps_to_close = _unique_preserving(
-        list(signals.get("critical_missing") or [])
+        normalize_field_list(list(signals.get("critical_missing") or []))
         + [
-            f"{item.get('title')}: {', '.join(item.get('fields', []) or item.get('raw_fields', []) or [])}"
+            f"{item.get('title')}: {', '.join(item.get('display_fields_summary') or item.get('visible_fields') or item.get('fields', []) or item.get('raw_fields', []) or [])}"
             for item in list(signals.get("prognostic_capture_targets") or [])
-            if list(item.get("fields") or item.get("raw_fields") or [])
+            if list(item.get("display_fields_summary") or item.get("visible_fields") or item.get("fields") or item.get("raw_fields") or [])
         ]
         + [str(item.get("title") or "") for item in list(signals.get("pending_adjudications") or [])]
         + [
-            f"{alert.get('title')}: {', '.join(alert.get('fields_to_capture') or [])}"
+            f"{alert.get('title')}: {', '.join(alert.get('display_fields_to_capture') or alert.get('fields_to_capture') or [])}"
             for alert in blocking_alerts
-            if alert.get("fields_to_capture")
+            if list(alert.get("display_fields_to_capture") or alert.get("fields_to_capture") or [])
         ]
-        + [str(item) for item in list(survivorship_bundle.get("missing_inputs") or [])]
-        + [f"Dato vencido de survivorship: {item}" for item in list(survivorship_bundle.get("stale_inputs") or [])]
+        + normalize_field_list(list(survivorship_bundle.get("missing_inputs") or []))
+        + [f"Dato vencido de survivorship: {item}" for item in normalize_field_list(list(survivorship_bundle.get("stale_inputs") or []))]
+        + [f"Evidencia decisional vencida: {item}" for item in normalize_field_list(list(decision_evidence_currentness_bundle.get("stale_evidence_fields") or []))]
+        + [f"Evidencia decisional por revisar: {item}" for item in normalize_field_list(list(decision_evidence_currentness_bundle.get("aging_evidence_fields") or []))]
+        + [f"Brecha de trazabilidad: {item}" for item in normalize_field_list(list(decision_evidence_currentness_bundle.get("traceability_gaps") or []))]
+        + [f"Discordancia clínica: {item}" for item in normalize_field_list(list(staging_adjudication_bundle.get("discordant_fields") or []))]
+        + [f"Evidencia superseded: {item}" for item in normalize_field_list(list(staging_adjudication_bundle.get("superseded_evidence") or []))]
+        + [f"Soporte requerido: {item}" for item in normalize_field_list(list(supportive_care_toxicity_readiness_bundle.get("missing_support_inputs") or []))]
+        + [f"Soporte por actualizar: {item}" for item in normalize_field_list(list(supportive_care_toxicity_readiness_bundle.get("stale_support_inputs") or []))]
+        + list(therapeutic_readiness_bundle.get("display_required_to_release") or [])
+        + list(therapeutic_readiness_bundle.get("display_safety_blockers") or [])
+        + list(advanced_followup_bundle.get("display_missing_inputs") or [])
+        + list(staging_adjudication_bundle.get("display_missing_critical_inputs") or [])
     )[:8]
     survivorship_track = str(survivorship_bundle.get("survivorship_track_label") or survivorship_bundle.get("survivorship_track") or "")
     palliative_mode = str(palliative_bundle.get("care_mode_label") or palliative_bundle.get("care_mode") or "")
+    # EPIC 9 Group F (GAP-15 / OOS-11+OOS-12) — Si el bundle terapéutico llega vacío
+    # pero los bundles adyacentes (staging adjudication, advanced followup, supportive
+    # care) indican que la decisión está bloqueada por datos faltantes, derivamos el
+    # status para que `summary.therapeutic_readiness_status` y
+    # `summary.adjudication_gate_status` no queden en blanco. Es una lectura defensiva:
+    # no altera bundles no vacíos ni cambia las aserciones downstream cuando el bundle
+    # ya trae valores.
+    readiness_status, monitoring_gate_status, adjudication_gate_status = (
+        _compute_readiness_fallback_status(
+            state=state,
+            therapeutic_readiness_bundle=therapeutic_readiness_bundle,
+            staging_adjudication_bundle=staging_adjudication_bundle,
+            advanced_followup_bundle=advanced_followup_bundle,
+            supportive_care_bundle=supportive_care_toxicity_readiness_bundle,
+            signals=signals,
+        )
+    )
+    supportive_readiness_status = str(
+        supportive_care_toxicity_readiness_bundle.get("supportive_readiness_status") or ""
+    )
+    candidate_label = str(
+        therapeutic_readiness_bundle.get("candidate_regimen_label")
+        or therapeutic_readiness_bundle.get("candidate_family_label")
+        or ""
+    )
+    summary_headline = str(protocol.get("title") or "Plan maestro de seguimiento")
+    cadence_summary = str(protocol.get("cadence_summary") or "")
+    if readiness_status in {"blocked_by_missing_data", "conditional_pending_closure"} and candidate_label:
+        if monitoring_gate_status in {"blocked_by_missing_data", "conditional_pending_closure"} or adjudication_gate_status in {"blocked_by_missing_data", "conditional_pending_closure"}:
+            summary_headline = f"{summary_headline} · liberación terapéutica condicionada"
+            cadence_bits = [cadence_summary] if cadence_summary else []
+            if monitoring_gate_status in {"blocked_by_missing_data", "conditional_pending_closure"}:
+                cadence_bits.append("No conviene sostener estabilidad clínica solo por PSA mientras falten testosterona, vigilancia longitudinal o soporte avanzado.")
+            if adjudication_gate_status in {"blocked_by_missing_data", "conditional_pending_closure"}:
+                cadence_bits.append("La adjudicación de imagen/biomarcadores sigue pesando sobre la liberación terapéutica final.")
+            cadence_summary = " ".join(bit for bit in cadence_bits if bit).strip()
     summary = {
-        "headline": str(protocol.get("title") or "Plan maestro de seguimiento"),
-        "cadence_summary": str(protocol.get("cadence_summary") or ""),
+        "headline": summary_headline,
+        "cadence_summary": cadence_summary,
         "overdue_count": len(overdue_items),
         "due_now_count": len(due_items),
         "optional_count": len(optional_items),
@@ -371,7 +555,36 @@ def build_master_followup_plan(
         "cadence_adjusted_count": len(cadence_adjusted_by),
         "survivorship_track": survivorship_track,
         "palliative_care_mode": palliative_mode,
+        "therapeutic_readiness_status": readiness_status,
+        "therapeutic_candidate_label": candidate_label,
+        "advanced_followup_confidence_status": str(
+            advanced_followup_bundle.get("confidence_status") or ""
+        ),
+        "selected_decision_evidence_status": str(
+            decision_evidence_currentness_bundle.get("selected_decision_evidence_status") or ""
+        ),
+        "selected_decision_release_status": str(
+            decision_evidence_currentness_bundle.get("selected_decision_release_status") or ""
+        ),
+        "decision_refresh_action_count": len(
+            list(decision_evidence_currentness_bundle.get("refresh_actions") or [])
+        ),
+        "staging_adjudication_status": str(
+            staging_adjudication_bundle.get("concordance_status") or ""
+        ),
+        "adjudication_release_status": str(
+            staging_adjudication_bundle.get("adjudication_release_status") or ""
+        ),
+        "supportive_readiness_status": supportive_readiness_status,
+        "supportive_priority": str(
+            supportive_care_toxicity_readiness_bundle.get("supportive_priority") or ""
+        ),
+        "monitoring_gate_status": monitoring_gate_status,
+        "adjudication_gate_status": adjudication_gate_status,
     }
+    merged_capture_actions = _unique_preserving(
+        therapeutic_capture_actions[:4] + advanced_capture_actions[:2] + adjudication_capture_actions[:2]
+    )
     return MasterFollowupPlan(
         plan_version=PLAN_VERSION,
         plan_key=resolved_plan_key,
@@ -394,6 +607,7 @@ def build_master_followup_plan(
         optional_items=optional_items[:6],
         highlight_actions=highlight_actions,
         gaps_to_close=gaps_to_close,
+        capture_actions=merged_capture_actions[:6],
         prognostic_rationale=prognostic_rationale,
         cadence_adjusted_by=cadence_adjusted_by,
         backbone_alignment=backbone_alignment,

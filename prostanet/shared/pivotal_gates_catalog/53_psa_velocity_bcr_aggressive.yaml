@@ -1,0 +1,215 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 53: psa_velocity_bcr_aggressive
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXIV) — Auditoría #63A — Gate YAML-NATIVE.
+#
+# 🆕 PRIMER gate de categoría PSA KINETICS post-RP del catálogo.
+# Sienta arquitectura kinetics PSA para gates futuros (54 bounce post-RT,
+# 55 PSADT progresivo m0CRPC).
+#
+# Razón clínica:
+#   Post-prostatectomía radical (RP), recurrencia bioquímica (BCR) con
+#   PSA velocity acelerada y/o PSADT corto es predictor potente de
+#   metástasis a distancia y mortalidad cáncer-específica. Stephenson
+#   et al. JCO 2009;27:4300 (foundational reference) demostró que:
+#     - PSADT <3 meses → sobrevida cáncer-específica reducida 50% a 5 años
+#     - PSA velocity >2 ng/mL/año → mayor riesgo metástasis
+#     - PSA absoluto >0.5 ng/mL post-RP confirma BCR (no fluctuación)
+#   Pacientes con BCR agresivo requieren intervención URGENTE: salvage
+#   RT temprana (idealmente PSA <0.5 ng/mL) + ADT concurrente per
+#   GETUG-AFU-16 + RTOG-9601 + EAU 2026 §6.4.1.
+#
+#   Datos (Stephenson JCO 2009 + Pound JAMA 1999 + Freedland JAMA 2005):
+#     - **PSADT <3 meses + PSA >0.5**: predictor #1 metástasis (HR 4.5)
+#     - **PSADT 3-9 meses**: riesgo intermedio (HR 2.0)
+#     - **PSADT ≥10 meses + PSA <0.5**: BCR indolente (vigilancia OK)
+#     - **Mortalidad cáncer-específica 5 años PSADT <3m: 50%**
+#       (vs 15% PSADT >10m)
+#
+#   Threshold canónico (Stephenson JCO 2009 + EAU 2026 §6.4.1):
+#     - Path A: psa_doubling_time_months <3 + post-RP context confirmado
+#     - Path B compound: psa_velocity_ng_ml_year >2.0 + psa_value >0.5 +
+#       prior_radical_prostatectomy_documented
+#     - Path C: bcr_high_risk_aggressive_documented flag
+#       (interpretación clínica especialista urology/oncology)
+#
+#   ⚠️ ALERTA: Gate 53 NO bloquea tratamiento — INFORMA urgencia salvage
+#   RT + ADT temprano. Severity hard_block (bloquea "no-tratamiento") en
+#   sentido inverso al pattern usual. Activa recomendación urgente.
+#
+#   Override: bcr_aggressive_treated_for_salvage=Sí
+#   (paciente ya bajo salvage RT activo + ADT concurrente per protocolo
+#   GETUG-AFU-16 + radiation oncology endorsement explícito).
+#
+#   Coexistencia: gate 53 puede coexistir con gate 47 (PSA flare ARPI
+#   informacional) si paciente recibió ARPI post-salvage RT y desarrolla
+#   flare confundido con BCR.
+#
+#   Bloquea: REGIMEN_CODES_OBSERVATION_ONLY (no-tratamiento). Implícito:
+#   recomendación urgente salvage RT + ADT concurrente.
+# ──────────────────────────────────────────────────────────────────────
+
+code: psa_velocity_bcr_aggressive
+title: "BCR agresivo post-RP (PSADT<3m + PSA velocity >2 ng/mL/año) — salvage RT urgente (Stephenson JCO 2009 + EAU 2026)"
+faubot_added_in: "2026-04-25 LXIV"
+faubot_yaml_native: true
+severity: soft_warning  # Informacional/anti-misinterpretation: alerta urgencia salvage RT, NO bloquea tratamiento
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: PSADT <3 meses + post-RP confirmado (criterio Stephenson #1)
+    - type: all_of
+      triggers:
+        - type: numeric_below
+          field: psa_doubling_time_months
+          alias_fields:
+            - psadt_months
+            - psadt
+            - psa_doubling_time
+            - tiempo_duplicacion_psa_meses
+          threshold: 3
+        - type: truthy_flag
+          field: prior_radical_prostatectomy_documented
+          alias_fields:
+            - prior_rp_documented
+            - prostatectomia_radical_previa
+            - history_radical_prostatectomy
+            - post_rp_state
+    # Path B compound: velocity >2 + PSA >0.5 + post-RP (criterio agresivo)
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: psa_velocity_ng_ml_year
+          alias_fields:
+            - psa_velocity
+            - psav
+            - velocidad_psa_ng_ml_anio
+          threshold: 2.0
+        - type: numeric_above
+          field: psa_value
+          alias_fields:
+            - psa
+            - psa_current
+            - psa_serum
+          threshold: 0.5
+        - type: truthy_flag
+          field: prior_radical_prostatectomy_documented
+          alias_fields:
+            - prior_rp_documented
+            - prostatectomia_radical_previa
+            - history_radical_prostatectomy
+            - post_rp_state
+    # Path C: flag clínico documentado por urology/oncology
+    - type: truthy_flag
+      field: bcr_high_risk_aggressive_documented
+      alias_fields:
+        - bcr_aggressive_documented
+        - recurrencia_bioquimica_agresiva
+        - high_risk_bcr_post_rp
+        - aggressive_bcr_for_salvage
+
+# Override: paciente ya bajo salvage RT activo + ADT concurrente
+override:
+  type: truthy_flag
+  field: bcr_aggressive_treated_for_salvage
+  alias_fields:
+    - salvage_rt_active_for_bcr
+    - bcr_under_salvage_treatment
+    - salvage_rt_adt_active
+    - tratamiento_rescate_bcr_activo
+
+regimen_codes:
+  - REGIMEN_CODES_OBSERVATION_ONLY
+
+keywords:
+  - KEYWORDS_OBSERVATION_ONLY
+
+message: |
+  ⚠️ ALERTA CLÍNICA URGENTE: BCR (Recurrencia Bioquímica) AGRESIVO
+  post-prostatectomía radical detectado. Criterios Stephenson JCO 2009:
+
+  📊 CONTEXTO DETECTADO:
+  - PSADT (PSA Doubling Time) <3 meses (predictor #1 metástasis HR 4.5)
+  - O PSA velocity >2 ng/mL/año + PSA absoluto >0.5 ng/mL post-RP
+  - O documentación clínica explícita BCR agresivo
+
+  🎯 ACCIÓN URGENTE RECOMENDADA (NO observation):
+  1. **Salvage RT temprana** (idealmente PSA <0.5 ng/mL — ventana de
+     mayor beneficio per GETUG-AFU-16 + RTOG-9601)
+  2. **ADT concurrente** 6-24 meses según riesgo (per RTOG-9601:
+     bicalutamida 150 mg/d × 24 meses; alternativa GnRH agonist
+     LHRH 6-12 meses si paciente tolera mejor)
+  3. **Imaging staging** PSMA PET/CT (más sensible que CT/bone scan
+     a PSA <2 ng/mL — descarta enfermedad oligometastásica que
+     cambia approach)
+  4. **Genomic panel** Decipher/Prolaris si disponible (estratifica
+     riesgo metástasis para intensidad ADT)
+
+  🔬 EVIDENCIA CIENTÍFICA:
+    - Stephenson AJ et al. JCO 2009;27:4300 — **foundational PSADT
+      post-RP**: PSADT <3m → mortalidad cáncer-específica 50% a 5 años
+    - Pound CR et al. JAMA 1999;281:1591 — natural history BCR post-RP
+    - Freedland SJ et al. JAMA 2005;294:433 — PSADT como predictor mortalidad
+    - GETUG-AFU-16 (Carrie C et al. Lancet Oncol 2016;17:747) —
+      salvage RT + 6 meses ADT mejora sobrevida 8 años
+    - RTOG-9601 (Shipley WU et al. NEJM 2017;376:417) — salvage RT +
+      24 meses bicalutamida mejora sobrevida 12 años
+    - EAU 2026 §6.4.1 — post-RP BCR management
+    - NCCN PROS-G v5.2026 — BCR section
+
+  📋 ESCENARIOS DE RIESGO:
+    - **PSADT <3m + Gleason ≥8 + tiempo a BCR <18m**: alto riesgo
+      → salvage RT + ADT 24 meses (RTOG-9601 protocol)
+    - **PSADT 3-9m + Gleason 6-7 + tiempo a BCR >18m**: riesgo
+      intermedio → salvage RT + ADT 6 meses (GETUG-AFU-16)
+    - **PSADT ≥10m + PSA <0.5 + biopsia local + Gleason 6**:
+      indolente → vigilancia activa OK (gate NO dispara)
+
+  ❌ ERRORES COMUNES A EVITAR:
+    - Esperar PSA >2 ng/mL para iniciar salvage RT (fuera de ventana
+      eficacia per RTOG-9601)
+    - Salvage RT sin ADT en alto riesgo (HR sobrevida 0.7 con ADT vs
+      sin ADT en RTOG-9601)
+    - Solo observación con PSADT <3m (mortalidad 50% sin tratamiento)
+    - Confundir con PSA bounce post-RT (gate 54 distingue)
+
+  ⚠️ EXCEPCIONES — NO disparar gate si:
+    - Paciente ya bajo salvage RT activo + ADT (override
+      `bcr_aggressive_treated_for_salvage=Sí`)
+    - Paciente en cuidados paliativos (decisión multidisciplinaria)
+    - Comorbilidades severas que precluyan RT (Charlson ≥6)
+
+  CAMPOS REQUERIDOS:
+    - `psa_doubling_time_months`: PSADT en meses
+    - `psa_velocity_ng_ml_year`: PSA velocity en ng/mL/año
+    - `psa_value`: PSA actual en ng/mL
+    - `prior_radical_prostatectomy_documented`: flag post-RP
+    - O `bcr_high_risk_aggressive_documented`: flag clínico
+
+evidence_tag: stephenson_jco_2009_pound_jama_1999_freedland_jama_2005_getug_afu_16_rtog_9601
+trial_refs:
+  - "Stephenson JCO 2009"
+  - "Pound JAMA 1999"
+  - "Freedland JAMA 2005"
+  - "GETUG-AFU-16"
+  - "RTOG-9601"
+  - "EAU 2026 §6.4.1"
+  - "NCCN PROS-G v5.2026"
+
+references:
+  - "Stephenson AJ et al. Predictive model of prostate cancer recurrence after surgery. JCO 2009;27:4300 — foundational PSADT post-RP."
+  - "Pound CR et al. Natural history of progression after PSA elevation following radical prostatectomy. JAMA 1999;281:1591."
+  - "Freedland SJ et al. Risk of prostate cancer-specific mortality following biochemical recurrence after radical prostatectomy. JAMA 2005;294:433."
+  - "Carrie C et al. GETUG-AFU-16. Lancet Oncol 2016;17:747 — salvage RT + 6 months ADT."
+  - "Shipley WU et al. RTOG-9601. NEJM 2017;376:417 — salvage RT + 24 months bicalutamide."
+  - "EAU Guidelines 2026 §6.4.1 — Management of biochemical recurrence after RP."
+  - "NCCN Guidelines Prostate Cancer v5.2026 — BCR section."
+  - "Roach M et al. RTOG-ASTRO Phoenix Consensus on PSA failure post-RT 2006."
+  - "Fendler WP et al. PSMA PET in BCR. JAMA Oncol 2019;5:856 (sensitivity at low PSA)."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — BCR post-RP: salvage RT + ADT for high-risk PSADT <3m"
+  eau_section: "EAU 2026 §6.4.1 — Biochemical recurrence after RP management"
+  rtog_section: "RTOG-9601 + GETUG-AFU-16 — salvage RT + ADT pivotal trials"
+  asco_section: "ASCO Salvage RT Guidelines 2024"

@@ -1,1 +1,0 @@
-{"cases": [{"case_key": "current_db:224:crpc_first", "profile_url": "http://127.0.0.1:8080/patient_profile/224"}, {"case_key": "current_db:205:post_rp_salvage_first", "profile_url": "http://127.0.0.1:8080/patient_profile/205"}], "output_dir": "/Users/oscaralvarado/Desktop/ProstaNet_Model_Fase6/output/playwright/validation"}

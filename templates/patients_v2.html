@@ -1,0 +1,341 @@
+{# ProstaMed v2 PRODUCTION patients registry (Faubot 2026-04-27 LXXX #67E)
+
+   Reemplaza la vista legacy `templates/patients.html` cuando se accede con
+   `/patients?v=2`. Usa el v2 design system: sidebar con logo oficial,
+   bento KPIs, tabla rica con filtros por estadio, click → perfil v2.
+
+   Variables consumidas (de v2_adapters.patients_list_to_v2):
+     - patients: [{nss, name, age, stage, stage_label, baseline_psa, ecog,
+                   diagnosis_date, alert_count, visit_count, vital_status, ...}]
+     - kpis: {total, with_alerts, recent_30d, deceased}
+     - stages_filter_options: [{key, label, count}]
+#}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cohorte de pacientes · ProstaMed v2</title>
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+    <style>
+    /* Inline minimal additions for patients table */
+    .pm2-cohort-search { position: relative; flex: 1; max-width: 460px; }
+    .pm2-cohort-search input {
+        width: 100%; height: 38px; border-radius: 10px;
+        border: 1px solid var(--border-strong); background: var(--surface-1);
+        padding: 0 14px 0 40px; font-size: 14px; color: #f0fbff;
+        font-family: inherit; transition: all var(--dur-fast) var(--ease-clinical);
+    }
+    .pm2-cohort-search input:focus {
+        outline: none; border-color: var(--border-focus);
+        box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.15);
+    }
+    .pm2-cohort-search svg { position: absolute; left: 12px; top: 10px; color: var(--pn-text-muted); }
+
+    .pm2-cohort-table {
+        width: 100%; border-collapse: collapse; font-size: 0.85rem;
+        background: linear-gradient(180deg, var(--surface-2) 0%, rgba(15, 23, 42, 0.92) 100%);
+        border-radius: 14px; overflow: hidden;
+    }
+    .pm2-cohort-table thead { background: rgba(15, 23, 42, 0.85); }
+    .pm2-cohort-table th {
+        text-align: left; padding: 12px 14px; color: var(--pn-text-muted);
+        font-weight: 600; font-size: 0.7rem; letter-spacing: 0.08em;
+        text-transform: uppercase; border-bottom: 1px solid var(--border-default);
+        position: sticky; top: 0; z-index: 5; background: rgba(15, 23, 42, 0.95);
+        backdrop-filter: blur(8px);
+    }
+    .pm2-cohort-table tbody tr {
+        cursor: pointer; transition: background var(--dur-fast) var(--ease-clinical),
+                                     transform var(--dur-fast) var(--ease-clinical);
+        border-bottom: 1px solid var(--border-subtle);
+    }
+    .pm2-cohort-table tbody tr:hover {
+        background: rgba(6, 182, 212, 0.06);
+        transform: translateX(2px);
+    }
+    .pm2-cohort-table td {
+        padding: 12px 14px; color: #e2e8f0; vertical-align: middle;
+    }
+    .pm2-cohort-table td.pm2-num {
+        font-family: ui-monospace, "SF Mono", monospace;
+        text-align: right;
+    }
+    .pm2-cohort-name {
+        color: #f0fbff; font-weight: 600;
+    }
+    .pm2-cohort-mrn {
+        color: var(--pn-text-soft); font-size: 0.7rem;
+        font-family: ui-monospace, monospace; margin-top: 2px;
+    }
+    .pm2-cohort-alert-pill {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 3px 8px; border-radius: 9999px;
+        background: var(--clinical-critical-soft); color: var(--clinical-critical);
+        font-size: 0.7rem; font-weight: 700;
+        border: 1px solid var(--clinical-critical-edge);
+        font-feature-settings: "tnum";
+    }
+    .pm2-cohort-alert-pill--zero {
+        background: var(--clinical-success-soft); color: var(--clinical-success);
+        border-color: var(--clinical-success-edge);
+    }
+    .pm2-cohort-row-action {
+        opacity: 0; transition: opacity var(--dur-fast) var(--ease-clinical);
+        color: var(--pn-accent); font-weight: 600; font-size: 0.78rem;
+    }
+    .pm2-cohort-table tbody tr:hover .pm2-cohort-row-action { opacity: 1; }
+
+    .pm2-stage-filter-pill {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 6px 12px; border-radius: 9999px;
+        background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-strong);
+        color: #cbd5e1; font-size: 0.78rem; font-weight: 600;
+        cursor: pointer; transition: all var(--dur-fast) var(--ease-clinical);
+        font-family: inherit;
+    }
+    .pm2-stage-filter-pill:hover { border-color: var(--clinical-info-edge); color: #f0fbff; }
+    .pm2-stage-filter-pill.is-active {
+        background: var(--clinical-info-soft); color: var(--pn-accent);
+        border-color: var(--clinical-info-edge);
+    }
+    .pm2-stage-filter-pill-count {
+        background: rgba(2, 6, 23, 0.6); padding: 1px 7px;
+        border-radius: 9999px; font-size: 0.66rem; font-weight: 700;
+        color: var(--pn-accent);
+    }
+
+    .pm2-cohort-toolbar {
+        display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+        padding: 12px 14px; background: var(--surface-2);
+        border: 1px solid var(--border-default); border-bottom: 0;
+        border-radius: 14px 14px 0 0; margin-top: var(--space-4);
+    }
+    .pm2-cohort-table-wrap {
+        border: 1px solid var(--border-default); border-radius: 0 0 14px 14px;
+        max-height: calc(100vh - 380px); overflow-y: auto;
+    }
+
+    .pm2-empty-state {
+        padding: 60px 24px; text-align: center; color: var(--pn-text-soft);
+    }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+
+{# Faubot LXXXIII — Sidebar centralizado via macro (resuelve bug "UI previa cargada") #}
+{% from "components/pm2_sidebar.html" import pm2_sidebar %}
+
+<div class="pm2-app-shell">
+
+    {{ pm2_sidebar(
+        active='patients',
+        kpi_total=kpis.total,
+    ) }}
+
+    {# ── Header ── #}
+    <header class="pm2-app-header">
+        <div class="pm2-cohort-search">
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="m21 21-4.35-4.35"/></svg>
+            <input type="search" id="pm2-cohort-search-input" placeholder="Buscar por NSS, nombre, estadio…" autocomplete="off">
+        </div>
+        <div class="pm2-header-tools">
+            <span class="pm2-faubot-chip"><span class="pm2-faubot-pulse"></span> Faubot · live</span>
+            <a class="pm2-icon-btn" href="/patients" title="Ver versión clásica" aria-label="Ver legacy">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="1.7" d="M3 12c0-4.97 4.03-9 9-9s9 4.03 9 9-4.03 9-9 9-9-4.03-9-9zm9-5v5l3 2"/></svg>
+            </a>
+            <a class="pm2-btn pm2-btn--primary" href="/patient_intake?v=2">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14M5 12h14"/></svg>
+                Nuevo paciente
+            </a>
+        </div>
+    </header>
+
+    {# ── Main ── #}
+    <main id="main-content" class="pm2-app-main" tabindex="-1">
+
+        {# Header de la vista #}
+        <section style="padding: var(--space-6) var(--space-6) 0">
+            <div class="pm2-kicker">PROSTAMED 2026 · COHORTE LONGITUDINAL</div>
+            <h1 style="font-family:var(--pm-font-display);font-size:2rem;font-weight:700;letter-spacing:-.03em;color:#f8fbff;margin:6px 0 4px">Cohorte de pacientes</h1>
+            <p style="color:var(--pn-text-muted);font-size:.92rem;max-width:78ch;line-height:1.5">
+                Cohorte longitudinal vinculada al centro clínico. Filtros por estadio, alertas activas, y acceso directo al perfil <span class="pm2-mono" style="color:var(--pn-accent)">v2</span> de cada paciente.
+            </p>
+        </section>
+
+        {# KPI Strip #}
+        <section style="padding: var(--space-5) var(--space-6) 0; display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:var(--space-3)">
+            <article class="pm2-kpi-card" data-variant="info">
+                <div class="pm2-kpi-label">Pacientes activos</div>
+                <div class="pm2-kpi-value">{{ kpis.total }}</div>
+                <div class="pm2-kpi-foot">
+                    <div class="pm2-kpi-trend pm2-metric-trend--flat">→ cohorte completa</div>
+                </div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="critical">
+                <div class="pm2-kpi-label">Con alertas activas</div>
+                <div class="pm2-kpi-value">{{ kpis.with_alerts }}</div>
+                <div class="pm2-kpi-foot">
+                    <div class="pm2-kpi-trend pm2-metric-trend--up">⚠ {{ ((kpis.with_alerts / kpis.total * 100) | round | int) if kpis.total > 0 else 0 }}% del total</div>
+                </div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="success">
+                <div class="pm2-kpi-label">Ingresos 30 días</div>
+                <div class="pm2-kpi-value">{{ kpis.recent_30d }}</div>
+                <div class="pm2-kpi-foot">
+                    <div class="pm2-kpi-trend pm2-metric-trend--up">↑ casos nuevos</div>
+                </div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="warning">
+                <div class="pm2-kpi-label">Estadios cubiertos</div>
+                <div class="pm2-kpi-value">{{ stages_filter_options | selectattr('count', 'gt', 0) | list | length }}</div>
+                <div class="pm2-kpi-foot">
+                    <div class="pm2-kpi-trend pm2-metric-trend--flat">de 7 estadios canónicos</div>
+                </div>
+            </article>
+        </section>
+
+        {# Filters + Table #}
+        <section style="padding: 0 var(--space-6) var(--space-6)">
+
+            <div class="pm2-cohort-toolbar">
+                <span class="pm2-kicker">Filtrar por estadio:</span>
+                <button type="button" class="pm2-stage-filter-pill is-active" data-stage-filter="all">
+                    Todos
+                    <span class="pm2-stage-filter-pill-count">{{ kpis.total }}</span>
+                </button>
+                {% for s in stages_filter_options %}
+                {% if s.count > 0 %}
+                <button type="button" class="pm2-stage-filter-pill" data-stage-filter="{{ s.key }}">
+                    <span class="pm2-stage-pill" data-stage="{{ s.key }}" style="font-size:.62rem;padding:2px 8px">{{ s.label }}</span>
+                    <span class="pm2-stage-filter-pill-count">{{ s.count }}</span>
+                </button>
+                {% endif %}
+                {% endfor %}
+                <span style="margin-left:auto;color:var(--pn-text-soft);font-size:.74rem;font-feature-settings:'tnum'">
+                    <span id="pm2-visible-count">{{ patients | length }}</span> visibles
+                </span>
+            </div>
+
+            <div class="pm2-cohort-table-wrap">
+                <table class="pm2-cohort-table" id="pm2-cohort-table">
+                    <thead>
+                        <tr>
+                            <th>Paciente</th>
+                            <th>Estadio</th>
+                            <th>Diagnóstico</th>
+                            <th class="pm2-num">PSA basal</th>
+                            <th>ECOG</th>
+                            <th class="pm2-num">Visitas</th>
+                            <th>Alertas</th>
+                            <th>Vital</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in patients %}
+                        <tr data-stage-key="{{ p.stage }}"
+                            data-search-blob="{{ p.nss | lower }} {{ p.name | lower }} {{ p.stage_label | lower }}"
+                            onclick="window.location='/patient_profile/{{ p.nss }}?v=2'">
+                            <td>
+                                <div class="pm2-cohort-name">{{ p.name }}</div>
+                                <div class="pm2-cohort-mrn">{{ p.nss }}</div>
+                            </td>
+                            <td>
+                                <span class="pm2-stage-pill" data-stage="{{ p.stage }}">{{ p.stage_label }}</span>
+                            </td>
+                            <td class="pm2-mono" style="font-size:.74rem;color:var(--pn-text-muted)">
+                                {{ p.diagnosis_date }}
+                                {% if p.age != "—" %}<br><span style="color:var(--pn-text-soft)">{{ p.age }} años</span>{% endif %}
+                            </td>
+                            <td class="pm2-num">{{ p.baseline_psa }}</td>
+                            <td>{{ p.ecog }}</td>
+                            <td class="pm2-num">{{ p.visit_count }}</td>
+                            <td>
+                                {% if p.alert_count > 0 %}
+                                <span class="pm2-cohort-alert-pill">⚠ {{ p.alert_count }}</span>
+                                {% else %}
+                                <span class="pm2-cohort-alert-pill pm2-cohort-alert-pill--zero">✓ 0</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if p.vital_status == "alive" %}
+                                <span class="pm2-state-chip pm2-state-chip--success" style="font-size:.62rem;padding:2px 8px">activo</span>
+                                {% elif p.vital_status == "deceased" %}
+                                <span class="pm2-state-chip pm2-state-chip--neutral" style="font-size:.62rem;padding:2px 8px;opacity:.6">fallecido</span>
+                                {% else %}
+                                <span class="pm2-state-chip" style="font-size:.62rem;padding:2px 8px">{{ p.vital_status }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="pm2-cohort-row-action">Abrir →</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="9">
+                                <div class="pm2-empty-state">
+                                    <p style="font-size:1.05rem;color:#f0fbff;margin-bottom:8px">Sin pacientes registrados</p>
+                                    <p style="font-size:.85rem">Cohorte vacía · ingresa el primer caso desde
+                                        <a href="/patient_intake?v=2" style="color:var(--pn-accent);text-decoration:underline">Wizard intake</a>
+                                    </p>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <p style="margin-top:var(--space-4);color:var(--pn-text-soft);font-size:.72rem;text-align:center">
+                Click en cualquier fila → abre perfil v2 (9 tabs · Decisión hoy · Audit 5⭐)
+            </p>
+        </section>
+
+    </main>
+</div>
+
+<script src="{{ url_for('static', filename='js/clinical_intelligence_v2.js') }}"></script>
+<script>
+/* ===== Cohort filter + search ===== */
+(function() {
+    const rows = document.querySelectorAll('#pm2-cohort-table tbody tr[data-stage-key]');
+    const visibleCount = document.getElementById('pm2-visible-count');
+    const searchInput = document.getElementById('pm2-cohort-search-input');
+    let activeStage = 'all';
+    let activeQuery = '';
+
+    function applyFilters() {
+        let visible = 0;
+        rows.forEach(row => {
+            const stageMatch = activeStage === 'all' || row.dataset.stageKey === activeStage;
+            const blob = row.dataset.searchBlob || '';
+            const queryMatch = !activeQuery || blob.includes(activeQuery);
+            const show = stageMatch && queryMatch;
+            row.style.display = show ? '' : 'none';
+            if (show) visible++;
+        });
+        if (visibleCount) visibleCount.textContent = visible;
+    }
+
+    document.querySelectorAll('[data-stage-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('[data-stage-filter]').forEach(b => b.classList.remove('is-active'));
+            btn.classList.add('is-active');
+            activeStage = btn.dataset.stageFilter;
+            applyFilters();
+        });
+    });
+
+    if (searchInput) {
+        searchInput.addEventListener('input', e => {
+            activeQuery = (e.target.value || '').toLowerCase().trim();
+            applyFilters();
+        });
+    }
+})();
+</script>
+</body>
+</html>

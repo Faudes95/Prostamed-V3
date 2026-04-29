@@ -1,0 +1,1663 @@
+{# ProstaMed v2 demo — Patient Profile FULL (9 tabs · re-skin del mockup LXXI)
+   Faubot 2026-04-26 LXXVII (#67D demo).
+   PRESERVA todos los datos/secciones del mockup original
+   (templates/patient_profile_v2_mockup.html, ~2700 líneas) y los re-estiliza
+   al sistema v2 dark Mayo/Epic con logo oficial ProstaMed + Avenir Next.
+   Standalone. Ruta: /demos/v2/patient_profile_full #}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PX-7Q42 · Expediente clínico v2 · ProstaMed</title>
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+
+<div class="pm2-app-shell">
+
+    {# ── Sidebar ── #}
+    {# Faubot LXXXIII — Sidebar centralizado via macro (resuelve bug "href=# placeholders") #}
+    {% from "components/pm2_sidebar.html" import pm2_sidebar %}
+    {{ pm2_sidebar(
+        active='profile',
+        identity_nss='demo-mock-001',
+        faubot_release='2026-04-26 LXXXIII',
+        gates_count=85,
+    ) }}
+
+    {# ── Header ── #}
+    <header class="pm2-app-header">
+        <div class="pm2-header-search">
+            <svg class="pm2-ic" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="m21 21-4.35-4.35"/></svg>
+            <input type="search" placeholder="Buscar paciente por NSS, nombre, gate (G47), trial (CHAARTED)…">
+        </div>
+        <div class="pm2-header-tools">
+            <span class="pm2-faubot-chip"><span class="pm2-faubot-pulse"></span> Faubot · LXXVII · live</span>
+            <button class="pm2-icon-btn" title="Atajos teclado" aria-label="Atajos teclado">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2" stroke-width="1.7"/><path stroke-width="1.7" stroke-linecap="round" d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+            </button>
+            <button class="pm2-icon-btn" title="Notificaciones" aria-label="Notificaciones">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="1.7" stroke-linecap="round" d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+            </button>
+            <span class="pm2-user-chip">
+                <span class="pm2-user-avatar">FB</span>
+                <span style="font-size:13px;font-weight:600">Dr. Faudes B.</span>
+            </span>
+        </div>
+    </header>
+
+    {# ── Main column ── #}
+    <main id="main-content" class="pm2-app-main" tabindex="-1">
+
+        {# ── Patient identity strip ── #}
+        <section class="pm2-patient-header" aria-label="Resumen del paciente">
+            <div class="pm2-patient-id-block">
+                <div class="pm2-patient-name">
+                    PX-7Q42 · Anónimo
+                    <span class="pm2-state-chip pm2-state-chip--danger">⚠ Alerta activa</span>
+                    <span class="pm2-state-chip pm2-state-chip--success" title="Consentimiento firmado v3.2">✓ Consent v3.2</span>
+                </div>
+                <div class="pm2-patient-meta">
+                    <span class="pm2-mono">NSS 70-12-…-7Q42</span>
+                    <span class="pm2-dot">·</span>
+                    <span>67 años · M</span>
+                    <span class="pm2-dot">·</span>
+                    <span>Dx 2024-06-01</span>
+                    <span class="pm2-dot">·</span>
+                    <span class="pm2-mono">PSA basal 45.0 ng/mL</span>
+                </div>
+                <div class="pm2-state-row" style="margin-top:8px">
+                    <strong style="color:var(--pn-text-soft);font-size:.7rem;letter-spacing:.16em;text-transform:uppercase">Track:</strong>
+                    <span class="pm2-state-chip pm2-state-chip--primary">on_arpi</span>
+                    <span class="pm2-state-chip">on_docetaxel</span>
+                </div>
+            </div>
+
+            <div>
+                <div class="pm2-state-row">
+                    <span class="pm2-kicker">Estado clínico reconciliado</span>
+                </div>
+                <div class="pm2-state-row">
+                    <span class="pm2-state-chip pm2-state-chip--primary">mHSPC · alto volumen sincrónico</span>
+                </div>
+                <div class="pm2-state-row">
+                    <span class="pm2-state-chip">Línea 1 · ADT + Daro + Doce</span>
+                    <span class="pm2-state-chip pm2-state-chip--success">Imaging M1 confirmado</span>
+                </div>
+                <div class="pm2-state-row" style="font-size:.68rem;color:var(--pn-text-soft);margin-top:6px">
+                    <span>Capture state: <strong style="color:#cbd5e1">mcspc_high_volume_sync</strong></span>
+                    <span class="pm2-dot">·</span>
+                    <span>Reconciled: <strong style="color:#cbd5e1">mcspc_high_volume</strong></span>
+                </div>
+            </div>
+
+            <div class="pm2-vitals-block">
+                <div class="pm2-vital">
+                    <span class="pm2-vital-label">PSA basal</span>
+                    <span class="pm2-vital-value">45.0<span class="pm2-vital-unit">ng/mL</span></span>
+                    <span class="pm2-vital-delta">2024-06-01</span>
+                </div>
+                <div class="pm2-vital">
+                    <span class="pm2-vital-label">PSA actual</span>
+                    <span class="pm2-vital-value">3.8<span class="pm2-vital-unit">ng/mL</span></span>
+                    <span class="pm2-vital-delta pm2-vital-delta--dn">▼ 91.6% vs basal</span>
+                </div>
+                <div class="pm2-vital">
+                    <span class="pm2-vital-label">PSA nadir</span>
+                    <span class="pm2-vital-value">2.1<span class="pm2-vital-unit">ng/mL</span></span>
+                    <span class="pm2-vital-delta">2025-04 · L1</span>
+                </div>
+                <div class="pm2-vital">
+                    <span class="pm2-vital-label">PSADT</span>
+                    <span class="pm2-vital-value">11.2<span class="pm2-vital-unit">m</span></span>
+                    <span class="pm2-vital-delta pm2-vital-delta--up">▲ progr lenta</span>
+                </div>
+                <div class="pm2-vital">
+                    <span class="pm2-vital-label">Testo</span>
+                    <span class="pm2-vital-value">18<span class="pm2-vital-unit">ng/dL</span></span>
+                    <span class="pm2-vital-delta pm2-vital-delta--dn">Castrate</span>
+                </div>
+            </div>
+        </section>
+
+        {# ── Decisión hoy hero (prominent · Faubot release stamped) ── #}
+        <section class="pm2-decision-hero" aria-labelledby="decision-hoy-title">
+            <div class="pm2-decision-hero-head">
+                <span class="pm2-decision-hero-stamp">DECISIÓN HOY · 2026-04-26 LXXVII</span>
+                <div class="pm2-decision-hero-actions">
+                    <span class="pm2-consent-badge" title="Consentimiento informado vigente · firmado 2026-03-12">
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                        Consent v3.2 ✓ uso de datos autorizado
+                    </span>
+                    <button class="pm2-btn pm2-btn--ghost" type="button" onclick="pm2ShowTab('audit')">Ver detalle decisión</button>
+                    <button class="pm2-btn pm2-btn--primary" type="button" onclick="alert('Demo · imprimir orden clínica (PDF)')">📄 Imprimir orden</button>
+                </div>
+            </div>
+            <h2 id="decision-hoy-title" class="pm2-decision-hero-title">
+                Solicitar PSMA-PET + iniciar PARP (olaparib) por BRCA2+ patogénico
+            </h2>
+            <p class="pm2-decision-hero-rationale">
+                <strong>Rationale:</strong> Falla a docetaxel + ARPI tras BRCA2 confirmado → PROfound NCCN cat 1
+            </p>
+            <div class="pm2-decision-hero-tags">
+                <span class="pm2-state-chip pm2-state-chip--primary"><span class="pm2-mono">OLAPARIB_300_BID</span></span>
+                <span class="pm2-state-chip pm2-state-chip--success">decision_quality 92% · alta calidad</span>
+                <span class="pm2-state-chip">NCCN PROS-13 cat 1 · EAU 2026 §7.4 strong</span>
+                <a href="/demos/v2/longitudinal_capture" class="pm2-state-chip" style="text-decoration:none">+ captura longitudinal</a>
+                <a href="/demos/v2/clinical_result" class="pm2-state-chip pm2-state-chip--primary" style="text-decoration:none">Re-ver resultado CDE →</a>
+            </div>
+        </section>
+
+        {# ── Active gates banner ── #}
+        <div class="pm2-alert-banner" role="status">
+            <div class="pm2-alert-banner-icon">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg>
+            </div>
+            <div class="pm2-alert-banner-text">
+                <strong>2 hard_block · 3 soft_warning activos</strong>
+                <small>G07 contraindicación absoluta abiraterona (ALT &gt; 5×LSN) · G55 PSADT ≤ 10m sugiere iniciar ARPI en m0CRPC · ver pestaña <a href="#" onclick="pm2ShowTab('gates'); return false;" style="color:var(--pn-accent);text-decoration:underline">Decisión &amp; Gates</a></small>
+            </div>
+            <button class="pm2-btn pm2-btn--primary" onclick="pm2ShowTab('gates')">Revisar gates →</button>
+        </div>
+
+        {# ── Tabs ── #}
+        <nav class="pm2-tabs" role="tablist">
+            <button class="pm2-tab is-active" data-tab="overview" role="tab">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" stroke-width="2"/><rect x="14" y="3" width="7" height="5" stroke-width="2"/><rect x="14" y="12" width="7" height="9" stroke-width="2"/><rect x="3" y="16" width="7" height="5" stroke-width="2"/></svg>
+                Vista 360°
+            </button>
+            <button class="pm2-tab" data-tab="psa" role="tab">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 14l4-4 4 4 6-6"/></svg>
+                PSA Compass
+            </button>
+            <button class="pm2-tab" data-tab="gates" role="tab">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Decisión &amp; Gates
+                <span class="pm2-tab-badge">5</span>
+            </button>
+            <button class="pm2-tab" data-tab="evidence" role="tab">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                Evidencia
+            </button>
+            <button class="pm2-tab" data-tab="timeline" role="tab">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M12 6v6l4 2"/></svg>
+                Combined Timeline
+            </button>
+            <button class="pm2-tab" data-tab="audit" role="tab">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                CDE Audit (5⭐)
+            </button>
+            <button class="pm2-tab" data-tab="version" role="tab">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33"/></svg>
+                Versionado
+            </button>
+            <button class="pm2-tab" data-tab="intake" role="tab">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14M5 12h14"/></svg>
+                Intake longitudinal
+            </button>
+            <button class="pm2-tab" data-tab="consent" role="tab">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15l2 2 4-4"/></svg>
+                Consentimiento
+            </button>
+        </nav>
+
+        {# ============ TAB 1 — VISTA 360° ============ #}
+        <section class="pm2-tab-panel is-active" id="tab-overview" role="tabpanel">
+            <div class="pm2-grid-3-2">
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head">
+                        <h3>
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--pn-accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 14l4-4 4 4 6-6"/></svg>
+                            PSA Observability — torre de vigilancia
+                        </h3>
+                        <span class="pm2-head-meta">3 líneas · 11 puntos · forecast 3/6/12m</span>
+                    </div>
+                    <div class="pm2-tab-card-body">
+                        <div class="pm2-chart-shell" style="height:340px"><canvas id="psaMini"></canvas></div>
+                        <div class="pm2-chart-legend">
+                            <span><span class="pm2-legend-swatch" style="background:#1FB8FF"></span>L1 ADT+Daro+Doce</span>
+                            <span><span class="pm2-legend-swatch" style="background:#7C5CFF"></span>L2 Cabazitaxel</span>
+                            <span><span class="pm2-legend-swatch" style="background:#A857E8"></span>ARASENS mediana</span>
+                            <span><span class="pm2-legend-swatch" style="background:rgba(31,184,255,.3)"></span>Forecast CI 95%</span>
+                            <span><span class="pm2-legend-swatch" style="background:#dc2626"></span>BCR · Detect · CRPC</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head">
+                        <h3>
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--pn-accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            Gates pivotal activos
+                        </h3>
+                        <span class="pm2-head-meta">5 / 55 evaluados</span>
+                    </div>
+                    <div style="display:flex;flex-direction:column">
+                        <div class="pm2-gate-card" data-severity="hard_block" style="border-radius:0;border-bottom:1px solid var(--border-default)">
+                            <div class="pm2-gate-card-head">
+                                <span class="pm2-gate-code">G07</span>
+                                <span class="pm2-gate-badge" data-severity="hard_block">hard_block</span>
+                            </div>
+                            <h4>Hepatotoxicidad — abiraterona contraindicada</h4>
+                            <div class="pm2-gate-msg">ALT 6.2× LSN supera umbral seguro. Bloquea ADT_ABIRATERONE y NIRAPARIB_ABIRATERONE.</div>
+                            <div class="pm2-gate-foot">
+                                <a href="https://pubmed.ncbi.nlm.nih.gov/28296438/" target="_blank" rel="noopener" class="pm2-trial-link">PMID 28296438</a>
+                                <a href="#" class="pm2-trial-link">NCCN PROS-N</a>
+                                <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">truthy_flag</span>
+                            </div>
+                        </div>
+
+                        <div class="pm2-gate-card" data-severity="soft_warning" style="border-radius:0;border-bottom:1px solid var(--border-default)">
+                            <div class="pm2-gate-card-head">
+                                <span class="pm2-gate-code">G55</span>
+                                <span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span>
+                            </div>
+                            <h4>PSADT ≤ 10 m — iniciar ARPI en m0CRPC</h4>
+                            <div class="pm2-gate-msg">Cinética agresiva sugiere apalutamida/enzalutamida/darolutamida (SPARTAN/PROSPER/ARAMIS).</div>
+                            <div class="pm2-gate-foot">
+                                <a href="#" class="pm2-trial-link">SPARTAN</a>
+                                <a href="#" class="pm2-trial-link">PROSPER</a>
+                                <a href="#" class="pm2-trial-link">ARAMIS</a>
+                                <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">numeric_threshold</span>
+                            </div>
+                        </div>
+
+                        <div class="pm2-gate-card" data-severity="soft_warning" style="border-radius:0;border-bottom:1px solid var(--border-default)">
+                            <div class="pm2-gate-card-head">
+                                <span class="pm2-gate-code">G47</span>
+                                <span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span>
+                            </div>
+                            <h4>PSA flare ARPI — pseudoprogresión</h4>
+                            <div class="pm2-gate-msg">Subida transitoria de PSA en primeras 12 sem post-ARPI puede no indicar progresión.</div>
+                            <div class="pm2-gate-foot">
+                                <a href="#" class="pm2-trial-link">PMID 31816320</a>
+                                <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">numeric_baseline_delta_rise_above</span>
+                            </div>
+                        </div>
+
+                        <div class="pm2-gate-card" data-severity="informational" style="border-radius:0;border-bottom:1px solid var(--border-default)">
+                            <div class="pm2-gate-card-head">
+                                <span class="pm2-gate-code">G53</span>
+                                <span class="pm2-gate-badge" data-severity="informational">informational</span>
+                            </div>
+                            <h4>BCR agresivo post-RP — considerar salvage temprano</h4>
+                            <div class="pm2-gate-msg">PSA velocity sugiere ventana de RT salvage con mejor outcome (Stephenson JCO 2009).</div>
+                            <div class="pm2-gate-foot">
+                                <a href="#" class="pm2-trial-link">Stephenson JCO 2009</a>
+                                <a href="#" class="pm2-trial-link">RTOG-9601</a>
+                            </div>
+                        </div>
+
+                        <div class="pm2-gate-card" data-severity="informational" style="border-radius:0">
+                            <div class="pm2-gate-card-head">
+                                <span class="pm2-gate-code">G14</span>
+                                <span class="pm2-gate-badge" data-severity="informational">informational</span>
+                            </div>
+                            <h4>HRR status pendiente — considerar test germline</h4>
+                            <div class="pm2-gate-msg">BRCA1/2 desconocido en mCRPC habilitaría OLAPARIB y TALAZOPARIB+ENZA.</div>
+                            <div class="pm2-gate-foot">
+                                <a href="#" class="pm2-trial-link">PROfound</a>
+                                <a href="#" class="pm2-trial-link">TALAPRO-2</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {# Combined timeline horizontal compact #}
+            <div class="pm2-tab-card" style="margin-top:18px">
+                <div class="pm2-tab-card-head">
+                    <h3>
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--pn-accent)"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M12 6v6l4 2"/></svg>
+                        Combined Timeline · últimos 12 eventos
+                    </h3>
+                    <span class="pm2-head-meta">PSA + tratamientos + imaging + gates</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <div class="pm2-timeline-h">
+                        <div class="pm2-timeline-h-track" id="timelineHTrack"></div>
+                    </div>
+                </div>
+            </div>
+
+            {# Per-line analytics quick row #}
+            <div class="pm2-grid-3" style="margin-top:18px">
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head">
+                        <h3>Línea 1 · ADT+Daro+Doce</h3>
+                        <span class="pm2-kin-badge pm2-kin-response" style="margin-left:auto">response</span>
+                    </div>
+                    <div class="pm2-tab-card-body">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.78rem">
+                            <div><div class="pm2-kicker">Baseline</div><strong class="pm2-mono" style="color:#f0fbff;font-size:1.1rem">45.0</strong></div>
+                            <div><div class="pm2-kicker">Nadir</div><strong class="pm2-mono" style="color:#f0fbff;font-size:1.1rem">2.1</strong></div>
+                            <div><div class="pm2-kicker">Best Δ%</div><strong class="pm2-mono" style="color:var(--clinical-success);font-size:1.1rem">−95.3%</strong></div>
+                            <div><div class="pm2-kicker">Time to nadir</div><strong class="pm2-mono" style="color:#f0fbff">9.2 m</strong></div>
+                            <div><div class="pm2-kicker">DOR</div><strong class="pm2-mono" style="color:#f0fbff">14.6 m</strong></div>
+                            <div><div class="pm2-kicker">PSADT prog</div><strong class="pm2-mono" style="color:#f0fbff">11.2 m</strong></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head">
+                        <h3>Forecast log-linear · 3/6/12 m</h3>
+                        <span class="pm2-state-chip pm2-state-chip--success" style="margin-left:auto;font-size:.65rem">model_fit: high</span>
+                    </div>
+                    <div class="pm2-tab-card-body" style="padding:0">
+                        <table class="pm2-tbl">
+                            <thead><tr><th>Horizonte</th><th>Esperado</th><th>CI inf</th><th>CI sup</th><th>Width</th></tr></thead>
+                            <tbody>
+                                <tr><td>3 m</td><td class="pm2-num">4.1</td><td class="pm2-num">3.6</td><td class="pm2-num">4.7</td><td class="pm2-num">1.1</td></tr>
+                                <tr><td>6 m</td><td class="pm2-num">5.0</td><td class="pm2-num">4.0</td><td class="pm2-num">6.4</td><td class="pm2-num">2.4</td></tr>
+                                <tr><td>12 m</td><td class="pm2-num">7.4</td><td class="pm2-num">5.2</td><td class="pm2-num">10.5</td><td class="pm2-num">5.3</td></tr>
+                            </tbody>
+                        </table>
+                        <div style="padding:10px 14px;color:var(--pn-text-muted);font-size:.7rem">R² = 0.91 · outliers = 0 · reliability = high · 11 puntos · 2 líneas estables</div>
+                    </div>
+                </div>
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head">
+                        <h3>Cohort ref · ARASENS</h3>
+                        <span class="pm2-state-chip" style="margin-left:auto;font-size:.65rem;background:rgba(168,87,232,.18);color:#d8b4fe;border-color:rgba(168,87,232,.4)">trial overlay</span>
+                    </div>
+                    <div class="pm2-tab-card-body" style="padding:0">
+                        <table class="pm2-tbl pm2-cohort-tbl">
+                            <thead><tr><th>Métrica</th><th>Paciente</th><th>Cohort</th><th>Δ</th></tr></thead>
+                            <tbody>
+                                <tr><td>PSA mes 6</td><td class="pm2-num">5.0</td><td class="pm2-num">3.8</td><td class="pm2-num pm2-delta-neg">+1.2</td></tr>
+                                <tr><td>PSA mes 12</td><td class="pm2-num">7.4</td><td class="pm2-num">2.1</td><td class="pm2-num pm2-delta-neg">+5.3</td></tr>
+                                <tr><td>Time to nadir</td><td class="pm2-num">9.2 m</td><td class="pm2-num">7.4 m</td><td class="pm2-num pm2-delta-neg">+1.8</td></tr>
+                                <tr><td>DOR</td><td class="pm2-num">14.6 m</td><td class="pm2-num">22.1 m</td><td class="pm2-num pm2-delta-neg">−7.5</td></tr>
+                            </tbody>
+                        </table>
+                        <div style="padding:10px 14px;color:var(--pn-text-muted);font-size:.7rem">ARASENS NEJM 2022 · n=1306 mHSPC · ADT+Daro+Doce</div>
+                    </div>
+                </div>
+            </div>
+
+            {# Consent quick summary #}
+            <div class="pm2-tab-card" style="margin-top:18px;border-left:4px solid var(--clinical-success)">
+                <div class="pm2-tab-card-head">
+                    <h3>
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--clinical-success)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15l2 2 4-4"/></svg>
+                        Consentimiento informado &amp; firma electrónica
+                    </h3>
+                    <span class="pm2-head-meta">consent_version_code · v3.2 · 2026-03-12</span>
+                    <button class="pm2-icon-btn" title="Ver y firmar" onclick="pm2ShowTab('consent')" style="margin-left:8px">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 3h6v6M14 10l7-7M9 21H3v-6M3 21l7-7"/></svg>
+                    </button>
+                </div>
+                <div class="pm2-tab-card-body" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px">
+                    <div>
+                        <div class="pm2-kicker">Estado</div>
+                        <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+                            <span class="pm2-state-chip pm2-state-chip--success">✓ signed</span>
+                            <span style="font-size:.7rem;color:var(--pn-text-muted)">vence en 287 d</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Firmado por</div>
+                        <div style="font-size:.82rem;font-weight:600;margin-top:4px;color:#f0fbff">Paciente PX-7Q42 + Dr. Faudes B.</div>
+                        <div style="font-size:.68rem;color:var(--pn-text-muted)">2026-03-12 · 14:32 CST</div>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">content_hash (SHA-256)</div>
+                        <div class="pm2-mono" style="font-size:.7rem;margin-top:4px;color:#f0fbff">4f3c91…a7e2b8</div>
+                        <div style="font-size:.68rem;color:var(--pn-text-muted)">FAUBOT_RELEASE LXVIII</div>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Tipos de uso autorizados</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+                            <span class="pm2-state-chip pm2-state-chip--success" style="padding:2px 6px;font-size:.6rem">clínico</span>
+                            <span class="pm2-state-chip pm2-state-chip--success" style="padding:2px 6px;font-size:.6rem">CDE/IA</span>
+                            <span class="pm2-state-chip pm2-state-chip--success" style="padding:2px 6px;font-size:.6rem">cohorte</span>
+                            <span class="pm2-state-chip" style="padding:2px 6px;font-size:.6rem;opacity:.6">investigación</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        {# ============ TAB 2 — PSA COMPASS ============ #}
+        <section class="pm2-tab-panel" id="tab-psa" role="tabpanel">
+            <div class="pm2-grid-3-2">
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head">
+                        <h3>PSA Compass · drill-down per-treatment-line</h3>
+                        <div style="display:flex;gap:6px;margin-left:auto">
+                            <button class="pm2-icon-btn" title="Toggle cohort overlay">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 2 2 7l10 5 10-5-10-5z"/></svg>
+                            </button>
+                            <button class="pm2-icon-btn" title="Toggle CI">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="8" stroke-width="2"/></svg>
+                            </button>
+                            <button class="pm2-icon-btn" title="Exportar CSV">
+                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="pm2-tab-card-body">
+                        <div class="pm2-chart-shell" style="height:440px"><canvas id="psaFull"></canvas></div>
+                        <div class="pm2-chart-legend">
+                            <span><span class="pm2-legend-swatch" style="background:#1FB8FF"></span>L1 ADT+Daro+Doce</span>
+                            <span><span class="pm2-legend-swatch" style="background:#7C5CFF"></span>L2 Cabazitaxel</span>
+                            <span><span class="pm2-legend-swatch" style="background:#A857E8"></span>ARASENS mediana</span>
+                            <span><span class="pm2-legend-swatch" style="background:rgba(31,184,255,.3)"></span>Forecast CI 95%</span>
+                            <span><span class="pm2-legend-swatch" style="background:#dc2626"></span>Phoenix BCR (≥nadir+2)</span>
+                            <span><span class="pm2-legend-swatch" style="background:#f59e0b"></span>PSA detectable (0.1)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head"><h3>Analítica per-line · 6 estados de cinética</h3></div>
+                    <div style="padding:0">
+                        <table class="pm2-tbl">
+                            <thead>
+                                <tr><th>L#</th><th>Régimen</th><th>Baseline</th><th>Nadir</th><th>TtN</th><th>DOR</th><th>PSADT</th><th>Estado</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="pm2-state-chip pm2-line-1">L1</span></td>
+                                    <td>ADT+Daro+Doce</td>
+                                    <td class="pm2-num">45.0</td><td class="pm2-num">2.1</td>
+                                    <td class="pm2-num">9.2 m</td><td class="pm2-num">14.6 m</td><td class="pm2-num">11.2 m</td>
+                                    <td><span class="pm2-kin-badge pm2-kin-response">response</span></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="pm2-state-chip pm2-line-2">L2</span></td>
+                                    <td>Cabazitaxel</td>
+                                    <td class="pm2-num">8.5</td><td class="pm2-num">3.8</td>
+                                    <td class="pm2-num">3.4 m</td><td class="pm2-num">5.1 m</td><td class="pm2-num">6.8 m</td>
+                                    <td><span class="pm2-kin-badge pm2-kin-partial">partial_response</span></td>
+                                </tr>
+                                <tr style="opacity:.6">
+                                    <td><span class="pm2-state-chip pm2-line-3">L3</span></td>
+                                    <td>(planif) Lu-177 PSMA</td>
+                                    <td class="pm2-num">—</td><td class="pm2-num">—</td>
+                                    <td class="pm2-num">—</td><td class="pm2-num">—</td><td class="pm2-num">—</td>
+                                    <td><span class="pm2-kin-badge pm2-kin-insufficient">insufficient_data</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div style="padding:14px;border-top:1px solid var(--border-default);background:rgba(15,23,42,0.6)">
+                            <div class="pm2-kicker" style="margin-bottom:6px">Confidence reasons (forecast_reliability)</div>
+                            <ul style="margin:0;padding-left:18px;font-size:.78rem;color:var(--pn-text-muted);line-height:1.6">
+                                <li><strong style="color:#cbd5e1">minimum_data_passed</strong>: 11 puntos ≥ umbral (5)</li>
+                                <li><strong style="color:#cbd5e1">line_stability_passed</strong>: paciente en L2 estable últimos 90 d</li>
+                                <li><strong style="color:#cbd5e1">model_fit_quality</strong>: high (R²=0.91)</li>
+                                <li><strong style="color:#cbd5e1">outlier_burden</strong>: 0 outliers detectados</li>
+                                <li><strong style="color:#cbd5e1">confidence final</strong>: <span class="pm2-state-chip pm2-state-chip--success">high</span></li>
+                            </ul>
+                        </div>
+                        <div style="padding:14px;border-top:1px solid var(--border-default)">
+                            <div class="pm2-kicker" style="margin-bottom:6px">Drill-down per-band (click sobre la banda en chart)</div>
+                            <button class="pm2-btn pm2-btn--ghost" style="margin-right:6px" onclick="pm2OpenDrill('L1')">Ver detalle L1 →</button>
+                            <button class="pm2-btn pm2-btn--ghost" onclick="pm2OpenDrill('L2')">Ver detalle L2 →</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        {# ============ TAB 3 — DECISIÓN & GATES ============ #}
+        <section class="pm2-tab-panel" id="tab-gates" role="tabpanel">
+            <div class="pm2-grid-3-2" style="margin-bottom:18px">
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head">
+                        <h3>Decisión recomendada (CÓMO)</h3>
+                        <span class="pm2-head-meta">ranking_policy_version v3.4</span>
+                    </div>
+                    <div class="pm2-tab-card-body">
+                        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                            <span class="pm2-state-chip pm2-state-chip--primary" style="font-size:.85rem;padding:8px 14px">ADT_DAROLUTAMIDE_DOCETAXEL</span>
+                            <span class="pm2-state-chip pm2-state-chip--success">decision_quality: high</span>
+                            <span class="pm2-state-chip" style="background:var(--clinical-info-soft);color:#c5e8ff;border-color:var(--clinical-info-edge)">applicability: directly_applicable</span>
+                        </div>
+                        <div style="margin-top:14px;font-size:.82rem;color:var(--pn-text-muted);line-height:1.6">
+                            <strong style="color:#f0fbff">Razonamiento clínico</strong> · paciente mHSPC alto-volumen sincrónico, performance status preservado, sin contraindicaciones a docetaxel ni darolutamida. Triplete preferido por ARASENS (HR mortalidad 0.68).
+                        </div>
+                        <div style="margin-top:12px"><span class="pm2-kicker">Alternativas (3)</span></div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+                            <span class="pm2-state-chip">ADT_DOCETAXEL_ABIRATERONE (PEACE-1)</span>
+                            <span class="pm2-state-chip">ADT_APALUTAMIDE (TITAN)</span>
+                            <span class="pm2-state-chip">ADT_ENZALUTAMIDE (ENZAMET / ARCHES)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head"><h3>Filtros · 55 gates evaluados</h3></div>
+                    <div class="pm2-tab-card-body" style="display:flex;gap:8px;flex-wrap:wrap">
+                        <button class="pm2-state-chip pm2-state-chip--danger">2 hard_block</button>
+                        <button class="pm2-state-chip pm2-state-chip--warn">3 soft_warning</button>
+                        <button class="pm2-state-chip">8 informational</button>
+                        <button class="pm2-state-chip pm2-state-chip--success">42 no triggered</button>
+                        <div style="width:100%;margin-top:8px;font-size:.72rem;color:var(--pn-text-muted)">
+                            <strong style="color:#f0fbff">not_recommended (4):</strong> ADT_ABIRATERONE, NIRAPARIB_ABIRATERONE, RUCAPARIB, RADIUM223 (M0)
+                        </div>
+                        <div style="width:100%;font-size:.72rem;color:var(--pn-text-muted)">
+                            <strong style="color:#f0fbff">missing_critical_inputs (2):</strong> HRR_status, ECOG_PS · <strong style="color:#f0fbff">stale (1):</strong> imaging &gt; 90 d
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pm2-section-h">
+                <h2>Gates triggered · vista detallada</h2>
+                <span class="pm2-sub">Cada gate muestra severity 3-tier · trial_refs live · trigger_type · override</span>
+            </div>
+            <div class="pm2-gate-grid">
+                <div class="pm2-gate-card" data-severity="hard_block">
+                    <div class="pm2-gate-card-head">
+                        <span class="pm2-gate-code">G07</span>
+                        <span class="pm2-gate-badge" data-severity="hard_block">hard_block</span>
+                        <span class="pm2-state-chip" style="margin-left:auto;font-size:.62rem">since LXIV</span>
+                    </div>
+                    <h4>Hepatotoxicidad — abiraterona contraindicada</h4>
+                    <div class="pm2-gate-msg">ALT 6.2 × LSN supera umbral seguro (≤5 × LSN). Bloquea ADT_ABIRATERONE y NIRAPARIB_ABIRATERONE en mHSPC y mCRPC.</div>
+                    <div class="pm2-gate-foot">
+                        <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">trigger: numeric_threshold</span>
+                        <a href="https://pubmed.ncbi.nlm.nih.gov/28296438/" target="_blank" rel="noopener" class="pm2-trial-link">PMID 28296438</a>
+                        <a href="#" class="pm2-trial-link">NCCN PROS-N v2.2026</a>
+                        <a href="#" class="pm2-trial-link">EAU 2026 §6.3</a>
+                    </div>
+                </div>
+
+                <div class="pm2-gate-card" data-severity="hard_block">
+                    <div class="pm2-gate-card-head">
+                        <span class="pm2-gate-code">G29</span>
+                        <span class="pm2-gate-badge" data-severity="hard_block">hard_block</span>
+                    </div>
+                    <h4>Insuficiencia cardiaca NYHA III–IV — enzalutamida no recomendada</h4>
+                    <div class="pm2-gate-msg">Riesgo de HTA y eventos cardiovasculares mayores. Considerar darolutamida (perfil CV mejorado).</div>
+                    <div class="pm2-gate-foot">
+                        <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">trigger: any_of</span>
+                        <a href="#" class="pm2-trial-link">ARAMIS NEJM 2018</a>
+                        <a href="#" class="pm2-trial-link">PMID 31039765</a>
+                    </div>
+                </div>
+
+                <div class="pm2-gate-card" data-severity="soft_warning">
+                    <div class="pm2-gate-card-head">
+                        <span class="pm2-gate-code">G55</span>
+                        <span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span>
+                        <span class="pm2-state-chip" style="margin-left:auto;font-size:.62rem">since LXIV #63A</span>
+                    </div>
+                    <h4>PSADT ≤ 10 m en m0CRPC — iniciar ARPI</h4>
+                    <div class="pm2-gate-msg">Cinética agresiva. SPARTAN/PROSPER/ARAMIS demuestran beneficio MFS con apalutamida/enzalutamida/darolutamida.</div>
+                    <div class="pm2-gate-foot">
+                        <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">trigger: numeric_below</span>
+                        <a href="#" class="pm2-trial-link">SPARTAN</a>
+                        <a href="#" class="pm2-trial-link">PROSPER</a>
+                        <a href="#" class="pm2-trial-link">ARAMIS</a>
+                    </div>
+                </div>
+
+                <div class="pm2-gate-card" data-severity="soft_warning">
+                    <div class="pm2-gate-card-head">
+                        <span class="pm2-gate-code">G47</span>
+                        <span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span>
+                        <span class="pm2-state-chip" style="margin-left:auto;font-size:.62rem">since LVIII #62</span>
+                    </div>
+                    <h4>PSA flare ARPI · pseudoprogresión</h4>
+                    <div class="pm2-gate-msg">Subida transitoria de PSA en primeras 12 semanas post-ARPI no debe interpretarse como progresión real. Re-evaluar a sem 12.</div>
+                    <div class="pm2-gate-foot">
+                        <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">trigger: numeric_baseline_delta_rise_above</span>
+                        <a href="#" class="pm2-trial-link">PMID 31816320</a>
+                    </div>
+                </div>
+
+                <div class="pm2-gate-card" data-severity="soft_warning">
+                    <div class="pm2-gate-card-head">
+                        <span class="pm2-gate-code">G54</span>
+                        <span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span>
+                        <span class="pm2-state-chip" style="margin-left:auto;font-size:.62rem">since LXIV</span>
+                    </div>
+                    <h4>PSA bounce post-RT · pseudoprogresión</h4>
+                    <div class="pm2-gate-msg">Bounce típico 12–24 m post-RT puede confundirse con BCR. Esperar 3 mediciones consecutivas (Phoenix 2006).</div>
+                    <div class="pm2-gate-foot">
+                        <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">trigger: numeric_baseline_delta_above</span>
+                        <a href="#" class="pm2-trial-link">Crook IJROBP 2010</a>
+                        <a href="#" class="pm2-trial-link">Phoenix 2006</a>
+                    </div>
+                </div>
+
+                <div class="pm2-gate-card" data-severity="informational">
+                    <div class="pm2-gate-card-head">
+                        <span class="pm2-gate-code">G14</span>
+                        <span class="pm2-gate-badge" data-severity="informational">informational</span>
+                    </div>
+                    <h4>HRR status pendiente</h4>
+                    <div class="pm2-gate-msg">BRCA1/2 desconocido. En mCRPC habilitaría OLAPARIB / TALAZOPARIB+ENZA / NIRAPARIB+ABI. Recomendar test germline + somatic.</div>
+                    <div class="pm2-gate-foot">
+                        <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">trigger: all_of_falsy</span>
+                        <a href="#" class="pm2-trial-link">PROfound</a>
+                        <a href="#" class="pm2-trial-link">TALAPRO-2</a>
+                        <a href="#" class="pm2-trial-link">MAGNITUDE</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        {# ============ TAB 4 — EVIDENCIA ============ #}
+        <section class="pm2-tab-panel" id="tab-evidence" role="tabpanel">
+            <div class="pm2-grid-3" style="margin-bottom:18px">
+                <div class="pm2-tab-card"><div class="pm2-tab-card-body">
+                    <div class="pm2-kicker">unique_trial_refs</div>
+                    <div style="font-size:2rem;font-weight:800;color:var(--pn-accent);margin-top:6px;font-feature-settings:'tnum';line-height:1">37</div>
+                    <div style="font-size:.72rem;color:var(--pn-text-muted);margin-top:4px">trials pivotales reconocidos · auto-resolución a PubMed/CT.gov/DOI</div>
+                </div></div>
+                <div class="pm2-tab-card"><div class="pm2-tab-card-body">
+                    <div class="pm2-kicker">per_gate_evidence_count</div>
+                    <div style="font-size:2rem;font-weight:800;color:var(--pn-accent);margin-top:6px;font-feature-settings:'tnum';line-height:1">5</div>
+                    <div style="font-size:.72rem;color:var(--pn-text-muted);margin-top:4px">gates triggered con drill-down completo</div>
+                </div></div>
+                <div class="pm2-tab-card"><div class="pm2-tab-card-body">
+                    <div class="pm2-kicker">guideline_versions</div>
+                    <div style="font-size:.85rem;font-weight:700;margin:6px 0;display:flex;gap:6px;flex-wrap:wrap">
+                        <span class="pm2-state-chip pm2-state-chip--success">NCCN v2.2026</span>
+                        <span class="pm2-state-chip pm2-state-chip--success">EAU 2026</span>
+                    </div>
+                    <div style="font-size:.72rem;color:var(--pn-text-muted)">primary + comparison · trazabilidad regulatoria</div>
+                </div></div>
+            </div>
+
+            <div class="pm2-section-h">
+                <h2>Per-gate evidence drill-down · LXX #65A</h2>
+                <span class="pm2-sub">Cada gate expone trial_refs_with_links + evidence_tag_link + citation_count</span>
+            </div>
+
+            <div class="pm2-tab-card">
+                <table class="pm2-tbl">
+                    <thead><tr><th>Gate</th><th>Class label</th><th>Trial refs (live)</th><th>Evidence tag</th><th>Citations</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="pm2-gate-code">G07</span></td>
+                            <td>Hepatic toxicity contraindication</td>
+                            <td><a class="pm2-trial-link" href="https://pubmed.ncbi.nlm.nih.gov/28296438/" target="_blank">PMID 28296438</a> <a class="pm2-trial-link" href="https://clinicaltrials.gov/study/NCT00638690" target="_blank">NCT00638690</a></td>
+                            <td><a class="pm2-trial-link">cougar_aa_302_safety</a></td>
+                            <td class="pm2-num">3</td>
+                        </tr>
+                        <tr>
+                            <td><span class="pm2-gate-code">G55</span></td>
+                            <td>m0CRPC PSADT-driven ARPI</td>
+                            <td><a class="pm2-trial-link">SPARTAN (NCT01946204)</a> <a class="pm2-trial-link">PROSPER (NCT02003924)</a> <a class="pm2-trial-link">ARAMIS (NCT02200614)</a></td>
+                            <td><a class="pm2-trial-link">spartan_prosper_aramis_NEJM_2018</a></td>
+                            <td class="pm2-num">5</td>
+                        </tr>
+                        <tr>
+                            <td><span class="pm2-gate-code">G47</span></td>
+                            <td>PSA flare ARPI</td>
+                            <td><a class="pm2-trial-link">PMID 31816320</a></td>
+                            <td><a class="pm2-trial-link">arpi_psa_flare_pseudoprogression</a></td>
+                            <td class="pm2-num">2</td>
+                        </tr>
+                        <tr>
+                            <td><span class="pm2-gate-code">G54</span></td>
+                            <td>PSA bounce post-RT</td>
+                            <td><a class="pm2-trial-link">Crook IJROBP 2010</a> <a class="pm2-trial-link">Phoenix 2006 RTOG-ASTRO</a></td>
+                            <td><a class="pm2-trial-link">phoenix_definition_bcr</a></td>
+                            <td class="pm2-num">2</td>
+                        </tr>
+                        <tr>
+                            <td><span class="pm2-gate-code">G14</span></td>
+                            <td>HRR test pending</td>
+                            <td><a class="pm2-trial-link">PROfound (NCT02987543)</a> <a class="pm2-trial-link">TALAPRO-2</a> <a class="pm2-trial-link">MAGNITUDE</a></td>
+                            <td><a class="pm2-trial-link">hrr_test_recommendation</a></td>
+                            <td class="pm2-num">4</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pm2-section-h">
+                <h2>Cohort references · 11 combos pivotales</h2>
+                <span class="pm2-sub">Mediana publicada por (state × regimen-class) — overlay disponible en PSA Compass</span>
+            </div>
+            <div class="pm2-tab-card">
+                <table class="pm2-tbl">
+                    <thead><tr><th>Trial</th><th>State</th><th>Regimen class</th><th>n</th><th>Mediana PSA</th><th>PSADT</th><th>Año</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong style="color:#f0fbff">CHAARTED</strong></td><td>mHSPC alto-vol</td><td>ADT + Doce</td><td class="pm2-num">790</td><td class="pm2-num">3.2</td><td class="pm2-num">—</td><td class="pm2-num">2015</td></tr>
+                        <tr><td><strong style="color:#f0fbff">LATITUDE</strong></td><td>mHSPC alto-riesgo</td><td>ADT + Abi</td><td class="pm2-num">1199</td><td class="pm2-num">2.8</td><td class="pm2-num">—</td><td class="pm2-num">2017</td></tr>
+                        <tr><td><strong style="color:#f0fbff">ENZAMET</strong></td><td>mHSPC</td><td>ADT + Enza</td><td class="pm2-num">1125</td><td class="pm2-num">3.5</td><td class="pm2-num">—</td><td class="pm2-num">2019</td></tr>
+                        <tr><td><strong style="color:#f0fbff">ARCHES</strong></td><td>mHSPC</td><td>ADT + Enza</td><td class="pm2-num">1150</td><td class="pm2-num">3.1</td><td class="pm2-num">—</td><td class="pm2-num">2019</td></tr>
+                        <tr><td><strong style="color:#f0fbff">PEACE-1</strong></td><td>mHSPC</td><td>ADT + Doce + Abi</td><td class="pm2-num">1173</td><td class="pm2-num">2.0</td><td class="pm2-num">—</td><td class="pm2-num">2022</td></tr>
+                        <tr><td><strong style="color:#f0fbff">ARASENS</strong></td><td>mHSPC</td><td>ADT + Doce + Daro</td><td class="pm2-num">1306</td><td class="pm2-num">2.1</td><td class="pm2-num">—</td><td class="pm2-num">2022</td></tr>
+                        <tr><td><strong style="color:#f0fbff">SPARTAN</strong></td><td>m0CRPC</td><td>Apa</td><td class="pm2-num">1207</td><td class="pm2-num">—</td><td class="pm2-num">8.5</td><td class="pm2-num">2018</td></tr>
+                        <tr><td><strong style="color:#f0fbff">PROSPER</strong></td><td>m0CRPC</td><td>Enza</td><td class="pm2-num">1401</td><td class="pm2-num">—</td><td class="pm2-num">8.0</td><td class="pm2-num">2018</td></tr>
+                        <tr><td><strong style="color:#f0fbff">ARAMIS</strong></td><td>m0CRPC</td><td>Daro</td><td class="pm2-num">1509</td><td class="pm2-num">—</td><td class="pm2-num">9.0</td><td class="pm2-num">2019</td></tr>
+                        <tr><td><strong style="color:#f0fbff">PROfound</strong></td><td>mCRPC HRR+</td><td>Olaparib</td><td class="pm2-num">387</td><td class="pm2-num">7.4</td><td class="pm2-num">—</td><td class="pm2-num">2020</td></tr>
+                        <tr><td><strong style="color:#f0fbff">VISION</strong></td><td>mCRPC PSMA+</td><td>Lu-177 PSMA</td><td class="pm2-num">831</td><td class="pm2-num">5.9</td><td class="pm2-num">—</td><td class="pm2-num">2021</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        {# ============ TAB 5 — COMBINED TIMELINE (vertical Epic-style) ============ #}
+        <section class="pm2-tab-panel" id="tab-timeline" role="tabpanel">
+            <div class="pm2-section-h">
+                <h2>Combined Timeline · evento por evento</h2>
+                <span class="pm2-sub">PSA + tratamientos + imaging + biopsy + clinical events · auto-asignados a la línea de terapia activa por fecha</span>
+            </div>
+
+            <div class="pm2-grid-3-2">
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head">
+                        <h3>Cronología clínica completa</h3>
+                        <select class="pm2-state-chip" style="margin-left:auto;padding:6px 10px;background:var(--surface-3);border:1px solid var(--border-strong);color:#cbd5e1">
+                            <option>Todos los eventos</option>
+                            <option>Solo PSA</option>
+                            <option>Solo tratamientos</option>
+                            <option>Solo imaging</option>
+                            <option>Solo gates</option>
+                        </select>
+                    </div>
+                    <div class="pm2-tab-card-body">
+                        <div class="pm2-timeline-v">
+                            <div class="pm2-tv-item" data-type="tx">
+                                <div class="pm2-tv-head">
+                                    <span class="pm2-state-chip pm2-line-1">Línea 1 inicio</span>
+                                    <span class="pm2-tv-date">2024-06-15</span>
+                                </div>
+                                <div class="pm2-tv-title">Inicio ADT + Darolutamida + Docetaxel (triplete ARASENS)</div>
+                                <div class="pm2-tv-body">Régimen: <span class="pm2-mono" style="color:var(--pn-accent)">ADT_DAROLUTAMIDE_DOCETAXEL</span> · indicación: mHSPC alto-volumen sincrónico · 6 ciclos docetaxel programados.</div>
+                            </div>
+
+                            <div class="pm2-tv-item">
+                                <div class="pm2-tv-head">
+                                    <span class="pm2-state-chip">PSA</span>
+                                    <span class="pm2-tv-date">2024-09-01 · L1 mes 3</span>
+                                </div>
+                                <div class="pm2-tv-title">PSA 12.0 ng/mL · ▼ 73% vs basal</div>
+                                <div class="pm2-tv-body">Respuesta esperada al triplete. Nadir aún no alcanzado. Source: <span class="pm2-mono">biomarker_longitudinal</span>.</div>
+                            </div>
+
+                            <div class="pm2-tv-item" data-type="img">
+                                <div class="pm2-tv-head">
+                                    <span class="pm2-state-chip" style="background:rgba(168,87,232,.18);color:#d8b4fe;border-color:rgba(168,87,232,.4)">Imaging</span>
+                                    <span class="pm2-tv-date">2024-12-10</span>
+                                </div>
+                                <div class="pm2-tv-title">CT + bone scan · respuesta parcial</div>
+                                <div class="pm2-tv-body">Reducción carga ósea · sin nuevas lesiones. Reconfirma estado M1 (high-volume).</div>
+                            </div>
+
+                            <div class="pm2-tv-item" data-type="event">
+                                <div class="pm2-tv-head">
+                                    <span class="pm2-state-chip pm2-state-chip--success">PSA · NADIR</span>
+                                    <span class="pm2-tv-date">2025-04-12 · L1 mes 9.2</span>
+                                </div>
+                                <div class="pm2-tv-title">PSA nadir = 2.1 ng/mL · ▼ 95.3% vs basal · PSA50/90 ✓</div>
+                                <div class="pm2-tv-body">Time-to-nadir 9.2 m. Inicia ventana <strong style="color:#f0fbff">duration_response</strong>.</div>
+                            </div>
+
+                            <div class="pm2-tv-item" data-type="gate">
+                                <div class="pm2-tv-head">
+                                    <span class="pm2-gate-badge" data-severity="soft_warning">G47 soft_warning</span>
+                                    <span class="pm2-tv-date">2025-06-18</span>
+                                </div>
+                                <div class="pm2-tv-title">PSA flare detectado · pseudoprogresión probable</div>
+                                <div class="pm2-tv-body">PSA 3.4 (subida +62% desde nadir, &lt;12 sem post-ARPI re-escalation). Sistema flagged para no interpretar como BCR.</div>
+                            </div>
+
+                            <div class="pm2-tv-item">
+                                <div class="pm2-tv-head">
+                                    <span class="pm2-state-chip pm2-state-chip--warn">PSA progresión</span>
+                                    <span class="pm2-tv-date">2025-10-20 · L1 mes 16</span>
+                                </div>
+                                <div class="pm2-tv-title">Progresión PSA confirmada · L1 → L2</div>
+                                <div class="pm2-tv-body">3 mediciones ascendentes consecutivas. PSADT post-nadir = 11.2 m. Kinetics → <span class="pm2-kin-badge pm2-kin-progression">progression</span>.</div>
+                            </div>
+
+                            <div class="pm2-tv-item" data-type="tx">
+                                <div class="pm2-tv-head">
+                                    <span class="pm2-state-chip pm2-line-2">Línea 2 inicio</span>
+                                    <span class="pm2-tv-date">2025-11-02</span>
+                                </div>
+                                <div class="pm2-tv-title">Inicio Cabazitaxel · CARD trial logic</div>
+                                <div class="pm2-tv-body">Régimen: <span class="pm2-mono" style="color:var(--pn-accent)">CABAZITAXEL</span> · prior ARPI + Doce → CARD evidence support.</div>
+                            </div>
+
+                            <div class="pm2-tv-item" data-type="gate">
+                                <div class="pm2-tv-head">
+                                    <span class="pm2-gate-badge" data-severity="hard_block">G07 hard_block</span>
+                                    <span class="pm2-tv-date">2025-12-05</span>
+                                </div>
+                                <div class="pm2-tv-title">Hepatotoxicidad detectada · Abi/Niraparib bloqueadas</div>
+                                <div class="pm2-tv-body">ALT 6.2 × LSN. Excluye ADT_ABIRATERONE y NIRAPARIB_ABIRATERONE de futuras líneas.</div>
+                            </div>
+
+                            <div class="pm2-tv-item">
+                                <div class="pm2-tv-head">
+                                    <span class="pm2-state-chip">PSA</span>
+                                    <span class="pm2-tv-date">2026-04-02 · L2 mes 5</span>
+                                </div>
+                                <div class="pm2-tv-title">PSA 3.8 ng/mL · respuesta parcial L2</div>
+                                <div class="pm2-tv-body">Best Δ% L2 = −55.3% (de 8.5 → 3.8). Kinetics → <span class="pm2-kin-badge pm2-kin-partial">partial_response</span>.</div>
+                            </div>
+
+                            <div class="pm2-tv-item" data-type="event">
+                                <div class="pm2-tv-head">
+                                    <span class="pm2-state-chip" style="background:var(--clinical-info-soft);color:#c5e8ff;border-color:var(--clinical-info-edge)">PSMA-PET planificado</span>
+                                    <span class="pm2-tv-date">2026-05-15</span>
+                                </div>
+                                <div class="pm2-tv-title">PSMA-PET para qualificar Lu-177 PSMA-617 (línea 3)</div>
+                                <div class="pm2-tv-body">Si PSMA+ → trial VISION elegibility (mediana cohort PSA 5.9 ng/mL post-Lu).</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head"><h3>Eventos clave (12)</h3></div>
+                    <div class="pm2-tab-card-body">
+                        <div style="display:grid;gap:8px;font-size:.8rem">
+                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip pm2-state-chip--success">9</span>PSA measurements</div>
+                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip pm2-line-2">3</span>Treatment starts/ends</div>
+                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip" style="background:var(--clinical-info-soft);color:#c5e8ff">2</span>Imaging events</div>
+                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip pm2-state-chip--warn">2</span>Gate triggers</div>
+                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip pm2-state-chip--danger">1</span>Clinical milestone (BCR)</div>
+                        </div>
+                        <div style="margin-top:14px;padding:12px;border:1px dashed var(--border-default);border-radius:10px;font-size:.74rem;color:var(--pn-text-muted);line-height:1.5">
+                            Cada evento se asigna automáticamente a la línea activa (auto-asignación por fecha · LXV #63B). Los gates con severity = soft_warning aparecen contextualizados pero NO bloquean tratamiento (anti-misinterpretation pattern · LVIII #62).
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        {# ============ TAB 6 — CDE AUDIT 5 DIMENSIONES ============ #}
+        <section class="pm2-tab-panel" id="tab-audit" role="tabpanel">
+            <div class="pm2-section-h">
+                <h2>Clinical Decision Engine Auditable · 5 dimensiones</h2>
+                <span class="pm2-sub">build_decision_audit() · scorecard 5/5 ⭐⭐⭐⭐⭐ · LXX #65A · FDA SaMD compliance ready</span>
+            </div>
+
+            <div class="pm2-dim-grid">
+                <div class="pm2-dim-card" style="border-top-color:var(--pn-accent)">
+                    <div class="pm2-dim-name">CÓMO</div>
+                    <div class="pm2-dim-stars">★★★★★</div>
+                    <div class="pm2-dim-title">Reasoning chain</div>
+                    <div class="pm2-dim-body">UI muestra el razonamiento completo al médico: estado → régimen preferido → alternativas → policy version.</div>
+                    <div style="margin-top:10px">
+                        <div class="pm2-dim-stat"><span>preferred_regimen</span><strong>ADT_DARO_DOCE</strong></div>
+                        <div class="pm2-dim-stat"><span>decision_quality</span><strong>high</strong></div>
+                        <div class="pm2-dim-stat"><span>alternatives</span><strong>3</strong></div>
+                        <div class="pm2-dim-stat"><span>ranking_policy</span><strong>v3.4</strong></div>
+                    </div>
+                </div>
+
+                <div class="pm2-dim-card" style="border-top-color:var(--clinical-warning)">
+                    <div class="pm2-dim-name">POR QUÉ</div>
+                    <div class="pm2-dim-stars">★★★★★</div>
+                    <div class="pm2-dim-title">Gates pivotales con razón</div>
+                    <div class="pm2-dim-body">Cada gate documentado con clinical_reason + severity 3-tier + override clínico + trial_refs.</div>
+                    <div style="margin-top:10px">
+                        <div class="pm2-dim-stat"><span>active_gates</span><strong>5</strong></div>
+                        <div class="pm2-dim-stat"><span>contraindications</span><strong>2</strong></div>
+                        <div class="pm2-dim-stat"><span>not_recommended</span><strong>4</strong></div>
+                        <div class="pm2-dim-stat"><span>severity 3-tier</span><strong>✓</strong></div>
+                    </div>
+                </div>
+
+                <div class="pm2-dim-card" style="border-top-color:#23D9C8">
+                    <div class="pm2-dim-name">DATOS</div>
+                    <div class="pm2-dim-stars">★★★★★</div>
+                    <div class="pm2-dim-title">Captura estructurada</div>
+                    <div class="pm2-dim-body">input_snapshot completo, PHI-scrubbed, missing/stale flags explícitos para auditoría regulatoria.</div>
+                    <div style="margin-top:10px">
+                        <div class="pm2-dim-stat"><span>input_field_count</span><strong>147</strong></div>
+                        <div class="pm2-dim-stat"><span>missing_critical</span><strong>2</strong></div>
+                        <div class="pm2-dim-stat"><span>stale_inputs</span><strong>1</strong></div>
+                        <div class="pm2-dim-stat"><span>phi_scrubbed</span><strong>true</strong></div>
+                    </div>
+                </div>
+
+                <div class="pm2-dim-card" style="border-top-color:#a855f7">
+                    <div class="pm2-dim-name">EVIDENCIA</div>
+                    <div class="pm2-dim-stars">★★★★★</div>
+                    <div class="pm2-dim-title">Referencias vivas</div>
+                    <div class="pm2-dim-body">37 trials reconocidos · per-gate evidence drill-down a PubMed/CT.gov/DOI · NCCN/EAU vivos.</div>
+                    <div style="margin-top:10px">
+                        <div class="pm2-dim-stat"><span>unique_trial_refs</span><strong>37</strong></div>
+                        <div class="pm2-dim-stat"><span>per_gate_evidence</span><strong>5</strong></div>
+                        <div class="pm2-dim-stat"><span>NCCN</span><strong>v2.2026</strong></div>
+                        <div class="pm2-dim-stat"><span>EAU</span><strong>2026</strong></div>
+                    </div>
+                </div>
+
+                <div class="pm2-dim-card" style="border-top-color:#22FF57">
+                    <div class="pm2-dim-name">VERSIÓN</div>
+                    <div class="pm2-dim-stars">★★★★★</div>
+                    <div class="pm2-dim-title">Reproducibilidad algorítmica</div>
+                    <div class="pm2-dim-body">FAUBOT_RELEASE + module_sha + per-gate YAML SHA garantizan reproducir cualquier decisión histórica.</div>
+                    <div style="margin-top:10px">
+                        <div class="pm2-dim-stat"><span>FAUBOT_RELEASE</span><strong>LXXVII</strong></div>
+                        <div class="pm2-dim-stat"><span>gates_active</span><strong>55</strong></div>
+                        <div class="pm2-dim-stat"><span>module_sha</span><strong class="pm2-mono">a7f3c92e</strong></div>
+                        <div class="pm2-dim-stat"><span>YAML SHAs</span><strong>52 / 55</strong></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pm2-grid-2" style="margin-top:18px">
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head">
+                        <h3>input_snapshot · vista regulatoria (PHI-scrubbed)</h3>
+                        <button class="pm2-icon-btn" title="Exportar JSON" style="margin-left:auto">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5"/></svg>
+                        </button>
+                    </div>
+                    <div style="font-family:ui-monospace,'JetBrains Mono',monospace;font-size:.74rem;line-height:1.65;color:#cbd5e1;background:var(--surface-1);max-height:300px;overflow:auto;padding:14px"><pre style="margin:0;white-space:pre-wrap">{
+  "patient_hash": "PX-7Q42 [PHI-scrubbed]",
+  "diagnosis_date": "2024-06-01",
+  "baseline_psa": 45.0,
+  "current_state_capture": "mcspc_high_volume_sync",
+  "current_state_reconciled": "mcspc_high_volume",
+  "management_track": ["on_arpi", "on_docetaxel"],
+  "castrate_testosterone_status": "confirmed_castrate",
+  "conventional_imaging_status": "M1",
+  "current_regimen": "ADT_DAROLUTAMIDE_DOCETAXEL",
+  "line_of_therapy_number": 2,
+  "prior_treatment_lines_count": 1,
+  "prior_arpi_agent": "darolutamide",
+  "prior_docetaxel_cycles": 6,
+  "psa_history_count": 11,
+  "testosterone_history_count": 4,
+  "alt_value_x_uln": 6.2,
+  "_audit": {
+    "phi_scrubbed": true,
+    "missing_critical": ["HRR_status", "ECOG_PS"],
+    "stale": ["imaging_date >90d"]
+  }
+}</pre></div>
+                </div>
+
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head"><h3>Acciones de auditoría</h3></div>
+                    <div class="pm2-tab-card-body" style="display:flex;gap:10px;flex-wrap:wrap">
+                        <button class="pm2-btn pm2-btn--primary">📄 Exportar audit dossier (PDF)</button>
+                        <button class="pm2-btn pm2-btn--ghost">⬇ Descargar JSON completo</button>
+                        <button class="pm2-btn pm2-btn--ghost">▶ Reproducir decisión en sandbox</button>
+                        <button class="pm2-btn pm2-btn--danger">⚠ Solicitar override clínico</button>
+                        <div style="width:100%;margin-top:6px;padding-top:10px;border-top:1px dashed var(--border-default);font-size:.72rem;color:var(--pn-text-muted)">
+                            Toda exportación queda registrada en <span class="pm2-mono" style="color:var(--pn-accent)">audit_log_dashboard</span> con timestamp + user + FAUBOT_RELEASE para trazabilidad regulatoria FDA SaMD / EMA MDR.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        {# ============ TAB 7 — VERSIONADO ============ #}
+        <section class="pm2-tab-panel" id="tab-version" role="tabpanel">
+            <div class="pm2-grid-4" style="margin-bottom:18px">
+                <div class="pm2-tab-card"><div class="pm2-tab-card-body">
+                    <div class="pm2-kicker">FAUBOT_RELEASE</div>
+                    <div class="pm2-mono" style="font-size:1.2rem;font-weight:800;color:#f0fbff;margin:6px 0">2026-04-26 LXXVII</div>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted)">Bumpeado 2026-04-26 · iter #67D</div>
+                </div></div>
+                <div class="pm2-tab-card"><div class="pm2-tab-card-body">
+                    <div class="pm2-kicker">gates_active_count</div>
+                    <div style="font-size:1.5rem;font-weight:800;color:var(--pn-accent);margin:6px 0;font-feature-settings:'tnum'">55</div>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted)">52 YAML + 3 Python · 4 soft_warning</div>
+                </div></div>
+                <div class="pm2-tab-card"><div class="pm2-tab-card-body">
+                    <div class="pm2-kicker">module_sha (head)</div>
+                    <div class="pm2-mono" style="font-size:1.05rem;font-weight:700;color:#f0fbff;margin:6px 0">a7f3c92e8b41</div>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted)">pivotal_contraindication_gates.py</div>
+                </div></div>
+                <div class="pm2-tab-card"><div class="pm2-tab-card-body">
+                    <div class="pm2-kicker">tests dedicados</div>
+                    <div style="font-size:1.5rem;font-weight:800;color:#22FF57;margin:6px 0;font-feature-settings:'tnum'">3902</div>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted)">+222 entre #65A → #67D</div>
+                </div></div>
+            </div>
+
+            <div class="pm2-grid-3-2">
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head">
+                        <h3>Active gate codes · per-gate YAML SHA</h3>
+                        <span class="pm2-head-meta">52 / 55 yaml-loaded</span>
+                    </div>
+                    <div style="padding:0;max-height:480px;overflow-y:auto">
+                        <table class="pm2-tbl">
+                            <thead><tr><th>Code</th><th>Class label</th><th>Severity</th><th>YAML SHA</th><th>Since</th></tr></thead>
+                            <tbody>
+                                <tr><td><span class="pm2-gate-code">G07</span></td><td>Hepatic toxicity contraindication</td><td><span class="pm2-gate-badge" data-severity="hard_block">hard_block</span></td><td class="pm2-mono">e8a9f12c</td><td>LXII</td></tr>
+                                <tr><td><span class="pm2-gate-code">G14</span></td><td>HRR test recommendation</td><td><span class="pm2-gate-badge" data-severity="informational">informational</span></td><td class="pm2-mono">b3c7d401</td><td>LV</td></tr>
+                                <tr><td><span class="pm2-gate-code">G29</span></td><td>NYHA III–IV enza warning</td><td><span class="pm2-gate-badge" data-severity="hard_block">hard_block</span></td><td class="pm2-mono">f1d203ae</td><td>LIX</td></tr>
+                                <tr><td><span class="pm2-gate-code">G47</span></td><td>PSA flare ARPI pseudoprogression</td><td><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></td><td class="pm2-mono">c7e91802</td><td>LVIII #62</td></tr>
+                                <tr><td><span class="pm2-gate-code">G53</span></td><td>BCR aggressive post-RP</td><td><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></td><td class="pm2-mono">a912fb38</td><td>LXIV #63A</td></tr>
+                                <tr><td><span class="pm2-gate-code">G54</span></td><td>PSA bounce post-RT</td><td><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></td><td class="pm2-mono">d4e02c19</td><td>LXIV #63A</td></tr>
+                                <tr><td><span class="pm2-gate-code">G55</span></td><td>m0CRPC PSADT-driven ARPI</td><td><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></td><td class="pm2-mono">9b1afe70</td><td>LXIV #63A</td></tr>
+                                <tr><td><span class="pm2-gate-code">G19</span></td><td>Cabazitaxel post-Doce/ARPI</td><td><span class="pm2-gate-badge" data-severity="informational">informational</span></td><td class="pm2-mono">82e3a514</td><td>LIV</td></tr>
+                                <tr><td colspan="5" style="text-align:center;color:var(--pn-text-muted);font-style:italic;padding:16px">+ 47 gates más (catálogo completo ver versioning_dashboard)</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head"><h3>Changelog (últimas 10 releases)</h3></div>
+                    <div style="padding:0;max-height:480px;overflow-y:auto">
+                        {% for r in [
+                            ("LXXVII", "2026-04-26", "Demo v2 ProstaMed Clinical Intelligence (Mayo/Epic re-skin) + intake con live staging classifier", "+25", "#67D"),
+                            ("LXXVI",  "2026-04-26", "🚨 Genomic Critical Gates (HRR HARD_BLOCK pre-PARP + AR-V7 + CDK12 + HRD comprehensive)", "+22", "#67B"),
+                            ("LXXV",   "2026-04-26", "🩺 RP vs RT Subspecialty (5 nuevos gates 56-60 + SVI MSKCC + RT modality scoring)", "+25", "#67A"),
+                            ("LXXIV",  "2026-04-26", "♿ Mobile fix (0 overflow!) + WCAG 2.4.7 focus indicators + skip-to-content", "+20", "#66C"),
+                            ("LXXIII", "2026-04-26", "♿ Real Playwright + WCAG AA validated (0 violations) + Mobile responsive", "+20", "#66B"),
+                            ("LXXII",  "2026-04-26", "🛡️ Cross-domain integration + E2E HTTP smoke + Performance baseline", "+25", "#66A"),
+                            ("LXXI",   "2026-04-26", "UI exposure de #65A: per-gate evidence widget + cohort comparison panel", "+20", "#65B"),
+                            ("LXX",    "2026-04-26", "🏆 Decision audit endpoint + per-gate evidence drill-down + versioning automation", "+25", "#65A"),
+                            ("LXIX",   "2026-04-26", "Frontend wiring de #64A: drill-down panel + cohort overlay + combined timeline", "+20", "#64B"),
+                            ("LXVIII", "2026-04-26", "Forecast per-line + Cohort overlay + Combined timeline (backend)", "+30", "#64A"),
+                        ] %}
+                        <div style="padding:10px 16px;border-bottom:1px solid var(--border-subtle){% if loop.first %};background:linear-gradient(90deg,var(--clinical-info-soft),transparent){% endif %}">
+                            <div class="pm2-mono" style="font-size:.75rem;color:var(--pn-accent);font-weight:700">{{ r[0] }} · {{ r[1] }}</div>
+                            <div style="font-size:.82rem;font-weight:600;color:#f0fbff;margin:2px 0">{{ r[2] }}</div>
+                            <div style="font-size:.7rem;color:var(--pn-text-muted)">{{ r[3] }} tests · Iter {{ r[4] }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        {# ============ TAB 8 — INTAKE LONGITUDINAL ============ #}
+        <section class="pm2-tab-panel" id="tab-intake" role="tabpanel">
+            <div class="pm2-section-h">
+                <h2>Intake longitudinal · widgets multi-row (#63C)</h2>
+                <span class="pm2-sub">PSA history · Testosterone history · Prior treatment lines · auto-baseline PSA point a torre (#63A)</span>
+            </div>
+
+            <div class="pm2-grid-2">
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head">
+                        <h3>PSA history · 11 rows</h3>
+                        <button class="pm2-icon-btn" style="margin-left:auto"><svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14M5 12h14"/></svg></button>
+                    </div>
+                    <div style="padding:0;max-height:340px;overflow-y:auto">
+                        <table class="pm2-tbl">
+                            <thead><tr><th>Fecha</th><th>Valor</th><th>Assay</th><th>Context</th><th>Source</th></tr></thead>
+                            <tbody>
+                                <tr><td>2024-06-01</td><td class="pm2-num">45.0</td><td>Beckman</td><td>basal Dx</td><td><span class="pm2-state-chip pm2-state-chip--success" style="font-size:.62rem">auto-baseline LXIV</span></td></tr>
+                                <tr><td>2024-09-01</td><td class="pm2-num">12.0</td><td>Beckman</td><td>L1 mes 3</td><td>biomarker_long</td></tr>
+                                <tr><td>2024-12-15</td><td class="pm2-num">5.6</td><td>Beckman</td><td>L1 mes 6</td><td>biomarker_long</td></tr>
+                                <tr><td>2025-04-12</td><td class="pm2-num">2.1</td><td>Beckman</td><td><strong style="color:var(--clinical-success)">NADIR L1</strong></td><td>biomarker_long</td></tr>
+                                <tr><td>2025-06-18</td><td class="pm2-num">3.4</td><td>Beckman</td><td>flare ARPI?</td><td>biomarker_long</td></tr>
+                                <tr><td>2025-08-10</td><td class="pm2-num">5.2</td><td>Beckman</td><td>progresión?</td><td>biomarker_long</td></tr>
+                                <tr><td>2025-10-20</td><td class="pm2-num">8.5</td><td>Beckman</td><td><strong style="color:var(--clinical-warning)">progresión L1</strong></td><td>biomarker_long</td></tr>
+                                <tr><td>2025-11-02</td><td class="pm2-num">8.5</td><td>Beckman</td><td>baseline L2</td><td>biomarker_long</td></tr>
+                                <tr><td>2025-12-10</td><td class="pm2-num">5.4</td><td>Beckman</td><td>L2 mes 1</td><td>biomarker_long</td></tr>
+                                <tr><td>2026-02-05</td><td class="pm2-num">4.0</td><td>Beckman</td><td>L2 mes 3</td><td>biomarker_long</td></tr>
+                                <tr><td>2026-04-02</td><td class="pm2-num">3.8</td><td>Beckman</td><td>L2 mes 5</td><td>biomarker_long</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head"><h3>Testosterone history · 4 rows</h3></div>
+                    <div style="padding:0">
+                        <table class="pm2-tbl">
+                            <thead><tr><th>Fecha</th><th>Valor</th><th>Status</th></tr></thead>
+                            <tbody>
+                                <tr><td>2024-06-01</td><td class="pm2-num">512 ng/dL</td><td><span class="pm2-state-chip">pre-ADT</span></td></tr>
+                                <tr><td>2024-09-15</td><td class="pm2-num">28 ng/dL</td><td><span class="pm2-state-chip pm2-state-chip--success">castrate</span></td></tr>
+                                <tr><td>2025-04-12</td><td class="pm2-num">15 ng/dL</td><td><span class="pm2-state-chip pm2-state-chip--success">confirmed_castrate</span></td></tr>
+                                <tr><td>2026-04-02</td><td class="pm2-num">18 ng/dL</td><td><span class="pm2-state-chip pm2-state-chip--success">confirmed_castrate</span></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="pm2-tab-card" style="grid-column:1/-1">
+                    <div class="pm2-tab-card-head">
+                        <h3>Prior treatment lines · widget multi-row (#63C)</h3>
+                        <span class="pm2-head-meta">prior_treatment_lines_count = 1 · most_recent_prior_line populado</span>
+                    </div>
+                    <div style="padding:0">
+                        <table class="pm2-tbl">
+                            <thead>
+                                <tr><th>L#</th><th>drug_scheme (canonical)</th><th>Inicio</th><th>Fin</th><th>Best Δ%</th><th>Reason for change</th><th>Kinetics</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="pm2-state-chip pm2-line-1">L1</span></td>
+                                    <td><span class="pm2-mono">ADT_DAROLUTAMIDE_DOCETAXEL</span></td>
+                                    <td>2024-06-15</td>
+                                    <td>2025-10-20</td>
+                                    <td class="pm2-num" style="color:var(--clinical-success);font-weight:700">−95.3%</td>
+                                    <td>PSA progression confirmed (3 ascending)</td>
+                                    <td><span class="pm2-kin-badge pm2-kin-progression">progression</span></td>
+                                </tr>
+                                <tr>
+                                    <td><span class="pm2-state-chip pm2-line-2">L2 actual</span></td>
+                                    <td><span class="pm2-mono">CABAZITAXEL</span></td>
+                                    <td>2025-11-02</td>
+                                    <td>—</td>
+                                    <td class="pm2-num" style="color:var(--clinical-success);font-weight:700">−55.3%</td>
+                                    <td>—</td>
+                                    <td><span class="pm2-kin-badge pm2-kin-partial">partial_response</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div style="padding:14px;background:rgba(15,23,42,0.6);border-top:1px solid var(--border-default);font-size:.72rem;color:var(--pn-text-muted);line-height:1.5">
+                            ✓ Auto-asignación PSA point ↔ treatment line por fecha (LXV #63B). Cada PSA sample se etiqueta con <span class="pm2-mono" style="color:var(--pn-accent)">treatment_line_number</span> + <span class="pm2-mono" style="color:var(--pn-accent)">treatment_line_label</span> + <span class="pm2-mono" style="color:var(--pn-accent)">treatment_band_index</span> + <span class="pm2-mono" style="color:var(--pn-accent)">treatment_color</span>. Ver chart en <a href="#" onclick="pm2ShowTab('psa');return false" style="color:var(--pn-accent);text-decoration:underline">PSA Compass →</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        {# ============ TAB 9 — CONSENTIMIENTO & FIRMA ============ #}
+        <section class="pm2-tab-panel" id="tab-consent" role="tabpanel">
+            <div class="pm2-section-h">
+                <h2>Consentimiento informado &amp; firma electrónica</h2>
+                <span class="pm2-sub">Backend: <span class="pm2-mono">consent_versions</span> · <span class="pm2-mono">patient_consents</span> · <span class="pm2-mono">consent_signature_evidence</span> · alineado con HIPAA + GDPR + LFPDPPP MX</span>
+            </div>
+
+            <div class="pm2-grid-4" style="margin-bottom:18px">
+                <div class="pm2-tab-card" style="border-top:3px solid var(--clinical-success)"><div class="pm2-tab-card-body">
+                    <div class="pm2-kicker">status</div>
+                    <div style="font-size:1.4rem;font-weight:800;color:var(--clinical-success);margin:6px 0">signed ✓</div>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted)">vigente · vence 2027-02-12 (287 d)</div>
+                </div></div>
+                <div class="pm2-tab-card"><div class="pm2-tab-card-body">
+                    <div class="pm2-kicker">consent_version_code</div>
+                    <div class="pm2-mono" style="font-size:1.05rem;font-weight:700;color:#f0fbff;margin:6px 0">PROSTAMED_CONSENT_v3.2</div>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted)">effective_at 2026-03-01 · active=true</div>
+                </div></div>
+                <div class="pm2-tab-card"><div class="pm2-tab-card-body">
+                    <div class="pm2-kicker">content_hash (SHA-256)</div>
+                    <div class="pm2-mono" style="font-size:.78rem;font-weight:700;color:#f0fbff;margin:6px 0;word-break:break-all">4f3c91d8b27af04c…a7e2b85f019c</div>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted)">verificable contra evidence_html</div>
+                </div></div>
+                <div class="pm2-tab-card"><div class="pm2-tab-card-body">
+                    <div class="pm2-kicker">signed_at</div>
+                    <div style="font-size:1.05rem;font-weight:700;margin:6px 0;color:#f0fbff">2026-03-12 14:32</div>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted)">CST · FAUBOT_RELEASE LXVIII</div>
+                </div></div>
+            </div>
+
+            <div class="pm2-grid-3-2">
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head">
+                        <h3>
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--pn-accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></svg>
+                            Texto firmado · v3.2 (snapshot inmutable)
+                        </h3>
+                        <button class="pm2-icon-btn" title="Descargar PDF" style="margin-left:auto" onclick="alert('Descargar evidence_html como PDF (mockup)')">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                        </button>
+                    </div>
+                    <div class="pm2-tab-card-body" style="max-height:400px;overflow-y:auto;font-size:.82rem;line-height:1.65;color:var(--pn-text-muted)">
+                        <p><strong style="color:#f0fbff">1. Identidad y propósito.</strong> El paciente PX-7Q42 autoriza a ProstaMed (titular del Clinical Decision Engine Auditable, FAUBOT_RELEASE LXVIII al momento de la firma) a registrar, procesar y conservar sus datos clínicos derivados del seguimiento de cáncer de próstata.</p>
+                        <p><strong style="color:#f0fbff">2. Ámbitos de uso autorizados.</strong> El paciente otorga consentimiento <em>granular</em> sobre los siguientes usos (cada uno requiere check independiente):</p>
+                        <ul style="margin:0;padding-left:18px">
+                            <li><strong style="color:#cbd5e1">Atención clínica primaria</strong> — uso de los datos por su médico tratante para diagnóstico, tratamiento y seguimiento.</li>
+                            <li><strong style="color:#cbd5e1">Procesamiento por motor CDE / IA</strong> — evaluación por las 55 reglas pivotales (gates) y modelos de pronóstico (PSA forecast, kinetics per-line, cohort overlay).</li>
+                            <li><strong style="color:#cbd5e1">Comparación poblacional con cohortes pivotales</strong> — uso anonimizado contra medianas publicadas (CHAARTED, ARASENS, PROfound, VISION, …).</li>
+                            <li><strong style="color:#cbd5e1">Investigación secundaria</strong> — re-uso anonimizado para estudios retrospectivos y validación de algoritmos (revocable en cualquier momento).</li>
+                        </ul>
+                        <p><strong style="color:#f0fbff">3. Firma electrónica avanzada.</strong> El trazo capturado en el panel adjunto se almacena en <span class="pm2-mono" style="color:var(--pn-accent)">consent_signature_evidence.signature_data_url</span> como PNG codificado base64. Sobre el conjunto (texto + ámbitos + nombre del firmante + signature data URL + timestamp + FAUBOT_RELEASE) se calcula un hash SHA-256 (<span class="pm2-mono" style="color:var(--pn-accent)">content_hash</span>) que sella la integridad de la evidencia.</p>
+                        <p><strong style="color:#f0fbff">4. Derechos ARCO (LFPDPPP MX) / GDPR.</strong> El paciente conserva el derecho de Acceso, Rectificación, Cancelación y Oposición sobre sus datos. Puede revocar este consentimiento en cualquier momento (botón "Revocar consentimiento"). La revocación queda registrada en el <em>audit trail</em> sin destruir el histórico clínico mínimo legalmente requerido.</p>
+                        <p><strong style="color:#f0fbff">5. Vigencia y renovación.</strong> Este consentimiento es válido por 365 días a partir de <span class="pm2-mono" style="color:var(--pn-accent)">signed_at</span>. Pasado el período, el sistema solicitará renovación automática.</p>
+                        <p style="font-size:.7rem;color:var(--pn-text-soft);font-style:italic">Texto íntegro almacenado en <span class="pm2-mono">consent_versions.consent_text</span> con snapshot HTML en <span class="pm2-mono">consent_versions.html_snapshot</span>.</p>
+                    </div>
+                </div>
+
+                <div class="pm2-tab-card">
+                    <div class="pm2-tab-card-head"><h3>Ámbitos autorizados &amp; firma</h3></div>
+                    <div class="pm2-tab-card-body" style="display:flex;flex-direction:column;gap:14px">
+                        <div>
+                            <div class="pm2-kicker" style="margin-bottom:8px">Tipos de uso (granular)</div>
+                            <div style="display:flex;flex-direction:column;gap:8px">
+                                <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--clinical-success-soft);border:1px solid var(--clinical-success-edge);border-radius:8px;cursor:pointer">
+                                    <input type="checkbox" checked disabled>
+                                    <div style="flex:1">
+                                        <div style="font-weight:600;font-size:.78rem;color:#f0fbff">Atención clínica primaria</div>
+                                        <div style="font-size:.7rem;color:var(--pn-text-muted)">Obligatorio · firmado 2026-03-12</div>
+                                    </div>
+                                    <span class="pm2-state-chip pm2-state-chip--success">✓</span>
+                                </label>
+                                <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--clinical-success-soft);border:1px solid var(--clinical-success-edge);border-radius:8px;cursor:pointer">
+                                    <input type="checkbox" checked>
+                                    <div style="flex:1">
+                                        <div style="font-weight:600;font-size:.78rem;color:#f0fbff">Procesamiento por CDE / IA</div>
+                                        <div style="font-size:.7rem;color:var(--pn-text-muted)">55 gates · forecast · kinetics</div>
+                                    </div>
+                                    <span class="pm2-state-chip pm2-state-chip--success">✓</span>
+                                </label>
+                                <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--clinical-success-soft);border:1px solid var(--clinical-success-edge);border-radius:8px;cursor:pointer">
+                                    <input type="checkbox" checked>
+                                    <div style="flex:1">
+                                        <div style="font-weight:600;font-size:.78rem;color:#f0fbff">Comparación con cohortes pivotales</div>
+                                        <div style="font-size:.7rem;color:var(--pn-text-muted)">Anonimizado · 11 trials</div>
+                                    </div>
+                                    <span class="pm2-state-chip pm2-state-chip--success">✓</span>
+                                </label>
+                                <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:8px;cursor:pointer">
+                                    <input type="checkbox">
+                                    <div style="flex:1">
+                                        <div style="font-weight:600;font-size:.78rem;color:#f0fbff">Investigación secundaria</div>
+                                        <div style="font-size:.7rem;color:var(--pn-text-muted)">Opcional · revocable</div>
+                                    </div>
+                                    <span class="pm2-state-chip">○</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                                <div class="pm2-kicker">Firma del paciente</div>
+                                <button class="pm2-btn pm2-btn--ghost" style="font-size:.7rem;padding:4px 10px;min-height:28px" onclick="pm2ClearSignature()">Limpiar</button>
+                            </div>
+                            <div style="background:#f4f7fa;border:2px dashed var(--clinical-info-edge);border-radius:10px;padding:8px">
+                                <canvas id="sigCanvas" width="520" height="160" style="width:100%;height:160px;background:white;border-radius:6px;cursor:crosshair;touch-action:none;display:block"></canvas>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+                                <input id="sigName" type="text" placeholder="Nombre completo del paciente" value="PX-7Q42 (anonimizado)" style="flex:1;padding:8px 12px;border:1px solid var(--border-strong);border-radius:8px;font-size:.78rem;background:var(--surface-1);color:#f0fbff;font-family:inherit">
+                                <button class="pm2-btn pm2-btn--primary" onclick="pm2SignConsent()">Firmar &amp; sellar</button>
+                            </div>
+                            <div id="sigStatus" style="margin-top:8px;font-size:.7rem;color:var(--pn-text-muted)">
+                                Estado: <span class="pm2-state-chip pm2-state-chip--success">✓ firmado el 2026-03-12 14:32</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="pm2-kicker" style="margin-bottom:6px">Clínico responsable (testigo)</div>
+                            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface-3);border-radius:10px;border:1px solid var(--border-default)">
+                                <span class="pm2-user-avatar">FB</span>
+                                <div style="flex:1">
+                                    <div style="font-weight:700;font-size:.82rem;color:#f0fbff">Dr. Faudes Bautista</div>
+                                    <div style="font-size:.7rem;color:var(--pn-text-muted)">Cédula 12345678 · Urología-Oncológica · firmado 2026-03-12 14:33</div>
+                                </div>
+                                <span class="pm2-state-chip pm2-state-chip--success">✓</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pm2-tab-card" style="margin-top:18px">
+                <div class="pm2-tab-card-head">
+                    <h3>Audit trail · eventos del consentimiento</h3>
+                    <span class="pm2-head-meta">trazabilidad regulatoria FDA SaMD / EMA MDR / LFPDPPP</span>
+                </div>
+                <div style="padding:0">
+                    <table class="pm2-tbl">
+                        <thead>
+                            <tr><th>Timestamp</th><th>Evento</th><th>Versión</th><th>signer_name</th><th>content_hash</th><th>FAUBOT</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="pm2-mono">2024-06-01 09:14</td>
+                                <td><span class="pm2-state-chip pm2-state-chip--success">signed</span></td>
+                                <td class="pm2-mono">v2.8</td>
+                                <td>PX-7Q42 + Dr. F.Bautista</td>
+                                <td class="pm2-mono">a812…39fa</td>
+                                <td class="pm2-mono">XLVI</td>
+                            </tr>
+                            <tr>
+                                <td class="pm2-mono">2025-09-04 11:02</td>
+                                <td><span class="pm2-state-chip" style="background:var(--clinical-info-soft);color:#c5e8ff">superseded</span></td>
+                                <td class="pm2-mono">v2.8 → v3.0</td>
+                                <td>system (renovación NCCN v2.2025)</td>
+                                <td class="pm2-mono">b71d…02e8</td>
+                                <td class="pm2-mono">LX</td>
+                            </tr>
+                            <tr>
+                                <td class="pm2-mono">2025-09-04 11:05</td>
+                                <td><span class="pm2-state-chip pm2-state-chip--success">signed</span></td>
+                                <td class="pm2-mono">v3.0</td>
+                                <td>PX-7Q42 + Dr. F.Bautista</td>
+                                <td class="pm2-mono">7d0c…e1aa</td>
+                                <td class="pm2-mono">LX</td>
+                            </tr>
+                            <tr>
+                                <td class="pm2-mono">2026-03-01 08:00</td>
+                                <td><span class="pm2-state-chip" style="background:var(--clinical-info-soft);color:#c5e8ff">superseded</span></td>
+                                <td class="pm2-mono">v3.0 → v3.2</td>
+                                <td>system (FAUBOT_RELEASE LXVIII)</td>
+                                <td class="pm2-mono">2c1b…48d3</td>
+                                <td class="pm2-mono">LXVIII</td>
+                            </tr>
+                            <tr style="background:var(--clinical-success-soft)">
+                                <td class="pm2-mono">2026-03-12 14:32</td>
+                                <td><span class="pm2-state-chip pm2-state-chip--success">signed (vigente)</span></td>
+                                <td class="pm2-mono">v3.2</td>
+                                <td>PX-7Q42 + Dr. F.Bautista</td>
+                                <td class="pm2-mono">4f3c91d8…a7e2b85f019c</td>
+                                <td class="pm2-mono">LXVIII</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div style="padding:12px 16px;background:rgba(15,23,42,0.6);border-top:1px solid var(--border-default);font-size:.72rem;color:var(--pn-text-muted);line-height:1.5">
+                        Cada evento se registra inmutablemente en <span class="pm2-mono" style="color:var(--pn-accent)">consent_signature_evidence.audit_metadata_json</span> con IP, user-agent, geolocalización aproximada (si autorizada) y hash de la sesión. La supersession nunca borra el histórico — sólo marca la firma anterior como reemplazada para preservar la cadena de custodia.
+                    </div>
+                </div>
+            </div>
+
+            <div class="pm2-grid-3" style="margin-top:18px">
+                <div class="pm2-tab-card"><div class="pm2-tab-card-body" style="text-align:center">
+                    <button class="pm2-btn pm2-btn--primary" style="width:100%;padding:12px 18px">⬇ Descargar PDF firmado</button>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted);margin-top:6px">consent_signature_evidence.evidence_html → PDF/A</div>
+                </div></div>
+                <div class="pm2-tab-card"><div class="pm2-tab-card-body" style="text-align:center">
+                    <button class="pm2-btn pm2-btn--ghost" style="width:100%;padding:12px 18px" onclick="alert('Renovar consent (mockup)')">↻ Renovar consentimiento</button>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted);margin-top:6px">requerido a los 365 d o cambio de versión activa</div>
+                </div></div>
+                <div class="pm2-tab-card" style="border-left:3px solid var(--clinical-critical)"><div class="pm2-tab-card-body" style="text-align:center">
+                    <button class="pm2-btn pm2-btn--danger" style="width:100%;padding:12px 18px" onclick="confirm('¿Revocar consentimiento? Quedará registrado en audit trail.') && alert('Revocación registrada (mockup)')">⊘ Revocar consentimiento (ARCO)</button>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted);margin-top:6px">derecho ARCO · queda en audit trail</div>
+                </div></div>
+            </div>
+        </section>
+
+    </main>
+</div>
+
+{# ── Drill-down lateral panel (compartido) ── #}
+<aside id="pm2-drilldown" class="pm2-drilldown" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="pm2-drilldown-head">
+        <div style="min-width:0;flex:1">
+            <div class="pm2-drilldown-context">PSA COMPASS · DRILL</div>
+            <div class="pm2-drilldown-title" data-drilldown-title>Drill-down · Línea</div>
+        </div>
+        <button class="pm2-btn pm2-btn--ghost pm2-btn--icon" type="button" data-drilldown-close aria-label="Cerrar">
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+    </div>
+    <div class="pm2-drilldown-body" data-drilldown-body>
+        <h4>Per-line analytics</h4>
+        <div class="pm2-kv"><span>regimen</span><strong>ADT_DAROLUTAMIDE_DOCETAXEL</strong></div>
+        <div class="pm2-kv"><span>baseline_psa</span><strong>45.0 ng/mL</strong></div>
+        <div class="pm2-kv"><span>nadir_psa</span><strong>2.1 ng/mL</strong></div>
+        <div class="pm2-kv"><span>best_pct_change</span><strong style="color:var(--clinical-success)">−95.3%</strong></div>
+        <div class="pm2-kv"><span>psa50_achieved</span><strong>true</strong></div>
+        <div class="pm2-kv"><span>time_to_nadir_months</span><strong>9.2</strong></div>
+        <div class="pm2-kv"><span>duration_response_months</span><strong>14.6</strong></div>
+        <div class="pm2-kv"><span>psadt_during_progression</span><strong>11.2</strong></div>
+        <div class="pm2-kv"><span>kinetics_classification</span><strong><span class="pm2-kin-badge pm2-kin-progression">progression</span></strong></div>
+        <div class="pm2-kv"><span>point_count</span><strong>7</strong></div>
+
+        <h4>Forecast horizons (per-line log-linear)</h4>
+        <div class="pm2-kv"><span>3m esperado</span><strong>4.1 (3.6–4.7)</strong></div>
+        <div class="pm2-kv"><span>6m esperado</span><strong>5.0 (4.0–6.4)</strong></div>
+        <div class="pm2-kv"><span>12m esperado</span><strong>7.4 (5.2–10.5)</strong></div>
+
+        <h4>Cohort comparison · ARASENS</h4>
+        <div class="pm2-kv"><span>Δ PSA mes 6</span><strong style="color:var(--clinical-critical)">+1.2 vs mediana</strong></div>
+        <div class="pm2-kv"><span>Δ duration_response</span><strong style="color:var(--clinical-critical)">−7.5 m vs mediana</strong></div>
+        <div class="pm2-kv"><span>Δ time_to_nadir</span><strong style="color:var(--clinical-critical)">+1.8 m vs mediana</strong></div>
+
+        <h4>Gates contextualizados</h4>
+        <div style="display:flex;flex-direction:column;gap:8px">
+            <div class="pm2-gate-card" data-severity="soft_warning" style="padding:10px">
+                <div class="pm2-gate-card-head"><span class="pm2-gate-code">G55</span><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></div>
+                <div class="pm2-gate-msg" style="font-size:.74rem">PSADT 11.2 m supera umbral m0CRPC, pero paciente está en mHSPC L2 → no aplica directamente.</div>
+            </div>
+            <div class="pm2-gate-card" data-severity="soft_warning" style="padding:10px">
+                <div class="pm2-gate-card-head"><span class="pm2-gate-code">G47</span><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></div>
+                <div class="pm2-gate-msg" style="font-size:.74rem">PSA flare detectado en sem 4 post-rotación → no interpretado como progresión real.</div>
+            </div>
+        </div>
+    </div>
+</aside>
+
+{# ── Floating CDE scorecard ── #}
+<div class="pm2-scorecard" role="status">
+    <div>
+        <div class="pm2-sc-lbl">CDE Auditable</div>
+        <div class="pm2-sc-val">Faubot LXXVII · #67D</div>
+    </div>
+    <div>
+        <div class="pm2-sc-lbl">5 dimensiones</div>
+        <div class="pm2-sc-stars">★★★★★</div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/clinical_intelligence_v2.js') }}"></script>
+<script>
+/* ===== Tabs ===== */
+function pm2ShowTab(name) {
+    document.querySelectorAll('.pm2-tab').forEach(t => t.classList.toggle('is-active', t.dataset.tab === name));
+    document.querySelectorAll('.pm2-tab-panel').forEach(p => p.classList.toggle('is-active', p.id === 'tab-' + name));
+    if (name === 'psa' && !window._pm2FullPsa) { renderFullPSA(); window._pm2FullPsa = true; }
+}
+document.querySelectorAll('.pm2-tab').forEach(b => b.addEventListener('click', () => pm2ShowTab(b.dataset.tab)));
+document.addEventListener('keydown', e => {
+    if (e.target.matches('input,textarea,select')) return;
+    const map = {o:'overview', p:'psa', g:'gates', e:'evidence', t:'timeline', a:'audit', v:'version', i:'intake', c:'consent'};
+    if (map[e.key]) pm2ShowTab(map[e.key]);
+});
+
+/* ===== Drill-down (open with content) ===== */
+function pm2OpenDrill(line) {
+    const panel = document.getElementById('pm2-drilldown');
+    if (!panel) return;
+    panel.querySelector('[data-drilldown-title]').textContent = 'Drill-down · Línea ' + line;
+    panel.classList.add('is-open');
+    panel.setAttribute('aria-hidden', 'false');
+}
+
+/* ===== Horizontal timeline events ===== */
+(function buildHTimeline() {
+    const events = [
+        { left: '4%',  cls:'tx',    label:'Inicio L1 ADT+Daro+Doce', date:'2024-06-15' },
+        { left: '12%', cls:'psa',   label:'PSA 12.0 ▼73%', date:'2024-09-01' },
+        { left: '20%', cls:'img',   label:'CT/Bone scan', date:'2024-12-10' },
+        { left: '34%', cls:'psa',   label:'NADIR 2.1', date:'2025-04-12' },
+        { left: '46%', cls:'gate',  label:'G47 PSA flare', date:'2025-06-18' },
+        { left: '60%', cls:'psa',   label:'Progresión 8.5', date:'2025-10-20' },
+        { left: '64%', cls:'tx',    label:'Inicio L2 Cabazitaxel', date:'2025-11-02' },
+        { left: '70%', cls:'gate',  label:'G07 hard_block', date:'2025-12-05' },
+        { left: '88%', cls:'psa',   label:'PSA 3.8 (L2)', date:'2026-04-02' },
+        { left: '95%', cls:'event', label:'PSMA-PET planned', date:'2026-05-15' },
+    ];
+    const track = document.getElementById('timelineHTrack');
+    if (!track) return;
+    events.forEach(e => {
+        const el = document.createElement('div');
+        el.className = 'pm2-timeline-event';
+        el.dataset.cls = e.cls;
+        el.style.left = e.left;
+        el.innerHTML = `<span class="pm2-te-dot"></span><span class="pm2-te-label">${e.label}</span><span class="pm2-te-date">${e.date}</span>`;
+        track.appendChild(el);
+    });
+})();
+
+/* ===== PSA charts (mini + full) ===== */
+const psaDates = ['2024-06-01','2024-09-01','2024-12-15','2025-04-12','2025-06-18','2025-08-10','2025-10-20','2025-11-02','2025-12-10','2026-02-05','2026-04-02'];
+const psaValues = [45.0, 12.0, 5.6, 2.1, 3.4, 5.2, 8.5, 8.5, 5.4, 4.0, 3.8];
+const lineAssign = [1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2];
+const linesColors = { 1: '#1FB8FF', 2: '#7C5CFF' };
+const cohortDates = psaDates.concat(['2026-07-01','2026-10-01']);
+const cohortVals = [45, 18, 8, 3.5, 2.6, 2.3, 2.1, 2.1, 2.05, 2.0, 2.0, 2.0, 2.0];
+const forecastDates = ['2026-04-02','2026-07-02','2026-10-02','2027-04-02'];
+const forecastUpper = [3.8, 4.7, 6.4, 10.5];
+const forecastLower = [3.8, 3.6, 4.0, 5.2];
+const forecastMean = [3.8, 4.1, 5.0, 7.4];
+
+if (window['chartjs-plugin-annotation']) Chart.register(window['chartjs-plugin-annotation']);
+
+function buildDataSets() {
+    return [
+        {
+            label: 'PSA paciente',
+            data: psaDates.map((d, i) => ({ x: d, y: psaValues[i] })),
+            pointBackgroundColor: ctx => linesColors[lineAssign[ctx.dataIndex]] || '#888',
+            pointBorderColor: '#020617', pointBorderWidth: 1.5,
+            pointRadius: 6, pointHoverRadius: 9,
+            borderColor: 'rgba(31,184,255,.45)', borderWidth: 1.6,
+            tension: 0.25,
+            segment: {
+                borderColor: ctx => lineAssign[ctx.p1DataIndex] === 2 ? 'rgba(124,92,255,.55)' : 'rgba(31,184,255,.55)'
+            }
+        },
+        {
+            label: 'ARASENS cohort mediana',
+            data: cohortDates.map((d, i) => ({ x: d, y: cohortVals[i] })),
+            borderColor: 'rgba(168,87,232,.85)', borderWidth: 2, borderDash: [6, 4],
+            pointRadius: 0, tension: 0.4, fill: false
+        },
+        {
+            label: 'Forecast central',
+            data: forecastDates.map((d, i) => ({ x: d, y: forecastMean[i] })),
+            borderColor: 'rgba(31,184,255,.9)', borderWidth: 2, borderDash: [2, 3],
+            pointRadius: 4, pointBackgroundColor: '#1FB8FF',
+            tension: 0.35, fill: false
+        },
+        {
+            label: 'CI 95 upper',
+            data: forecastDates.map((d, i) => ({ x: d, y: forecastUpper[i] })),
+            borderColor: 'rgba(31,184,255,.4)', borderWidth: 1, borderDash: [2, 2],
+            pointRadius: 0, fill: '+1', backgroundColor: 'rgba(31,184,255,.10)', tension: 0.35
+        },
+        {
+            label: 'CI 95 lower',
+            data: forecastDates.map((d, i) => ({ x: d, y: forecastLower[i] })),
+            borderColor: 'rgba(31,184,255,.4)', borderWidth: 1, borderDash: [2, 2],
+            pointRadius: 0, fill: false, tension: 0.35
+        }
+    ];
+}
+
+function commonOpts() {
+    return {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'nearest', intersect: false },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                backgroundColor: 'rgba(2, 6, 23, 0.95)',
+                borderColor: 'rgba(6, 182, 212, 0.4)', borderWidth: 1,
+                titleColor: '#67e8f9', bodyColor: '#f0fbff', padding: 10,
+                callbacks: {
+                    afterLabel: ctx => {
+                        const i = ctx.dataIndex;
+                        if (lineAssign[i] && ctx.dataset.label === 'PSA paciente') return 'Línea ' + lineAssign[i];
+                        return null;
+                    }
+                }
+            },
+            annotation: {
+                annotations: {
+                    bcr: { type: 'line', yMin: 0.2, yMax: 0.2, borderColor: '#dc2626',
+                           borderDash: [4, 4], borderWidth: 1.5,
+                           label: { display: true, content: 'Phoenix BCR (≥nadir+2)', position: 'end',
+                                    backgroundColor: 'rgba(220,38,38,.18)', color: '#fecaca', font: { size: 10, weight: '600' } } },
+                    detect: { type: 'line', yMin: 0.1, yMax: 0.1, borderColor: '#f59e0b',
+                              borderDash: [3, 3], borderWidth: 1, label: { display: false } },
+                    band1: { type: 'box', xMin: '2024-06-15', xMax: '2025-10-20',
+                             backgroundColor: 'rgba(31,184,255,.08)', borderColor: 'rgba(31,184,255,.3)', borderWidth: 1,
+                             label: { display: true, content: 'L1 · ADT+Daro+Doce', position: { x: 'start', y: 'start' },
+                                      backgroundColor: 'rgba(31,184,255,.85)', color: '#020617', font: { size: 10, weight: '700' }, padding: 4 } },
+                    band2: { type: 'box', xMin: '2025-11-02', xMax: '2026-04-02',
+                             backgroundColor: 'rgba(124,92,255,.10)', borderColor: 'rgba(124,92,255,.4)', borderWidth: 1,
+                             label: { display: true, content: 'L2 · Cabazitaxel', position: { x: 'start', y: 'start' },
+                                      backgroundColor: 'rgba(124,92,255,.85)', color: '#020617', font: { size: 10, weight: '700' }, padding: 4 } },
+                    forecast: { type: 'box', xMin: '2026-04-02', xMax: '2027-04-02',
+                                backgroundColor: 'rgba(31,184,255,.05)', borderColor: 'rgba(31,184,255,.25)', borderDash: [2, 3], borderWidth: 1,
+                                label: { display: true, content: 'Forecast 3/6/12m (CI 95%)', position: 'end',
+                                         backgroundColor: 'rgba(31,184,255,.85)', color: '#020617', font: { size: 10, weight: '700' }, padding: 4 } }
+                }
+            }
+        },
+        scales: {
+            x: { type: 'time', time: { unit: 'month', displayFormats: { month: 'MMM yy' } },
+                 grid: { color: 'rgba(30, 41, 59, 0.5)' },
+                 ticks: { color: '#94a3b8', font: { size: 11 } } },
+            y: { type: 'logarithmic', min: 0.05,
+                 grid: { color: 'rgba(30, 41, 59, 0.4)' },
+                 ticks: { color: '#94a3b8', font: { size: 11 },
+                          callback: v => (v >= 1 ? v : v.toFixed(1)) + ' ng/mL' } }
+        },
+        onClick: (e, els) => {
+            if (els.length) { const i = els[0].index; pm2OpenDrill(lineAssign[i] || '?'); }
+        }
+    };
+}
+
+if (document.getElementById('psaMini')) {
+    new Chart(document.getElementById('psaMini'), { type: 'line', data: { datasets: buildDataSets() }, options: commonOpts() });
+}
+function renderFullPSA() {
+    new Chart(document.getElementById('psaFull'), { type: 'line', data: { datasets: buildDataSets() }, options: commonOpts() });
+}
+
+/* ===== Signature pad ===== */
+(function initSignaturePad() {
+    const canvas = document.getElementById('sigCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let drawing = false, hasInk = false;
+    ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#0E2A47';
+
+    function drawDemo() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.beginPath(); ctx.moveTo(80, 100);
+        ctx.bezierCurveTo(120, 40, 160, 140, 200, 80);
+        ctx.bezierCurveTo(220, 60, 240, 130, 270, 70);
+        ctx.bezierCurveTo(290, 30, 320, 120, 360, 90);
+        ctx.bezierCurveTo(390, 70, 410, 110, 440, 80);
+        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(180, 130); ctx.lineTo(420, 130);
+        ctx.strokeStyle = 'rgba(14,42,71,.4)'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.font = '11px ui-monospace, monospace'; ctx.fillStyle = 'rgba(14,42,71,.6)';
+        ctx.fillText('PX-7Q42 · firmado 2026-03-12 14:32 · hash 4f3c91…', 90, 150);
+        ctx.strokeStyle = '#0E2A47'; ctx.lineWidth = 2.4; hasInk = true;
+    }
+    drawDemo();
+
+    function pos(e) {
+        const r = canvas.getBoundingClientRect();
+        const t = e.touches ? e.touches[0] : e;
+        return { x: (t.clientX - r.left) * canvas.width / r.width, y: (t.clientY - r.top) * canvas.height / r.height };
+    }
+    function start(e) { drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+    function move(e) { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); hasInk = true; }
+    function end() { drawing = false; }
+    canvas.addEventListener('mousedown', e => { if (!window._sigCleared) { drawDemo(); window._sigCleared = false; } start(e); });
+    canvas.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+    canvas.addEventListener('touchstart', start, { passive: false });
+    canvas.addEventListener('touchmove', move, { passive: false });
+    window.addEventListener('touchend', end);
+
+    window.pm2ClearSignature = function() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        hasInk = false; window._sigCleared = true;
+        document.getElementById('sigStatus').innerHTML =
+            'Estado: <span class="pm2-state-chip pm2-state-chip--warn">○ pendiente de firma</span>';
+    };
+    window.pm2SignConsent = function() {
+        if (!hasInk) {
+            document.getElementById('sigStatus').innerHTML =
+                'Estado: <span class="pm2-state-chip pm2-state-chip--danger">⚠ debe trazar la firma antes de continuar</span>';
+            return;
+        }
+        const signerName = document.getElementById('sigName').value || 'Anónimo';
+        const dataUrl = canvas.toDataURL('image/png');
+        let hash = 0;
+        for (let i = 0; i < dataUrl.length; i++) hash = ((hash << 5) - hash + dataUrl.charCodeAt(i)) | 0;
+        const fakeSha = ('0000000000000000' + (hash >>> 0).toString(16)).slice(-12) + '…' + Math.random().toString(16).slice(2, 8);
+        const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        document.getElementById('sigStatus').innerHTML =
+            `Estado: <span class="pm2-state-chip pm2-state-chip--success">✓ firmado ${ts}</span> · content_hash <span class="pm2-mono">${fakeSha}</span> · signer: <strong>${signerName}</strong>`;
+    };
+})();
+</script>
+</body>
+</html>

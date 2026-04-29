@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from prostanet.shared.advanced_support_normalizer import normalize_advanced_support_payload
 
 def evaluate_mcspc_low_volume(payload: dict) -> dict:
+    payload = normalize_advanced_support_payload(payload, state="mcspc_low_volume_sync_oligo")
     seizure_risk = str(payload.get("comorbidity_seizure", "0")) == "1"
     cardio_risk = str(payload.get("comorbidity_cardio", "0")) == "1" or str(payload.get("cv_risk_documented", "0")) == "1"
     child_pugh = str(payload.get("child_pugh_score", "A"))
     rt_primary_received = str(payload.get("rt_primary_received", "0")) == "1"
-    ddi_reviewed = str(payload.get("drug_interaction_reviewed", "0")) == "1"
+    ddi_reviewed = str(payload.get("ddi_review_status") or "").strip().lower() == "completed"
     brca2_status = str(payload.get("brca2_status", "Desconocido"))
     hrr_gene = str(payload.get("hrr_gene", "Desconocido"))
     assay_source = str(payload.get("molecular_assay_source", "Desconocida"))
@@ -22,5 +24,6 @@ def evaluate_mcspc_low_volume(payload: dict) -> dict:
         "rezvilutamide_candidate": not seizure_risk,
         "bone_health_complete": str(payload.get("dxa_baseline_done", "0")) == "1" and str(payload.get("calcium_vitd_started", "0")) == "1",
         "bone_protection_started": str(payload.get("bone_protection_started", "0")) == "1",
+        "ddi_review_status": str(payload.get("ddi_review_status") or ""),
         "recommendation": "Prefer systemic doublets and evaluate RT to the primary when the prostate remains untreated.",
     }

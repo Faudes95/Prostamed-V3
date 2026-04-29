@@ -20,6 +20,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from prostanet.domains.clinical_validation.oracle_contracts import (
+    action_contract_matches_texts,
+    build_action_oracle_contract,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -185,17 +190,18 @@ class ClinicalValidationSuite:
             })
 
         # ── Check 2: Recommendations contain expected action ──
-        expected_action = clinical_oracle.get("expected_action_contains", "")
-        if expected_action:
+        action_contract = build_action_oracle_contract(
+            clinical_oracle,
+            fallback_label=str(clinical_oracle.get("expected_action_contains") or ""),
+        )
+        if action_contract.get("display_label"):
             all_recs = _collect_recommendations(agent_result)
-            action_found = any(
-                expected_action.lower() in str(r).lower()
-                for r in all_recs
-            )
+            action_found = action_contract_matches_texts(all_recs, action_contract)
             checks.append({
                 "check": "action_keyword",
                 "passed": action_found,
-                "expected_keyword": expected_action,
+                "expected_keyword": action_contract.get("display_label"),
+                "action_semantic_family": action_contract.get("action_semantic_family"),
                 "recommendations_found": len(all_recs),
             })
 

@@ -1,6 +1,11 @@
+# IEC 62304 §5.5 (Unit verification)
 from __future__ import annotations
 
+from prostanet.domains.clinical_validation.trajectory_catalog import (
+    build_trajectory_catalog,
+)
 from prostanet.domains.clinical_validation.vertical_verification import (
+    _build_treatment_assertions,
     _vertical_from_snapshot,
     run_vertical_verification,
 )
@@ -8,6 +13,7 @@ from prostanet.domains.clinical_validation.vertical_verification import (
 
 def test_run_vertical_verification_returns_seeded_and_live_coverage(app_client):
     client, _ = app_client
+    expected_seeded_cases = len(build_trajectory_catalog())
 
     report = run_vertical_verification(
         app=client.application,
@@ -17,7 +23,7 @@ def test_run_vertical_verification_returns_seeded_and_live_coverage(app_client):
         seed_live_samples_when_missing=True,
     )
 
-    assert report["seeded"]["summary"]["total_cases"] == 51
+    assert report["seeded"]["summary"]["total_cases"] == expected_seeded_cases
     assert report["current_db"]["summary"]["total_cases"] >= 6
     assert report["current_db"]["summary"]["sample_coverage"]["mhspc_first"] >= 1
     assert report["current_db"]["summary"]["sample_coverage"]["diagnostic_to_biopsy_first"] >= 1
@@ -47,6 +53,7 @@ def test_run_vertical_verification_returns_seeded_and_live_coverage(app_client):
 
 def test_vertical_audit_endpoint_returns_report(app_client):
     client, _ = app_client
+    expected_seeded_cases = len(build_trajectory_catalog())
 
     response = client.post(
         "/api/validation/vertical-audit",
@@ -60,7 +67,7 @@ def test_vertical_audit_endpoint_returns_report(app_client):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["success"] is True
-    assert payload["report"]["seeded"]["summary"]["total_cases"] == 51
+    assert payload["report"]["seeded"]["summary"]["total_cases"] == expected_seeded_cases
     assert payload["report"]["current_db"]["summary"]["sample_coverage"]["mhspc_first"] >= 1
 
 
@@ -81,3 +88,31 @@ def test_vertical_snapshot_classifies_post_rt_recurrence_as_post_rt_vertical():
     }
 
     assert _vertical_from_snapshot(snapshot) == "post_rt_salvage_first"
+
+
+def test_vertical_treatment_assertions_keep_persistent_psa_pending_inputs_in_post_prostatectomy():
+    snapshot = {"patient_record": {}, "signals": {"effective_state": "post_prostatectomy"}}
+    bundle = {
+        "post_prostatectomy_course": "persistent_psa",
+        "salvage_window_status": "pending_inputs",
+        "effective_state": "post_prostatectomy",
+    }
+
+    assertions = _build_treatment_assertions(snapshot, bundle=bundle, vertical="post_rp_salvage_first")
+    assertion = next(item for item in assertions if item["key"] == "persistent_psa_pending_inputs_stays_post_prostatectomy")
+
+    assert assertion["passed"] is True
+
+
+def test_vertical_treatment_assertions_promote_persistent_psa_once_salvage_window_is_classified():
+    snapshot = {"patient_record": {}, "signals": {"effective_state": "recurrence_bcr"}}
+    bundle = {
+        "post_prostatectomy_course": "persistent_psa",
+        "salvage_window_status": "open_pending_restaging",
+        "effective_state": "recurrence_bcr",
+    }
+
+    assertions = _build_treatment_assertions(snapshot, bundle=bundle, vertical="post_rp_salvage_first")
+    assertion = next(item for item in assertions if item["key"] == "persistent_psa_decisive_context_promotes_bcr")
+
+    assert assertion["passed"] is True

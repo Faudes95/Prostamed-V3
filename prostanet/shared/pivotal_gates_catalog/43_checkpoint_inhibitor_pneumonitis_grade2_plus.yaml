@@ -1,0 +1,193 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 43: checkpoint_inhibitor_pneumonitis_grade2_plus
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LVII) — Auditoría #54 — Gate YAML-NATIVE.
+#
+# Razón clínica:
+#   Pembrolizumab/nivolumab/atezolizumab (anti-PD-1/PD-L1) tienen WARNING
+#   regulatorio CRÍTICO sobre pneumonitis immune-related (irAE pulmonar).
+#   Mecanismo: desinhibición células T → infiltrado linfocítico T CD8+ en
+#   parénquima pulmonar → daño alveolar difuso (DAD) + neumonía
+#   organizativa (OP) + neumonitis intersticial inespecífica (NSIP).
+#
+#   Datos de KEYNOTE-365 cohort C + KEYNOTE-921 (mCRPC):
+#     - Pneumonitis ANY GRADE: 5.7-6.4% pembrolizumab (vs <1% placebo)
+#     - Pneumonitis G≥2 (sintomática + intervención médica): 2.1-3.2%
+#     - Pneumonitis G≥3 (severa, hospitalización): 0.9-1.5%
+#     - **Mortalidad pneumonitis G≥3 sin tratamiento: 5-10%**
+#       (con esteroides altas dosis + suspensión inmediata: <2%)
+#     - Tiempo medio aparición: 3.1 meses (rango 0.5-13.6)
+#     - Discontinuación PERMANENTE por pneumonitis G≥3: 1.8-2.3%
+#
+#   Threshold canónico (NCCN Immunotherapy Toxicity Management 2024 +
+#   Brahmer JCO 2018 + KEYNOTE protocols):
+#     - Path A: pneumonitis CTCAE G≥2 (sintomática — disnea, tos,
+#       hipoxemia leve; intervención médica indicada; limitando
+#       instrumental ADL)
+#     - Path B: pneumonitis_documented_for_checkpoint_inhibitor flag
+#     - Path C: hipoxemia documented (SpO2 <92% room air) en contexto
+#       checkpoint inhibitor (sospecha clínica fuerte)
+#     - Path D: ground-glass opacities CT scan documentadas (patrón
+#       radiográfico típico irAE pulmonar)
+#
+#   Override: pneumonitis_resolved_for_checkpoint_inhibitor=Sí
+#   (post-resolución completa CTCAE G≤1 + esteroides taper completed
+#   + repeat CT clear + pulmonary endorsement + reintroducción solo
+#   tras evaluación caso-por-caso per NCCN IO Toxicity 2024 §PNEU-1).
+#
+#   Coexistencia con Gates 44+45+46 (eje irAE checkpoint inhibitors
+#   QUÁDRUPLE): pneumonitis (43) + hepatitis (44) + colitis (45) +
+#   endocrinopatías (46). Todos comparten REGIMEN_CODES_CHECKPOINT_
+#   INHIBITORS pero scope clínico distinto. Pacientes pueden disparar
+#   múltiples simultáneamente (irAE poliórgano descrito en 5-10%).
+#
+#   Bloquea: REGIMEN_CODES_CHECKPOINT_INHIBITORS (pembrolizumab + nivolumab
+#   + atezolizumab + combos).
+# ──────────────────────────────────────────────────────────────────────
+
+code: checkpoint_inhibitor_pneumonitis_grade2_plus
+title: "Checkpoint inhibitor × pneumonitis irAE G≥2 (KEYNOTE-365/921 + NCCN IO Toxicity 2024)"
+faubot_added_in: "2026-04-25 LVII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: pneumonitis CTCAE G≥2 (sintomática + intervención médica)
+    - type: numeric_threshold
+      field: pneumonitis_ctcae_grade
+      alias_fields:
+        - pneumonitis_grade
+        - pulmonary_irae_ctcae_grade
+        - ip_ctcae_grade
+        - interstitial_pneumonitis_grade
+      threshold: 2
+    # Path B: flag clínico documentado
+    - type: truthy_flag
+      field: pneumonitis_documented_for_checkpoint_inhibitor
+      alias_fields:
+        - immune_pneumonitis_documented
+        - checkpoint_pneumonitis_documented
+        - irae_pneumonitis_for_pembrolizumab
+    # Path C: hipoxemia documentada (SpO2 <92% room air en contexto IO)
+    - type: truthy_flag
+      field: hypoxemia_with_checkpoint_inhibitor
+      alias_fields:
+        - hypoxia_documented_for_checkpoint
+        - spo2_decline_for_checkpoint_inhibitor
+        - dyspnea_with_hypoxemia_for_io
+    # Path D: ground-glass opacities CT scan documentadas
+    - type: truthy_flag
+      field: ground_glass_opacities_ct_for_checkpoint
+      alias_fields:
+        - ggo_ct_for_checkpoint_inhibitor
+        - ct_pneumonitis_pattern_for_io
+        - radiographic_pneumonitis_for_checkpoint
+
+# Override: post-resolución completa + esteroides completed + CT clear
+override:
+  type: truthy_flag
+  field: pneumonitis_resolved_for_checkpoint_inhibitor
+  alias_fields:
+    - immune_pneumonitis_resolved
+    - checkpoint_pneumonitis_recovered
+    - irae_pneumonitis_normalized
+
+regimen_codes:
+  - REGIMEN_CODES_CHECKPOINT_INHIBITORS
+
+keywords:
+  - KEYWORDS_CHECKPOINT_INHIBITORS
+
+message: |
+  Checkpoint inhibitors (pembrolizumab/nivolumab/atezolizumab + combos)
+  NO deben continuarse en pacientes con pneumonitis immune-related
+  (irAE pulmonar) CTCAE G≥2 o cualquier signo sugestivo (hipoxemia,
+  ground-glass opacities CT). Pneumonitis G≥3 sin tratamiento tiene
+  mortalidad 5-10%; con esteroides altas dosis + suspensión inmediata
+  baja a <2%.
+
+  Evidencia clínica (KEYNOTE-365 cohort C + KEYNOTE-921 mCRPC):
+    - Pneumonitis any grade: 5.7-6.4% (vs <1% placebo)
+    - Pneumonitis G≥2 (sintomática): 2.1-3.2%
+    - Pneumonitis G≥3 (severa, hospitalización): 0.9-1.5%
+    - Tiempo medio aparición: 3.1 meses (rango 0.5-13.6)
+    - Discontinuación PERMANENTE G≥3: 1.8-2.3%
+
+  Mecanismo:
+    - Desinhibición células T (anti-PD-1/PD-L1 bloquea checkpoint)
+    - Infiltrado linfocítico T CD8+ en parénquima pulmonar
+    - Daño alveolar difuso (DAD) + neumonía organizativa (OP) +
+      neumonitis intersticial inespecífica (NSIP)
+    - Sin marker predictivo pre-tratamiento validado
+
+  Conducta clínica obligatoria (NCCN Immunotherapy Toxicity 2024
+  §PNEU-1 + Brahmer ASCO 2018):
+  1. Suspender checkpoint inhibitor INMEDIATAMENTE ante sospecha
+     (NO esperar confirmación radiográfica si síntomas progresivos).
+  2. Workup urgente:
+     - SpO2 ambient air (<92% = sospecha alta)
+     - CT thorax HRCT (ground-glass opacities = patrón típico)
+     - Spirometría + DLCO baseline si paciente estable
+     - Broncoscopia + BAL si dx incierto (descartar infección,
+       progresión tumoral)
+     - Cultivos esputo + Pneumocystis PCR (descartar PJP)
+  3. Tratamiento por grado CTCAE:
+     - G1 (asintomática, hallazgo radiográfico): retener IO + monitor
+       cada 2-3 días
+     - G2 (sintomática moderada): suspender IO + prednisona 1-2 mg/kg/d
+       + taper 4-6 semanas
+     - G3-G4 (severa/life-threatening): hospitalización + esteroides
+       IV altas dosis (metilprednisolona 2-4 mg/kg/d) + considerar
+       infliximab/mycofenolato si refractaria a 48h
+  4. ⚠️ DISCONTINUACIÓN PERMANENTE checkpoint inhibitor en:
+     - G3-G4 pneumonitis (NCCN §PNEU-1 mandatory)
+     - G2 recurrente tras reintroducción
+     - Necesidad de >12 sem de esteroides para resolución
+  5. Override (`pneumonitis_resolved_for_checkpoint_inhibitor=Sí`)
+     SOLO si:
+     - CTCAE G≤1 documentada en 2 visitas separadas ≥7d
+     - Esteroides taper completado (prednisona <10 mg/d)
+     - CT thorax control SIN nuevos infiltrados
+     - DLCO recuperada >75% baseline
+     - Pulmonology endorsement + monitoring SpO2 + CT mensual × 3 meses
+  6. Considerar terapia alternativa NO-IO:
+     - **Olaparib** si HRR+ y CrCl ≥30 (gates 15+29 monitor)
+     - **ARSI** si naive a 2da línea (gates 17-21+31 monitor)
+     - **Lu-177-PSMA-617** si PSMA+ (gates 13-14-30+40 monitor)
+     - **Cabazitaxel** si quimio-tolerable (gates 26+34+41 monitor)
+     - Best supportive care + palliative care
+
+  CAMPOS REQUERIDOS:
+    - `pneumonitis_ctcae_grade`: severidad CTCAE v5 (0-5)
+    - `pneumonitis_documented_for_checkpoint_inhibitor`: flag clínico
+    - `hypoxemia_with_checkpoint_inhibitor`: flag SpO2 <92% (RA)
+    - `ground_glass_opacities_ct_for_checkpoint`: flag patrón CT
+
+evidence_tag: keynote_365_keynote_921_nccn_io_toxicity_2024_brahmer_jco_2018
+trial_refs:
+  - "KEYNOTE-365 cohort C"
+  - "KEYNOTE-921"
+  - "Antonarakis JCO 2020"
+  - "Petrylak JCO 2024"
+  - "Brahmer JCO 2018"
+  - "Keytruda label §5.4"
+  - "NCCN IO Toxicity 2024 §PNEU-1"
+  - "CTCAE v5"
+
+references:
+  - "Antonarakis ES et al. KEYNOTE-365 cohort C. JCO 2020;38:395."
+  - "Petrylak DP et al. KEYNOTE-921. JCO 2024;42:215 (mCRPC pembro+docetaxel)."
+  - "Brahmer JR et al. NCCN/ASCO Immunotherapy Toxicity Management. JCO 2018;36:1714."
+  - "Keytruda (pembrolizumab) FDA prescribing information §5.4 — Immune-mediated pneumonitis."
+  - "Naidoo J et al. Pneumonitis in patients treated with anti-PD-1/PD-L1. JCO 2017;35:709."
+  - "NCCN Guidelines Immunotherapy Toxicity Management v1.2024 §PNEU-1."
+  - "CTCAE v5.0 — Pneumonitis grading (G1 asymptomatic → G5 death)."
+  - "ESMO Clinical Practice Guidelines: Management of toxicities from immunotherapy 2022."
+
+nccn_eau_alignment:
+  nccn_section: "NCCN PROS-G v5.2026 — Pembrolizumab dMMR/MSI-H mCRPC + IO Toxicity Management v1.2024 §PNEU-1"
+  eau_section: "EAU 2026 §6.5.10 — Immune checkpoint inhibitors in dMMR/MSI-H mCRPC + irAE management"
+  asco_section: "ASCO/NCCN Immunotherapy Toxicity Management 2024 (Brahmer JCO 2018)"
+  esmo_section: "ESMO Clinical Practice Guidelines: Toxicities from immunotherapy 2022"

@@ -1,0 +1,158 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 25: ipatasertib_hyperglycemia_grade3
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XXXIII) — Auditoría #41 — Gate YAML-NATIVE.
+#
+# Razón clínica:
+#   Ipatasertib (AKT inhibitor PTEN-loss mCRPC) tiene WARNING regulatorio
+#   distintivo por hiperglucemia tratamiento-emergente severa. Mecanismo:
+#   inhibición AKT bloquea cascada PI3K/AKT/mTOR que normalmente facilita
+#   uptake de glucosa periférica → resistencia insulínica iatrogénica.
+#
+#   Datos de IPATential150 (Sweeney C et al. Lancet 2021;398:131-142 +
+#   NEJM 2022;386:1132 follow-up):
+#     - Hiperglucemia tratamiento-emergente grado ≥3: ~20% ipatasertib vs
+#       ~5% placebo (RR ~4x)
+#     - Crisis hiperglucémica con cetoacidosis: 0.5% (raro pero serio)
+#     - Discontinuación por hiperglucemia: 6%
+#     - Reducción de dosis necesaria: 12%
+#
+#   Threshold canónico (CTCAE v5 + IPATential150 protocol):
+#     - Glucosa ayuno >250 mg/dL = grado 3 CTCAE v5 (sintomática o
+#       requiere medidas urgentes)
+#     - HbA1c >10% = control crónico severamente comprometido
+#     - Glucosa ayuno >500 mg/dL = grado 4 (riesgo cetoacidosis)
+#
+#   Coexistencia con Gate 5 (uncontrolled_diabetes — NO se elimina):
+#     - Gate 5: pre-existing DM no controlada (flag `uncontrolled_diabetes`),
+#       exclusion criterion para INICIO de ipatasertib
+#     - Gate 25: hiperglucemia AGUDA G3 (treatment-emergent o new-onset),
+#       hard-block CONTINUACIÓN o INICIO independientemente de DM previa
+#
+#   Override: hyperglycemia_controlled_for_ipatasertib=Sí (tras
+#   optimización antidiabética con metformina ± SGLT2i ± insulina,
+#   y glucosa ayuno <180 mg/dL + HbA1c <8% sostenidos ≥4 sem).
+#
+#   Bloquea: REGIMEN_CODES_IPATASERTIB (ipatasertib monoterapia +
+#   ipatasertib+abiraterona). Catálogo extensible para futuros AKT
+#   inhibitors (capivasertib CAPItello-281) o PI3K inhibitors (alpelisib).
+# ──────────────────────────────────────────────────────────────────────
+
+code: ipatasertib_hyperglycemia_grade3
+title: "Ipatasertib × hiperglucemia grado ≥3 (CTCAE v5 + IPATential150)"
+faubot_added_in: "2026-04-25 XXXIII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1. Glucosa ayuno > 250 mg/dL (CTCAE v5 grado 3 + IPATential150 protocol)
+    - type: numeric_above
+      field: glucose_fasting
+      alias_fields:
+        - glucose_fasting_mg_dl
+        - fasting_glucose
+        - fasting_blood_glucose
+        - glucemia_ayuno
+      threshold: 250
+    # 2. HbA1c > 10% (control crónico severamente comprometido)
+    - type: numeric_above
+      field: hba1c
+      alias_fields:
+        - hba1c_percent
+        - hemoglobina_glucosilada
+        - a1c
+      threshold: 10
+    # 3. CTCAE v5 grado ≥3 hiperglucemia documentada
+    - type: numeric_threshold
+      field: hyperglycemia_ctcae_grade
+      threshold: 3
+    # 4. Flag explícito documentado
+    - type: truthy_flag
+      field: hyperglycemia_grade3_for_ipatasertib
+      alias_fields:
+        - severe_hyperglycemia_for_ipatasertib
+        - hyperglycemic_crisis_active
+        - dka_history_treatment_emergent
+
+# Override: tras optimización antidiabética + control glicémico documentado
+override:
+  type: truthy_flag
+  field: hyperglycemia_controlled_for_ipatasertib
+
+regimen_codes:
+  - REGIMEN_CODES_IPATASERTIB
+
+keywords:
+  - KEYWORDS_IPATASERTIB
+
+message: |
+  Ipatasertib (AKT inhibitor mCRPC PTEN-loss) NO debe iniciarse o continuarse
+  con hiperglucemia grado ≥3 (CTCAE v5: glucosa ayuno >250 mg/dL O HbA1c >10%
+  O hiperglucemia sintomática que requiere medidas urgentes).
+
+  Mecanismo distintivo: inhibición AKT bloquea cascada PI3K/AKT/mTOR que
+  normalmente facilita uptake de glucosa periférica → resistencia insulínica
+  iatrogénica. Riesgo de progresión a cetoacidosis diabética en pacientes
+  predispuestos.
+
+  Evidencia regulatoria:
+    - IPATential150 (Sweeney Lancet 2021;398:131; NEJM 2022;386:1132) —
+      Hiperglucemia G≥3 en 20% ipatasertib vs 5% placebo; cetoacidosis
+      0.5%; discontinuación 6%; reducción dosis 12%.
+    - CTCAE v5.0 — Hyperglycemia grading (G3 = sintomática + medidas
+      urgentes; G4 = >500 mg/dL o riesgo cetoacidosis).
+    - Sustrato: PI3K/AKT/mTOR cascade en glucose homeostasis.
+
+  Coexistencia con Gate 5 (uncontrolled_diabetes general, exclusion
+  pre-tratamiento). Gate 25 captura hiperglucemia aguda treatment-emergent
+  o new-onset que requiere acción inmediata independientemente de status
+  DM previo.
+
+  Conducta clínica:
+  1. Suspender ipatasertib inmediatamente si glucemia ≥250 sostenida
+     o sintomática (poliuria, polidipsia, deshidratación, alteración
+     conciencia).
+  2. Evaluar cetonas (β-hidroxibutirato sangre o cetonuria) si glucosa
+     >300 → si positivos, manejo de cetoacidosis diabética (DKA):
+     - Insulina IV 0.1 U/kg/h
+     - Reposición hidroelectrolítica (NaCl 0.9% + KCl según K+)
+     - Monitorización ICU si pH <7.3
+  3. Optimización antidiabética:
+     - Metformina 500-2000 mg/día (primera línea, mejora resistencia)
+     - SGLT2i (empagliflozin/dapagliflozin) si TFG ≥30 ml/min
+       (favorable porque excreta glucosa por orina + benefit cardiac)
+     - Insulina basal (glargina/degludec) si HbA1c >9% o glucemia
+       ayuno >180 sostenida
+     - Endocrinología consult si refractariedad
+  4. Reintroducción solo con `hyperglycemia_controlled_for_ipatasertib=Sí`
+     tras glucosa ayuno <180 mg/dL + HbA1c <8% sostenidos ≥4 semanas
+     + sin episodios sintomáticos.
+  5. Considerar terapia alternativa NO-PI3K/AKT:
+     - ARPI (enzalutamida, abiraterona, darolutamida) si gates 17-21 OK
+     - PARPi (olaparib/talazoparib/rucaparib) si HRR mutation
+     - Lu-177-PSMA-617 si PSMA-positive
+     - Docetaxel/cabazitaxel si fitness y gates 2/24 OK
+
+  Notar: futuros AKT inhibitors (capivasertib CAPItello-281 mCRPC)
+  o PI3K inhibitors (alpelisib) tendrán warning similar; el gate
+  catalog REGIMEN_CODES_IPATASERTIB se extenderá cuando entren a
+  pipeline regulatorio aprobado.
+
+evidence_tag: ipatential150_sweeney_nejm_2022_ctcae_v5
+trial_refs:
+  - IPATential150
+  - "CTCAE v5"
+
+references:
+  - "Sweeney C et al. IPATential150. Lancet 2021;398:131-142."
+  - "Sweeney C et al. IPATential150 follow-up. NEJM 2022;386:1132-1142."
+  - "Toska E et al. PI3K/AKT inhibition + hyperglycemia mechanism. Sci Transl Med 2017;9:eaal5253."
+  - "CTCAE v5.0 — Hyperglycemia grading (G1: 116-160 mg/dL; G2: 161-250; G3: >250 sintomática; G4: >500 o cetoacidosis)."
+  - "ADA Standards of Medical Care in Diabetes 2024 — DKA management."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — AKT inhibitors + glycemic monitoring"
+  eau_section: "EAU 2026 §6.5.10 — PI3K/AKT pathway inhibitors safety"
+  ada_section: "ADA Standards 2024 — Drug-induced hyperglycemia management"

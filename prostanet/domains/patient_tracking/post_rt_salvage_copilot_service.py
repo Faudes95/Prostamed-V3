@@ -38,9 +38,10 @@ from prostanet.domains.post_radiotherapy_or_local_salvage.service import (
 )
 from prostanet.engine.confidence_scoring import ConfidenceScorer
 from prostanet.shared.feature_flags import resolve_feature_flags
+from prostanet.shared.phoenix import evaluate_phoenix
 
 
-POST_RT_VERTICAL_STATES = {"recurrence_bcr", "post_radiotherapy_or_local_salvage"}
+POST_RT_VERTICAL_STATES = {"recurrence_bcr", "post_radiotherapy_or_local_salvage", "post_radiotherapy_followup"}
 
 
 def _has_post_rp_context(patient: dict[str, Any]) -> bool:
@@ -67,6 +68,8 @@ def _has_post_rp_context(patient: dict[str, Any]) -> bool:
 def _has_post_rt_context(patient: dict[str, Any], payload: dict[str, Any]) -> bool:
     if _has_post_rp_context(patient):
         return False
+    if patient.get("radiation") or patient.get("radiotherapy_courses") or patient.get("radiotherapy_courses_detailed"):
+        return True
     bcr = patient.get("bcr") or {}
     primary_treatment = normalize_text(bcr.get("primary_treatment")).upper()
     if primary_treatment in {"RT", "RADIOTHERAPY", "EBRT", "RT_PRIMARY"}:
@@ -215,6 +218,28 @@ class PostRTSalvageCopilotService:
                 or ""
             )
         )
+
+        # Phoenix hard-gate (NCCN PROS-10 cat 1, EAU 2026 §6.3.2). Aun cuando
+        # el pipeline longitudinal pudo haber derivado una transición más
+        # avanzada, no liberamos ningún carril de salvage si el paciente no
+        # cumple nadir + 2 ng/mL, no hay biopsia de recurrencia local, ni
+        # confirmación radiográfica local.
+        phoenix_gate = evaluate_phoenix(payload)
+        biopsy_proven = normalize_text(payload.get("biopsy_proven_local_recurrence")).lower() in YES_VALUES
+        radiographic_local = normalize_text(payload.get("mpmri_localized_recurrence")).lower() in YES_VALUES
+        phoenix_gate_blocked = (
+            not phoenix_gate.threshold_reached
+            and not biopsy_proven
+            and not radiographic_local
+        )
+        if phoenix_gate_blocked:
+            transition_status = "pending_confirmation"
+            transition_reason = (
+                "PSA aún no cumple criterio Phoenix (nadir + 2 ng/mL) y no hay "
+                "biopsia confirmatoria ni recurrencia local en imagen. No liberar "
+                "rescate: mantener PSA cada 3 meses hasta confirmar el umbral."
+            )
+
         course = {
             "post_rt_course": transition_status,
             "window_status": transition_status,
@@ -307,7 +332,10 @@ class PostRTSalvageCopilotService:
             or {}
         )
         local_salvage_pathway = {
-            "visible": transition_status in {"local_salvage_candidate", "mdt_candidate"},
+            "visible": (
+                transition_status in {"local_salvage_candidate", "mdt_candidate"}
+                and not phoenix_gate_blocked
+            ),
             "status": transition_status,
             "recommended_path": (
                 dominant_local_option.get("name")
@@ -316,6 +344,7 @@ class PostRTSalvageCopilotService:
             "rationale": transition_reason,
             "dominant_local_option": dominant_local_option,
             "ranking": local_salvage_ranking[:5],
+            "phoenix_gate_blocked": phoenix_gate_blocked,
         }
         restaging_strategy = {
             "status": transition_status,
@@ -359,6 +388,8 @@ class PostRTSalvageCopilotService:
             "histopathology_summary": histopathology_summary,
             "post_rt_course": transition_status,
             "post_rt_salvage_window_status": transition_status,
+            "phoenix_gate": phoenix_gate.to_dict(),
+            "phoenix_gate_blocked": phoenix_gate_blocked,
             "restaging_strategy": restaging_strategy,
             "local_salvage_pathway": local_salvage_pathway,
             "systemic_redirection_status": systemic_redirection_status,

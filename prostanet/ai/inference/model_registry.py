@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import torch
@@ -30,6 +31,9 @@ class ModelRegistry:
         model = registry.get("state_transition")
         result = model.predict(patient_record)
     """
+
+    _missing_artifact_warning_keys: set[tuple[str, str]] = set()
+    _warning_state_lock = Lock()
 
     def __init__(self, models_dir: str | Path | None = None) -> None:
         from prostanet.ai.config import AI_MODEL_IDS, get_ai_config
@@ -64,7 +68,7 @@ class ModelRegistry:
 
         artifact_path = Path(artifact_path)
         if not artifact_path.exists():
-            logger.warning("Model artifact not found: %s", artifact_path)
+            self._log_missing_artifact(model_id, artifact_path)
             self._metadata[model_id] = {
                 **status,
                 "artifact_path": str(artifact_path),
@@ -74,6 +78,7 @@ class ModelRegistry:
             return False
 
         try:
+            self._clear_missing_artifact_log(model_id, artifact_path)
             model = self._instantiate_model(model_id)
             if model is None:
                 return False
@@ -107,6 +112,11 @@ class ModelRegistry:
                 "load_error": str(exc),
             }
             return False
+
+    @classmethod
+    def reset_process_log_state(cls) -> None:
+        with cls._warning_state_lock:
+            cls._missing_artifact_warning_keys.clear()
 
     def get(self, model_id: str) -> Any | None:
         """Get a loaded model by ID. Returns None if not loaded."""
@@ -269,6 +279,25 @@ class ModelRegistry:
             "maturity": maturity,
             "validation_status": validation_status,
         }
+
+    @classmethod
+    def _log_missing_artifact(cls, model_id: str, artifact_path: Path) -> None:
+        key = (model_id, str(artifact_path))
+        with cls._warning_state_lock:
+            if key in cls._missing_artifact_warning_keys:
+                logger.debug("Model artifact still missing: %s", artifact_path)
+                return
+            cls._missing_artifact_warning_keys.add(key)
+        logger.warning("Model artifact not found: %s", artifact_path)
+
+    @classmethod
+    def _clear_missing_artifact_log(cls, model_id: str, artifact_path: Path) -> None:
+        key = (model_id, str(artifact_path))
+        with cls._warning_state_lock:
+            if key not in cls._missing_artifact_warning_keys:
+                return
+            cls._missing_artifact_warning_keys.discard(key)
+        logger.info("Model artifact available again: %s", artifact_path)
 
     @staticmethod
     def _normalize_metrics(metrics_blob: Any) -> dict[str, Any] | None:

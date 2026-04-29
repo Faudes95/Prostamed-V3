@@ -1,0 +1,1035 @@
+{# Faubot LXXXVI #67F — Stage-Aware Progressive Intake (Fase 3)
+   3-step wizard:
+     Step 1 (Quick Classify): 15 NCCN minimum fields → state_classifier
+     Step 2 (Stage-Specific):  schema completo del estadio resuelto
+     Step 3 (Refinement):       decision_refiner expandible (opcional)
+   PRESERVA todos los campos del schema NCCN. NO elimina campos.
+#}
+{% extends "layouts/base_clinical.html" %}
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+<style>
+.iw-shell { display:grid; grid-template-columns: 280px 1fr 320px; gap: 24px; min-height: calc(100vh - 80px); padding: 24px; }
+@media (max-width: 1100px) { .iw-shell { grid-template-columns: 1fr; } .iw-rail, .iw-preview { position: static; } }
+.iw-rail { background: var(--surface-2); border-radius: 16px; padding: 20px; align-self: start; position: sticky; top: 24px; }
+.iw-preview { background: var(--surface-2); border-radius: 16px; padding: 20px; align-self: start; position: sticky; top: 24px; max-height: calc(100vh - 60px); overflow-y: auto; }
+.iw-step { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; margin-bottom: 8px; transition: background .15s; cursor: pointer; }
+.iw-step.is-active { background: rgba(6,182,212,.15); border: 1px solid var(--clinical-info-edge); }
+.iw-step.is-done { opacity: .7; }
+.iw-step-num { width: 32px; height: 32px; border-radius: 50%; background: var(--surface-3); display: flex; align-items: center; justify-content: center; font-weight: 700; color: var(--pn-text-muted); }
+.iw-step.is-active .iw-step-num { background: var(--clinical-info); color: #0b1325; }
+.iw-step.is-done .iw-step-num { background: var(--clinical-success); color: #0b1325; }
+.iw-step-label { font-weight: 600; color: #f0fbff; font-size: .88rem; }
+.iw-step-meta { color: var(--pn-text-muted); font-size: .72rem; }
+.iw-main { background: var(--surface-1); border-radius: 16px; padding: 24px; min-height: 600px; }
+.iw-step-panel { display: none; }
+.iw-step-panel.is-active { display: block; }
+.iw-field-group { background: var(--surface-2); padding: 16px; border-radius: 12px; margin-bottom: 16px; }
+.iw-field-group-title { font-size: .8rem; color: var(--clinical-info); font-weight: 700; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border-default); }
+.iw-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+.iw-field { display: flex; flex-direction: column; gap: 4px; }
+.iw-field label { font-size: .78rem; color: #f0fbff; font-weight: 600; }
+.iw-field-meta { font-size: .68rem; color: var(--pn-text-muted); }
+.iw-field input, .iw-field select, .iw-field textarea { background: var(--surface-3); border: 1px solid var(--border-default); border-radius: 6px; padding: 8px 10px; color: #f0fbff; font-size: .82rem; }
+.iw-field input:focus, .iw-field select:focus { outline: 2px solid var(--clinical-info); outline-offset: 1px; }
+.iw-field-required label::after { content: " *"; color: var(--clinical-critical); }
+.iw-actions { display: flex; gap: 10px; justify-content: space-between; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-default); }
+.iw-classify-result { padding: 16px; background: linear-gradient(135deg, rgba(6,182,212,.12), rgba(15,23,42,.6)); border-left: 4px solid var(--clinical-info); border-radius: 10px; margin-bottom: 20px; }
+.iw-classify-result h3 { color: #f0fbff; font-size: 1.1rem; margin: 0 0 6px; }
+.iw-classify-result .iw-state-pill { display: inline-block; padding: 4px 10px; background: var(--clinical-info); color: #0b1325; border-radius: 6px; font-weight: 700; font-size: .82rem; margin-right: 8px; }
+.iw-role-badge { font-size: .62rem; padding: 2px 6px; border-radius: 4px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.iw-role-required { background: var(--clinical-critical); color: white; }
+.iw-role-refiner { background: var(--clinical-warning); color: #0b1325; }
+.iw-role-monitoring { background: var(--clinical-info); color: #0b1325; }
+.iw-role-optional { background: var(--surface-3); color: var(--pn-text-muted); }
+.iw-collapsible { cursor: pointer; user-select: none; }
+.iw-stat { display: flex; justify-content: space-between; padding: 6px 10px; background: var(--surface-3); border-radius: 6px; margin-bottom: 4px; font-size: .78rem; }
+.iw-stat strong { color: #f0fbff; }
+</style>
+{% endblock %}
+
+{% block content %}
+{# v2 shell flag asegura no top_nav legacy #}
+<div class="pm2-app-shell">
+    {% from "components/pm2_sidebar.html" import pm2_sidebar with context %}
+    {{ pm2_sidebar(
+        active='intake',
+        faubot_release=(audit_dims_v2.version.faubot_release if audit_dims_v2 and audit_dims_v2.version else 'LXXXVI'),
+        gates_count=(audit_dims_v2.version.gates_active_count if audit_dims_v2 and audit_dims_v2.version else 89)
+    ) }}
+    <div class="pm2-app-main">
+        <div class="iw-shell">
+            {# ── LEFT: STEP RAIL ── #}
+            <aside class="iw-rail">
+                <h2 style="font-size: .92rem; font-weight: 700; color: #f0fbff; margin: 0 0 16px;">Stage-Aware Intake</h2>
+
+                <div class="iw-step is-active" data-step="1" onclick="iwGoStep(1)">
+                    <div class="iw-step-num">1</div>
+                    <div>
+                        <div class="iw-step-label">Quick Classify</div>
+                        <div class="iw-step-meta">32 campos NCCN · 18 estadios</div>
+                    </div>
+                </div>
+                <div class="iw-step" data-step="2" onclick="iwGoStep(2)">
+                    <div class="iw-step-num">2</div>
+                    <div>
+                        <div class="iw-step-label">Stage-Specific</div>
+                        <div class="iw-step-meta" id="iw-step2-meta">Pendiente Step 1</div>
+                    </div>
+                </div>
+                <div class="iw-step" data-step="3" onclick="iwGoStep(3)">
+                    <div class="iw-step-num">3</div>
+                    <div>
+                        <div class="iw-step-label">Confirmar y guardar</div>
+                        <div class="iw-step-meta">Resumen + decisión inicial</div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-default); font-size: .72rem; color: var(--pn-text-muted); line-height: 1.5;">
+                    <strong style="color: var(--clinical-success);">Principio rector</strong><br>
+                    Cada estadio expone TODOS sus campos relevantes (no se elimina nada). El paciente m1CRPC ve 84+, el localizado ve 59, el diagnostic-workup ve 30 — sin contaminar con campos no aplicables.
+                </div>
+            </aside>
+
+            {# ── CENTER: FORM ── #}
+            <main class="iw-main">
+                <h1 style="font-family: var(--pm-font-display); font-size: 1.6rem; font-weight: 700; letter-spacing: -.02em; color: #f8fbff; margin: 0 0 8px;">
+                    Nuevo paciente · Stage-Aware Progressive
+                </h1>
+                <p style="color: var(--pn-text-muted); font-size: .85rem; margin: 0 0 20px;">
+                    Captura inteligente: clasificación NCCN multi-nivel (32 campos · 18 estadios canónicos) → schema completo del estadio resuelto.
+                </p>
+
+                {# STEP 1 — Quick Classify (32 fields NCCN minimum, multi-level conditional · LXCII.1) #}
+                <section class="iw-step-panel is-active" data-panel="1" id="iw-panel-1">
+                    <h2 style="color: var(--clinical-info); font-size: 1rem; margin: 0 0 12px;">Step 1 · Clasificación NCCN 5.2026 · 18 estadios canónicos</h2>
+
+                    {# LXCII.1 — Live classification preview per imagen canonical:
+                       D'Amico (localizada bajo/intermedio/alto) +
+                       CHAARTED HV/LV +
+                       LATITUDE HR (≥2/3) +
+                       PCWG3 mCRPC M0/M1 +
+                       BCR post-RP / post-RT
+                       Computed in real-time from form inputs. #}
+                    <aside id="iw-live-preview" style="background: linear-gradient(135deg, rgba(56, 189, 248, 0.06), rgba(56, 189, 248, 0.02)); border: 1px solid rgba(56, 189, 248, 0.18); border-radius: 10px; padding: 12px 16px; margin: 0 0 16px; font-size: .85rem; color: rgba(165, 243, 252, 0.9); line-height: 1.6;">
+                        <em>Captura los campos clínicos para ver clasificación inicial en vivo (D'Amico / CHAARTED / LATITUDE / PCWG3)…</em>
+                    </aside>
+
+                    <div id="iw-quick-form-container">
+                        <div style="text-align:center;padding:40px;color:var(--pn-text-muted);">
+                            <div class="iw-spinner" style="display:inline-block;width:32px;height:32px;border:3px solid var(--surface-3);border-top-color:var(--clinical-info);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+                            <p>Cargando schema…</p>
+                        </div>
+                    </div>
+                    <div class="iw-actions">
+                        <a href="/patients" class="pm2-btn pm2-btn--ghost">← Cancelar</a>
+                        <button type="button" class="pm2-btn pm2-btn--primary" onclick="iwClassifyAndAdvance()" id="iw-step1-next">
+                            Clasificar y continuar →
+                        </button>
+                    </div>
+                </section>
+
+                {# STEP 2 — Stage-Specific schema (loaded after classify) #}
+                <section class="iw-step-panel" data-panel="2" id="iw-panel-2">
+                    <div id="iw-classify-result" class="iw-classify-result" style="display:none;">
+                        <h3>
+                            <span class="iw-state-pill" id="iw-classified-state">—</span>
+                            Estadio NCCN resuelto
+                        </h3>
+                        <p style="color: var(--pn-text-muted); font-size: .82rem; margin: 6px 0 0;" id="iw-classify-reason">—</p>
+                    </div>
+                    <h2 style="color: var(--clinical-info); font-size: 1rem; margin: 0 0 12px;">Step 2 · Schema completo del estadio</h2>
+                    <p style="color: var(--pn-text-muted); font-size: .78rem; margin: 0 0 16px;">
+                        Honra <strong style="color: var(--clinical-warning);">required</strong> antes de avanzar. Los campos <em>decision_refiner</em> son opcionales pero refinan la recomendación clínica.
+                    </p>
+                    <div id="iw-stage-form-container">
+                        <p style="color: var(--pn-text-muted); text-align: center; padding: 40px;">
+                            Esperando clasificación…
+                        </p>
+                    </div>
+                    <div class="iw-actions">
+                        <button type="button" class="pm2-btn pm2-btn--ghost" onclick="iwGoStep(1)">← Volver a clasificación</button>
+                        <button type="button" class="pm2-btn pm2-btn--primary" onclick="iwGoStep(3)">
+                            Continuar → Step 3
+                        </button>
+                    </div>
+                </section>
+
+                {# STEP 3 — Confirm + Save #}
+                <section class="iw-step-panel" data-panel="3" id="iw-panel-3">
+                    <h2 style="color: var(--clinical-info); font-size: 1rem; margin: 0 0 12px;">Step 3 · Resumen y persistencia</h2>
+                    <p style="color: var(--pn-text-muted); font-size: .82rem; margin: 0 0 12px;">
+                        Revisión final antes de persistir. Al guardar, se generará el primer <code>decision_audit</code> snapshot + bundle CDE inicial.
+                    </p>
+                    <div id="iw-summary-container" style="background: var(--surface-2); padding: 16px; border-radius: 10px; min-height: 200px;">
+                        <em style="color: var(--pn-text-muted);">Cargando resumen…</em>
+                    </div>
+                    <div class="iw-actions">
+                        <button type="button" class="pm2-btn pm2-btn--ghost" onclick="iwGoStep(2)">← Volver al schema</button>
+                        <button type="button" class="pm2-btn pm2-btn--primary" onclick="iwSavePatient()" id="iw-save-btn">
+                            ✓ Confirmar y abrir expediente
+                        </button>
+                    </div>
+                </section>
+
+                {# LXCI Fase 2 — Modal firma electrónica de consentimientos #}
+                <div id="iw-consent-modal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(2,6,23,0.85);backdrop-filter:blur(6px);align-items:center;justify-content:center;padding:20px;" role="dialog" aria-labelledby="iw-consent-title">
+                    <div style="background:linear-gradient(180deg,var(--surface-2) 0%,var(--surface-1) 100%);border:1px solid rgba(56,189,248,0.3);border-radius:16px;padding:28px;max-width:680px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,0.6);">
+                        <div style="text-align:center;margin-bottom:20px;">
+                            <div style="font-size:.7rem;color:var(--clinical-info);font-weight:700;letter-spacing:.18em;text-transform:uppercase;margin-bottom:6px;">Paso final · 21 CFR Part 11 + LFPDPPP</div>
+                            <h2 id="iw-consent-title" style="font-family:var(--pm-font-display);font-size:1.4rem;color:#f8fbff;margin:0;letter-spacing:-.01em;">Consentimiento informado</h2>
+                            <p style="color:var(--pn-text-muted);font-size:.85rem;margin-top:8px;line-height:1.5;">Paciente <strong id="iw-consent-nss" style="color:var(--pn-accent);font-family:ui-monospace,monospace;">—</strong> · Firme el consentimiento informado para activar el expediente clínico ProstaMed.</p>
+                        </div>
+
+                        <div style="background:var(--surface-3);padding:14px 16px;border-radius:10px;margin-bottom:16px;font-size:.78rem;color:#cbd5e1;line-height:1.5;max-height:180px;overflow-y:auto;border-left:3px solid var(--clinical-info);">
+                            <strong style="color:#f0fbff;">Términos del consentimiento:</strong><br>
+                            Autorizo a ProstaMed/ProstaNet (CDE Auditable Class IIb 510(k) SaMD) al manejo de mis datos clínicos
+                            (PSA, biomarcadores, historia de tratamiento, comorbilidades) para soporte de decisión clínica
+                            en cáncer de próstata bajo NCCN 5.2026 + EAU 2026 guidelines. Los datos serán protegidos bajo
+                            HIPAA + LFPDPPP (Ley Federal de Protección de Datos Personales · México) con retention de 10 años
+                            (FDA standard). Tengo derecho ARCO (Acceso · Rectificación · Cancelación · Oposición). Las
+                            recomendaciones del sistema NO sustituyen el juicio clínico de mi médico tratante.
+                        </div>
+
+                        <div style="margin-bottom:14px;">
+                            <label style="display:block;font-size:.78rem;color:#f0fbff;font-weight:600;margin-bottom:6px;">Nombre completo del firmante <span style="color:var(--clinical-critical);">*</span></label>
+                            <input type="text" id="iw-consent-signer-name" placeholder="Nombre completo (paciente o representante legal)" required style="width:100%;padding:10px 12px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:6px;color:#f0fbff;font-size:.9rem;">
+                        </div>
+
+                        <div style="margin-bottom:14px;">
+                            <label style="display:block;font-size:.78rem;color:#f0fbff;font-weight:600;margin-bottom:6px;">Firma electrónica <span style="color:var(--clinical-critical);">*</span></label>
+                            <canvas id="iw-consent-sig" width="600" height="160" style="width:100%;height:160px;background:#fefefe;border:1px solid var(--border-default);border-radius:8px;cursor:crosshair;touch-action:none;display:block;"></canvas>
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:.7rem;color:var(--pn-text-muted);">
+                                <span id="iw-consent-sig-status">Estado: <span style="color:var(--clinical-warning);">○ pendiente de firma</span></span>
+                                <button type="button" class="pm2-btn pm2-btn--ghost" onclick="iwClearConsentSig()" style="padding:4px 10px;font-size:.75rem;">Limpiar</button>
+                            </div>
+                        </div>
+
+                        <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:8px;border-top:1px solid var(--border-default);">
+                            <button type="button" class="pm2-btn pm2-btn--ghost" onclick="iwCancelConsent()">Cancelar registro</button>
+                            <button type="button" class="pm2-btn pm2-btn--primary" id="iw-consent-sign-btn" onclick="iwSignConsentAndOpen()">✍ Firmar y abrir expediente</button>
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            {# ── RIGHT: LIVE PREVIEW ── #}
+            <aside class="iw-preview">
+                <h3 style="color: #f0fbff; font-size: .92rem; margin: 0 0 12px;">Vista previa en vivo</h3>
+                <div id="iw-live-stats">
+                    <div class="iw-stat"><span>Step actual</span> <strong id="iw-stat-step">1</strong></div>
+                    <div class="iw-stat"><span>Estadio resuelto</span> <strong id="iw-stat-state">—</strong></div>
+                    <div class="iw-stat"><span>Campos completados</span> <strong id="iw-stat-completed">0</strong></div>
+                    <div class="iw-stat"><span>Required pendientes</span> <strong id="iw-stat-pending">—</strong></div>
+                    <div class="iw-stat"><span>Schema total</span> <strong id="iw-stat-total">—</strong></div>
+                </div>
+
+                <div style="margin-top: 16px; padding: 12px; background: var(--surface-3); border-radius: 8px; font-size: .72rem; color: var(--pn-text-muted); line-height: 1.5;">
+                    <strong style="color: var(--clinical-success);">CDE Auditable</strong><br>
+                    El schema cargado expone TODOS los campos del estadio NCCN (required + decision_refiner + monitoring + optional). Conditional logic nativa preservada.
+                </div>
+            </aside>
+        </div>
+    </div>
+</div>
+
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────────
+ * Faubot LXXXVI #67F — Stage-Aware Progressive Intake (Fase 3 client)
+ * ─────────────────────────────────────────────────────────────────────────
+ * window.iwState         — current wizard state (step, schema, payload)
+ * iwGoStep(n)            — switch step (1/2/3)
+ * iwLoadQuickSchema()    — fetch /api/intake-schema/_quick
+ * iwClassifyAndAdvance() — POST /api/state-classifier → load stage schema → step 2
+ * iwLoadStageSchema(s)   — fetch /api/intake-schema/<state>
+ * iwRenderFields(fields, container) — render FieldSpecs as form
+ * iwSavePatient()        — collect all + POST register
+ * ──────────────────────────────────────────────────────────────────────── */
+
+window.iwState = {
+    step: 1,
+    quickSchema: null,
+    stageSchema: null,
+    classifiedState: null,
+    classifiedReason: '',
+    payload: {},  // accumulated form values across steps
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    iwLoadQuickSchema();
+});
+
+async function iwLoadQuickSchema() {
+    try {
+        const res = await fetch('/api/intake-schema/_quick');
+        const body = await res.json();
+        if (!body.success) {
+            document.getElementById('iw-quick-form-container').innerHTML =
+                '<p style="color:var(--clinical-critical);">Error cargando schema: ' + (body.error || 'desconocido') + '</p>';
+            return;
+        }
+        window.iwState.quickSchema = body;
+        iwRenderQuickForm();
+        iwUpdateStats();
+    } catch (err) {
+        document.getElementById('iw-quick-form-container').innerHTML =
+            '<p style="color:var(--clinical-critical);">Network error: ' + err.message + '</p>';
+    }
+}
+
+function iwRenderQuickForm() {
+    const schema = window.iwState.quickSchema;
+    const container = document.getElementById('iw-quick-form-container');
+
+    // Group fields by group
+    const groups = {};
+    for (const f of schema.fields) {
+        const g = f.group || 'Datos clínicos';
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(f);
+    }
+
+    let html = '';
+    for (const [groupName, fields] of Object.entries(groups)) {
+        html += `<div class="iw-field-group">
+            <div class="iw-field-group-title">${escapeHtml(groupName)}</div>
+            <div class="iw-field-row">`;
+        for (const f of fields) {
+            html += iwRenderFieldHtml(f, 'quick');
+        }
+        html += `</div></div>`;
+    }
+    container.innerHTML = html;
+
+    // Update field-completed count + apply conditional_visibility + live preview on input change.
+    // LXCII (2026-04-28) — Step 1 ahora tiene multi-level conditional_visibility
+    // (32 fields con conditional rules) para routear correctamente a 18 estadios.
+    // LXCII.1 (2026-04-28) — agregado live preview card con D'Amico/CHAARTED/LATITUDE/PCWG3.
+    container.querySelectorAll('input, select, textarea').forEach((el) => {
+        el.addEventListener('input', () => {
+            iwUpdateStats();
+            iwApplyConditionalVisibility(container);
+            iwBuildLiveClassificationPreview();
+        });
+        el.addEventListener('change', () => {
+            iwUpdateStats();
+            iwApplyConditionalVisibility(container);
+            iwBuildLiveClassificationPreview();
+        });
+    });
+    // Apply once on initial render (hide branches not yet activated by user).
+    iwApplyConditionalVisibility(container);
+    iwBuildLiveClassificationPreview();
+}
+
+function iwRenderFieldHtml(f, prefix) {
+    const id = `iw-${prefix}-${f.name}`;
+    const required = f.required ? 'required' : '';
+    const requiredCls = f.required ? 'iw-field-required' : '';
+    const role = (f.clinical_role || '').toLowerCase();
+    const roleBadge = role && role !== 'optional'
+        ? `<span class="iw-role-badge iw-role-${role === 'decision_refiner' ? 'refiner' : role}">${role}</span>`
+        : '';
+    const helpText = f.help_text ? `<span class="iw-field-meta">${escapeHtml(f.help_text)}</span>` : '';
+    const unit = f.unit ? ` (${f.unit})` : '';
+
+    let input = '';
+    if (f.field_type === 'select') {
+        const opts = (f.display_options || f.options || []).map(o => {
+            const v = typeof o === 'object' ? (o.value ?? o) : o;
+            const label = typeof o === 'object' ? (o.label ?? o) : o;
+            const sel = (f.default && String(f.default) === String(v)) ? 'selected' : '';
+            return `<option value="${escapeHtml(String(v))}" ${sel}>${escapeHtml(String(label))}</option>`;
+        }).join('');
+        input = `<select id="${id}" name="${f.name}" ${required}>${opts}</select>`;
+    } else if (f.field_type === 'date') {
+        input = `<input id="${id}" name="${f.name}" type="date" value="${f.default || ''}" ${required}>`;
+    } else if (f.field_type === 'number') {
+        const minAttr = (f.min_value !== null && f.min_value !== undefined) ? `min="${f.min_value}"` : '';
+        const maxAttr = (f.max_value !== null && f.max_value !== undefined) ? `max="${f.max_value}"` : '';
+        input = `<input id="${id}" name="${f.name}" type="number" step="any" value="${f.default !== null && f.default !== undefined ? f.default : ''}" ${minAttr} ${maxAttr} ${required}>`;
+    } else if (f.field_type === 'textarea') {
+        input = `<textarea id="${id}" name="${f.name}" rows="3" ${required}>${f.default || ''}</textarea>`;
+    } else {
+        // text
+        input = `<input id="${id}" name="${f.name}" type="text" value="${f.default || ''}" ${required}>`;
+    }
+
+    // conditional_visibility data attribute
+    const condAttr = f.conditional_visibility && Object.keys(f.conditional_visibility).length
+        ? `data-conditional='${escapeHtml(JSON.stringify(f.conditional_visibility))}'` : '';
+
+    return `<div class="iw-field ${requiredCls}" ${condAttr}>
+        <label for="${id}">${escapeHtml(f.label)}${unit} ${roleBadge}</label>
+        ${input}
+        ${helpText}
+    </div>`;
+}
+
+function iwUpdateStats() {
+    const panel = document.querySelector('.iw-step-panel.is-active');
+    if (!panel) return;
+    const inputs = panel.querySelectorAll('input, select, textarea');
+    let completed = 0, requiredPending = 0, total = inputs.length;
+    inputs.forEach((i) => {
+        if (i.value) completed++;
+        if (i.required && !i.value) requiredPending++;
+    });
+    document.getElementById('iw-stat-step').textContent = window.iwState.step;
+    document.getElementById('iw-stat-completed').textContent = completed + '/' + total;
+    document.getElementById('iw-stat-pending').textContent = requiredPending || '✓ ninguno';
+    if (window.iwState.classifiedState) {
+        document.getElementById('iw-stat-state').textContent = window.iwState.classifiedState;
+    }
+    if (window.iwState.stageSchema) {
+        document.getElementById('iw-stat-total').textContent = window.iwState.stageSchema.total_fields || '—';
+    }
+}
+
+function iwGoStep(n) {
+    if (n === 2 && !window.iwState.classifiedState) {
+        if (window.pm2Toast) window.pm2Toast('warn', 'Primero completa Step 1 (clasificación)');
+        return;
+    }
+    if (n === 3) {
+        iwBuildSummary();
+    }
+    window.iwState.step = n;
+    document.querySelectorAll('.iw-step').forEach((el) => {
+        const stepN = parseInt(el.dataset.step);
+        el.classList.toggle('is-active', stepN === n);
+        el.classList.toggle('is-done', stepN < n);
+    });
+    document.querySelectorAll('.iw-step-panel').forEach((el) => {
+        el.classList.toggle('is-active', parseInt(el.dataset.panel) === n);
+    });
+    iwUpdateStats();
+}
+
+// LXCII (2026-04-28) — Auto-derive flags que el state_classifier consume
+// pero que la UI NO expone explícitamente, evitando duplicación visual.
+// Mantiene rigor clínico completo del classifier (44 fields) con form de 32.
+//
+// LXCII.1 (2026-04-28) — Refinement: agregado D'Amico + CHAARTED HV/LV +
+// LATITUDE HR autoderived de inputs canónicos (PSA + GS + cT + visceral +
+// bone_lesion_count_total + bone_appendicular_count). Compatible con
+// _derive_mhspc_burden_context_from_profile() del backend.
+//
+// Mappings derivados del análisis de StateClassifierService.classify():
+//   prior_local_therapy=prostatectomy → prior_prostatectomy=1
+//   prior_local_therapy=radiation/brachytherapy → prior_radiation=1
+//   systemic_progression_context=confirmed_crpc → castration_resistant=1
+//   castrate_testosterone_status=confirmed_castrate → castrate_testosterone_confirmed=1
+//   bone_lesion_count_total - bone_appendicular_count = bone_axial_count
+//   visceral=1 OR (bone_total≥4 AND appendicular≥1) → volume_disease=high (CHAARTED)
+//   bone_total<3 AND visceral=0 → volume_disease=low (CHAARTED inverse)
+//   count(GS≥8, bone≥3, visceral) ≥2 → latitude_high_risk=1 (LATITUDE)
+function iwAutoDeriveClassifierFlags(payload) {
+    const plt = (payload.prior_local_therapy || '').toLowerCase();
+    if (plt === 'prostatectomy') {
+        payload.prior_prostatectomy = '1';
+    } else if (plt === 'radiation' || plt === 'brachytherapy') {
+        payload.prior_radiation = '1';
+    }
+    if ((payload.systemic_progression_context || '') === 'confirmed_crpc') {
+        payload.castration_resistant = '1';
+    }
+    if ((payload.castrate_testosterone_status || '') === 'confirmed_castrate') {
+        payload.castrate_testosterone_confirmed = '1';
+    }
+
+    // LXCII.1 — CHAARTED bone burden split (axial vs appendicular).
+    const boneTotal = parseInt(payload.bone_lesion_count_total) || 0;
+    const boneApp = parseInt(payload.bone_appendicular_count) || 0;
+    const visceral = (String(payload.visceral_metastasis_present || '0') === '1');
+    if (boneTotal > 0) {
+        payload.bone_axial_count = String(Math.max(boneTotal - boneApp, 0));
+        payload.bone_appendicular_count = String(boneApp);
+        payload.bone_metastasis_present = '1';
+    }
+    if (visceral) {
+        payload.visceral_metastasis_present = '1';
+        payload.visceral_lesion_count = String(parseInt(payload.visceral_lesion_count) || 1);
+    }
+
+    // LXCII.1 — CHAARTED HV/LV computation (matches backend _derive_mhspc_burden_context).
+    if (visceral) {
+        payload.volume_disease = 'high';
+    } else if (boneTotal >= 4 && boneApp >= 1) {
+        payload.volume_disease = 'high';
+    } else if (boneTotal < 3 && !visceral) {
+        payload.volume_disease = 'low';
+    }
+    // (else leave undefined → backend will set "unknown" or fallback)
+
+    // LXCII.1 — LATITUDE HR computation (image-canonical: 2 of 3 criteria).
+    const gp = parseInt(payload.gleason_primary) || 0;
+    const gs = parseInt(payload.gleason_secondary) || 0;
+    const totalGleason = gp + gs;
+    let latitudeCriteria = 0;
+    if (totalGleason >= 8) latitudeCriteria++;
+    if (boneTotal >= 3) latitudeCriteria++;
+    if (visceral) latitudeCriteria++;
+    if (latitudeCriteria >= 2) {
+        payload.latitude_high_risk = '1';
+    }
+
+    return payload;
+}
+
+// LXCII.1 (2026-04-28) — Live classification preview per image canonical
+// definitions. Shows D'Amico (localized) + CHAARTED HV/LV + LATITUDE HR +
+// PCWG3 mCRPC criteria computed live as the user fills Step 1.
+function iwBuildLiveClassificationPreview() {
+    const panel1 = document.getElementById('iw-panel-1');
+    if (!panel1) return;
+    const inputs = panel1.querySelectorAll('input, select');
+    const payload = {};
+    inputs.forEach((i) => {
+        if (i.value !== '' && i.value !== null) payload[i.name] = i.value;
+    });
+    iwAutoDeriveClassifierFlags(payload);
+
+    const previewEl = document.getElementById('iw-live-preview');
+    if (!previewEl) return;
+
+    const lines = [];
+    const known = String(payload.known_cancer_diagnosis || '');
+    const psa = parseFloat(payload.psa_baseline_ng_ml) || 0;
+    const gp = parseInt(payload.gleason_primary) || 0;
+    const gs = parseInt(payload.gleason_secondary) || 0;
+    const totalGleason = gp + gs;
+    const cT = (payload.clinical_tstage || '').toLowerCase();
+    const m = (payload.metastasis_site || 'M0');
+
+    // D'Amico para localizado
+    if (known === '1' && m === 'M0' && psa > 0 && totalGleason >= 6) {
+        const lowCT = ['ct1a', 'ct1b', 'ct1c', 'ct2a'].includes(cT);
+        const intCT = cT === 'ct2b';
+        const highCT = ['ct2c', 'ct3a', 'ct3b', 'ct4'].includes(cT);
+        let damico = 'no resuelto';
+        if (psa < 10 && totalGleason < 7 && lowCT) damico = '🟢 Bajo riesgo (D\'Amico)';
+        else if (psa > 20 || totalGleason >= 8 || highCT) damico = '🔴 Alto riesgo (D\'Amico)';
+        else damico = '🟡 Riesgo intermedio (D\'Amico)';
+        lines.push(`<strong>Localizada · ${damico}</strong> · PSA ${psa} · GS ${gp}+${gs}=${totalGleason} · ${cT.toUpperCase()}`);
+    }
+
+    // mCSPC volume + LATITUDE per imagen
+    if (known === '1' && ['M1a', 'M1b', 'M1c'].includes(m)) {
+        const adt = (payload.current_adt_context || 'none');
+        const isCRPC = (payload.systemic_progression_context || '') === 'confirmed_crpc';
+        if (!isCRPC && adt === 'none') {
+            const vol = (payload.volume_disease || 'no resuelto');
+            const volEmoji = vol === 'high' ? '🔴' : (vol === 'low' ? '🟢' : '⚪');
+            const isLAT = (payload.latitude_high_risk || '0') === '1';
+            const sync = (payload.metachronous_metastasis || '0') === '0' ? 'CPHNm hormono naïve / de novo' : 'CPHSm metacrónico';
+            const boneTotal = parseInt(payload.bone_lesion_count_total) || 0;
+            const boneApp = parseInt(payload.bone_appendicular_count) || 0;
+            const visceral = (payload.visceral_metastasis_present || '0') === '1';
+            lines.push(`<strong>mCSPC · ${volEmoji} Volumen ${vol === 'high' ? 'ALTO (CHAARTED)' : vol === 'low' ? 'BAJO' : 'no resuelto'}${isLAT ? ' · 🔥 ALTO RIESGO LATITUDE (≥2/3)' : ''}</strong> · ${sync}`);
+            const reasons = [];
+            if (visceral) reasons.push('visceral=sí');
+            if (boneTotal > 0) reasons.push(`${boneTotal} óseas (${boneApp} apendicular, ${boneTotal-boneApp} axial)`);
+            if (totalGleason >= 8) reasons.push(`GS ${totalGleason}`);
+            if (reasons.length) lines.push(`<small>${reasons.join(' · ')}</small>`);
+        }
+    }
+
+    // PCWG3 mCRPC
+    if (known === '1' && (payload.current_adt_context || 'none') !== 'none') {
+        const cs = (payload.castrate_testosterone_status || 'unknown');
+        const sp = (payload.systemic_progression_context || 'none');
+        const ci = (payload.conventional_imaging_status || 'NOT_RESTAGED');
+        if (sp === 'confirmed_crpc' && cs === 'confirmed_castrate') {
+            if (ci === 'M1') lines.push(`<strong>🚨 m1CRPC (PCWG3)</strong> · T<50 + 3↑PSA + M1 imagen`);
+            else if (ci === 'M0') lines.push(`<strong>📈 m0CRPC / nmCRPC (PCWG3)</strong> · T<50 + 3↑PSA + M0 imagen · candidato SPARTAN/PROSPER/ARAMIS si PSADT≤10mo`);
+            else lines.push(`<strong>CPCR · imagen pendiente</strong> · falta restadificación CT+bone`);
+        } else if (sp === 'suspicious' || (cs === 'unknown' && sp === 'confirmed_crpc')) {
+            lines.push(`<strong>⚠ ADT progression verification</strong> · castración no confirmada o progresión no PCWG3`);
+        }
+    }
+
+    // BCR
+    if ((payload.prior_local_therapy || '') === 'prostatectomy' &&
+        (payload.bcr_detected || '0') === '1') {
+        const bcrPSA = parseFloat(payload.bcr_psa) || 0;
+        lines.push(`<strong>📉 Recurrencia bioquímica post-RP</strong> · APE ${bcrPSA}≥0.2 confirmado`);
+    }
+    if (['radiation', 'brachytherapy'].includes(payload.prior_local_therapy || '') &&
+        parseFloat(payload.psa_nadir_post_rt || 0) > 0) {
+        lines.push(`<strong>📉 Post-RT seguimiento</strong> · nadir ${payload.psa_nadir_post_rt} (Phoenix BCR si APE>nadir+2)`);
+    }
+
+    if (lines.length === 0) {
+        previewEl.innerHTML = '<em>Captura los campos clínicos para ver clasificación inicial en vivo (D\'Amico / CHAARTED / LATITUDE / PCWG3)…</em>';
+    } else {
+        previewEl.innerHTML = lines.join('<br>');
+    }
+}
+
+// LXC fix C3 — Cross-field clinical validation antes de classify
+function iwCrossFieldValidate(payload) {
+    const errors = [];
+    const t = (payload.clinical_tstage || '').toLowerCase();
+    const m = (payload.metastasis_site || '').toUpperCase();
+    const gp = parseInt(payload.gleason_primary);
+    const gs = parseInt(payload.gleason_secondary);
+
+    // 1. cT0 + M1 imposible (no hay tumor primario detectable pero sí mets)
+    if (t === 'ct0' && m.startsWith('M1')) {
+        errors.push('Combinación clínicamente imposible: cT0 + M1 (no puede haber metástasis sin tumor primario detectable)');
+    }
+    // 2. Gleason 2+2 rejected by ISUP 2014
+    if (gp === 2 && gs === 2) {
+        errors.push('Gleason 2+2 fue rechazado por ISUP 2014. Use Gleason 3+3 (ISUP 1) como mínimo');
+    }
+    // 3. Gleason values must be 3-5
+    if (!isNaN(gp) && (gp < 3 || gp > 5)) {
+        errors.push(`Gleason primary ${gp} inválido (debe ser 3-5 per ISUP 2014)`);
+    }
+    if (!isNaN(gs) && (gs < 3 || gs > 5)) {
+        errors.push(`Gleason secondary ${gs} inválido (debe ser 3-5 per ISUP 2014)`);
+    }
+    // 4. ECOG 5 doesn't exist
+    const ecog = parseInt(payload.ecog_score);
+    if (!isNaN(ecog) && (ecog < 0 || ecog > 4)) {
+        errors.push(`ECOG ${ecog} inválido (max 4)`);
+    }
+    // 5. PSA basal sanity
+    const psa = parseFloat(payload.psa_baseline_ng_ml);
+    if (!isNaN(psa) && psa < 0) {
+        errors.push('PSA basal no puede ser negativo');
+    }
+    if (!isNaN(psa) && psa > 10000) {
+        errors.push(`PSA basal ${psa} > 10000 ng/mL improbable, verificar unidades`);
+    }
+    return errors;
+}
+
+async function iwClassifyAndAdvance() {
+    // Collect step 1 payload — only visible (not display:none) inputs count
+    // for required-validation, since conditional_visibility hides branches
+    // not active for the selected disease history (LXCII).
+    const panel1 = document.getElementById('iw-panel-1');
+    const inputs = panel1.querySelectorAll('input, select');
+    const payload = {};
+    let missingRequired = [];
+    inputs.forEach((i) => {
+        const fieldEl = i.closest('.iw-field');
+        const isHidden = fieldEl && fieldEl.style.display === 'none';
+        if (isHidden) return;  // skip hidden conditional branches
+        if (i.required && !i.value) missingRequired.push(i.previousElementSibling?.textContent || i.name);
+        if (i.value !== '' && i.value !== null) payload[i.name] = i.value;
+    });
+    if (missingRequired.length) {
+        if (window.pm2Toast) window.pm2Toast('warn', 'Faltan: ' + missingRequired.slice(0, 3).join(', '));
+        return;
+    }
+
+    // LXC fix C3 — cross-field clinical validation
+    const xfErrors = iwCrossFieldValidate(payload);
+    if (xfErrors.length) {
+        if (window.pm2Toast) window.pm2Toast('error', xfErrors[0]);
+        // Show all in console for transparency
+        console.warn('LXC C3 cross-field validation errors:', xfErrors);
+        return;
+    }
+
+    // LXCII (2026-04-28) — Auto-derive routing flags que el classifier consume
+    // pero que NO se exponen explícitamente en la UI. Mantiene el schema
+    // visualmente compacto sin perder rigor del classifier (44 fields).
+    iwAutoDeriveClassifierFlags(payload);
+
+    Object.assign(window.iwState.payload, payload);
+
+    const btn = document.getElementById('iw-step1-next');
+    btn.disabled = true;
+    btn.textContent = '⏳ Clasificando…';
+    try {
+        const res = await fetch('/api/state-classifier', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const body = await res.json();
+        if (!body.success) {
+            if (window.pm2Toast) window.pm2Toast('error', body.error || 'Error en clasificación');
+            return;
+        }
+        window.iwState.classifiedState = body.state;
+        window.iwState.classifiedReason = body.classification_reason || '';
+
+        // Update UI
+        document.getElementById('iw-classified-state').textContent = body.state;
+        document.getElementById('iw-classify-reason').textContent = body.classification_reason || '';
+        document.getElementById('iw-classify-result').style.display = 'block';
+        document.getElementById('iw-step2-meta').textContent = `${body.state} · cargando schema…`;
+
+        await iwLoadStageSchema(body.state);
+        iwGoStep(2);
+        if (window.pm2Toast) window.pm2Toast('success', `✓ Estadio resuelto: ${body.state}`);
+    } catch (err) {
+        if (window.pm2Toast) window.pm2Toast('error', `Network: ${err.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Clasificar y continuar →';
+    }
+}
+
+async function iwLoadStageSchema(state) {
+    const container = document.getElementById('iw-stage-form-container');
+    container.innerHTML = '<p style="text-align:center;padding:40px;color:var(--pn-text-muted);">Cargando schema completo…</p>';
+
+    try {
+        const res = await fetch(`/api/intake-schema/${encodeURIComponent(state)}`);
+        const body = await res.json();
+        if (!body.success) {
+            container.innerHTML = `<p style="color:var(--clinical-critical);">Error: ${body.error || 'no schema'}</p>`;
+            return;
+        }
+        window.iwState.stageSchema = body;
+        document.getElementById('iw-step2-meta').textContent =
+            `${body.total_fields} campos · ${body.required_count} req · ${body.field_groups?.length || 0} grupos`;
+
+        // Render con grouping y collapsibles para optional/refiner
+        let html = '';
+
+        // First: required fields prominent
+        if (body.by_role?.required?.length) {
+            html += `<div class="iw-field-group" style="border-left:3px solid var(--clinical-critical);">
+                <div class="iw-field-group-title" style="color:var(--clinical-critical);">⚠ Campos requeridos · ${body.by_role.required.length}</div>
+                <div class="iw-field-row">`;
+            for (const f of body.by_role.required) {
+                html += iwRenderFieldHtml(f, 'stage');
+            }
+            html += `</div></div>`;
+        }
+
+        // Then: decision_refiner (collapsible by default)
+        if (body.by_role?.decision_refiner?.length) {
+            html += `<details class="iw-field-group" style="border-left:3px solid var(--clinical-warning);">
+                <summary class="iw-collapsible iw-field-group-title" style="color:var(--clinical-warning);">
+                    🎯 Decision refiner · ${body.by_role.decision_refiner.length} campos · click para expandir
+                </summary>
+                <div class="iw-field-row" style="margin-top:12px;">`;
+            for (const f of body.by_role.decision_refiner) {
+                html += iwRenderFieldHtml(f, 'stage');
+            }
+            html += `</div></details>`;
+        }
+
+        // Then: monitoring (collapsible)
+        if (body.by_role?.monitoring?.length) {
+            html += `<details class="iw-field-group" style="border-left:3px solid var(--clinical-info);">
+                <summary class="iw-collapsible iw-field-group-title" style="color:var(--clinical-info);">
+                    📊 Monitoring · ${body.by_role.monitoring.length} campos · click para expandir
+                </summary>
+                <div class="iw-field-row" style="margin-top:12px;">`;
+            for (const f of body.by_role.monitoring) {
+                html += iwRenderFieldHtml(f, 'stage');
+            }
+            html += `</div></details>`;
+        }
+
+        // Optional last (collapsible)
+        if (body.by_role?.optional?.length) {
+            html += `<details class="iw-field-group">
+                <summary class="iw-collapsible iw-field-group-title">
+                    Optional · ${body.by_role.optional.length} campos · click para expandir
+                </summary>
+                <div class="iw-field-row" style="margin-top:12px;">`;
+            for (const f of body.by_role.optional) {
+                html += iwRenderFieldHtml(f, 'stage');
+            }
+            html += `</div></details>`;
+        }
+
+        container.innerHTML = html;
+
+        container.querySelectorAll('input, select, textarea').forEach((el) => {
+            el.addEventListener('input', () => iwUpdateStats());
+            el.addEventListener('change', () => {
+                iwUpdateStats();
+                iwApplyConditionalVisibility(container);
+            });
+        });
+        iwApplyConditionalVisibility(container);
+        iwUpdateStats();
+    } catch (err) {
+        container.innerHTML = `<p style="color:var(--clinical-critical);">Network: ${err.message}</p>`;
+    }
+}
+
+function iwApplyConditionalVisibility(container) {
+    container.querySelectorAll('[data-conditional]').forEach((field) => {
+        try {
+            const cond = JSON.parse(field.dataset.conditional);
+            let show = true;
+            for (const [depField, allowedValues] of Object.entries(cond)) {
+                const depEl = container.querySelector(`[name="${depField}"]`);
+                if (!depEl) continue;
+                const v = depEl.value;
+                if (!allowedValues.includes(v)) { show = false; break; }
+            }
+            field.style.display = show ? '' : 'none';
+        } catch (e) { /* malformed conditional */ }
+    });
+}
+
+function iwBuildSummary() {
+    const container = document.getElementById('iw-summary-container');
+    const allInputs = document.querySelectorAll('#iw-panel-1 input, #iw-panel-1 select, #iw-panel-2 input, #iw-panel-2 select');
+    const captured = {};
+    allInputs.forEach((i) => {
+        if (i.value && i.style.display !== 'none' && (i.offsetParent !== null || i.closest('details'))) {
+            captured[i.name] = i.value;
+        }
+    });
+    Object.assign(window.iwState.payload, captured);
+
+    let html = `<h4 style="color:#f0fbff;margin:0 0 12px;">📋 ${Object.keys(captured).length} campos capturados</h4>`;
+    html += `<div class="iw-stat"><span>Estadio NCCN</span> <strong>${window.iwState.classifiedState || '—'}</strong></div>`;
+    html += `<div class="iw-stat"><span>Schema total</span> <strong>${window.iwState.stageSchema?.total_fields || '—'} campos</strong></div>`;
+    html += `<div class="iw-stat"><span>Capturados</span> <strong>${Object.keys(captured).length}</strong></div>`;
+    html += `<div style="margin-top:12px;padding:10px;background:var(--surface-3);border-radius:6px;font-size:.78rem;color:var(--pn-text-muted);">
+        <strong style="color:var(--clinical-success);">Reasoning:</strong> ${escapeHtml(window.iwState.classifiedReason)}
+    </div>`;
+    container.innerHTML = html;
+}
+
+async function iwSavePatient() {
+    // LXCI Fase 1+2 — URL fix + consent modal flow.
+    // Pre-LXCI: hang en "Guardando…" por URL mismatch (`register-patient-v2` 404).
+    // Post-LXCI: register OK → modal firma electrónica → POST /api/consent/sign → redirect.
+    const btn = document.getElementById('iw-save-btn');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Abriendo expediente…';
+
+    // Build full payload
+    const allInputs = document.querySelectorAll('#iw-panel-1 input, #iw-panel-1 select, #iw-panel-2 input, #iw-panel-2 select');
+    const payload = {};
+    allInputs.forEach((i) => {
+        if (i.value) payload[i.name] = i.value;
+    });
+    payload._classified_state = window.iwState.classifiedState;
+    payload._classification_reason = window.iwState.classifiedReason;
+
+    try {
+        // LXCI fix: endpoint correcto (was /api/register-patient-v2 → 404 hang)
+        const res = await fetch('/api/register_patient', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        // LXCI defensive: capture res.json() failure (malformed/non-JSON response)
+        let body;
+        try {
+            body = await res.json();
+        } catch (e) {
+            if (window.pm2Toast) window.pm2Toast('error', `Backend respuesta inválida (HTTP ${res.status})`);
+            btn.disabled = false;
+            btn.textContent = originalText;
+            return;
+        }
+
+        if (!body.success) {
+            if (window.pm2Toast) window.pm2Toast('error', body.error || body.msg || 'Error guardando paciente');
+            btn.disabled = false;
+            btn.textContent = originalText;
+            return;
+        }
+
+        // SUCCESS — open consent signature modal (NO redirect yet)
+        const nss = body.nss || body.patient_nss || payload.nss;
+        if (window.pm2Toast) window.pm2Toast('success', `✓ Paciente guardado · NSS ${nss}`);
+        // Open consent modal (LXCI Fase 2)
+        iwOpenConsentModal(nss);
+        btn.disabled = false;
+        btn.textContent = originalText;
+    } catch (err) {
+        if (window.pm2Toast) window.pm2Toast('error', `Network: ${err && err.message ? err.message : err}`);
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Faubot LXCI Fase 2 — Consent signature modal post-registro.
+ * 21 CFR Part 11 §11.200 e-signature compliant + LFPDPPP MX.
+ * ──────────────────────────────────────────────────────────────────────── */
+let _iwConsentSigCtx = null;
+let _iwConsentSigCanvas = null;
+let _iwConsentHasInk = false;
+let _iwConsentNss = null;
+
+function iwOpenConsentModal(nss) {
+    _iwConsentNss = nss;
+    const modal = document.getElementById('iw-consent-modal');
+    const nssEl = document.getElementById('iw-consent-nss');
+    if (nssEl) nssEl.textContent = nss || '—';
+    if (modal) modal.style.display = 'flex';
+    // Init canvas
+    setTimeout(() => iwInitConsentSig(), 100);
+}
+
+function iwInitConsentSig() {
+    const canvas = document.getElementById('iw-consent-sig');
+    if (!canvas) return;
+    _iwConsentSigCanvas = canvas;
+    _iwConsentSigCtx = canvas.getContext('2d');
+    _iwConsentHasInk = false;
+    _iwConsentSigCtx.lineWidth = 2.2;
+    _iwConsentSigCtx.lineCap = 'round';
+    _iwConsentSigCtx.strokeStyle = '#0b1325';
+
+    let drawing = false;
+    function pos(e) {
+        const r = canvas.getBoundingClientRect();
+        const t = e.touches ? e.touches[0] : e;
+        return {
+            x: (t.clientX - r.left) * canvas.width / r.width,
+            y: (t.clientY - r.top) * canvas.height / r.height,
+        };
+    }
+    const start = (e) => { drawing = true; const p = pos(e); _iwConsentSigCtx.beginPath(); _iwConsentSigCtx.moveTo(p.x, p.y); };
+    const move = (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e); _iwConsentSigCtx.lineTo(p.x, p.y); _iwConsentSigCtx.stroke(); _iwConsentHasInk = true; };
+    const end = () => { drawing = false; };
+
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+    canvas.addEventListener('touchstart', start, { passive: false });
+    canvas.addEventListener('touchmove', move, { passive: false });
+    window.addEventListener('touchend', end);
+}
+
+function iwClearConsentSig() {
+    if (!_iwConsentSigCtx || !_iwConsentSigCanvas) return;
+    _iwConsentSigCtx.clearRect(0, 0, _iwConsentSigCanvas.width, _iwConsentSigCanvas.height);
+    _iwConsentHasInk = false;
+    const status = document.getElementById('iw-consent-sig-status');
+    if (status) status.innerHTML = 'Estado: <span style="color:var(--clinical-warning);">○ pendiente de firma</span>';
+}
+
+function iwCancelConsent() {
+    if (!confirm('¿Cancelar registro? El paciente quedará creado pero SIN consentimiento firmado (banner amarillo en perfil hasta firmar).')) {
+        return;
+    }
+    const modal = document.getElementById('iw-consent-modal');
+    if (modal) modal.style.display = 'none';
+    // Redirect anyway (consent pending state)
+    if (_iwConsentNss) {
+        window.location.href = `/patient_profile/${encodeURIComponent(_iwConsentNss)}?consent=pending`;
+    }
+}
+
+async function iwSignConsentAndOpen() {
+    const signerInput = document.getElementById('iw-consent-signer-name');
+    const signer = (signerInput?.value || '').trim();
+    if (!signer || signer.length < 3) {
+        if (window.pm2Toast) window.pm2Toast('warn', 'Ingrese el nombre completo del firmante (mín 3 chars)');
+        return;
+    }
+    if (!_iwConsentHasInk) {
+        if (window.pm2Toast) window.pm2Toast('warn', 'Debe trazar la firma en el canvas antes de continuar');
+        return;
+    }
+    if (!_iwConsentNss) {
+        if (window.pm2Toast) window.pm2Toast('error', 'NSS del paciente no disponible · refresh');
+        return;
+    }
+
+    const btn = document.getElementById('iw-consent-sign-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Firmando…';
+
+    // Build signature payload
+    const dataUrl = _iwConsentSigCanvas.toDataURL('image/png');
+    // Compute SHA-256 hash of dataUrl + signer + timestamp (browser-side via crypto.subtle)
+    const ts = new Date().toISOString();
+    const hashInput = `${dataUrl}|${signer}|${ts}|${_iwConsentNss}`;
+    let contentHash = '';
+    try {
+        const enc = new TextEncoder().encode(hashInput);
+        const hashBuf = await crypto.subtle.digest('SHA-256', enc);
+        contentHash = Array.from(new Uint8Array(hashBuf))
+            .map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) {
+        // Fallback simple hash
+        let h = 0;
+        for (let i = 0; i < hashInput.length; i++) h = ((h << 5) - h + hashInput.charCodeAt(i)) | 0;
+        contentHash = 'simple-' + (h >>> 0).toString(16);
+    }
+
+    try {
+        const res = await fetch('/api/consent/sign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                nss: _iwConsentNss,
+                signer_name: signer,
+                content_hash: contentHash,
+                signed_at: ts,
+                signature_dataurl_thumbnail: dataUrl.slice(0, 200) + '...',  // truncated for log
+                consent_version: 'v3.2',
+                source: 'intake_stage_aware_v2',
+            }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body.success === false) {
+            if (window.pm2Toast) window.pm2Toast('error', body.error || `Error firmando (HTTP ${res.status})`);
+            btn.disabled = false;
+            btn.textContent = '✍ Firmar y abrir expediente';
+            return;
+        }
+        // Success — close modal + redirect
+        const status = document.getElementById('iw-consent-sig-status');
+        if (status) status.innerHTML = 'Estado: <span style="color:var(--clinical-success);">✓ firmado · ' + ts.slice(0, 19).replace('T', ' ') + ' · hash ' + contentHash.slice(0, 12) + '…</span>';
+        if (window.pm2Toast) window.pm2Toast('success', `✓ Consentimiento firmado · abriendo expediente…`);
+        setTimeout(() => {
+            window.location.href = `/patient_profile/${encodeURIComponent(_iwConsentNss)}`;
+        }, 800);
+    } catch (err) {
+        if (window.pm2Toast) window.pm2Toast('error', `Network: ${err && err.message ? err.message : err}`);
+        btn.disabled = false;
+        btn.textContent = '✍ Firmar y abrir expediente';
+    }
+}
+
+function escapeHtml(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* Reuse pm2Toast utility from patient_profile_v2 if available, otherwise inline */
+(function () {
+    if (window.pm2Toast) return;
+    function ensureHost() {
+        let h = document.getElementById('pm2-toast-host');
+        if (!h) {
+            h = document.createElement('div');
+            h.id = 'pm2-toast-host';
+            h.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:420px;';
+            document.body.appendChild(h);
+        }
+        return h;
+    }
+    window.pm2Toast = function (level, msg) {
+        const host = ensureHost();
+        const colors = { success:'#10b981', warn:'#f59e0b', error:'#ef4444', info:'#06b6d4' };
+        const c = colors[level] || colors.info;
+        const t = document.createElement('div');
+        t.style.cssText = `padding:12px 16px;background:${c};border-radius:8px;color:#0b1325;font-weight:600;font-size:.85rem;box-shadow:0 8px 24px rgba(0,0,0,.4);`;
+        t.textContent = msg;
+        host.appendChild(t);
+        setTimeout(() => t.remove(), 4500);
+    };
+})();
+</script>
+{% endblock %}

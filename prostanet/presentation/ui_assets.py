@@ -60,10 +60,13 @@ def _resolve_asset(
 def build_ui_assets() -> dict[str, dict[str, object]]:
     prostamed_logo = _resolve_asset(
         candidates=[
+            "img/prostamed_logo_official.png",
+            "img/prostamed_logo_header_official.png",
             "img/prostamed_logo_header.png",
             "img/prostamed_logo_header.jpg",
             "img/prostamed_logo_header.jpeg",
             "img/prostamed_logo_header.webp",
+            "img/prostamed_logo_header.svg",
             "img/prostamed_logo_real.png",
             "img/prostamed_logo_real.jpg",
             "img/prostamed_logo_real.jpeg",
@@ -82,6 +85,8 @@ def build_ui_assets() -> dict[str, dict[str, object]]:
             "img/*prostamed*.jpg",
             "img/*prostamed*.jpeg",
             "img/*prostamed*.webp",
+            "img/*prostamed*logo*.svg",
+            "img/*prostamed*.svg",
         ],
         fallback="img/prostamed_logo.svg",
         alt="PROSTAMED",

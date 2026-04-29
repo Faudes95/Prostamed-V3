@@ -4,7 +4,14 @@ from datetime import datetime
 from math import log
 from typing import Any
 
-from prostanet.shared.metastatic_profile import derive_legacy_metastasis, derive_mhspc_burden_context
+from prostanet.domains.post_radiotherapy_or_local_salvage.logic import (
+    build_post_rt_failure_definition,
+)
+from prostanet.shared.metastatic_profile import (
+    derive_legacy_metastasis,
+    derive_mhspc_burden_context,
+    resolve_metastatic_state_context,
+)
 from prostanet.shared.systemic_progression import (
     build_progression_gate,
     normalize_castrate_status,
@@ -201,6 +208,112 @@ def _has_post_prostatectomy_context(patient: dict[str, Any]) -> bool:
     return False
 
 
+def _has_post_radiotherapy_context(patient: dict[str, Any]) -> bool:
+    if patient.get("radiation"):
+        return True
+    prior_state = str((patient.get("prior_history") or {}).get("current_state") or "")
+    if prior_state in {"post_radiotherapy_followup", "post_radiotherapy_or_local_salvage"}:
+        return True
+    assessment_state = str((patient.get("latest_assessment") or {}).get("state") or "")
+    if assessment_state in {"post_radiotherapy_followup", "post_radiotherapy_or_local_salvage"}:
+        return True
+    truth_values = ((patient.get("longitudinal_truth_snapshot") or {}).get("field_values") or {})
+    assessment_inputs = ((patient.get("latest_assessment") or {}).get("input_snapshot") or {})
+    for source in (
+        patient.get("baseline") or {},
+        truth_values,
+        assessment_inputs,
+        patient.get("bcr") or {},
+    ):
+        if not isinstance(source, dict):
+            continue
+        if _safe_bool(source.get("prior_radiation")):
+            return True
+        if _safe_bool(source.get("radiotherapy_done")):
+            return True
+        if _is_present(source.get("radiation_date")) or _is_present(source.get("prior_rt_date")):
+            return True
+        if _is_present(source.get("prior_rt_modality")) or _is_present(source.get("rt_modality")):
+            return True
+    return False
+
+
+def _build_post_rt_recurrence_payload(patient: dict[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    truth_values = ((patient.get("longitudinal_truth_snapshot") or {}).get("field_values") or {})
+    latest_assessment_inputs = ((patient.get("latest_assessment") or {}).get("input_snapshot") or {})
+    latest_signal_snapshot = patient.get("latest_signal_snapshot") or {}
+    latest_followup = _latest(patient.get("follow_ups", []), "visit_date")
+    latest_stage_visit = _latest(patient.get("stage_visits", []), "visit_date", "created_at", "recorded_at")
+    stage_payload = ((latest_stage_visit.get("visit_bundle") or {}).get("payload") or {}) if latest_stage_visit else {}
+    latest_rt_course = _latest(
+        patient.get("radiotherapy_courses_detailed", []) or patient.get("radiotherapy_courses", []),
+        "rt_start_date",
+        "rt_end_date",
+        "created_at",
+    )
+    latest_radiation = _latest(patient.get("radiation", []), "rt_date", "created_at")
+
+    for source in (
+        patient.get("baseline") or {},
+        truth_values,
+        latest_assessment_inputs,
+        latest_signal_snapshot,
+        latest_followup,
+        stage_payload,
+        patient.get("bcr") or {},
+    ):
+        if not isinstance(source, dict):
+            continue
+        for key, value in source.items():
+            if value not in (None, "", [], {}):
+                payload[key] = value
+
+    payload["prior_radiation"] = 1 if _has_post_radiotherapy_context(patient) else payload.get("prior_radiation")
+    payload["prior_prostatectomy"] = 1 if _has_post_prostatectomy_context(patient) else payload.get("prior_prostatectomy")
+
+    if not _is_present(payload.get("psa_current")):
+        psa_series = list(patient.get("psa_series") or [])
+        if psa_series:
+            payload["psa_current"] = psa_series[-1].get("value")
+
+    if not _is_present(payload.get("psa_history")):
+        psa_history = []
+        for point in list(patient.get("psa_series") or []):
+            value = _safe_float(point.get("value"))
+            if value is None:
+                continue
+            psa_history.append(
+                {
+                    "value": value,
+                    "date": point.get("sample_date") or "",
+                    "unit": point.get("unit") or "ng/mL",
+                    "context": point.get("context") or "",
+                    "source": point.get("source") or point.get("entry_origin") or "",
+                    "line_of_therapy_number": point.get("line_of_therapy_number"),
+                    "line_of_therapy_context": point.get("line_of_therapy_context") or "",
+                }
+            )
+        if psa_history:
+            payload["psa_history"] = psa_history
+
+    if not _is_present(payload.get("prior_rt_modality")):
+        payload["prior_rt_modality"] = (
+            latest_rt_course.get("modality")
+            or latest_radiation.get("rt_technique")
+            or payload.get("rt_modality")
+            or ""
+        )
+    if not _is_present(payload.get("radiation_date")):
+        payload["radiation_date"] = (
+            latest_rt_course.get("rt_start_date")
+            or latest_radiation.get("rt_date")
+            or payload.get("prior_rt_date")
+            or ""
+        )
+    return payload
+
+
 def _is_metachronous_mhspc(patient: dict[str, Any]) -> bool:
     baseline = patient.get("baseline") or {}
     explicit = str(baseline.get("metachronous_metastasis", "") or "").strip().lower()
@@ -249,6 +362,8 @@ def _derive_castrate_status(patient: dict[str, Any], state: str) -> str:
         or stage_payload.get("testosterone")
     )
     if latest_testosterone is None:
+        latest_testosterone = _safe_float(patient.get("latest_testosterone_value"))
+    if latest_testosterone is None:
         latest_testosterone = _safe_float(latest_followup.get("testosterone_current"))
     if latest_testosterone is None:
         latest_testosterone = _safe_float((patient.get("baseline") or {}).get("testosterone_baseline"))
@@ -292,6 +407,54 @@ def _derive_progression_pattern(patient: dict[str, Any], state: str) -> str:
     return "biochemical_only"
 
 
+def _overlay_psma_context(payload: dict[str, Any], patient: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(payload or {})
+    psma_profile = patient.get("psma_structured_profile") or {}
+    if isinstance(psma_profile, dict) and psma_profile.get("available"):
+        mapping = {
+            "psma_pet_done": "1",
+            "psma_positive": "1" if psma_profile.get("psma_positive") else "0",
+            "psma_result": psma_profile.get("psma_result"),
+            "psma_radioligand": psma_profile.get("psma_radioligand"),
+            "psma_rads_score": psma_profile.get("psma_rads_score"),
+            "psma_uptake_pattern": psma_profile.get("psma_uptake_pattern"),
+            "psma_stage_after_psma": psma_profile.get("psma_stage_after_psma"),
+            "conventional_stage_before_psma": psma_profile.get("conventional_stage_before_psma"),
+            "psma_total_lesions": psma_profile.get("psma_total_lesions"),
+            "psma_lesion_locations": psma_profile.get("psma_lesion_locations"),
+            "psma_study_date": psma_profile.get("study_date"),
+        }
+        for key, value in mapping.items():
+            if value not in (None, "", [], {}) and merged.get(key) in (None, "", [], {}):
+                merged[key] = value
+        if merged.get("conventional_imaging_status") in (None, "", [], {}) and psma_profile.get("conventional_stage_before_psma"):
+            merged["conventional_imaging_status"] = psma_profile.get("conventional_stage_before_psma")
+
+    latest_psma = {}
+    for study in patient.get("imaging") or []:
+        if "psma" in str(study.get("study_type") or "").lower():
+            latest_psma = dict(study)
+            break
+    if latest_psma:
+        findings = latest_psma.get("findings") if isinstance(latest_psma.get("findings"), dict) else {}
+        for key in (
+            "psma_result",
+            "psma_radioligand",
+            "psma_rads_score",
+            "psma_uptake_pattern",
+            "conventional_stage_before_psma",
+            "psma_stage_after_psma",
+        ):
+            value = latest_psma.get(key) or findings.get(key)
+            if value not in (None, "", [], {}) and merged.get(key) in (None, "", [], {}):
+                merged[key] = value
+        if merged.get("psma_study_date") in (None, "", [], {}) and latest_psma.get("study_date"):
+            merged["psma_study_date"] = latest_psma.get("study_date")
+        if merged.get("psma_pet_done") in (None, "", [], {}):
+            merged["psma_pet_done"] = "1"
+    return merged
+
+
 def _metastatic_context(patient: dict[str, Any]) -> tuple[str, int, bool]:
     baseline = patient.get("baseline") or {}
     truth = patient.get("longitudinal_truth_snapshot") or {}
@@ -316,70 +479,21 @@ def _metastatic_context(patient: dict[str, Any]) -> tuple[str, int, bool]:
             if value not in (None, "", [], {}):
                 metastatic_payload[key] = value
 
+    metastatic_payload = _overlay_psma_context(metastatic_payload, patient)
+    metastatic_state_context = resolve_metastatic_state_context(metastatic_payload)
     metastasis_site, metastasis_count, _ = derive_legacy_metastasis(metastatic_payload)
-    metastatic_evidence = metastasis_site not in {"", "M0", "No aplica"}
-    conventional_stage = str(truth_values.get("conventional_imaging_status") or "")
-    if conventional_stage in {"M1a", "M1b", "M1c"}:
-        metastatic_evidence = True
-        if conventional_stage == "M1a":
-            metastasis_site = "Node"
-        elif conventional_stage == "M1b":
-            metastasis_site = "Bone"
-        elif conventional_stage == "M1c":
-            metastasis_site = "Visceral"
-    psma_profile = patient.get("psma_structured_profile") or {}
-    if psma_profile.get("available") and psma_profile.get("clinical_pattern") != "negative":
-        psma_stage = str(psma_profile.get("psma_stage_after_psma") or "")
-        lesion_count = _safe_int(psma_profile.get("psma_total_lesions")) or 0
-        if psma_stage in {"M1a", "M1b", "M1c"} or lesion_count:
-            metastatic_evidence = True
-            metastasis_count = max(metastasis_count, lesion_count)
-            if psma_stage == "M1a":
-                metastasis_site = "Node"
-            elif psma_stage == "M1b":
-                metastasis_site = "Bone"
-            elif psma_stage == "M1c":
-                metastasis_site = "Visceral"
-            else:
-                return metastasis_site or "M1", metastasis_count, metastatic_evidence
-    imaging = patient.get("imaging") or []
-    for study in imaging:
-        study_type = str(study.get("study_type", "")).lower()
-        findings = study.get("findings", {}) if isinstance(study.get("findings"), dict) else {}
-        if "psma" in study_type:
-            locations = findings.get("lesion_locations", []) or []
-            lesion_count = _safe_int(findings.get("psma_total_lesions")) or 0
-            if locations or lesion_count:
-                metastatic_evidence = True
-                metastasis_count = max(metastasis_count, lesion_count or len(locations))
-                lowered = " ".join(str(item).lower() for item in locations)
-                if "hueso" in lowered:
-                    metastasis_site = "Bone"
-                elif "higado" in lowered or "pulm" in lowered or "visceral" in lowered:
-                    metastasis_site = "Visceral"
-                elif "ganglio" in lowered:
-                    metastasis_site = "Node"
-                else:
-                    metastasis_site = "M1"
-        if "gammagrama" in study_type:
-            bone_lesions = _safe_int(study.get("bone_lesion_count")) or _safe_int(findings.get("bone_lesion_count")) or 0
-            if bone_lesions:
-                metastatic_evidence = True
-                metastasis_site = "Bone"
-                metastasis_count = max(metastasis_count, bone_lesions)
-        if "tac" in study_type:
-            summary = str(findings.get("ct_summary") or "")
-            locations = findings.get("ct_locations", []) or []
-            if summary == "Metástasis" or locations:
-                metastatic_evidence = True
-                metastasis_count = max(metastasis_count, len(locations) or 1)
-                lowered = " ".join(str(item).lower() for item in locations)
-                if "hueso" in lowered:
-                    metastasis_site = "Bone"
-                elif "ganglio" in lowered:
-                    metastasis_site = "Node"
-                else:
-                    metastasis_site = "Visceral"
+    metastatic_evidence = bool(metastatic_state_context.get("metastatic_known"))
+    stage_resolved = str(metastatic_state_context.get("metastatic_stage_resolved") or "M0")
+    if stage_resolved == "M1a":
+        metastasis_site = "Node"
+    elif stage_resolved == "M1b":
+        metastasis_site = "Bone"
+    elif stage_resolved == "M1c":
+        metastasis_site = "Visceral"
+    elif stage_resolved == "M1_unspecified" and metastasis_site in {"", "M0", "No aplica"}:
+        metastasis_site = "M1"
+    if metastatic_evidence and metastasis_count in (None, 0):
+        metastasis_count = max(_safe_int(metastatic_payload.get("metastasis_count")) or 0, 1)
     return metastasis_site, metastasis_count, metastatic_evidence
 
 
@@ -602,10 +716,21 @@ def derive_post_prostatectomy_course(patient: dict[str, Any]) -> str:
 def _has_postlocal_bcr(patient: dict[str, Any]) -> bool:
     bcr = patient.get("bcr") or {}
     post_rp_truth = derive_post_prostatectomy_truth(patient) if _has_post_prostatectomy_context(patient) else {}
-    has_postlocal_context = _has_post_prostatectomy_context(patient) or bool(patient.get("radiation"))
+    has_post_rt_context = _has_post_radiotherapy_context(patient)
+    has_postlocal_context = _has_post_prostatectomy_context(patient) or has_post_rt_context
     prior_state = str((patient.get("prior_history") or {}).get("current_state") or "")
     if prior_state in POSTLOCAL_STATES:
         has_postlocal_context = True
+    if has_post_rt_context:
+        post_rt_failure = build_post_rt_failure_definition(_build_post_rt_recurrence_payload(patient))
+        if bool(post_rt_failure.get("phoenix_threshold_reached")):
+            return True
+        if str(post_rt_failure.get("failure_confirmation_basis") or "") in {
+            "biopsy_proven_local_failure",
+            "radiographic_local_failure",
+        }:
+            return True
+        return False
     explicit_bcr_markers = bool(post_rp_truth.get("structured_bcr_confirmed")) or any(
         _is_present(bcr.get(field))
         for field in ("bcr_psa", "psadt_at_bcr", "bcr_definition", "salvage_date", "bcr_date")
@@ -658,6 +783,8 @@ def _systemic_target_state(
                     burden_payload[key] = value
     burden_payload.setdefault("metastasis_site", metastasis_site)
     burden_payload.setdefault("metastasis_count", metastasis_count)
+    burden_payload = _overlay_psma_context(burden_payload, patient)
+    metastatic_state_context = resolve_metastatic_state_context(burden_payload)
     burden_context = derive_mhspc_burden_context(burden_payload)
     volume_context = str(burden_context.get("volume_disease") or "unknown")
     adt_context = _derive_adt_context(patient, explicit_state)
@@ -696,7 +823,35 @@ def _systemic_target_state(
         )
     )
     phenotype_state = explicit_state
-    if explicit_state in {"m0_crpc", "m1_crpc"}:
+    explicit_mhspc_state = _resolved_explicit_mhspc_state(patient, explicit_state) if explicit_state in MHSPC_STATES else ""
+    if explicit_state in MHSPC_STATES and explicit_mhspc_state:
+        phenotype_state = explicit_mhspc_state
+        # Auditoría #21 (cierre OOS-6): cuando el snapshot explícito quedó como
+        # mHSPC de bajo volumen (oligo_metachronous o low_volume_sync_oligo) pero
+        # la evidencia actual documenta carga alta CHAARTED (p.ej. metástasis
+        # visceral o ≥4 óseas con ≥1 apendicular), el reconciliador debe
+        # reclasificar para no permanecer en un estado stale que oculta la
+        # elegibilidad a doblete/triplete de alto volumen. La condición de
+        # "metacrónico" clínicamente exige tratamiento local previo (RP/RT);
+        # sin esa corroboración la carga se interpreta como sincrónica.
+        # Se actualiza también `explicit_mhspc_state` para que los bloques
+        # posteriores (p. ej. la salvaguarda en líneas 869-873) no reviertan
+        # el override volumétrico al estado stale.
+        low_volume_explicit_states = {
+            "mcspc_oligo_metachronous",
+            "mcspc_low_volume_sync_oligo",
+        }
+        if explicit_state in low_volume_explicit_states and volume_context == "high":
+            reasons.append(
+                "Evidencia clínica (carga alta CHAARTED con sitios viscerales o óseos apendiculares) "
+                "contradice el último assessment; se reclasifica a alto volumen."
+            )
+            effective_metachronous = metachronous and _has_local_treatment(patient)
+            phenotype_state = (
+                "mcspc_high_volume_metachronous" if effective_metachronous else "mcspc_high_volume_sync"
+            )
+            explicit_mhspc_state = phenotype_state
+    elif explicit_state in {"m0_crpc", "m1_crpc"}:
         phenotype_state = "m1_crpc" if metastatic_evidence else "m0_crpc"
     elif metastatic_evidence:
         if volume_context == "high":
@@ -714,6 +869,10 @@ def _systemic_target_state(
     if explicit_state in {"m0_crpc", "m1_crpc"}:
         reasons.append("Último assessment ya documenta CRPC.")
         resolved_systemic_context = "confirmed_crpc"
+        if explicit_state == "m0_crpc" and metastatic_evidence:
+            reasons.append(
+                f"Existe enfermedad metastásica documentada ({metastatic_state_context.get('metastatic_stage_label') or 'M1'}); el caso ya no es compatible con m0 CRPC."
+            )
 
     if castrate_status == "confirmed_castrate" and progression_pattern in {"radiographic", "clinical", "mixed"}:
         reasons.append("Progresión avanzada con testosterona en rango de castración.")
@@ -761,6 +920,11 @@ def _systemic_target_state(
             reasons.append("Carga metastásica baja / oligometastásica documentada.")
         else:
             reasons.append("Enfermedad metastásica documentada sin staging longitudinal completo.")
+        if explicit_mhspc_state and explicit_mhspc_state != phenotype_state:
+            phenotype_state = explicit_mhspc_state
+            reasons.append(
+                "El subtipo mHSPC explícito del último assessment prevalece sobre heurísticas longitudinales más débiles mientras no exista evidencia estructurada que lo contradiga."
+            )
     elif explicit_state in MHSPC_STATES:
         phenotype_state = _resolved_explicit_mhspc_state(patient, explicit_state)
         reasons.append(
@@ -788,11 +952,14 @@ def _systemic_target_state(
         prior_radiation=bool(patient.get("radiation")),
         phenotype_state=phenotype_state if phenotype_state in MHSPC_STATES else "",
     )
-    if progression_gate.get("progression_gate_active") and (
-        phenotype_state in MHSPC_STATES or explicit_state in {"m0_crpc", "m1_crpc"}
-    ):
+    if progression_gate.get("progression_gate_active") and phenotype_state in MHSPC_STATES:
         reasons.append(str(progression_gate.get("progression_gate_reason") or ""))
         resolved_state = phenotype_state
+    elif progression_gate.get("progression_gate_active") and explicit_state in {"m0_crpc", "m1_crpc"}:
+        reasons.append(str(progression_gate.get("progression_gate_reason") or ""))
+        if metastatic_evidence:
+            reasons.append("M1 anatómico ya documentado; la ruta correcta es verificar castración/progresión antes de cerrar el estado resistente final.")
+        resolved_state = "adt_progression_verification"
     elif progression_gate.get("progression_gate_active"):
         resolved_state = "adt_progression_verification"
     else:
@@ -844,13 +1011,34 @@ def build_reconciled_state(
             progression_gate_reason = str(systemic_resolution.get("progression_gate_reason") or "")
             systemic_progression_context_resolved = str(systemic_resolution.get("systemic_progression_context_resolved") or "none")
         elif has_bcr or has_local_treatment:
-            reconciled_state = "recurrence_bcr" if has_bcr else "post_prostatectomy"
-            phenotype_state = reconciled_state
-            reasons.append("El longitudinal ya documenta tratamiento local previo / recurrencia.")
+            if _has_post_prostatectomy_context(patient):
+                reconciled_state = "recurrence_bcr" if has_bcr else "post_prostatectomy"
+                phenotype_state = reconciled_state
+                reasons.append("El longitudinal ya documenta prostatectomía radical previa y redirige al carril posquirúrgico correspondiente.")
+            elif _has_post_radiotherapy_context(patient):
+                reconciled_state = "post_radiotherapy_or_local_salvage" if has_bcr else "post_radiotherapy_followup"
+                phenotype_state = reconciled_state
+                reasons.append(
+                    "El longitudinal ya documenta radioterapia previa y reconstruye la ruta post-RT con evaluación específica de Phoenix y salvage."
+                )
+            else:
+                reconciled_state = "recurrence_bcr" if has_bcr else "post_prostatectomy"
+                phenotype_state = reconciled_state
+                reasons.append("El longitudinal ya documenta tratamiento local previo / recurrencia.")
         elif has_histology or has_confirmed_cancer:
             reconciled_state = "localized_initial"
             phenotype_state = reconciled_state
             reasons.append("Existe evidencia longitudinal de cáncer confirmado fuera del carril diagnóstico.")
+    elif explicit_state == "post_prostatectomy" and post_prostatectomy_course == "true_bcr":
+        reconciled_state = "recurrence_bcr"
+        phenotype_state = reconciled_state
+        reasons.append("El PSA longitudinal posprostatectomía ya cumple criterio operativo de recurrencia bioquímica y debe pasar a carril de salvage.")
+    elif explicit_state == "localized_initial" and has_systemic_treatment and not metastatic_evidence:
+        reconciled_state = explicit_state
+        phenotype_state = explicit_state
+        reasons.append(
+            "La intensificación hormonal o multimodal documentada no saca por sí sola el caso del carril localizado mientras no exista progresión sistémica estructurada."
+        )
     elif explicit_state == "localized_initial" and has_systemic_treatment:
         systemic_resolution = _systemic_target_state(
             patient,
@@ -866,25 +1054,17 @@ def build_reconciled_state(
         progression_gate_target = str(systemic_resolution.get("progression_gate_target") or "")
         progression_gate_reason = str(systemic_resolution.get("progression_gate_reason") or "")
         systemic_progression_context_resolved = str(systemic_resolution.get("systemic_progression_context_resolved") or "none")
-    elif explicit_state in POSTLOCAL_STATES and has_systemic_treatment:
-        systemic_resolution = _systemic_target_state(
-            patient,
-            explicit_state,
-            metastasis_site,
-            metastasis_count,
-            metastatic_evidence,
-        )
-        reconciled_state = systemic_resolution.get("state") or explicit_state
-        phenotype_state = systemic_resolution.get("phenotype_state") or reconciled_state
-        reasons.extend(systemic_resolution.get("reasons") or [])
-        progression_gate_active = bool(systemic_resolution.get("progression_gate_active"))
-        progression_gate_target = str(systemic_resolution.get("progression_gate_target") or "")
-        progression_gate_reason = str(systemic_resolution.get("progression_gate_reason") or "")
-        systemic_progression_context_resolved = str(systemic_resolution.get("systemic_progression_context_resolved") or "none")
-    elif explicit_state == "post_prostatectomy" and post_prostatectomy_course == "true_bcr":
-        reconciled_state = "recurrence_bcr"
+    elif explicit_state in POSTLOCAL_STATES:
+        reconciled_state = "recurrence_bcr" if explicit_state == "post_prostatectomy" and post_prostatectomy_course == "true_bcr" else explicit_state
         phenotype_state = reconciled_state
-        reasons.append("El PSA longitudinal posprostatectomía ya cumple criterio operativo de recurrencia bioquímica y debe pasar a carril de salvage.")
+        if has_systemic_treatment:
+            reasons.append(
+                "La exposición sistémica documentada no reclasifica por sí sola la familia postlocal; el carril operativo sigue siendo post-RP/BCR hasta cerrar un módulo avanzado específico."
+            )
+        if metastatic_evidence:
+            reasons.append(
+                "La enfermedad metastásica documentada redirige la conducta terapéutica, pero no convierte automáticamente el caso postlocal en mHSPC/CRPC si la ruta vigente sigue siendo salvage/BCR."
+            )
     elif explicit_state in MHSPC_STATES | CRPC_TRACK_STATES:
         systemic_resolution = _systemic_target_state(
             patient,

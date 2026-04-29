@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iniciar sesión | ProstaMed Clinical Decision Engine</title>
+    <link rel="icon" href="{{ url_for('static', filename='img/prostamed_logo.svg') }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 antialiased">
+    <div class="flex min-h-screen flex-col items-center justify-center px-4 py-12">
+        <div class="w-full max-w-md">
+            <div class="mb-8 text-center">
+                <img src="{{ url_for('static', filename='img/prostamed_logo.svg') }}"
+                     alt="ProstaMed" class="mx-auto h-16 w-16 mb-4">
+                <h1 class="text-3xl font-bold tracking-tight text-white">
+                    Prosta<span class="text-cyan-400">Med</span>
+                </h1>
+                <p class="mt-2 text-sm text-slate-400">Clinical Decision Engine Auditable</p>
+            </div>
+
+            <div class="rounded-3xl border border-slate-800 bg-slate-900/70 p-8 shadow-2xl shadow-slate-950/40">
+                {# Mensaje de error si viene en query string.
+                   Faubot 2026-04-25 (XL) — Tier 7 G8: cuando
+                   `error=session_expired`, mostramos mensaje contextual
+                   según `session_reason_sentinel` (decoded server-side
+                   via whitelist). Idle vs absolute distinguibles para
+                   que el clínico entienda por qué fue logueado out:
+                     - idle    → cerramos por inactividad (puede volver a entrar)
+                     - absolute → jornada finalizada (re-auth obligatorio)
+                #}
+                {% if request.args.get('error') %}
+                <div class="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200" role="alert">
+                    {% if request.args.get('error') == 'invalid_credentials' %}
+                        Credenciales inválidas. Verifique usuario y contraseña.
+                    {% elif request.args.get('error') == 'session_expired' %}
+                        {% if session_reason_sentinel == session_reason_idle %}
+                            <strong>Cerramos su sesión por inactividad.</strong>
+                            <span class="pm-session-reason-detail mt-1 block text-xs text-rose-300/80">
+                                Por seguridad clínica HIPAA, las sesiones inactivas se cierran automáticamente.
+                                Inicie sesión nuevamente para continuar donde lo dejó.
+                            </span>
+                        {% elif session_reason_sentinel == session_reason_absolute %}
+                            <strong>Su jornada de trabajo finalizó.</strong>
+                            <span class="pm-session-reason-detail mt-1 block text-xs text-rose-300/80">
+                                Por política de seguridad, debe re-autenticarse periódicamente.
+                                Esto NO indica un problema con su cuenta.
+                            </span>
+                        {% else %}
+                            Su sesión expiró. Por favor inicie sesión nuevamente.
+                        {% endif %}
+                    {% elif request.args.get('error') == 'access_denied' %}
+                        Acceso denegado por el proveedor de identidad.
+                    {% elif request.args.get('error') == 'missing_credentials' %}
+                        Faltan credenciales. Ingrese usuario y contraseña.
+                    {% elif request.args.get('error') == 'csrf_failed' %}
+                        Sesión inválida. Por favor recargue la página y reintente.
+                    {% else %}
+                        Error de autenticación. Intente nuevamente.
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {# Mensaje de logout exitoso #}
+                {% if request.args.get('logged_out') %}
+                <div class="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200" role="status">
+                    Sesión cerrada correctamente.
+                </div>
+                {% endif %}
+
+                <h2 class="text-xl font-semibold text-white mb-6">Iniciar sesión</h2>
+
+                {# Local login form (LocalPbkdf2Backend) #}
+                {% if g.local_login_available %}
+                <form method="POST" action="{{ url_for('clinical_auth.login') }}"
+                      id="loginForm" class="space-y-4">
+                    {% if g.csrf_token %}
+                    <input type="hidden" name="csrf_token" value="{{ g.csrf_token }}">
+                    {% endif %}
+
+                    <div>
+                        <label for="username" class="block text-sm font-medium text-slate-300 mb-1">
+                            Usuario
+                        </label>
+                        <input type="text" id="username" name="username" required autocomplete="username"
+                               class="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                               placeholder="usuario.clinico">
+                    </div>
+
+                    <div>
+                        <label for="password" class="block text-sm font-medium text-slate-300 mb-1">
+                            Contraseña
+                        </label>
+                        <input type="password" id="password" name="password" required autocomplete="current-password"
+                               class="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                               placeholder="••••••••">
+                    </div>
+
+                    <button type="submit"
+                            class="w-full rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-950/30 transition-colors hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50">
+                        Ingresar con usuario local
+                    </button>
+                </form>
+
+                {% if g.oidc_available %}
+                <div class="my-6 flex items-center gap-3">
+                    <div class="h-px flex-1 bg-slate-700"></div>
+                    <span class="text-xs text-slate-500">o</span>
+                    <div class="h-px flex-1 bg-slate-700"></div>
+                </div>
+                {% endif %}
+                {% endif %}
+
+                {# OIDC SSO button (if OIDC backend configured) #}
+                {% if g.oidc_available %}
+                <a href="{{ url_for('clinical_auth.oidc_login') }}"
+                   class="flex w-full items-center justify-center gap-3 rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-colors hover:bg-slate-800 hover:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30">
+                    <svg class="h-5 w-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                    Iniciar sesión con SSO ({{ g.oidc_backend_label }})
+                </a>
+                {% endif %}
+
+                {% if not g.local_login_available and not g.oidc_available %}
+                <div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+                    El sistema de autenticación no está configurado.
+                    Contacte al administrador del sistema.
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="mt-6 text-center text-xs text-slate-500">
+                <p>Sistema regulado HIPAA &middot; COFEPRIS NOM-024-SSA3 &middot; FDA SaMD §820.30</p>
+                <p class="mt-1">FAUBOT release: <span class="text-slate-400">{{ g.faubot_release }}</span></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

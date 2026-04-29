@@ -1,0 +1,396 @@
+{# templates/_auth_session_indicator.html
+   FAUBOT 2026-04-25 (XXXVIII→XXXIX) — Tier 7 G6 + G7.
+
+   Session countdown badge + auto-refresh + idle/absolute differentiation.
+
+   Renderiza solo cuando g.session_indicator_enabled = True
+   (auth real activo + usuario autenticado).
+
+   Funcionalidad G6 (XXXVIII):
+   1. Badge fijo en esquina inferior derecha mostrando "Sesión: MM:SS"
+   2. Color verde (>warning_threshold), amber (≤warning_threshold), rojo (≤60s)
+   3. Polls /api/auth/session-status cada poll_interval_ms (default 60s)
+   4. Auto-refresh via POST /api/auth/refresh cuando expires_in ≤ refresh_threshold_sec
+   5. Si /refresh falla (401/502) → redirect a /login?error=session_expired
+   6. Si is anonymous (anonymous middleware), badge se oculta
+
+   Nuevo G7 (XXXIX):
+   7. Display dual: countdown principal = MIN(idle, absolute, access_token).
+      Tooltip y meta exponen ambas dimensiones (idle vs absolute) por separado.
+   8. Idle warning: cuando idle_remaining ≤ idle_warning_threshold_sec (default 120s),
+      banner amber-naranja "Sesión inactiva — interactúe para continuar"
+      indicando que próximo logout es por inactividad (no por hard cap).
+   9. Auto-touch: listeners debounced (default 5s) en click/keydown que
+      POST /api/auth/touch para resetear sliding window IDLE.
+      NO se hace touch en simple polling, scroll ligero, o focus events.
+  10. Distinción visual de motivos: cuando session-status retorna
+      expiry_reason=expired_idle vs expired_absolute, el redirect lleva
+      &reason=idle/&reason=absolute para que login.html muestre mensaje
+      contextual ("Cerramos tu sesión por inactividad" vs "Re-autentícate
+      para continuar tras la jornada").
+
+   Variables Jinja consumidas:
+   - g.session_indicator_enabled
+   - g.session_indicator_poll_interval_ms
+   - g.session_indicator_refresh_threshold_sec
+   - g.session_indicator_warning_threshold_sec
+   - g.session_indicator_idle_warning_threshold_sec  ★ G7
+   - g.session_indicator_touch_url                    ★ G7
+   - g.session_indicator_touch_debounce_ms            ★ G7
+   - g.session_indicator_idle_timeout_sec             ★ G7
+   - g.session_indicator_absolute_timeout_sec         ★ G7
+   - g.csrf_token (cuando CSRF habilitado)
+   - g.current_user_role (mostrado en tooltip)
+#}
+{% if g.session_indicator_enabled %}
+<div id="pm-session-indicator"
+     data-poll-interval-ms="{{ g.session_indicator_poll_interval_ms }}"
+     data-refresh-threshold-sec="{{ g.session_indicator_refresh_threshold_sec }}"
+     data-warning-threshold-sec="{{ g.session_indicator_warning_threshold_sec }}"
+     data-idle-warning-threshold-sec="{{ g.session_indicator_idle_warning_threshold_sec }}"
+     data-touch-debounce-ms="{{ g.session_indicator_touch_debounce_ms }}"
+     data-idle-timeout-sec="{{ g.session_indicator_idle_timeout_sec }}"
+     data-absolute-timeout-sec="{{ g.session_indicator_absolute_timeout_sec }}"
+     data-csrf-token="{{ g.csrf_token or '' }}"
+     data-status-url="/api/auth/session-status"
+     data-refresh-url="/api/auth/refresh"
+     data-touch-url="{{ g.session_indicator_touch_url }}"
+     data-login-url="/login"
+     data-user-role="{{ g.current_user_role or '' }}"
+     class="pm-session-indicator fixed bottom-4 right-4 z-50 hidden flex-col gap-1 rounded-2xl border px-4 py-3 text-xs font-medium shadow-2xl backdrop-blur-md transition-colors"
+     role="status"
+     aria-live="polite"
+     aria-atomic="true">
+    <div class="flex items-center gap-2">
+        <span class="pm-session-indicator-dot inline-block h-2 w-2 rounded-full bg-emerald-400"></span>
+        <span class="pm-session-indicator-label">Sesión</span>
+        <span class="pm-session-indicator-countdown font-mono">--:--</span>
+    </div>
+    <div class="pm-session-indicator-meta text-[10px] text-slate-400">
+        <span class="pm-session-indicator-status">activa</span>
+        <span class="pm-session-indicator-refreshes hidden">· renovaciones: <span class="pm-session-indicator-refresh-count">0</span></span>
+    </div>
+    {# G7 — Detail line: idle vs absolute deadlines (tooltip-grade info) #}
+    <div class="pm-session-indicator-deadlines text-[10px] text-slate-500 hidden">
+        <span class="pm-session-indicator-idle-line">inactividad: <span class="pm-session-indicator-idle-mmss font-mono">--:--</span></span>
+        <span class="pm-session-indicator-sep" aria-hidden="true"> · </span>
+        <span class="pm-session-indicator-absolute-line">jornada: <span class="pm-session-indicator-absolute-mmss font-mono">--:--</span></span>
+    </div>
+    {# G7 — Banner inline cuando idle por debajo del umbral #}
+    <div class="pm-session-indicator-idle-banner mt-1 hidden rounded-md bg-amber-600/30 px-2 py-1 text-[10px] text-amber-100">
+        Sesión inactiva — interactúe para continuar
+    </div>
+</div>
+<script nonce="{{ g.csp_nonce or '' }}">
+(function () {
+    'use strict';
+    var indicator = document.getElementById('pm-session-indicator');
+    if (!indicator) { return; }
+
+    var pollIntervalMs = parseInt(indicator.dataset.pollIntervalMs, 10) || 60000;
+    var refreshThresholdSec = parseInt(indicator.dataset.refreshThresholdSec, 10) || 600;
+    var warningThresholdSec = parseInt(indicator.dataset.warningThresholdSec, 10) || 300;
+    var idleWarningThresholdSec = parseInt(indicator.dataset.idleWarningThresholdSec, 10) || 120;
+    var touchDebounceMs = parseInt(indicator.dataset.touchDebounceMs, 10) || 5000;
+    var idleTimeoutSec = parseInt(indicator.dataset.idleTimeoutSec, 10) || 1800;
+    var absoluteTimeoutSec = parseInt(indicator.dataset.absoluteTimeoutSec, 10) || 28800;
+    var csrfToken = indicator.dataset.csrfToken || '';
+    var statusUrl = indicator.dataset.statusUrl;
+    var refreshUrl = indicator.dataset.refreshUrl;
+    var touchUrl = indicator.dataset.touchUrl;
+    var loginUrl = indicator.dataset.loginUrl;
+
+    var dotEl = indicator.querySelector('.pm-session-indicator-dot');
+    var countdownEl = indicator.querySelector('.pm-session-indicator-countdown');
+    var statusEl = indicator.querySelector('.pm-session-indicator-status');
+    var refreshesEl = indicator.querySelector('.pm-session-indicator-refreshes');
+    var refreshCountEl = indicator.querySelector('.pm-session-indicator-refresh-count');
+    // G7 — deadlines + idle banner
+    var deadlinesEl = indicator.querySelector('.pm-session-indicator-deadlines');
+    var idleMmssEl = indicator.querySelector('.pm-session-indicator-idle-mmss');
+    var absoluteMmssEl = indicator.querySelector('.pm-session-indicator-absolute-mmss');
+    var idleBannerEl = indicator.querySelector('.pm-session-indicator-idle-banner');
+
+    var lastSeenExpiresIn = 0;
+    var lastSeenIdleRemaining = 0;
+    var lastSeenAbsoluteRemaining = 0;
+    var refreshInFlight = false;
+    var touchInFlight = false;
+    var lastTouchAt = 0;
+    var pollTimer = null;
+    var tickTimer = null;
+
+    function setColorTheme(seconds) {
+        // Reset classes
+        indicator.classList.remove(
+            'border-emerald-500/40', 'bg-emerald-500/10', 'text-emerald-100',
+            'border-amber-500/50', 'bg-amber-500/15', 'text-amber-100',
+            'border-rose-500/60', 'bg-rose-500/20', 'text-rose-100'
+        );
+        dotEl.classList.remove('bg-emerald-400', 'bg-amber-400', 'bg-rose-400');
+        if (seconds <= 60) {
+            indicator.classList.add('border-rose-500/60', 'bg-rose-500/20', 'text-rose-100');
+            dotEl.classList.add('bg-rose-400');
+        } else if (seconds <= warningThresholdSec) {
+            indicator.classList.add('border-amber-500/50', 'bg-amber-500/15', 'text-amber-100');
+            dotEl.classList.add('bg-amber-400');
+        } else {
+            indicator.classList.add('border-emerald-500/40', 'bg-emerald-500/10', 'text-emerald-100');
+            dotEl.classList.add('bg-emerald-400');
+        }
+    }
+
+    function formatMmSs(totalSec) {
+        if (totalSec < 0) { totalSec = 0; }
+        var mm = Math.floor(totalSec / 60);
+        var ss = totalSec % 60;
+        return (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+    }
+
+    function showIndicator() {
+        indicator.classList.remove('hidden');
+        indicator.classList.add('flex');
+    }
+
+    function hideIndicator() {
+        indicator.classList.add('hidden');
+        indicator.classList.remove('flex');
+    }
+
+    function updateIdleBanner(idleRemaining) {
+        // G7: si idle_remaining <= threshold, mostrar banner naranja avisando
+        // que la próxima desconexión es por inactividad y no por hard cap.
+        if (!idleBannerEl) { return; }
+        if (idleRemaining > 0 && idleRemaining <= idleWarningThresholdSec) {
+            idleBannerEl.classList.remove('hidden');
+        } else {
+            idleBannerEl.classList.add('hidden');
+        }
+    }
+
+    function updateDeadlinesPanel(idleSec, absSec) {
+        if (!deadlinesEl) { return; }
+        if (idleMmssEl) { idleMmssEl.textContent = formatMmSs(idleSec); }
+        if (absoluteMmssEl) { absoluteMmssEl.textContent = formatMmSs(absSec); }
+        // Mostrar el panel solo cuando estamos dentro del último 25% de
+        // alguna de las dos dimensiones (señal informativa para el clínico
+        // sin saturar la UI cuando todo va bien).
+        var nearIdle = idleSec > 0 && idleSec <= Math.max(warningThresholdSec, idleWarningThresholdSec);
+        var nearAbs = absSec > 0 && absSec <= Math.max(warningThresholdSec, refreshThresholdSec);
+        if (nearIdle || nearAbs) {
+            deadlinesEl.classList.remove('hidden');
+        } else {
+            deadlinesEl.classList.add('hidden');
+        }
+    }
+
+    function applyState(state) {
+        if (!state || !state.authenticated) {
+            hideIndicator();
+            stopTimers();
+            // G7: si el server reporta expiry_reason específico, redirigir
+            // con esa información para que /login muestre mensaje contextual.
+            var reason = state ? (state.expiry_reason || '') : '';
+            if (reason === 'expired_idle' || reason === 'expired_absolute') {
+                var suffix = reason === 'expired_idle' ? '&reason=idle' : '&reason=absolute';
+                window.location.assign(loginUrl + '?error=session_expired' + suffix);
+            }
+            return;
+        }
+        showIndicator();
+        var expiresIn = parseInt(state.access_token_seconds_until_expiry, 10) || 0;
+        var idleRemaining = parseInt(state.session_seconds_until_idle_timeout, 10) || 0;
+        var absoluteRemaining = parseInt(state.session_seconds_until_absolute_timeout, 10) || 0;
+        // Backward-compat path: pre-G7 deployments only ship session_seconds_until_timeout.
+        var legacyRemaining = parseInt(state.session_seconds_until_timeout, 10) || 0;
+        if (idleRemaining === 0 && absoluteRemaining === 0 && legacyRemaining > 0) {
+            // No granular info — colapsar ambos a legacy.
+            idleRemaining = legacyRemaining;
+            absoluteRemaining = legacyRemaining;
+        }
+        // Display: la dimensión MÁS RESTRICTIVA gana (incluyendo access_token).
+        var candidates = [];
+        if (expiresIn > 0) { candidates.push(expiresIn); }
+        if (idleRemaining > 0) { candidates.push(idleRemaining); }
+        if (absoluteRemaining > 0) { candidates.push(absoluteRemaining); }
+        var displaySec = candidates.length > 0 ? Math.min.apply(null, candidates) : 0;
+
+        lastSeenExpiresIn = displaySec;
+        lastSeenIdleRemaining = idleRemaining;
+        lastSeenAbsoluteRemaining = absoluteRemaining;
+        countdownEl.textContent = formatMmSs(displaySec);
+        setColorTheme(displaySec);
+
+        // G7: panel granular + banner idle
+        updateDeadlinesPanel(idleRemaining, absoluteRemaining);
+        updateIdleBanner(idleRemaining);
+
+        var refreshCount = parseInt(state.refresh_count, 10) || 0;
+        if (refreshCount > 0) {
+            refreshesEl.classList.remove('hidden');
+            refreshCountEl.textContent = String(refreshCount);
+        }
+
+        // Status text: mensaje contextual según cuál timeout está más cerca.
+        if (displaySec <= 60) {
+            statusEl.textContent = 'expirando';
+        } else if (idleRemaining > 0 && idleRemaining <= idleWarningThresholdSec) {
+            statusEl.textContent = 'inactiva';
+        } else if (displaySec <= warningThresholdSec) {
+            statusEl.textContent = 'por renovar';
+        } else {
+            statusEl.textContent = 'activa';
+        }
+
+        // Auto-refresh trigger (G4): solo cuando el access_token está cerca de expirar
+        // Y sigue siendo el factor limitante (vs idle o absolute).
+        if (state.has_refresh_token
+            && expiresIn > 0
+            && expiresIn <= refreshThresholdSec
+            && expiresIn === displaySec  // access_token es el bottleneck actual
+            && !refreshInFlight) {
+            triggerRefresh();
+        }
+    }
+
+    function fetchStatus() {
+        return fetch(statusUrl, {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' },
+        })
+            .then(function (resp) {
+                if (resp.status === 401) {
+                    // Session lost — redirect (without specific reason; server didn't tell us)
+                    window.location.assign(loginUrl + '?error=session_expired');
+                    return null;
+                }
+                if (!resp.ok) { throw new Error('status_http_' + resp.status); }
+                return resp.json();
+            })
+            .then(function (data) { if (data) { applyState(data); } })
+            .catch(function (_err) { /* swallow — keep indicator state */ });
+    }
+
+    function triggerRefresh() {
+        if (refreshInFlight) { return; }
+        refreshInFlight = true;
+        statusEl.textContent = 'renovando…';
+        var headers = { 'Accept': 'application/json' };
+        if (csrfToken) { headers['X-CSRF-Token'] = csrfToken; }
+        fetch(refreshUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: headers,
+        })
+            .then(function (resp) {
+                if (resp.status === 401 || resp.status === 502) {
+                    // Refresh failed permanently — session invalidated server-side
+                    window.location.assign(loginUrl + '?error=session_expired');
+                    return null;
+                }
+                if (!resp.ok) { throw new Error('refresh_http_' + resp.status); }
+                return resp.json();
+            })
+            .then(function (data) {
+                refreshInFlight = false;
+                if (data && data.success) {
+                    // Force immediate status re-poll to update countdown
+                    fetchStatus();
+                }
+            })
+            .catch(function (_err) {
+                refreshInFlight = false;
+                statusEl.textContent = 'reintento pendiente';
+            });
+    }
+
+    // G7: touch debounced. Cada interacción real del usuario (click/keydown)
+    // intenta resetear el sliding window IDLE en el backend, máximo 1 vez
+    // cada touchDebounceMs. NO emite touch si la sesión ya está caducada o
+    // si hay otro touch en vuelo.
+    function maybeTouch() {
+        if (touchInFlight) { return; }
+        var now = Date.now();
+        if ((now - lastTouchAt) < touchDebounceMs) { return; }
+        // No molestar al backend si idle ya está completamente lleno (zona verde
+        // amplia) y no hay urgencia. Heuristic: solo emitir touch si idle_remaining
+        // bajó del 75% del idle window — así evitamos N pings/h cuando el clínico
+        // está activo continuo.
+        if (lastSeenIdleRemaining > 0 && lastSeenIdleRemaining > (idleTimeoutSec * 0.75)) {
+            return;
+        }
+        touchInFlight = true;
+        lastTouchAt = now;
+        var headers = { 'Accept': 'application/json' };
+        if (csrfToken) { headers['X-CSRF-Token'] = csrfToken; }
+        fetch(touchUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: headers,
+        })
+            .then(function (resp) {
+                if (resp.status === 401) {
+                    // Session ya expiró durante la espera del debounce: redirigir.
+                    window.location.assign(loginUrl + '?error=session_expired&reason=idle');
+                    return null;
+                }
+                return resp.ok ? resp.json() : null;
+            })
+            .then(function (data) {
+                touchInFlight = false;
+                if (data && data.success) {
+                    // Actualizar local sin esperar al próximo poll completo.
+                    if (typeof data.session_seconds_until_idle_timeout === 'number') {
+                        lastSeenIdleRemaining = data.session_seconds_until_idle_timeout;
+                    }
+                }
+            })
+            .catch(function (_err) {
+                touchInFlight = false;
+            });
+    }
+
+    function attachActivityListeners() {
+        // G7: 'click' y 'keydown' son las dos señales clínicamente fiables
+        // de presencia. 'mousemove' / 'scroll' producen demasiado ruido.
+        ['click', 'keydown'].forEach(function (evt) {
+            window.addEventListener(evt, maybeTouch, { passive: true, capture: true });
+        });
+    }
+
+    function localTick() {
+        // Decrement countdown locally between server polls
+        if (lastSeenExpiresIn > 0) {
+            lastSeenExpiresIn -= 1;
+            countdownEl.textContent = formatMmSs(lastSeenExpiresIn);
+            setColorTheme(lastSeenExpiresIn);
+        }
+        // G7: tambien decrementar idle/absolute para que el panel granular
+        // refleje paso del tiempo entre polls.
+        if (lastSeenIdleRemaining > 0) { lastSeenIdleRemaining -= 1; }
+        if (lastSeenAbsoluteRemaining > 0) { lastSeenAbsoluteRemaining -= 1; }
+        updateDeadlinesPanel(lastSeenIdleRemaining, lastSeenAbsoluteRemaining);
+        updateIdleBanner(lastSeenIdleRemaining);
+    }
+
+    function stopTimers() {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+    }
+
+    function start() {
+        fetchStatus();
+        pollTimer = setInterval(fetchStatus, pollIntervalMs);
+        tickTimer = setInterval(localTick, 1000);
+        attachActivityListeners();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', start);
+    } else {
+        start();
+    }
+})();
+</script>
+{% endif %}

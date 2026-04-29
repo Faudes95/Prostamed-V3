@@ -8,6 +8,7 @@ import numpy as np
 
 from prostanet.domains.patient_tracking.psa_line_monitor import build_psa_by_treatment_line
 from prostanet.domains.patient_tracking.therapy_catalog import regimen_label
+from prostanet.shared.phoenix import evaluate_phoenix
 
 ADVANCED_FORECAST_STATES = {
     "adt_progression_verification",
@@ -323,16 +324,19 @@ def _estimate_absolute_thresholds(
     if nadir is None or nadir <= 0:
         return thresholds
 
+    # EPIC 1 FIX-FORECAST-1: delegar umbral Phoenix al helper canónico.
+    phoenix_eval = evaluate_phoenix({"psa_nadir": nadir, "psa_current": nadir})
+    nadir_plus_2 = phoenix_eval.threshold if phoenix_eval.threshold is not None else nadir + 2.0
     absolute_thresholds = [
         {
             "threshold_key": "nadir_plus_2",
             "label": "Nadir + 2 ng/mL",
-            "target_psa": nadir + 2.0,
+            "target_psa": nadir_plus_2,
         },
         {
             "threshold_key": "pcwg3_psa_progression",
             "label": "Aumento ≥25% y ≥2 ng/mL sobre nadir",
-            "target_psa": max(nadir * 1.25, nadir + 2.0),
+            "target_psa": max(nadir * 1.25, nadir_plus_2),
         },
     ]
     for threshold in absolute_thresholds:
@@ -541,6 +545,541 @@ def build_psa_forecast(
             else "La tendencia actual sugiere estabilidad o descenso de PSA dentro de la línea actual."
         ),
         "reliability": reliability,
+    }
+
+
+def _build_forecast_for_segment_points(
+    segment_points: list[dict[str, Any]],
+    *,
+    line_label: str = "",
+    line_number: Any = None,
+    line_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Faubot 2026-04-25 (LXVIII) — Auditoría #64A.
+
+    Construye forecast log-linear PSA para UN segment de treatment line
+    específico (no para el current line global). Reutiliza la misma lógica
+    de `build_psa_forecast` pero parametrizada por segment.
+
+    Razón clínica: cada línea terapéutica tiene su propia kinetics PSA
+    (response, stable, progression). Forecast global "current line" oculta
+    la trayectoria de líneas previas. Per-line forecast permite:
+      - Comparar trayectorias entre líneas (¿esta línea está respondiendo
+        más rápido/lento que la previa?)
+      - Detectar progresión post-nadir POR LÍNEA antes de que el clínico
+        cambie régimen
+      - Auditar retrospectivamente "¿este cambio de línea fue justificado?"
+
+    Returns:
+        Dict con misma estructura que `build_psa_forecast` para una línea:
+            status, show, forecast_points (3/6/12m), forecast_curve (1-12m),
+            current_psa, nadir_psa, line_label, line_of_therapy_number.
+        Si insufficient_data, status="insufficient_data" con reasons.
+    """
+    if not segment_points or len(segment_points) < _MIN_POINTS:
+        return {
+            "status": "insufficient_data",
+            "show": False,
+            "line_of_therapy_number": line_number,
+            "line_label": line_label,
+            "forecast_points": [],
+            "forecast_curve": [],
+            "reasons": ["Puntos PSA insuficientes en esta línea para forecast."],
+        }
+
+    # Filtrar a structure {date, psa} esperada por _fit_log_psa_model
+    filtered_points: list[dict[str, Any]] = []
+    for p in segment_points:
+        psa = _safe_float(p.get("psa"))
+        date_iso = p.get("date")
+        if psa is None or not date_iso:
+            continue
+        filtered_points.append({"date": date_iso, "psa": psa})
+
+    if len(filtered_points) < _MIN_POINTS:
+        return {
+            "status": "insufficient_data",
+            "show": False,
+            "line_of_therapy_number": line_number,
+            "line_label": line_label,
+            "forecast_points": [],
+            "forecast_curve": [],
+            "reasons": ["Puntos PSA válidos insuficientes en esta línea."],
+        }
+
+    model = _fit_log_psa_model(filtered_points)
+    if model.get("status") != "ok":
+        return {
+            "status": "insufficient_data",
+            "show": False,
+            "line_of_therapy_number": line_number,
+            "line_label": line_label,
+            "forecast_points": [],
+            "forecast_curve": [],
+            "reasons": [str(model.get("reason") or "Modelo no ajustable.")],
+        }
+
+    prepared = list(model.get("points") or filtered_points)
+    last_date = _parse_date(prepared[-1]["date"]) if prepared else None
+    x_values = model.get("x")
+    last_x = float(x_values[-1]) if x_values is not None and len(x_values) else 0.0
+
+    forecast_points = []
+    for horizon in FORECAST_HORIZONS:
+        prediction = _predict_log_point(model, last_x + float(horizon))
+        target_date = last_date + timedelta(days=int(horizon * 30.44)) if last_date else None
+        forecast_points.append({
+            "horizon_months": horizon,
+            "date": target_date.isoformat() if target_date else "",
+            "expected_psa": _round_or_none(prediction["expected_psa"], 2),
+            "lower_psa": _round_or_none(prediction["lower_psa"], 2),
+            "upper_psa": _round_or_none(prediction["upper_psa"], 2),
+            "interval_width": _round_or_none(prediction["interval_width"], 2),
+        })
+
+    forecast_curve = []
+    for horizon in range(1, 13):
+        prediction = _predict_log_point(model, last_x + float(horizon))
+        target_date = last_date + timedelta(days=int(horizon * 30.44)) if last_date else None
+        forecast_curve.append({
+            "horizon_months": horizon,
+            "date": target_date.isoformat() if target_date else "",
+            "expected_psa": _round_or_none(prediction["expected_psa"], 2),
+            "lower_psa": _round_or_none(prediction["lower_psa"], 2),
+            "upper_psa": _round_or_none(prediction["upper_psa"], 2),
+        })
+
+    psa_values = [_safe_float(p.get("psa")) or 0.0 for p in prepared]
+    return {
+        "status": "ready",
+        "show": True,
+        "line_of_therapy_number": line_number,
+        "line_label": line_label,
+        "line_of_therapy_context": (line_context or {}).get("line_of_therapy_context", ""),
+        "drug_scheme": (line_context or {}).get("drug_scheme", ""),
+        "forecast_points": forecast_points,
+        "forecast_curve": forecast_curve,
+        "last_observed_date": last_date.isoformat() if last_date else "",
+        "current_psa": _round_or_none(psa_values[-1] if psa_values else None, 2),
+        "nadir_psa": _round_or_none(min(psa_values) if psa_values else None, 2),
+        "slope": _round_or_none(model.get("slope"), 4),
+        "projected_psadt_months": _projected_psadt_months(float(model.get("slope") or 0.0)),
+        "point_count": len(prepared),
+    }
+
+
+# Faubot 2026-04-25 (LXVIII) — Auditoría #64A
+# Cohort reference PSA trajectories by (state, regimen_class).
+# Basado en literatura pivotal: median time-to-nadir + median nadir % vs baseline
+# de ensayos clínicos publicados. Estos valores son "best estimate" para
+# comparación visual; NO son cohort data en vivo (eso requiere infraestructura
+# adicional de población). Con cohort data real, este dict se reemplaza.
+#
+# Estructura: {state: {regimen_class: {nadir_pct: float, time_to_nadir_m: int,
+#                                      duration_response_m: int, median_label: str}}}
+# nadir_pct: % del baseline PSA esperado en nadir (e.g., 0.05 = 5% del baseline)
+# time_to_nadir_m: meses esperados a nadir
+# duration_response_m: meses esperados de respuesta sostenida (post-nadir hasta progresión)
+COHORT_PSA_REFERENCES: dict[str, dict[str, dict[str, Any]]] = {
+    "mcspc_high_volume_sync": {
+        "ADT": {"nadir_pct": 0.10, "time_to_nadir_m": 6, "duration_response_m": 12,
+                "median_label": "Mediana ADT mHSPC alto volumen (CHAARTED control arm)"},
+        "ADT_DOCETAXEL": {"nadir_pct": 0.05, "time_to_nadir_m": 5, "duration_response_m": 18,
+                          "median_label": "Mediana ADT+Docetaxel mHSPC alto volumen (CHAARTED)"},
+        "ADT_ARPI": {"nadir_pct": 0.04, "time_to_nadir_m": 5, "duration_response_m": 24,
+                     "median_label": "Mediana ADT+ARPI mHSPC (LATITUDE/ENZAMET/ARCHES)"},
+        "ADT_TRIPLET": {"nadir_pct": 0.02, "time_to_nadir_m": 4, "duration_response_m": 30,
+                        "median_label": "Mediana ADT+Docetaxel+ARPI triplete (PEACE-1/ARASENS)"},
+    },
+    "mcspc_high_volume_metachronous": {
+        "ADT": {"nadir_pct": 0.10, "time_to_nadir_m": 6, "duration_response_m": 14,
+                "median_label": "Mediana ADT mHSPC metacrónico"},
+        "ADT_DOCETAXEL": {"nadir_pct": 0.06, "time_to_nadir_m": 5, "duration_response_m": 20,
+                          "median_label": "Mediana ADT+Docetaxel mHSPC metacrónico"},
+        "ADT_ARPI": {"nadir_pct": 0.04, "time_to_nadir_m": 5, "duration_response_m": 26,
+                     "median_label": "Mediana ADT+ARPI mHSPC metacrónico"},
+    },
+    "m0_crpc": {
+        "ADT_ARPI": {"nadir_pct": 0.30, "time_to_nadir_m": 4, "duration_response_m": 24,
+                     "median_label": "Mediana ARPI m0CRPC (SPARTAN/PROSPER/ARAMIS)"},
+        "ADT": {"nadir_pct": 0.80, "time_to_nadir_m": 3, "duration_response_m": 8,
+                "median_label": "Mediana ADT solo m0CRPC (control arm)"},
+    },
+    "m1_crpc": {
+        "DOCETAXEL": {"nadir_pct": 0.45, "time_to_nadir_m": 4, "duration_response_m": 9,
+                      "median_label": "Mediana Docetaxel mCRPC primera línea (TAX-327)"},
+        "ARPI": {"nadir_pct": 0.40, "time_to_nadir_m": 4, "duration_response_m": 12,
+                 "median_label": "Mediana ARPI mCRPC primera línea (PREVAIL/COU-AA-302)"},
+        "PARP": {"nadir_pct": 0.35, "time_to_nadir_m": 5, "duration_response_m": 9,
+                 "median_label": "Mediana PARP-i mCRPC HRR+ (PROfound)"},
+        "LU177": {"nadir_pct": 0.30, "time_to_nadir_m": 5, "duration_response_m": 7,
+                  "median_label": "Mediana 177Lu-PSMA-617 mCRPC (VISION)"},
+    },
+}
+
+
+def _classify_regimen_for_cohort(drug_scheme: str) -> str:
+    """Faubot LXVIII #64A — Mapea drug_scheme canónico a clase para cohort lookup."""
+    if not drug_scheme:
+        return ""
+    s = str(drug_scheme).upper()
+    # Triplete: ADT + DOCETAXEL + ARPI
+    if "DOCETAXEL" in s and ("ARPI" in s or "ABIRATERONE" in s or "ENZALUTAMIDE" in s
+                              or "APALUTAMIDE" in s or "DAROLUTAMIDE" in s):
+        return "ADT_TRIPLET"
+    # ADT + Docetaxel
+    if "DOCETAXEL" in s and "ADT" in s:
+        return "ADT_DOCETAXEL"
+    # ADT + ARPI (sin docetaxel)
+    if any(arpi in s for arpi in ["ABIRATERONE", "ENZALUTAMIDE", "APALUTAMIDE", "DAROLUTAMIDE"]):
+        return "ADT_ARPI" if "ADT" in s else "ARPI"
+    # PARP
+    if any(parp in s for parp in ["OLAPARIB", "RUCAPARIB", "TALAZOPARIB", "NIRAPARIB", "PARP"]):
+        return "PARP"
+    # Lu-177
+    if "LU177" in s or "LUTETIUM" in s or "PSMA-617" in s or "PLUVICTO" in s:
+        return "LU177"
+    # Solo Docetaxel
+    if "DOCETAXEL" in s:
+        return "DOCETAXEL"
+    # Solo ADT
+    if "ADT" in s or "MONO" in s:
+        return "ADT"
+    return ""
+
+
+def build_psa_cohort_reference_overlay(patient: dict[str, Any]) -> dict[str, Any]:
+    """Faubot 2026-04-25 (LXVIII) — Auditoría #64A.
+
+    Construye curva de referencia PSA esperada para overlay en el chart,
+    basada en literatura pivotal por (state, regimen_class).
+
+    NO usa cohort data en vivo — usa medianas publicadas como mejor
+    estimación. Cuando cohort data en vivo esté disponible, este helper
+    se reemplaza por live_benchmark.curve real.
+
+    Returns:
+        {
+            "has_data": bool,
+            "reference_curve": [{"date": ISO, "expected_psa": float,
+                                 "horizon_months": int}],
+            "median_label": str,
+            "cohort_class": str,
+            "anchor_baseline_psa": float,
+            "anchor_date": ISO,
+            "narrative": str,
+        }
+    """
+    state = str(
+        patient.get("reconciled_state")
+        or (patient.get("latest_assessment") or {}).get("state")
+        or ""
+    )
+    monitoring = build_psa_by_treatment_line(patient)
+    line_context = _current_line_context(patient, monitoring)
+    drug_scheme = str(line_context.get("drug_scheme") or "")
+    cohort_class = _classify_regimen_for_cohort(drug_scheme)
+    state_refs = COHORT_PSA_REFERENCES.get(state, {})
+    reference = state_refs.get(cohort_class)
+    if not reference:
+        return {
+            "has_data": False,
+            "reference_curve": [],
+            "median_label": "",
+            "cohort_class": cohort_class,
+            "narrative": (
+                f"Sin curva de referencia poblacional documentada para "
+                f"({state}, {cohort_class}). Forecast individual sigue válido."
+            ),
+        }
+
+    # Anchor: baseline_psa de la línea actual + start_date de la línea
+    anchor_baseline = _safe_float(line_context.get("baseline_psa"))
+    if anchor_baseline is None or anchor_baseline <= 0:
+        # Fallback: baseline global del paciente
+        anchor_baseline = _safe_float(
+            (patient.get("baseline") or {}).get("baseline_psa")
+            or patient.get("baseline_psa")
+        )
+    if anchor_baseline is None or anchor_baseline <= 0:
+        return {
+            "has_data": False,
+            "reference_curve": [],
+            "median_label": reference.get("median_label", ""),
+            "cohort_class": cohort_class,
+            "narrative": "Sin baseline_psa documentado para anclar curva de referencia.",
+        }
+
+    anchor_date = _parse_date(line_context.get("start_date"))
+    if anchor_date is None:
+        return {
+            "has_data": False,
+            "reference_curve": [],
+            "median_label": reference.get("median_label", ""),
+            "cohort_class": cohort_class,
+            "narrative": "Sin start_date de línea actual para anclar curva.",
+        }
+
+    # Construir curva: log-linear decay del baseline al nadir esperado
+    nadir_pct = float(reference["nadir_pct"])
+    time_to_nadir_m = int(reference["time_to_nadir_m"])
+    duration_m = int(reference["duration_response_m"])
+    expected_nadir = anchor_baseline * nadir_pct
+
+    reference_curve: list[dict[str, Any]] = []
+    # Fase de respuesta: log-linear decay desde baseline a nadir
+    for month in range(0, time_to_nadir_m + 1):
+        if month == 0:
+            psa = anchor_baseline
+        else:
+            # Decay log-linear hasta nadir
+            log_decay = math.log(expected_nadir / anchor_baseline) * (month / time_to_nadir_m)
+            psa = anchor_baseline * math.exp(log_decay)
+        target_date = anchor_date + timedelta(days=int(month * 30.44))
+        reference_curve.append({
+            "horizon_months": month,
+            "date": target_date.isoformat(),
+            "expected_psa": _round_or_none(psa, 2),
+        })
+    # Fase de respuesta sostenida (mantiene nadir)
+    for month in range(time_to_nadir_m + 1, time_to_nadir_m + duration_m + 1):
+        target_date = anchor_date + timedelta(days=int(month * 30.44))
+        reference_curve.append({
+            "horizon_months": month,
+            "date": target_date.isoformat(),
+            "expected_psa": _round_or_none(expected_nadir, 2),
+        })
+
+    return {
+        "has_data": True,
+        "reference_curve": reference_curve,
+        "median_label": reference["median_label"],
+        "cohort_class": cohort_class,
+        "anchor_baseline_psa": _round_or_none(anchor_baseline, 2),
+        "anchor_date": anchor_date.isoformat(),
+        "expected_nadir_psa": _round_or_none(expected_nadir, 2),
+        "expected_time_to_nadir_months": time_to_nadir_m,
+        "expected_duration_response_months": duration_m,
+        "narrative": (
+            f"{reference['median_label']}. Comparar trayectoria del paciente vs "
+            f"mediana esperada (nadir ~{nadir_pct * 100:.0f}% baseline a {time_to_nadir_m}m, "
+            f"respuesta sostenida ~{duration_m}m)."
+        ),
+    }
+
+
+def build_psa_forecast_per_line(patient: dict[str, Any]) -> dict[str, Any]:
+    """Faubot 2026-04-25 (LXVIII) — Auditoría #64A.
+
+    Construye forecast log-linear PSA por CADA treatment line del paciente
+    (no solo el current). Returns dict {line_number: forecast_dict, ...}
+    + summary global con conteo de líneas con forecast disponible.
+
+    Esto es complementario a `build_psa_forecast()` (que solo proyecta
+    current line). El frontend puede usar ambos:
+      - build_psa_forecast() → forecast principal current line en chart
+      - build_psa_forecast_per_line() → forecasts adicionales para drill-down
+        per-line + comparación de trayectorias entre líneas
+
+    Returns:
+        {
+            "has_data": bool,
+            "per_line_forecasts": {"1": {...forecast...}, "2": {...}},
+            "lines_with_forecast_count": int,
+            "lines_insufficient_data_count": int,
+            "summary": {
+                "total_lines": int,
+                "ready_count": int,
+                "insufficient_count": int,
+            }
+        }
+    """
+    monitoring = build_psa_by_treatment_line(patient)
+    points_by_line = monitoring.get("points_by_line") or {}
+    line_segments = monitoring.get("line_segments") or []
+
+    # Mapear segments por line_of_therapy_number para metadata
+    segments_by_line: dict[str, dict[str, Any]] = {}
+    for seg in line_segments:
+        ln = str(seg.get("line_of_therapy_number") or "")
+        if ln:
+            segments_by_line[ln] = seg
+
+    per_line_forecasts: dict[str, dict[str, Any]] = {}
+    ready_count = 0
+    insufficient_count = 0
+
+    for line_key, line_points in points_by_line.items():
+        # line_key es string del line_of_therapy_number, o "pretreatment"/"between_lines"/"no_bands"
+        # Solo computar forecast para líneas terapéuticas reales (numéricas)
+        if not line_key.isdigit():
+            continue
+        seg = segments_by_line.get(line_key, {})
+        forecast = _build_forecast_for_segment_points(
+            line_points,
+            line_label=seg.get("label", f"Línea {line_key}"),
+            line_number=line_key,
+            line_context=seg,
+        )
+        per_line_forecasts[line_key] = forecast
+        if forecast.get("status") == "ready":
+            ready_count += 1
+        else:
+            insufficient_count += 1
+
+    return {
+        "has_data": bool(per_line_forecasts),
+        "per_line_forecasts": per_line_forecasts,
+        "lines_with_forecast_count": ready_count,
+        "lines_insufficient_data_count": insufficient_count,
+        "summary": {
+            "total_lines": len(per_line_forecasts),
+            "ready_count": ready_count,
+            "insufficient_count": insufficient_count,
+        },
+    }
+
+
+def build_combined_patient_timeline(
+    patient: dict[str, Any],
+    *,
+    clinical_events: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Faubot 2026-04-25 (LXVIII) — Auditoría #64A.
+
+    Construye estructura combined timeline para chart unificado:
+      - PSA points (con annotation per-line del #63B)
+      - Treatment bands (per-line)
+      - Clinical events markers (visitas, decisiones, cambios línea, etc.)
+
+    Esto permite al chart de patient_profile.html renderizar TODO en un
+    solo eje temporal sin duplicar dates entre múltiples charts. Antes
+    de #64A, PSA chart + treatment timeline chart + clinical events lista
+    estaban separados visualmente. Ahora hay UNA estructura combined que
+    el frontend consume.
+
+    Args:
+        patient: dict del paciente (con biomarker_longitudinal + treatments)
+        clinical_events: opcional, lista de eventos pre-construidos
+            (e.g., from clinical_journey_events). Si None, se omiten markers.
+
+    Returns:
+        {
+            "has_data": bool,
+            "axis_dates": [ISO date strings],  # eje x unificado ordenado
+            "psa_series": [{"date": ISO, "psa": float, "treatment_line": str|None}],
+            "treatment_lanes": [{"line_number": str, "label": str, "color": str,
+                                  "start_date": ISO, "end_date": ISO|None}],
+            "clinical_event_markers": [{"date": ISO, "label": str, "type": str,
+                                         "treatment_line": str|None}],
+            "summary": {
+                "total_psa_points": int,
+                "total_treatment_lanes": int,
+                "total_event_markers": int,
+                "earliest_date": ISO|"",
+                "latest_date": ISO|"",
+            },
+        }
+    """
+    monitoring = build_psa_by_treatment_line(patient)
+    if not monitoring.get("has_data"):
+        return {
+            "has_data": False,
+            "axis_dates": [],
+            "psa_series": [],
+            "treatment_lanes": [],
+            "clinical_event_markers": [],
+            "summary": {
+                "total_psa_points": 0,
+                "total_treatment_lanes": 0,
+                "total_event_markers": 0,
+                "earliest_date": "",
+                "latest_date": "",
+            },
+        }
+
+    # PSA series con anotación de treatment_line del #63B
+    psa_series: list[dict[str, Any]] = []
+    for point in monitoring.get("points") or []:
+        psa_series.append({
+            "date": point.get("date", ""),
+            "psa": point.get("psa"),
+            "treatment_line": point.get("treatment_line_number"),
+            "treatment_line_label": point.get("treatment_line_label"),
+            "treatment_color": point.get("treatment_color"),
+            "assignment_origin": point.get("treatment_assignment_origin"),
+        })
+
+    # Treatment lanes desde bands
+    treatment_lanes: list[dict[str, Any]] = []
+    for band in monitoring.get("treatment_bands") or []:
+        treatment_lanes.append({
+            "line_number": str(band.get("line_of_therapy_number") or ""),
+            "label": band.get("label", ""),
+            "color": band.get("color"),
+            "start_date": band.get("start_date", ""),
+            "end_date": band.get("end_date") or "",
+            "drug_scheme": band.get("drug_scheme"),
+            "drug_scheme_label": band.get("drug_scheme_label"),
+        })
+
+    # Clinical event markers
+    event_markers: list[dict[str, Any]] = []
+    for event in clinical_events or []:
+        if not isinstance(event, dict):
+            continue
+        event_date = event.get("date") or ""
+        if not event_date:
+            continue
+        # Asignar treatment_line por fecha (similar pattern al #63B)
+        event_parsed = _parse_date(event_date)
+        assigned_line = None
+        assigned_color = None
+        if event_parsed:
+            for lane in treatment_lanes:
+                lane_start = _parse_date(lane.get("start_date"))
+                lane_end = _parse_date(lane.get("end_date")) if lane.get("end_date") else date.today()
+                if lane_start and lane_end and lane_start <= event_parsed <= lane_end:
+                    assigned_line = lane.get("line_number")
+                    assigned_color = lane.get("color")
+                    break
+        event_markers.append({
+            "date": event_date,
+            "label": event.get("title") or event.get("label", ""),
+            "type": event.get("origin") or event.get("type", "event"),
+            "decision": event.get("decision", ""),
+            "treatment_line": assigned_line,
+            "treatment_color": assigned_color,
+        })
+
+    # Eje X unificado: union de todas las dates ordenadas
+    all_dates: set[str] = set()
+    for p in psa_series:
+        if p.get("date"):
+            all_dates.add(p["date"])
+    for lane in treatment_lanes:
+        if lane.get("start_date"):
+            all_dates.add(lane["start_date"])
+        if lane.get("end_date"):
+            all_dates.add(lane["end_date"])
+    for m in event_markers:
+        if m.get("date"):
+            all_dates.add(m["date"])
+    axis_dates = sorted(all_dates)
+
+    return {
+        "has_data": bool(psa_series),
+        "axis_dates": axis_dates,
+        "psa_series": psa_series,
+        "treatment_lanes": treatment_lanes,
+        "clinical_event_markers": event_markers,
+        "summary": {
+            "total_psa_points": len(psa_series),
+            "total_treatment_lanes": len(treatment_lanes),
+            "total_event_markers": len(event_markers),
+            "earliest_date": axis_dates[0] if axis_dates else "",
+            "latest_date": axis_dates[-1] if axis_dates else "",
+        },
     }
 
 

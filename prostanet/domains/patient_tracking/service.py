@@ -27,6 +27,7 @@ from prostanet.shared.official_diagnosis import (
     NODAL_STATUS_OPTIONS,
 )
 from prostanet.shared.contracts import FieldSpec, RegistrationFragment
+from prostanet.shared.advanced_support_catalog import MINI_COG_OPTIONS
 from prostanet.shared.field_semantics import (
     CAPTURE_LAYER_METADATA,
     build_score_semantics,
@@ -375,15 +376,25 @@ def _common_fragment() -> RegistrationFragment:
                 help_text="Agregue cero o más mediciones históricas de APE/PSA si ya existen; el sistema conservará el basal canónico y guardará la serie longitudinal.",
             ),
             _field("testosterone_baseline", "Testosterona basal", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="ng/dL"),
+            _field(
+                "testosterone_history",
+                "Serie longitudinal de testosterona disponible",
+                "testosterone_history",
+                group="Laboratorio basal",
+                group_order=2,
+                clinical_role="decision_refiner",
+                help_text="Agregue cero o más mediciones históricas de testosterona si ya existen; el sistema conservará el basal canónico y usará la serie para resolver castración y lógica CRPC.",
+            ),
             _field("hemoglobin", "Hemoglobina", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="g/dL"),
             _field("alp", "Fosfatasa alcalina", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="UI/L"),
             _field("ldh", "Lactato deshidrogenasa", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="UI/L"),
             _field("albumin", "Albúmina", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="g/dL"),
             _field("dxa_baseline_done", "DXA basal realizada", "select", options=["0", "1"], default="0", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner"),
             _field("weight_kg", "Peso actual", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner", unit="kg"),
+            _field("height_cm", "Estatura actual", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner", unit="cm"),
             _field("bmi_current", "Índice de masa corporal actual", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner", unit="kg/m²"),
-            _field("weight_loss_6m_pct", "Pérdida de peso en 6 meses", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner", unit="%"),
-            _field("mini_cog_score", "Mini-Cog basal", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
+            _field("weight_loss_6m_kg", "Pérdida de peso en 6 meses", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner", unit="kg"),
+            _field("mini_cog_score", "Mini-Cog basal", "select", options=MINI_COG_OPTIONS, group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
             _field("fatigue_score", "Fatiga basal", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
             _field("g8_food_intake", "G8: ingesta de alimentos", "select", options=["", "0", "1", "2"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
             _field("g8_weight_loss", "G8: pérdida de peso", "select", options=["", "0", "1", "2", "3"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
@@ -394,7 +405,16 @@ def _common_fragment() -> RegistrationFragment:
             _field("g8_self_health", "G8: percepción de salud", "select", options=["", "0", "0.5", "1", "2"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
             _field("low_activity", "Actividad física reducida", "select", options=["", "0", "1"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
             _field("slow_gait", "Marcha lenta", "select", options=["", "0", "1"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
-            _field("weak_grip", "Fuerza de prensión baja", "select", options=["", "0", "1"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
+            _field(
+                "weak_grip",
+                "Fuerza de prensión baja",
+                "select",
+                options=["", "0", "1"],
+                group="Fragilidad y fitness",
+                group_order=3,
+                clinical_role="decision_refiner",
+                help_text="Alimenta el índice de fragilidad de Fried y la lectura de fitness terapéutico.",
+            ),
         ],
     )
 
@@ -562,7 +582,9 @@ def _active_surveillance_operational_fragment() -> RegistrationFragment:
         fields=[
             _field("as_protocol", "Protocolo de vigilancia activa", "select", options=["", "NCCN_very_low", "NCCN_low", "NCCN_favorable_intermediate", "PRIAS", "Royal_Marsden"], group="Vigilancia activa", group_order=1, clinical_role="monitoring"),
             _field("confirmatory_biopsy_planned", "Biopsia confirmatoria planeada", "select", options=["", "0", "1"], group="Vigilancia activa", group_order=1, clinical_role="monitoring"),
+            _field("confirmatory_biopsy_done", "Biopsia confirmatoria realizada", "select", options=["", "0", "1"], group="Vigilancia activa", group_order=1, clinical_role="monitoring"),
             _field("confirmatory_biopsy_date", "Fecha de biopsia confirmatoria", "date", group="Vigilancia activa", group_order=1, clinical_role="monitoring"),
+            _field("mri_interval_months", "Intervalo de MRI multiparamétrica", "number", group="Vigilancia activa", group_order=1, clinical_role="monitoring", unit="meses"),
             _field("as_exit_reason", "Motivo de salida de vigilancia activa", "select", options=["", "gleason_upgrade", "volume_increase", "mri_progression", "patient_preference", "psa_kinetics"], group="Vigilancia activa", group_order=1, clinical_role="monitoring"),
             _field("as_exit_treatment", "Tratamiento de conversión", "select", options=["", "prostatectomy", "radiation", "focal_therapy", "observation"], group="Vigilancia activa", group_order=1, clinical_role="monitoring"),
         ],
@@ -666,6 +688,32 @@ def _advanced_current_treatment_fragment() -> RegistrationFragment:
             _field("prior_docetaxel_cycles", "Ciclos previos de docetaxel", "number", default=0, group="Historial previo", group_order=2, clinical_role="decision_refiner", unit="ciclos"),
             _field("prior_arpi_agent", "Inhibidor previo de la vía del receptor androgénico", "select", options=["", "Abiraterona", "Enzalutamida", "Apalutamida", "Darolutamida"], default="", group="Historial previo", group_order=2, clinical_role="decision_refiner"),
             _field("prior_arpi_duration", "Duración del inhibidor previo de la vía del receptor androgénico", "number", default=0, group="Historial previo", group_order=2, clinical_role="decision_refiner", unit="meses"),
+            # Faubot 2026-04-25 (LXV) — Auditoría #63B
+            # Treatment history timeline al intake: captura líneas terapéuticas
+            # previas (no solo la actual) para alimentar correctamente la
+            # torre de vigilancia de APE con bandas de tratamiento históricas
+            # y permitir cálculo de variación PSA por línea (PSADT por línea,
+            # nadir por línea, % cambio nadir, etc.).
+            _field("prior_treatment_lines_count", "Número de líneas terapéuticas previas (sistémicas)", "number", default=0, group="Timeline terapéutico previo", group_order=2, clinical_role="decision_refiner", unit="líneas", help_text="Cuente solo líneas SISTÉMICAS previas (ADT mono, ARPI, taxano, PARPi, Lu-177, etc.); excluya RT/cirugía locales."),
+            _field("most_recent_prior_line_drug_scheme", "Línea previa más reciente: esquema farmacológico", "select", options=therapy_select_options(state="advanced", management_track="systemic_surveillance", include_empty=True), default="", group="Timeline terapéutico previo", group_order=2, clinical_role="decision_refiner", help_text="Esquema canónico de la línea previa inmediatamente anterior a la actual (alimenta torre de APE con banda histórica)."),
+            _field("most_recent_prior_line_start_date", "Línea previa más reciente: fecha de inicio", "date", group="Timeline terapéutico previo", group_order=2, clinical_role="decision_refiner", help_text="Fecha en que se inició la línea previa (banda izquierda en torre APE)."),
+            _field("most_recent_prior_line_end_date", "Línea previa más reciente: fecha de fin", "date", group="Timeline terapéutico previo", group_order=2, clinical_role="decision_refiner", help_text="Fecha en que se discontinuó la línea previa (banda derecha en torre APE)."),
+            _field("most_recent_prior_line_reason_for_change", "Línea previa más reciente: motivo del cambio", "select", options=["", "progression_psa", "progression_radiographic", "progression_clinical", "toxicity", "completion_planned", "patient_choice", "other"], default="", group="Timeline terapéutico previo", group_order=2, clinical_role="decision_refiner", help_text="Por qué se cambió la línea previa (clave para auditabilidad de secuenciación)."),
+            _field("most_recent_prior_line_best_psa_response_pct", "Línea previa más reciente: mejor respuesta PSA (% cambio nadir)", "number", group="Timeline terapéutico previo", group_order=2, clinical_role="decision_refiner", unit="% cambio", help_text="Cambio % del PSA nadir vs basal de la línea previa (negativo = reducción; e.g., -75 = reducción 75%)."),
+            # Faubot 2026-04-25 (LXVI) — Auditoría #63C
+            # Widget multi-row para captura de N líneas terapéuticas previas
+            # (no solo "la más reciente"). Reusa pattern psa_history. Cuando
+            # presente, expande treatments[] con N entradas + actual,
+            # alimentando torre de vigilancia con bandas históricas completas.
+            _field(
+                "prior_treatment_lines_history",
+                "Historial completo de líneas terapéuticas previas (multi-línea)",
+                "prior_lines_history",
+                group="Timeline terapéutico previo",
+                group_order=2,
+                clinical_role="decision_refiner",
+                help_text="Agregue múltiples líneas terapéuticas previas con start/end/drug_scheme/reason; el sistema expandirá treatments[] automáticamente y alimentará la torre de APE con bandas históricas completas. Si solo se conoce la línea inmediatamente anterior, use los campos `most_recent_prior_line_*` arriba.",
+            ),
         ] + _metastatic_intake_fields(),
     )
 
@@ -761,7 +809,7 @@ def _advanced_safety_fragment() -> RegistrationFragment:
             _field("seizure_history", "Antecedente convulsivo", "select", options=["0", "1"], default="0", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner"),
             _field("peripheral_neuropathy_grade", "Neuropatía periférica", "select", options=["", "0", "1", "2", "3", "4"], default="", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner"),
             _field("dermatitis_history", "Dermatitis / rash previo", "select", options=["0", "1"], default="0", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner"),
-            _field("mini_cog_score", "Mini-Cog basal", "number", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner"),
+            _field("mini_cog_score", "Mini-Cog basal", "select", options=MINI_COG_OPTIONS, group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner"),
             _field("fatigue_score", "Brief Fatigue Inventory basal", "number", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner"),
             _field("systolic_bp", "PA sistólica basal", "number", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner", unit="mmHg"),
             _field("total_cholesterol", "Colesterol total basal", "number", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner", unit="mg/dL"),
@@ -770,7 +818,8 @@ def _advanced_safety_fragment() -> RegistrationFragment:
             _field("glucose", "Glucosa basal", "number", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner", unit="mg/dL"),
             _field("waist_circumference_cm", "Cintura abdominal", "number", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner", unit="cm"),
             _field("vitamin_d_level", "Vitamina D basal", "number", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner", unit="ng/mL"),
-            _field("weight_loss_6m_pct", "Pérdida ponderal 6 meses", "number", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner", unit="%"),
+            _field("height_cm", "Estatura actual", "number", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner", unit="cm"),
+            _field("weight_loss_6m_kg", "Pérdida ponderal 6 meses", "number", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner", unit="kg"),
             _field("protein_supplements", "Suplementos proteicos", "select", options=["0", "1"], default="0", group="Seguridad ARPI", group_order=3, clinical_role="decision_refiner"),
             _field("calcium_vitd_started", "Calcio / vitamina D iniciados", "select", options=["0", "1"], default="0", group="Salud ósea", group_order=4, clinical_role="monitoring"),
             _field("bone_protection_started", "Protección ósea iniciada", "select", options=["0", "1"], default="0", group="Salud ósea", group_order=4, clinical_role="monitoring"),
@@ -892,7 +941,9 @@ def _persist_targets_for_field(field_name: str, scope: str) -> list[str]:
         "mri_pirads_at_biopsy": ["structured_biopsy", "mri_facts"],
         "as_protocol": ["active_surveillance_update"],
         "confirmatory_biopsy_planned": ["active_surveillance_update"],
+        "confirmatory_biopsy_done": ["active_surveillance_update"],
         "confirmatory_biopsy_date": ["active_surveillance_update"],
+        "mri_interval_months": ["active_surveillance_update"],
         "as_exit_reason": ["active_surveillance_update"],
         "as_exit_treatment": ["active_surveillance_update"],
         "worst_t_score": ["bone_health_snapshot"],
@@ -908,6 +959,14 @@ def _persist_targets_for_field(field_name: str, scope: str) -> list[str]:
         "total_dose_gy": ["radiotherapy_course", "radiation_details"],
         "fractions": ["radiotherapy_course", "radiation_details"],
         "salvage_psa_at_start": ["radiotherapy_course"],
+        "epic26_response_packet": ["patient_pros", "clinical_assessments"],
+        "epic26_urinary_incontinence_domain": ["patient_pros", "clinical_assessments"],
+        "epic26_urinary_irritative_domain": ["patient_pros", "clinical_assessments"],
+        "epic26_urinary_domain": ["patient_pros", "clinical_assessments"],
+        "epic26_sexual_domain": ["patient_pros", "clinical_assessments"],
+        "epic26_bowel_domain": ["patient_pros", "clinical_assessments"],
+        "epic26_hormonal_domain": ["patient_pros", "clinical_assessments"],
+        "epic26_overall_urinary_bother": ["patient_pros", "clinical_assessments"],
     }
     default_targets = {
         "diagnostic": ["clinical_assessments", "diagnostic_plan"],
@@ -1061,6 +1120,7 @@ class PatientTrackingService:
             "line_of_therapy_number": assessment_input.get("line_of_therapy_number", assessment_input.get("line_of_therapy", "")),
             "line_of_therapy_context": assessment_input.get("line_of_therapy_context", ""),
             "psa_history": assessment_input.get("psa_history", assessment_input.get("ape_history", [])),
+            "testosterone_history": assessment_input.get("testosterone_history", []),
             "registrar_defuncion_en_esta_visita": death_toggle_default,
             "received_radiotherapy_this_visit": rt_toggle_default,
             "vital_status": assessment_input.get("vital_status", "deceased" if death_toggle_default == "1" else ""),
@@ -1083,6 +1143,8 @@ class PatientTrackingService:
                 "nonregional_nodal_metastasis_present": assessment_input.get("nonregional_nodal_metastasis_present", "1" if assessment_input.get("nonregional_nodal_site_entries") else "0"),
                 "metastatic_total_lesion_count": assessment_input.get("metastatic_total_lesion_count", assessment_input.get("metastasis_count", "")),
             },
+            "weight_loss_6m_kg": assessment_input.get("weight_loss_6m_kg", ""),
+            "height_cm": assessment_input.get("height_cm", ""),
         }
         score_requirements = build_intake_score_requirements(
             module_id=module_id,
@@ -1137,6 +1199,44 @@ class PatientTrackingService:
             canonical_key = CANONICAL_FIELD_MAP.get(key, key)
             canonical[canonical_key] = value
 
+        # ──────────────────────────────────────────────────────────────────
+        # Faubot LXXXV.b — Defensive scalar normalization (FDA SaMD).
+        # Bug detectado: v2 intake renderiza algunos fields 2 veces (e.g.,
+        # `hrr_status` en stages `genomics` + `genomic_critical`). FormData
+        # colecta ambos valores como list, que luego rompe en value_map
+        # lookups + set membership downstream con "unhashable type: 'list'".
+        # Fix: para fields scalar, colapsar list → último valor non-empty.
+        # Preserva semántica HTML form (last duplicated <select> wins).
+        # Lists legítimas (psa_history, testosterone_history, prior_treatment_lines)
+        # se manejan post-canonicalize separadamente y son listas de dicts.
+        # ──────────────────────────────────────────────────────────────────
+        _LEGIT_LIST_FIELDS = {
+            # PSA + testosterone longitudinal
+            "psa_history", "ape_history", "testosterone_history",
+            "psa_history_rows", "testosterone_history_rows",
+            # Treatment history multirow widgets
+            "prior_treatment_lines", "prior_treatment_lines_history",
+            "prior_treatment_lines_rows", "prior_lines_history",
+            "treatment_history", "treatments",
+            "fragment_treatment_history", "prior_clinical_history",
+            # Biomarker + clinical event longitudinal
+            "biomarker_longitudinal", "clinical_events",
+            "skeletal_events", "survival_anchor_events",
+            # Toxicity + adverse event histories (skin/seizure/taxane allergy)
+            "dermatitis_history", "seizure_history",
+            "taxane_hypersensitivity_history",
+            # Multi-value clinical lists
+            "hrr_genes_mutated", "mdt_providers_present",
+            "comorbidity_codes", "active_medications",
+            "metastasis_sites_list",
+        }
+        for k in list(canonical.keys()):
+            v = canonical[k]
+            if isinstance(v, list) and k not in _LEGIT_LIST_FIELDS:
+                # Colapsar lista escalar → último elemento non-empty (semántica form HTML)
+                non_empty = [x for x in v if x not in (None, "", [])]
+                canonical[k] = non_empty[-1] if non_empty else ""
+
         for field_name, value_map in CANONICAL_VALUE_MAPS.items():
             if field_name in canonical and canonical[field_name] in value_map:
                 canonical[field_name] = value_map[canonical[field_name]]
@@ -1177,5 +1277,217 @@ class PatientTrackingService:
         canonical = apply_gleason_profile(canonical)
         if _is_present(canonical.get("psa_history")) and not _is_present(canonical.get("ape_history")):
             canonical["ape_history"] = canonical.get("psa_history")
+        if _is_present(canonical.get("testosterone_history")) and not isinstance(canonical.get("testosterone_history"), list):
+            canonical["testosterone_history"] = canonical.get("testosterone_history")
+
+        # Faubot 2026-04-25 (LXIV) — Auditoría #63A
+        # Auto-baseline PSA point creation: si paciente tiene baseline_psa +
+        # diagnosis_date pero psa_history vacío/ausente, auto-crear baseline
+        # point para alimentar la torre de vigilancia desde la primera visita.
+        # Esto garantiza que gates kinetics 47/53/54/55 reciban PSA history
+        # correctamente desde el ingreso (no requiere visita seguimiento).
+        existing_history = canonical.get("psa_history")
+        history_is_empty = (
+            existing_history is None
+            or existing_history == ""
+            or existing_history == []
+            or existing_history == "[]"
+        )
+        baseline_psa_value = canonical.get("baseline_psa") or canonical.get("psa")
+        diagnosis_date = canonical.get("diagnosis_date") or canonical.get("date_of_diagnosis")
+        if history_is_empty and _is_present(baseline_psa_value) and _is_present(diagnosis_date):
+            try:
+                baseline_psa_numeric = float(str(baseline_psa_value).replace(",", "."))
+                if baseline_psa_numeric > 0:
+                    auto_baseline_point = {
+                        "sample_date": str(diagnosis_date),
+                        "psa_value": baseline_psa_numeric,
+                        "assay_type": "desconocido",
+                        "context": "pretratamiento",
+                        "source": "auto-baseline (Faubot LXIV #63A)",
+                    }
+                    canonical["psa_history"] = [auto_baseline_point]
+                    canonical["ape_history"] = [auto_baseline_point]
+            except (ValueError, TypeError):
+                # Si baseline_psa no es numérico válido, no auto-crear
+                pass
+
+        # Faubot 2026-04-25 (LXV) — Auditoría #63B
+        # Treatment history timeline: si el intake captura
+        # `most_recent_prior_line_*` fields, sintetizar entradas en
+        # `treatments[]` para alimentar bandas de tratamiento históricas
+        # en la torre de vigilancia APE (psa_line_monitor.py).
+        # Esto permite drill-down per treatment line en el chart sin
+        # requerir captura visita-a-visita previa.
+        existing_treatments = canonical.get("treatments")
+        treatments_is_empty = (
+            existing_treatments is None
+            or existing_treatments == ""
+            or existing_treatments == []
+            or existing_treatments == "[]"
+        )
+        prior_drug_scheme = canonical.get("most_recent_prior_line_drug_scheme")
+        prior_start_date = canonical.get("most_recent_prior_line_start_date")
+        prior_end_date = canonical.get("most_recent_prior_line_end_date")
+        prior_reason = canonical.get("most_recent_prior_line_reason_for_change")
+        prior_best_response = canonical.get("most_recent_prior_line_best_psa_response_pct")
+        prior_lines_count = canonical.get("prior_treatment_lines_count")
+        synthesized_treatments: list[dict[str, Any]] = []
+        if _is_present(prior_drug_scheme) and _is_present(prior_start_date):
+            try:
+                prior_line_number = int(prior_lines_count) if _is_present(prior_lines_count) else 1
+            except (ValueError, TypeError):
+                prior_line_number = 1
+            prior_entry = {
+                "start_date": str(prior_start_date),
+                "drug_scheme": normalize_regimen_code(prior_drug_scheme),
+                "line_of_therapy_number": str(prior_line_number),
+                "source": "auto-treatment-history (Faubot LXV #63B)",
+            }
+            if _is_present(prior_end_date):
+                prior_entry["end_date"] = str(prior_end_date)
+            if _is_present(prior_reason):
+                prior_entry["reason_for_change"] = str(prior_reason)
+            if _is_present(prior_best_response):
+                try:
+                    prior_entry["best_psa_response_pct"] = float(
+                        str(prior_best_response).replace(",", ".")
+                    )
+                except (ValueError, TypeError):
+                    pass
+            synthesized_treatments.append(prior_entry)
+
+        # Sintetizar entrada actual si hay drug_scheme + (line_of_therapy_number
+        # OR diagnosis_date como fallback de start_date). El extractor de
+        # bandas requiere start_date para construir la banda actual.
+        current_drug_scheme = canonical.get("drug_scheme")
+        current_line_number = canonical.get("line_of_therapy_number")
+        if _is_present(current_drug_scheme):
+            current_start_candidate = (
+                prior_end_date
+                or canonical.get("current_treatment_start_date")
+                or diagnosis_date
+            )
+            if _is_present(current_start_candidate):
+                try:
+                    current_line_int = (
+                        int(current_line_number)
+                        if _is_present(current_line_number)
+                        else (
+                            int(prior_lines_count) + 1
+                            if _is_present(prior_lines_count)
+                            else 1
+                        )
+                    )
+                except (ValueError, TypeError):
+                    current_line_int = 1
+                current_entry = {
+                    "start_date": str(current_start_candidate),
+                    "drug_scheme": normalize_regimen_code(current_drug_scheme),
+                    "line_of_therapy_number": str(current_line_int),
+                    "source": "auto-treatment-current (Faubot LXV #63B)",
+                }
+                line_context = canonical.get("line_of_therapy_context")
+                if _is_present(line_context):
+                    current_entry["line_of_therapy_context"] = str(line_context)
+                synthesized_treatments.append(current_entry)
+
+        # Solo aplicar si treatments[] está vacío (no sobrescribir captura
+        # visita-a-visita previa). Si hay treatments persistidos, ellos
+        # tienen prioridad.
+        if treatments_is_empty and synthesized_treatments:
+            canonical["treatments"] = synthesized_treatments
+
+        # Faubot 2026-04-25 (LXVI) — Auditoría #63C
+        # Multi-row prior treatment lines: si el intake usa el widget
+        # multi-row (`prior_treatment_lines_history` JSON array), expandir
+        # treatments[] con las N líneas previas + la actual. Esto reemplaza
+        # la sintetización anterior (que solo capturaba la "más reciente
+        # prior line") por una historia completa N líneas.
+        prior_lines_history = canonical.get("prior_treatment_lines_history")
+        if isinstance(prior_lines_history, str):
+            # Widget produce JSON string; parsear si presente
+            try:
+                import json
+                parsed = json.loads(prior_lines_history)
+                if isinstance(parsed, list):
+                    prior_lines_history = parsed
+                else:
+                    prior_lines_history = None
+            except (ValueError, TypeError):
+                prior_lines_history = None
+
+        if (
+            isinstance(prior_lines_history, list)
+            and prior_lines_history
+            and treatments_is_empty
+        ):
+            multi_synthesized: list[dict[str, Any]] = []
+            for idx, line_entry in enumerate(prior_lines_history):
+                if not isinstance(line_entry, dict):
+                    continue
+                if not _is_present(line_entry.get("start_date")):
+                    continue
+                if not _is_present(line_entry.get("drug_scheme")):
+                    continue
+                multi_entry = {
+                    "start_date": str(line_entry.get("start_date")),
+                    "drug_scheme": normalize_regimen_code(line_entry.get("drug_scheme")),
+                    "line_of_therapy_number": str(
+                        line_entry.get("line_of_therapy_number") or (idx + 1)
+                    ),
+                    "source": "auto-treatment-multirow (Faubot LXVI #63C)",
+                }
+                if _is_present(line_entry.get("end_date")):
+                    multi_entry["end_date"] = str(line_entry.get("end_date"))
+                if _is_present(line_entry.get("line_of_therapy_context")):
+                    multi_entry["line_of_therapy_context"] = str(
+                        line_entry.get("line_of_therapy_context")
+                    )
+                if _is_present(line_entry.get("reason_for_change")):
+                    multi_entry["reason_for_change"] = str(
+                        line_entry.get("reason_for_change")
+                    )
+                if _is_present(line_entry.get("best_psa_response_pct")):
+                    try:
+                        multi_entry["best_psa_response_pct"] = float(
+                            str(line_entry.get("best_psa_response_pct")).replace(",", ".")
+                        )
+                    except (ValueError, TypeError):
+                        pass
+                multi_synthesized.append(multi_entry)
+
+            # Agregar línea actual al final si hay drug_scheme
+            if _is_present(canonical.get("drug_scheme")):
+                last_end = (
+                    multi_synthesized[-1].get("end_date") if multi_synthesized else None
+                )
+                current_start_candidate = (
+                    last_end
+                    or canonical.get("current_treatment_start_date")
+                    or diagnosis_date
+                )
+                if _is_present(current_start_candidate):
+                    next_line_num = (
+                        len(multi_synthesized) + 1
+                        if not _is_present(canonical.get("line_of_therapy_number"))
+                        else canonical.get("line_of_therapy_number")
+                    )
+                    multi_current = {
+                        "start_date": str(current_start_candidate),
+                        "drug_scheme": normalize_regimen_code(canonical.get("drug_scheme")),
+                        "line_of_therapy_number": str(next_line_num),
+                        "source": "auto-treatment-multirow-current (Faubot LXVI #63C)",
+                    }
+                    if _is_present(canonical.get("line_of_therapy_context")):
+                        multi_current["line_of_therapy_context"] = str(
+                            canonical.get("line_of_therapy_context")
+                        )
+                    multi_synthesized.append(multi_current)
+
+            if multi_synthesized:
+                # Multi-row tiene prioridad sobre sintetización single-prior
+                # (es más informativa y completa)
+                canonical["treatments"] = multi_synthesized
 
         return canonical

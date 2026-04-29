@@ -47,20 +47,41 @@ _FIELD_LABEL_MAP = {
     "progression_pattern": "Patrón de progresión",
     "disease_status": "Estado clínico de la enfermedad",
     "conventional_imaging_status": "Imagen convencional actual",
+    "conventional_imaging_modality": "Modalidad de imagen convencional",
+    "conventional_imaging_date": "Fecha de imagen convencional",
     "imaging_modality": "Modalidad de imagen",
     "visit_date": "Fecha de la visita",
     "psma_pet_done": "Disponibilidad de PSMA-PET",
+    "mpmri_date": "Fecha de resonancia magnética",
+    "mri_fact_date": "Fecha de resonancia magnética",
+    "biopsy_date": "Fecha de biopsia",
+    "confirmatory_biopsy_done": "Biopsia confirmatoria realizada",
+    "confirmatory_biopsy_date": "Fecha de biopsia confirmatoria",
+    "targeted_biopsy_status": "Biopsia dirigida disponible",
+    "mri_interval_months": "Intervalo de resonancia magnética",
+    "genomic_classifier_result": "Clasificador genómico",
+    "genomic_classifier_report_date": "Fecha del clasificador genómico",
     "psma_positive": "Expresión global de PSMA",
     "psma_rads_score": "PSMA-RADS",
+    "psma_stage_after_psma": "Estadificación posterior a PSMA",
     "bone_distribution_documented": "Distribución ósea documentada",
     "psma_radioligand": "Radioligando PSMA",
+    "psma_downgrade_reason": "Razón clínica del downgrade sin PSMA",
     "psma_uptake_pattern": "Patrón de captación PSMA",
     "salvage_local_feasible": "Factibilidad de rescate local",
+    "prior_rt_modality": "Modalidad de radioterapia previa",
+    "prior_rt_dose": "Dosis previa de radioterapia",
+    "prior_rt_fields": "Campos previos de radioterapia",
     "pathologic_stage": "Estadio patológico",
     "psadt_months": "Tiempo de duplicación de PSA",
     "testosterone": "Testosterona sérica",
+    "testosterone_history": "Serie longitudinal de testosterona",
     "psa": "PSA actual",
+    "psa_history": "Serie longitudinal de PSA / APE",
     "psa_current": "PSA actual",
+    "psa_nadir": "Nadir de PSA",
+    "psa_nadir_date": "Fecha del nadir de PSA",
+    "phoenix_delta": "Delta Phoenix",
     "psa_postop": "PSA posoperatorio",
     "bcr_psa": "PSA al momento de la recurrencia bioquímica",
     "hemoglobin": "Hemoglobina",
@@ -72,25 +93,94 @@ _FIELD_LABEL_MAP = {
     "alt": "ALT",
     "ggt": "GGT",
     "glucose": "Glucosa",
+    "systolic_bp": "Presión arterial sistólica",
+    "diastolic_bp": "Presión arterial diastólica",
+    "total_cholesterol": "Colesterol total",
+    "hdl_cholesterol": "Colesterol HDL",
+    "triglycerides": "Triglicéridos",
+    "hba1c": "Hemoglobina glucosilada",
+    "waist_circumference_cm": "Circunferencia de cintura",
     "hrr_status": "Estado HRR",
     "brca2_status": "Estado BRCA2",
     "msi_status": "Estado MSI",
+    "molecular_report_date": "Fecha del estudio molecular",
     "molecular_assay_date": "Fecha del estudio molecular",
     "biomarker_source": "Fuente del biomarcador",
     "hrr_gene": "Gen HRR alterado",
     "line_of_therapy": "Número de línea terapéutica",
     "cv_risk_documented": "Antecedentes cardiovasculares mayores",
     "drug_interaction_reviewed": "Revisión de interacciones farmacológicas",
+    "ddi_review_status": "Estado de revisión de interacciones",
+    "active_liver_disease": "Hepatopatía activa",
+    "cirrhosis_or_portal_hypertension": "Cirrosis o hipertensión portal",
+    "active_hepatitis_b_or_c": "Hepatitis B o C activa",
+    "prior_drug_induced_liver_injury": "Hepatotoxicidad previa por fármacos",
+    "bcr_detected": "Recurrencia bioquímica no metastásica",
+    "eq5d_vas_band": "EQ-5D VAS basal",
+    "fact_p_total_band": "FACT-P basal",
+    "bpi_worst_pain_band": "BPI dolor peor basal",
+    "fatigue_score_band": "Fatiga basal",
     "seizure_history": "Antecedente convulsivo",
     "dermatitis_history": "Antecedentes cutáneos relevantes",
     "dxa_baseline_done": "Densitometría basal",
     "calcium_vitd_started": "Suplementación con calcio y vitamina D",
     "bone_protection_started": "Protección ósea activa",
     "vitamin_d_level": "Nivel de vitamina D",
+    "calcium_level": "Calcio sérico",
     "bone_bundle": "Bundle de salud ósea",
     "charlson_comorbidity_index": "Índice de Charlson",
     "g8": "Tamizaje geriátrico G8",
     "frailty_status": "Fragilidad clínica",
+    "dxa_t_score_lumbar": "DXA T-score lumbar",
+    "dxa_t_score_hip": "DXA T-score cadera",
+    "fall_risk": "Riesgo de caídas",
+    "cognitive_risk": "Riesgo cognitivo",
+    "neuropathy_grade": "Grado de neuropatía",
+    "functional_decline": "Declive funcional",
+    "pain": "Dolor actual",
+    "bone_pain": "Dolor óseo",
+    "neuropathic_pain": "Dolor neuropático",
+    "current_analgesics": "Analgesia actual",
+    "breakthrough_pain": "Dolor irruptivo",
+    "bowel_regimen_started": "Esquema preventivo para estreñimiento",
+    "dyspnea_score": "Disnea",
+    "nausea_score": "Náusea",
+    "constipation_score": "Estreñimiento",
+    "appetite_loss": "Pérdida del apetito",
+    "insomnia_score": "Insomnio",
+    "depression_score": "Síntomas depresivos",
+    "anxiety_score": "Síntomas de ansiedad",
+    "albumin": "Albúmina",
+    "refractory_pain": "Dolor refractario",
+    "visceral_crisis": "Crisis visceral",
+    "spinal_cord_compression": "Compresión medular",
+    "epidural_compression": "Compresión epidural",
+    "pathological_fracture_risk": "Riesgo de fractura patológica",
+    "obstructive_uropathy": "Uropatía obstructiva",
+    "hematuria_severe": "Hematuria severa",
+    "brain_metastasis": "Metástasis cerebral",
+    "advance_directive_documented": "Voluntad anticipada documentada",
+    "goals_of_care_discussed": "Objetivos de cuidado discutidos",
+    "healthcare_surrogate_designated": "Representante para decisiones de salud designado",
+    "patient_prefers_comfort": "Preferencia por medidas de confort",
+    "sexual_bother": "Malestar sexual",
+    "body_image_distress": "Malestar por imagen corporal",
+    "return_to_work_status": "Estado de retorno al rol laboral",
+    "biopsy_proven_local_recurrence": "Biopsia confirmatoria de recurrencia local",
+    "biopsy_date": "Fecha de biopsia",
+    "biopsy_grade_group": "Grupo de grado en biopsia",
+    "mpmri_done": "mpMRI prostática disponible",
+    "mpmri_date": "Fecha de mpMRI",
+    "mpmri_localized_recurrence": "mpMRI compatible con recurrencia localizada",
+    "local_recurrence_site": "Sitio de recurrencia local",
+    "urinary_burden": "Carga urinaria actual",
+    "incontinence_burden": "Carga de incontinencia",
+    "urethral_stricture_history": "Antecedente de estenosis uretral",
+    "bowel_burden": "Carga intestinal actual",
+    "rectal_toxicity_grade": "Grado de toxicidad rectal",
+    "prostate_volume": "Volumen prostático",
+    "anesthesia_surgical_fitness": "Aptitud anestésico-quirúrgica",
+    "salvage_expertise_available": "Experiencia local para salvage",
     "myocardial_infarction": "Infarto previo de miocardio",
     "congestive_heart_failure": "Insuficiencia cardiaca congestiva",
     "peripheral_vascular_disease": "Enfermedad vascular periférica",
@@ -110,11 +200,24 @@ _FIELD_LABEL_MAP = {
     "metastatic_solid_tumor": "Tumor sólido metastásico",
     "aids_hiv": "VIH/SIDA",
     "mini_cog_score": "Mini-Cog",
+    "eq5d_vas": "EQ-5D VAS",
+    "fact_p_total": "FACT-P",
+    "bpi_worst_pain": "BPI dolor peor",
     "fatigue_score": "Síntomas de fatiga",
+    "iief5_score": "IIEF-5",
     "peripheral_neuropathy_grade": "Neuropatía periférica",
     "weight_kg": "Peso actual",
+    "height_cm": "Estatura",
     "bmi_current": "Índice de masa corporal",
     "weight_loss_6m_pct": "Pérdida de peso en 6 meses",
+    "weight_loss_6m_kg": "Pérdida de peso en 6 meses",
+    "gu_toxicity_grade": "Grado de toxicidad GU",
+    "gi_toxicity_grade": "Grado de toxicidad GI",
+    "hematuria": "Hematuria",
+    "dysuria": "Disuria",
+    "radiation_cystitis": "Cistitis actínica",
+    "proctitis": "Proctitis",
+    "late_toxicity_json": "Resumen estructurado de toxicidad tardía",
     "low_activity": "Actividad física reducida",
     "slow_gait": "Marcha lenta",
     "weak_grip": "Fuerza de prensión reducida",
@@ -376,3 +479,48 @@ def normalize_ui_payload(payload: Any) -> Any:
     if isinstance(payload, str):
         return normalize_ui_label(payload)
     return payload
+
+
+def normalize_numeric_locale(value: Any) -> Any:
+    # Fixes IF-1 (FAUBOT FASE 6): safe_float("4,5") silently returned None for
+    # Spanish-style decimals. Accepts "1.234,56" (thousands) collapsed to "1234.56".
+    if value is None:
+        return value
+    if isinstance(value, (int, float)):
+        return value
+    text = str(value).strip()
+    if not text:
+        return text
+    if text.count(",") == 1 and text.count(".") >= 1:
+        text = text.replace(".", "")
+    return text.replace(",", ".")
+
+
+def clamp_numeric(
+    value: Any,
+    *,
+    min_value: Any = None,
+    max_value: Any = None,
+    allow_negative: bool = False,
+) -> tuple[float | None, str | None]:
+    # Returns (parsed_value, error). Guards PSA-1, PSADT-1, Te-1, S-1 ingress.
+    if value is None:
+        return None, None
+    text = normalize_numeric_locale(value)
+    if isinstance(text, str):
+        if not text:
+            return None, None
+        lowered = text.lower()
+        if lowered in _MISSING_SENTINELS or lowered in {"no aplica", "no documentado"}:
+            return None, None
+    try:
+        parsed = float(text)
+    except (TypeError, ValueError):
+        return None, "Valor no numérico"
+    if not allow_negative and parsed < 0:
+        return None, "Valor negativo no permitido"
+    if min_value is not None and parsed < float(min_value):
+        return parsed, f"Valor por debajo del mínimo permitido ({min_value})"
+    if max_value is not None and parsed > float(max_value):
+        return parsed, f"Valor por encima del máximo permitido ({max_value})"
+    return parsed, None

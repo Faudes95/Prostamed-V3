@@ -1,0 +1,196 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gates × DDI Cross-Check Catalog — Faubot 2026-04-25 (XXXV)
+# ──────────────────────────────────────────────────────────────────────
+# Tier 4 K — Refactor declarativo: migra los 3 dicts Python de
+# `gates_ddi_cross_check.py` (~250 líneas imperativo) a YAML declarativo.
+#
+# Para cada gate code, declara:
+#   - ddi_categories: tuple[str] de DDIEngine.category names que ENRIQUECEN
+#     la contraindicación (DDIs concomitantes que agravan el gate)
+#   - oncology_drugs: list[str] de fármacos oncológicos (lowercase ES)
+#     que el gate restringe (input para DDIEngine.check_interactions)
+#   - ui_summary: str legible para clínico/auditor (formato "Gate N (...)")
+#   - faubot_added_in: versión Faubot que añadió el mapping (auditoría)
+#
+# Aporte a auditabilidad post-Tier 4 K:
+#   - **VERSIÓN:** cada cross-check versionable per-mapping (SHA via loader);
+#     auditor regulatorio puede revisar cambios mapping-by-mapping
+#   - **CÓMO:** declarativo facilita grep/inspección vs código Python
+#   - **DATOS:** schema validation automática por loader
+#
+# Patrón consistente con `pivotal_gates_catalog/` que está 100% YAML-native
+# (28/28 gates). Cierra deuda arquitectónica: 21 mappings DDI ahora en YAML.
+#
+# Backward-compat: `gates_ddi_cross_check.py` API pública (cross_check_gates_with_ddi,
+# cross_messages_for_not_recommended, get_gate_ddi_mapping_summary) inalterada.
+# Internamente reads from YAML at import time.
+# ──────────────────────────────────────────────────────────────────────
+
+faubot_release: "2026-04-25 XXXV"
+faubot_added_in_iteration: "Tier 4 K — Refactor gates_ddi_cross_check to YAML"
+schema_version: "1.0"
+total_mappings: 21
+ddi_categories_supported:
+  - qtc_prolongation
+  - seizure_threshold
+  - cyp3a4_inhibition
+  - cyp3a4_induction
+  - cyp2c19_induction
+  - pharmacodynamic_aldosterone
+  - bone_remodeling
+
+mappings:
+  # ── ARSI cardiotox + neuro layer ────────────────────────────────────
+  qtc_prolongation_grade3_for_enzalutamide:
+    ddi_categories: [qtc_prolongation]
+    oncology_drugs: [enzalutamida]
+    ui_summary: "Gate 17 (QTc grado 3 + enzalutamida bloqueado)"
+    description: "Cualquier DDI QTc agrava (ondansetrón IV, fluoroquinolonas, antifúngicos azólicos)"
+    faubot_added_in: "2026-04-25 XV"
+
+  lvef_decline_for_apalutamide:
+    ddi_categories: [qtc_prolongation]
+    oncology_drugs: [apalutamida]
+    ui_summary: "Gate 18 (FEVI <50% + apalutamida bloqueado)"
+    description: "DDIs cardiotóxicos QTc agravan (estrés arrítmico empeora función ventricular comprometida)"
+    faubot_added_in: "2026-04-25 XV"
+
+  arsi_in_cognitive_decline_grade2:
+    ddi_categories: [seizure_threshold, cyp2c19_induction]
+    oncology_drugs: [enzalutamida, apalutamida, darolutamida]
+    ui_summary: "Gate 19 (ARSI + deterioro cognitivo grado ≥2 bloqueado)"
+    description: "Seizure_threshold (bupropion, tramadol con enzalutamida/apalutamida) + CYP2C19 induction (citalopram subdosis empeora síntomas neuropsiquiátricos)"
+    faubot_added_in: "2026-04-25 XIV"
+
+  # ── HTA + IC + bone health ──────────────────────────────────────────
+  uncontrolled_hypertension:
+    ddi_categories: [pharmacodynamic_aldosterone]
+    oncology_drugs: [abiraterona]
+    ui_summary: "Gate 3 (HTA no controlada + abiraterona bloqueado)"
+    description: "Espironolactona compite por receptor mineralocorticoide"
+    faubot_added_in: "2026-04-25 XV"
+
+  severe_heart_failure_nyha_iii_iv:
+    ddi_categories: [qtc_prolongation, pharmacodynamic_aldosterone]
+    oncology_drugs: [abiraterona, enzalutamida, apalutamida, docetaxel]
+    ui_summary: "Gate 4 (IC NYHA III-IV bloqueado)"
+    description: "DDIs QTc + aldosterone agravan IC severa"
+    faubot_added_in: "2026-04-25 XV"
+
+  no_bone_protective_agent:
+    ddi_categories: [bone_remodeling]
+    oncology_drugs: [radium_223]
+    ui_summary: "Gate 9 (Ra-223 sin agente óseo bloqueado)"
+    description: "DDIs bone_remodeling (denosumab/zoledronato) cambian el manejo"
+    faubot_added_in: "2026-04-25 XV"
+
+  # ── Ra-223 emergencias ──────────────────────────────────────────────
+  radium223_in_cord_compression:
+    ddi_categories: [bone_remodeling]
+    oncology_drugs: [radium_223]
+    ui_summary: "Gate 11 (Ra-223 + compresión medular bloqueado)"
+    description: "DDIs bone_remodeling cruzados con emergencia oncológica"
+    faubot_added_in: "2026-04-25 XV"
+
+  radium223_in_hypocalcemia:
+    ddi_categories: [bone_remodeling]
+    oncology_drugs: [radium_223]
+    ui_summary: "Gate 12 (Ra-223 + hipocalcemia bloqueado)"
+    description: "DDIs bone_remodeling cruzados con hipocalcemia"
+    faubot_added_in: "2026-04-25 XV"
+
+  # ── Lu-177 + PARPi ──────────────────────────────────────────────────
+  lutetium177_in_severe_cytopenias:
+    ddi_categories: [cyp3a4_inhibition]
+    oncology_drugs: [olaparib, niraparib, rucaparib]
+    ui_summary: "Gate 14 (Lu-177 + citopenias severas bloqueado)"
+    description: "CYP3A4 inhibitors elevan toxicidad PARPi concomitantes"
+    faubot_added_in: "2026-04-25 XV"
+
+  parp_inhibitor_in_severe_cytopenias:
+    ddi_categories: [cyp3a4_inhibition]
+    oncology_drugs: [olaparib, niraparib, rucaparib, talazoparib]
+    ui_summary: "Gate 15 (PARPi + citopenias severas bloqueado)"
+    description: "CYP3A4 inhibitors (ketoconazol, claritromicina, itraconazol) elevan toxicidad PARP"
+    faubot_added_in: "2026-04-25 XV"
+
+  parp_inhibitor_in_mds_aml_history:
+    ddi_categories: [cyp3a4_inhibition]
+    oncology_drugs: [olaparib, niraparib, rucaparib, talazoparib]
+    ui_summary: "Gate 16 (PARPi + historia MDS/AML bloqueado)"
+    description: "CYP3A4 inhibitors elevan toxicidad PARPi en pacientes alto riesgo MDS/AML"
+    faubot_added_in: "2026-04-25 XV"
+
+  creatinine_clearance_lt_30:
+    ddi_categories: [cyp3a4_inhibition]
+    oncology_drugs: [rucaparib, olaparib]
+    ui_summary: "Gate 10 (Ccr <30 + rucaparib bloqueado)"
+    description: "CYP3A4 inhibitors aumentan exposición PARPi en falla renal severa"
+    faubot_added_in: "2026-04-25 XV"
+
+  # ── Tier 2/3 D-F gates 20-23 (Faubot XXVI) ─────────────────────────
+  arsi_in_seizure_history_grade3:
+    ddi_categories: [seizure_threshold, cyp3a4_induction]
+    oncology_drugs: [enzalutamida, apalutamida, darolutamida]
+    ui_summary: "Gate 20 (ARSI + convulsiones grado ≥3 bloqueado)"
+    description: "Seizure_threshold (bupropion, tramadol) + cyp3a4_induction (carbamazepina, fenitoína antiepilépticos reducen ARSI)"
+    faubot_added_in: "2026-04-25 XXVI"
+
+  abiraterone_hepatotoxicity_grade3:
+    ddi_categories: [cyp3a4_inhibition, cyp3a4_induction]
+    oncology_drugs: [abiraterona]
+    ui_summary: "Gate 21 (Abiraterona + hepatotox grado 3 bloqueado)"
+    description: "CYP3A4 inhibitors aumentan exposición abiraterona; CYP3A4 inducers (rifampin) reducen niveles"
+    faubot_added_in: "2026-04-25 XXVI"
+
+  niraparib_in_severe_thrombocytopenia:
+    ddi_categories: [cyp3a4_inhibition]
+    oncology_drugs: [niraparib]
+    ui_summary: "Gate 22 (Niraparib + trombocitopenia <150K bloqueado)"
+    description: "CYP3A4 inhibitors elevan exposición niraparib específicamente; agrava mielotox plaquetaria"
+    faubot_added_in: "2026-04-25 XXVI"
+
+  niraparib_hypertension_grade3_magnitude:
+    ddi_categories: [pharmacodynamic_aldosterone, qtc_prolongation]
+    oncology_drugs: [niraparib]
+    ui_summary: "Gate 23 (Niraparib + HTA grado ≥3 bloqueado)"
+    description: "Pharmacodynamic_aldosterone + qtc_prolongation: HTA + DAT inhibition + DDIs QTc = riesgo cardiovascular cruzado"
+    faubot_added_in: "2026-04-25 XXVI"
+
+  # ── Auditoría #39 gate 24 (Faubot XXVII) ───────────────────────────
+  docetaxel_neuropathy_longitudinal_grade2_post_4_cycles:
+    ddi_categories: [cyp3a4_inhibition, cyp3a4_induction]
+    oncology_drugs: [docetaxel, cabazitaxel]
+    ui_summary: "Gate 24 (Docetaxel + neuropatía G≥2 post-4-ciclos bloqueado)"
+    description: "CYP3A4 inhibitors elevan exposición docetaxel y empeoran neuropathy acumulativa; CYP3A4 inducers reducen niveles podría enmascarar progresión"
+    faubot_added_in: "2026-04-25 XXVII"
+
+  # ── Auditoría #41 gate 25 (Faubot XXXIII) ──────────────────────────
+  ipatasertib_hyperglycemia_grade3:
+    ddi_categories: [cyp3a4_inhibition, cyp3a4_induction]
+    oncology_drugs: [ipatasertib]
+    ui_summary: "Gate 25 (Ipatasertib + hiperglucemia G≥3 bloqueado)"
+    description: "CYP3A4 inhibitors elevan exposición ipatasertib AKT inhibitor → empeora hiperglucemia; CYP3A4 inducers (dexametasona) empeoran glycemic control"
+    faubot_added_in: "2026-04-25 XXXIII"
+
+  # ── Auditorías #42+#43 gates 26-27-28 (Faubot XXXIV) ───────────────
+  cabazitaxel_hypersensitivity_grade3:
+    ddi_categories: [cyp3a4_inhibition, cyp3a4_induction]
+    oncology_drugs: [cabazitaxel]
+    ui_summary: "Gate 26 (Cabazitaxel + hipersensibilidad G≥3 bloqueado)"
+    description: "CYP3A4 inhibitors (ketoconazol/itraconazol) elevan exposición cabazitaxel + amplifican reacciones hipersensibilidad; CYP3A4 inducers (rifampin) reducen niveles pero NO previenen reacción inmunogénica"
+    faubot_added_in: "2026-04-25 XXXIV"
+
+  radium223_high_fracture_risk_frax:
+    ddi_categories: [bone_remodeling]
+    oncology_drugs: [radium_223]
+    ui_summary: "Gate 27 (Ra-223 + alto riesgo fractura FRAX bloqueado)"
+    description: "Bone_remodeling (denosumab/zoledronato) son la PROTECCIÓN obligatoria; cross-check identifica presencia para validar override bone_protection_established"
+    faubot_added_in: "2026-04-25 XXXIV"
+
+  abiraterone_adrenal_insufficiency:
+    ddi_categories: [pharmacodynamic_aldosterone, cyp3a4_inhibition]
+    oncology_drugs: [abiraterona]
+    ui_summary: "Gate 28 (Abiraterona + insuficiencia adrenal bloqueado)"
+    description: "Pharmacodynamic_aldosterone (espironolactona compite con manejo mineralocorticoide) + cyp3a4_inhibition (claritromicina eleva abiraterona empeorando supresión adrenal axis)"
+    faubot_added_in: "2026-04-25 XXXIV"

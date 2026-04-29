@@ -1401,6 +1401,58 @@ def build_decision_input_requirements(
     }
 
 
+def merge_staging_adjudication_into_requirements(
+    decision_input_requirements: dict[str, Any] | None,
+    staging_adjudication_bundle: dict[str, Any] | None,
+) -> dict[str, Any]:
+    merged = dict(decision_input_requirements or {})
+    staging_adjudication_bundle = dict(staging_adjudication_bundle or {})
+    if not staging_adjudication_bundle:
+        return merged
+
+    missing_critical_inputs = _dedupe(
+        list(staging_adjudication_bundle.get("missing_critical_inputs") or [])
+        + list(staging_adjudication_bundle.get("discordant_fields") or [])
+        + list(staging_adjudication_bundle.get("superseded_evidence") or [])
+    )
+    if not missing_critical_inputs:
+        merged["staging_adjudication_bundle"] = staging_adjudication_bundle
+        return merged
+
+    hard_inputs = _dedupe(list(merged.get("hard_blocking_inputs") or []) + missing_critical_inputs)
+    decision_inputs = _dedupe(list(merged.get("decision_blocking_inputs") or []))
+    blocking_inputs = _dedupe(list(merged.get("blocking_inputs") or []) + hard_inputs + decision_inputs)
+    required_to_recalculate = _dedupe(
+        list(merged.get("required_to_recalculate") or [])
+        + hard_inputs
+        + decision_inputs
+    )
+    domains = _dedupe(
+        list(merged.get("decision_domains_blocked") or [])
+        + ["staging_adjudication", "restaging_traceability"]
+    )
+    reasons = _dedupe(
+        list(merged.get("why_these_fields_now") or [])
+        + list(staging_adjudication_bundle.get("recommended_adjudication_actions") or [])
+        + [
+            "La decisión no debe liberarse hasta cerrar concordancia anatómica/funcional, trazabilidad PSMA o biomarcadores críticos."
+        ]
+    )
+
+    merged.update(
+        {
+            "hard_blocking_inputs": hard_inputs,
+            "decision_blocking_inputs": decision_inputs,
+            "blocking_inputs": blocking_inputs,
+            "required_to_recalculate": required_to_recalculate,
+            "decision_domains_blocked": domains,
+            "why_these_fields_now": reasons,
+            "staging_adjudication_bundle": staging_adjudication_bundle,
+        }
+    )
+    return merged
+
+
 def detect_ui_contradiction_flags(
     patient: dict[str, Any],
     *,
@@ -1489,5 +1541,6 @@ def detect_ui_contradiction_flags(
 
 __all__ = [
     "build_decision_input_requirements",
+    "merge_staging_adjudication_into_requirements",
     "detect_ui_contradiction_flags",
 ]

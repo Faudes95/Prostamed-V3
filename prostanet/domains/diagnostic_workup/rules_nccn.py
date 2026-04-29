@@ -1,5 +1,18 @@
 from __future__ import annotations
 
+from prostanet.shared.clinical_provisional_diagnosis_engine import (
+    PSA_EXTREME,
+    PSA_HIGH,
+    PSA_VERY_HIGH,
+    PSA_VIRTUALLY_CERTAIN,
+    assess_provisional_diagnosis,
+    empiric_adt_protocol,
+)
+from prostanet.shared.oncologic_emergency_triage_engine import (
+    emergency_triage_descriptor,
+)
+from prostanet.shared.staging_requirements_engine import staging_gap_descriptor
+
 
 def _parse_dre(payload: dict) -> tuple[bool, str | None]:
     """Parse DRE finding — supports both new ``dre_finding`` and legacy ``dre_suspicious``.
@@ -26,7 +39,23 @@ def _parse_dre(payload: dict) -> tuple[bool, str | None]:
 
 
 def classify_diagnostic_workup(payload: dict) -> dict:
-    psa = float(payload.get("psa", 0) or 0)
+    psa_raw = float(payload.get("psa", 0) or 0)
+    # EPIC 9 Group F (GAP-12) — Confundentes del PSA (EAU Diagnostic Evaluation 2026).
+    # 5-ARI (finasteride/dutasteride) reduce PSA ~50% tras 6-12 meses de uso;
+    # el PSA "efectivo" para scoring diagnóstico se multiplica ×2 cuando hay
+    # 5-ARI activo (Roehrborn Eur Urol 2006, Andriole J Urol 2006, NCCN PROS-A).
+    # Los otros confundentes (UTI/prostatitis aguda, retención urinaria reciente,
+    # eyaculación en 48h) NO multiplican el PSA pero emiten caveat narrativo;
+    # same-lab assay diferente también es caveat cuando PSA es la señal decisiva.
+    ari_active = _is_true(payload.get("ari_medication_active"))
+    uti_prostatitis = _is_true(payload.get("uti_prostatitis_recent"))
+    urinary_retention = _is_true(payload.get("urinary_retention_recent"))
+    recent_ejaculation = _is_true(payload.get("recent_ejaculation_48h"))
+    same_lab_assay = str(payload.get("psa_same_lab_assay", "1")).strip()
+    if same_lab_assay == "":
+        same_lab_assay = "1"
+    psa = psa_raw * 2.0 if ari_active else psa_raw
+    psa_correction_applied = ari_active
     psad = float(payload.get("psad", 0) or 0)
     if not psad:
         prostate_volume = float(payload.get("prostate_volume_ml", 0) or 0)
@@ -49,12 +78,79 @@ def classify_diagnostic_workup(payload: dict) -> dict:
     score = 0
     reasons: list[str] = []
 
-    if psa >= 10:
+    if psa_correction_applied:
+        reasons.append(
+            f"Paciente bajo inhibidor 5-α-reductasa activo: el PSA reportado ({psa_raw:.1f} ng/mL) "
+            f"se corrige ×2 a {psa:.1f} ng/mL para el scoring diagnóstico (EAU 2026 / NCCN PROS-A)."
+        )
+    # ── Brecha 2026-04-23: stratified PSA scoring ──────────────────────────
+    # NCCN PROS-G v5.2026 + EAU 2026 §6.5.4 + Briganti / ProsTIC nomograms.
+    # El umbral antiguo `psa>=10 → +2` saturaba: PSA 12 y PSA 5000 obtenían
+    # el mismo score y ProstaNet emitía las mismas recomendaciones para
+    # ambos pacientes. La evidencia muestra >97% probabilidad de M1 cuando
+    # PSA ≥ 5000, ~93% cuando PSA ≥ 1000, ~80-90% cuando PSA ≥ 500 y
+    # ~60-75% cuando PSA ≥ 100. La nueva estratificación discrimina las
+    # 4 órdenes de magnitud y permite a service.py emitir 3 ramas
+    # paralelas (emergencia / provisional / ADT empírico) ante PSA extremo.
+    if psa >= PSA_VIRTUALLY_CERTAIN:  # 5000 ng/mL
+        score += 7
+        reasons.append(
+            f"Antígeno prostático específico extremo {psa:.0f} ng/mL "
+            f"(≥{PSA_VIRTUALLY_CERTAIN:.0f}) — probabilidad de enfermedad "
+            "metastásica >97% (Briganti / ProsTIC). Considerar diagnóstico "
+            "provisional clínico + ADT empírico mientras se completa biopsia."
+        )
+    elif psa >= PSA_EXTREME:  # 1000 ng/mL
+        score += 6
+        reasons.append(
+            f"Antígeno prostático específico extremo {psa:.0f} ng/mL "
+            f"(≥{PSA_EXTREME:.0f}) — probabilidad de M1 >93% (Briganti). "
+            "Estadificación M obligatoria sin demoras."
+        )
+    elif psa >= PSA_VERY_HIGH:  # 500 ng/mL
+        score += 5
+        reasons.append(
+            f"Antígeno prostático específico muy elevado {psa:.0f} ng/mL "
+            f"(≥{PSA_VERY_HIGH:.0f}) — probabilidad de M1 80-90%."
+        )
+    elif psa >= PSA_HIGH:  # 100 ng/mL
+        score += 4
+        reasons.append(
+            f"Antígeno prostático específico alto {psa:.0f} ng/mL "
+            f"(≥{PSA_HIGH:.0f}) — probabilidad de M1 60-75%; "
+            "estadificación M obligatoria."
+        )
+    elif psa >= 20:
+        score += 3
+        reasons.append(
+            f"Antígeno prostático específico {psa:.0f} ng/mL >20 — "
+            "alta sospecha; estadificación M obligatoria."
+        )
+    elif psa >= 10:
         score += 2
         reasons.append("El antígeno prostático específico es igual o mayor de 10 ng/mL.")
     elif psa >= 4:
         score += 1
         reasons.append("El antígeno prostático específico se encuentra por encima del umbral de vigilancia.")
+
+    if uti_prostatitis or urinary_retention or recent_ejaculation:
+        confounders_present: list[str] = []
+        if uti_prostatitis:
+            confounders_present.append("ITU o prostatitis aguda reciente")
+        if urinary_retention:
+            confounders_present.append("retención urinaria o sondaje reciente")
+        if recent_ejaculation:
+            confounders_present.append("eyaculación en las últimas 48 h")
+        reasons.append(
+            "Se documentan confundentes del PSA (" + ", ".join(confounders_present) +
+            "): considerar repetir PSA a distancia del evento antes de decidir biopsia."
+        )
+
+    if same_lab_assay == "0" and psa >= 4:
+        reasons.append(
+            "El PSA comparado se obtuvo en distinto laboratorio o técnica: el delta puede reflejar "
+            "variabilidad analítica, conviene repetir con el mismo ensayo antes de confirmar tendencia."
+        )
 
     if psad >= 0.15:
         score += 2
@@ -113,6 +209,55 @@ def classify_diagnostic_workup(payload: dict) -> dict:
     if prior_negative_biopsy:
         reasons.append("Existe antecedente de biopsia benigna, por lo que la decisión debe integrar el nuevo nivel de sospecha y no repetir biopsia de forma automática.")
 
+    # Brecha M-staging gate — 2026-04-22 (§D.1):
+    # Calcula descriptor de gap de estadificación para que el service emita
+    # PSMA/GGO/TAC explícitos cuando PSA>20, cT2b-T4 o ISUP≥4 lo exigen
+    # (NCCN PROS-2 v5.2026 cat 1; EAU 2026 §6.4.1-6.4.3). En diagnostic_workup
+    # NO bloquea (no hay tratamiento curativo); informa qué falta.
+    staging_gap = staging_gap_descriptor(payload)
+
+    # ── Brecha 2026-04-23: triaje pre-biopsia (emergencia + provisional + ADT) ─
+    # NCCN PROS-G v5.2026 + EAU 2026 §6.5.4 + Loblaw 2012 + Briganti.
+    # `emergency_triage_descriptor` retorna None si no hay emergencia, o
+    # un dict con conteos por severidad y lista detallada de emergencias.
+    # `assess_provisional_diagnosis` retorna tier (none/possible/probable/
+    # highly_probable/virtually_certain) + basis + confidence + biopsy
+    # priority + flag allow_empiric_adt. `empiric_adt_protocol` decide
+    # si emitir agonista LHRH + bicalutamida o antagonista (degarelix)
+    # según presencia de compresión medular o uropatía obstructiva severa.
+    # Estos descriptores los consume `service.py` para insertar 3 ramas
+    # paralelas en el bundle de tratamientos sin contaminar la lógica
+    # actual de scoring / staging.
+    payload_for_engines = dict(payload)
+    payload_for_engines["psa"] = psa  # usa PSA corregido por 5-ARI
+    emergency = emergency_triage_descriptor(payload_for_engines)
+    provisional = assess_provisional_diagnosis(payload_for_engines)
+    adt_protocol = empiric_adt_protocol(payload_for_engines, provisional)
+
+    if provisional.get("tier") in ("highly_probable", "virtually_certain"):
+        reasons.append(
+            f"Diagnóstico provisional clínico nivel '{provisional['tier']}' "
+            f"(confianza {provisional['confidence'] * 100:.0f}%): permite "
+            "activar workflows downstream (mHSPC empírico, paliativo, ADT) "
+            "sin esperar histología confirmatoria — NCCN PROS-G v5.2026, "
+            "EAU §6.5.4."
+        )
+    elif provisional.get("tier") in ("probable", "possible"):
+        reasons.append(
+            f"Diagnóstico provisional clínico nivel '{provisional['tier']}' "
+            f"(confianza {provisional['confidence'] * 100:.0f}%): mantener "
+            "biopsia urgente + estadificación M sin diferir."
+        )
+
+    if emergency:
+        reasons.append(
+            f"Triaje de emergencia oncológica: {emergency['critical_count']} "
+            f"crítica(s) y {emergency['high_count']} alta(s) detectadas "
+            f"(severidad máxima {emergency['max_severity']}, tiempo a "
+            f"acción {emergency['min_tta_hours']}h). Requiere referencia "
+            "inmediata."
+        )
+
     return {
         "label": label,
         "risk_group": risk_group,
@@ -123,6 +268,38 @@ def classify_diagnostic_workup(payload: dict) -> dict:
         "recommendation": recommendation,
         "reasons": reasons,
         "dre_implied_tstage": dre_implied_tstage,
+        # EPIC 9 Group F (GAP-12) — Propagación de la corrección PSA y los
+        # confundentes al bundle clínico para que profile_compass y copilots
+        # puedan surface el delta al usuario.
+        "psa_raw_reported": psa_raw,
+        "psa_effective_for_scoring": psa,
+        "psa_correction_applied": psa_correction_applied,
+        "psa_confounders_active": {
+            "ari_medication_active": ari_active,
+            "uti_prostatitis_recent": uti_prostatitis,
+            "urinary_retention_recent": urinary_retention,
+            "recent_ejaculation_48h": recent_ejaculation,
+            "psa_same_lab_assay": same_lab_assay == "1",
+        },
+        # Staging M flags (NCCN PROS-2 / EAU §6.4)
+        "staging_imaging_recommended": bool(staging_gap),
+        "staging_gap": staging_gap,
+        # Brecha PSA extremo + cT4 fijo + sin biopsia (2026-04-23)
+        # NCCN PROS-G v5.2026 + EAU §6.5.4 + Briganti + Loblaw 2012
+        "extreme_psa": psa >= PSA_EXTREME,
+        "very_high_psa": psa >= PSA_VERY_HIGH,
+        "high_psa": psa >= PSA_HIGH,
+        "psa_metastatic_probability": (
+            ">97%" if psa >= PSA_VIRTUALLY_CERTAIN else
+            ">93%" if psa >= PSA_EXTREME else
+            "80-90%" if psa >= PSA_VERY_HIGH else
+            "60-75%" if psa >= PSA_HIGH else
+            "10-35%" if psa >= 20 else
+            "<10%"
+        ),
+        "oncologic_emergency": emergency,
+        "provisional_diagnosis": provisional,
+        "empiric_adt_protocol": adt_protocol,
     }
 
 

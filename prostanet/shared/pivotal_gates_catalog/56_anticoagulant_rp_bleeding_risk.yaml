@@ -1,0 +1,143 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 56: anticoagulant_rp_bleeding_risk
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXV) — Auditoría #67A — RP vs RT subspecialty.
+#
+# Razón clínica:
+#   Pacientes con anticoagulación crónica (warfarin, DOACs apixaban/
+#   rivaroxaban/dabigatran/edoxaban) o antiplaquetarios (aspirin,
+#   clopidogrel) tienen riesgo elevado de sangrado peri-operatorio en
+#   RP + linfadenectomía pélvica (PLND) extendida:
+#     - Sangrado peri-operatorio: ≥4× vs paciente no anticoagulado
+#     - PLND extendida: tasa transfusión 8-12% (vs 3-5% sin anticoag)
+#     - Pelvic hematoma: 6-9% (vs 2-3% baseline)
+#     - Riesgo trombosis perioperatoria si bridging mal manejado
+#
+#   La radioterapia (EBRT-IMRT, SBRT) NO tiene este riesgo de sangrado
+#   y es preferible en pacientes con anticoagulación crónica difícil de
+#   suspender (afib paroxística, DVT/PE reciente, prótesis mitral).
+#
+#   Severity: soft_warning — alerta clínico para considerar RT vs RP +
+#   bridging plan multidisciplinario (cardiology + hematology si
+#   high-risk anticoagulation indication).
+#
+#   Override: anticoagulation_bridged_documented + anesthesiologist
+#   approval explicit (caso documentado + plan formal).
+#
+#   Coexistencia: gate puede coexistir con gates 57 (IBD), 58 (prior RT),
+#   60 (SVI risk) — todos contribuyen a profile RT-favored.
+# ──────────────────────────────────────────────────────────────────────
+
+code: anticoagulant_rp_bleeding_risk
+title: "Anticoagulación crónica → riesgo bleed RP+PLND elevado, considerar RT"
+faubot_added_in: "2026-04-25 LXXV"
+faubot_yaml_native: true
+severity: soft_warning  # Alerta + downgrade RP score (no bloquea totalmente)
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: cualquier anticoagulante oral activo
+    - type: string_contains_any
+      field: anticoagulant_agent
+      alias_fields:
+        - anticoagulation_agent
+        - anticoagulante_activo
+        - oral_anticoagulant
+      patterns:
+        - warfarin
+        - apixaban
+        - rivaroxaban
+        - dabigatran
+        - edoxaban
+        - acenocoumarol
+    # Path B: dual antiplatelet therapy (DAPT) — riesgo equivalente
+    - type: all_of
+      triggers:
+        - type: string_contains_any
+          field: antiplatelet_agent
+          alias_fields:
+            - antiplatelet
+            - antiagregante
+          patterns:
+            - aspirin
+            - clopidogrel
+            - prasugrel
+            - ticagrelor
+        - type: truthy_flag
+          field: dual_antiplatelet_therapy
+          alias_fields:
+            - dapt_active
+            - terapia_antiagregante_dual
+    # Path C: flag clínico documentado (urology/cardio post-eval)
+    - type: truthy_flag
+      field: high_bleeding_risk_documented_pre_rp
+      alias_fields:
+        - rp_bleeding_risk_high
+        - alto_riesgo_sangrado_rp_documentado
+
+# Override: anticoagulation manejada con bridging + clearance anesthesia
+override:
+  type: truthy_flag
+  field: anticoagulation_bridged_with_anesthesia_clearance
+  alias_fields:
+    - bridging_documented_pre_rp
+    - puente_anticoagulacion_documentado
+    - anesthesia_approved_anticoag_management
+
+regimen_codes:
+  - REGIMEN_CODES_RADICAL_PROSTATECTOMY
+
+keywords:
+  - prostatectomía radical
+  - radical prostatectomy
+  - cirugía prostática
+
+message: |
+  ⚠️ ALERTA: paciente con anticoagulación/antiagregación dual activa →
+  riesgo bleed peri-RP elevado ≥4× vs paciente sin anticoagulación.
+  Considerar RT (EBRT-IMRT/SBRT/brachy) como alternativa primaria, o
+  bridging plan formal multidisciplinario.
+
+  📊 RIESGOS DOCUMENTADOS RP+PLND con anticoagulación:
+  - Sangrado peri-operatorio: ≥4× vs no anticoagulado
+  - Tasa transfusión PLND extendida: 8-12% (vs 3-5% baseline)
+  - Hematoma pélvico: 6-9% (vs 2-3% baseline)
+  - Riesgo trombosis peri-operatoria si bridging inadecuado
+
+  🎯 CONDUCTA RECOMENDADA:
+  1. **Multidisciplinaria pre-RP**: cardiology + hematology + anesthesia
+     evalúan necesidad de continuar anticoagulación
+  2. **Si anticoagulación esencial** (afib paroxística, DVT/PE <3m,
+     prótesis valvular) → preferir RT sobre RP
+  3. **Si anticoagulación electiva** (DVT remota, profilaxis simple) →
+     bridging plan: suspender warfarin 5-7 días pre-op, DOAC 24-48h pre,
+     LMWH bridging si indicación high-risk
+  4. **Documentar plan bridging + clearance anesthesia** para activar
+     override de este gate
+
+  📈 ALTERNATIVAS RT (sin riesgo bleed):
+  - **EBRT-IMRT**: 78-80 Gy / 39-40 fx (estándar oro local control)
+  - **SBRT**: 35-40 Gy / 5 fx (Hypo-RT-PC)
+  - **Brachy LDR/HDR**: si anatomía favorable + sin TURP previa
+
+  🔬 EVIDENCIA:
+  - NCCN Prostate v5.2026 PROS-3: "high bleeding risk may favor RT"
+  - Stolzenburg J Urol 2008 — bleeding risk anticoag + RP
+  - EAU 2026 §7.3.1 — perioperative anticoagulation management
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `anticoagulant_agent`: warfarin / apixaban / rivaroxaban / dabigatran / etc
+  - `antiplatelet_agent`: aspirin / clopidogrel / etc
+  - `dual_antiplatelet_therapy`: flag DAPT activo
+  - `anticoagulation_bridged_with_anesthesia_clearance`: override flag
+
+  Este gate es **INFORMACIONAL** — alerta contra RP sin manejo formal de
+  anticoagulación. NO bloquea RP si paciente tiene plan bridging y
+  clearance anesthesia explícitos.
+
+evidence_tag: nccn_pros_v5_2026_anticoagulation_rp_bleeding_risk
+trial_refs:
+  - "NCCN Prostate v5.2026 PROS-3"
+  - "Stolzenburg J Urol 2008 (bleeding anticoag RP)"
+  - "EAU 2026 §7.3.1 (perioperative anticoagulation)"

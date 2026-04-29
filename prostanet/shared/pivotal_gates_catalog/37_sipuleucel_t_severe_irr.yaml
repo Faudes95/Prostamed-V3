@@ -1,0 +1,148 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 37: sipuleucel_t_severe_irr
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LI) — Auditoría #53 — Gate YAML-NATIVE.
+#
+# Razón clínica:
+#   Sipuleucel-T (Provenge, Dendreon) es la PRIMERA immunoterapia
+#   autóloga aprobada FDA para mCRPC asymptomatic (IMPACT trial
+#   Kantoff NEJM 2010). Mecanismo: leukapheresis del paciente →
+#   activación ex vivo con PA2024 (PAP-GM-CSF fusion protein) →
+#   re-infusión IV cada 2 sem × 3 dosis.
+#
+#   Perfil safety DISTINTO de quimio/ARSI (immunotherapy-specific):
+#     - IRR (Infusion-Related Reactions): 71% any grade, 4-7% G≥3
+#       (Provenge label §6 + IMPACT supplementary)
+#     - Síntomas IRR: chills, fever, fatigue, nausea, headache,
+#       hipertensión transitoria, hipotensión, dyspnea, broncoespasmo
+#     - IRR severos (G≥3): requieren epinefrine + corticosteroides IV
+#       + hospitalización; potencial anafilaxis
+#
+#   Threshold canónico (Provenge label §5.1 + IMPACT protocol §6.4):
+#     - Path A: history_severe_irr_for_immunotherapy=Sí (HR 8.2x
+#       recurrencia G≥3 en re-exposición)
+#     - Path B: irr_grade_documented ≥3 en infusion previa
+#       (criterio absoluto de discontinuación per IMPACT protocol)
+#     - Path C: anafilaxis_history_documented=Sí (riesgo cross-reactivity
+#       con PA2024 antigen)
+#
+#   Override: irr_premedication_protocol_active=Sí (premedicación con
+#   acetaminofén 650mg + difenhidramina 25mg + corticosteroides 100mg
+#   metilprednisolona IV 30 min pre-infusión + epinefrine 1:1000 SC
+#   inmediatamente disponible + hospitalary monitoring × 30 min post).
+#
+#   Bloquea: REGIMEN_CODES_SIPULEUCEL_T (Provenge específicamente).
+# ──────────────────────────────────────────────────────────────────────
+
+code: sipuleucel_t_severe_irr
+title: "Sipuleucel-T × IRR severo previo o anafilaxis (IMPACT + Provenge §5.1)"
+faubot_added_in: "2026-04-25 LI"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: history IRR severo previo (HR 8.2x recurrencia)
+    - type: truthy_flag
+      field: history_severe_irr_for_immunotherapy
+      alias_fields:
+        - prior_severe_infusion_reaction
+        - history_irr_grade_3_or_higher
+        - severe_irr_documented
+    # Path B: IRR grado ≥3 en infusion previa Sipuleucel-T
+    - type: numeric_threshold
+      field: irr_grade_documented
+      alias_fields:
+        - infusion_reaction_ctcae_grade
+        - irr_ctcae_grade
+      threshold: 3
+    # Path C: anafilaxis previa (cross-reactivity riesgo)
+    - type: truthy_flag
+      field: anaphylaxis_history_documented
+      alias_fields:
+        - prior_anaphylaxis
+        - history_anaphylactic_reaction
+        - anaphylaxis_pa2024_documented
+
+# Override: premedicación + monitoring intensivo documentado
+override:
+  type: truthy_flag
+  field: irr_premedication_protocol_active
+  alias_fields:
+    - sipuleucel_premedication_documented
+    - irr_prophylaxis_protocol_active
+
+regimen_codes:
+  - REGIMEN_CODES_SIPULEUCEL_T
+
+keywords:
+  - KEYWORDS_SIPULEUCEL_T
+
+message: |
+  Sipuleucel-T (Provenge) NO debe administrarse en pacientes con
+  historia de IRR severo (G≥3) previo, anafilaxis previa, o IRR
+  documentado en infusión previa de Provenge. IMPACT trial
+  (Kantoff NEJM 2010) supplementary: 71% IRR any grade, 4-7% G≥3;
+  re-exposición sin premedicación tiene HR 8.2x recurrencia severa.
+
+  Síntomas IRR Provenge:
+    - Constitucionales: chills, fever (≥38.5°C), fatigue, nausea,
+      vomiting, myalgia, headache
+    - Cardiovasculares: hipertensión transitoria, hipotensión,
+      taquicardia
+    - Respiratorios: dyspnea, broncoespasmo, hipoxia
+    - Severos (G≥3): hipotensión que requiere vasopresores,
+      broncoespasmo que requiere broncodilatadores IV, anafilaxis,
+      hospitalización ≥24h
+
+  Mecanismo IRR:
+    - Reacción a antígeno PA2024 (PAP-GM-CSF fusion protein) +
+      cytokine storm post-activación T-cell
+    - Cross-reactivity con leukapheresis components (citrato + DMSO)
+    - Hipersensibilidad acumulativa con dosis 2-3 (peak en infusion 2)
+
+  Conducta clínica:
+  1. Stop inmediato de infusion si IRR G≥2 documentado.
+  2. Tratamiento agudo IRR severo:
+     - O2 suplementario si hipoxia
+     - Difenhidramina 50mg IV + ranitidina 50mg IV
+     - Metilprednisolona 100-250mg IV bolo
+     - Si anafilaxis: epinefrina 0.3-0.5mg IM + fluidos IV
+     - Si broncoespasmo severo: salbutamol nebulizado +
+       hidrocortisona IV
+     - Hospitalización monitoreo cardiopulmonar ≥24h
+  3. Documentar IRR grade per CTCAE v5 + reportar como SUSAR a
+     farmacovigilancia regulatoria.
+  4. Reintroducción solo con override `irr_premedication_protocol_active=Sí`:
+     - Premedicación 30 min pre-infusión:
+       * Acetaminofén 650mg PO/IV
+       * Difenhidramina 25-50mg PO/IV
+       * Metilprednisolona 100mg IV
+     - Velocidad de infusión REDUCIDA 50% primer ciclo post-IRR
+     - Epinefrina 1:1000 SC INMEDIATAMENTE disponible
+     - Hospitalary monitoring ≥30 min post-infusión
+     - Si recurrencia IRR G≥3 → discontinuación PERMANENTE
+  5. Si reintroducción NO posible o paciente prefiere alternativa:
+     - **Enzalutamida / apalutamida** (mCRPC asymptomatic alternativa
+       NO-immunoterapia)
+     - **Abiraterona + prednisona** (COU-AA-302 mismo escenario)
+     - **Lu-177-PSMA-617** si PSMA+ (gates 13-14-30 monitor)
+     - Cuidados paliativos con monitoring PSA si pronóstico >12m
+
+evidence_tag: impact_kantoff_nejm_2010_provenge_label_section_5_1
+trial_refs:
+  - "IMPACT"
+  - "Kantoff NEJM 2010"
+  - "Provenge label §5.1 IRR"
+  - "CTCAE v5"
+
+references:
+  - "Kantoff PW et al. IMPACT. NEJM 2010;363:411-422 + supplementary."
+  - "Provenge (sipuleucel-T) FDA prescribing information §5.1 (Infusion-Related Reactions)."
+  - "Beer TM et al. Sipuleucel-T mCRPC asymptomatic safety analysis. Urology 2011."
+  - "CTCAE v5.0 — Infusion-related reactions + anaphylaxis grading."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Sipuleucel-T patient selection + IRR management"
+  eau_section: "EAU 2026 §6.6.4 — Immunotherapy in mCRPC asymptomatic"

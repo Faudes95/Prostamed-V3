@@ -16,9 +16,13 @@ class LocalizedPatient:
     pct_cores_positive: float
     max_core_involvement: float
     psad: float
-    life_expectancy_years: float
+    life_expectancy_years: float | None
+    ecog_score: int | None
+    charlson_score: int | None
+    g8_score: float | None
+    frailty_status: str
+    anesthesia_surgical_fitness: str
     cribriform_pattern: bool
     intraductal_carcinoma: bool
     metastasis_site: str
     nodal_status: str
-

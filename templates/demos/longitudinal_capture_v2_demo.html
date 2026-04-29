@@ -1,0 +1,1030 @@
+{# ProstaMed v2 demo — Captura longitudinal adicional (append-only)
+   Faubot 2026-04-26 LXXVII (#67D demo).
+   Pantalla post-intake para añadir mediciones longitudinales SIN re-capturar
+   datos baseline. Patrón append-only:
+     - Baseline READ-ONLY (capturado en intake, locked)
+     - Series temporales: PSA · labs · imaging · líneas · eventos · PRO · DEXA
+     - Smart hints sobre cadencia NCCN y datos vencidos
+     - Smart "what to capture" con last-capture timing
+   Ruta: /demos/v2/longitudinal_capture #}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Captura longitudinal · {{ identity.name }} · ProstaMed v2 demo</title>
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+
+<div class="pm2-longitudinal-shell">
+
+    {# ── Sidebar ── #}
+    {# Faubot LXXXIII — Sidebar centralizado via macro (resuelve bug "UI previa cargada").
+       NOTA: anchors #section-* internos quedan en el panel principal como tabs/links
+       inline contextuales — NO en el sidebar global. #}
+    {% from "components/pm2_sidebar.html" import pm2_sidebar %}
+    {{ pm2_sidebar(
+        active='longitudinal',
+        identity_nss=identity.mrn or 'demo-mock-001',
+        faubot_release='2026-04-26 LXXXIII',
+        gates_count=85,
+    ) }}
+
+    {# ── Main column ── #}
+    <main id="main-content" class="pm2-longitudinal-main" tabindex="-1">
+
+        {# Patient identity recap (compact, read-only) #}
+        <header style="margin-bottom:var(--space-4);padding:var(--space-4);background:var(--surface-2);border:1px solid var(--border-default);border-radius:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:var(--space-3);flex-wrap:wrap">
+                <div>
+                    <h1 style="font-family:var(--pm-font-display);font-size:1.3rem;font-weight:700;color:#f0fbff;margin:0;letter-spacing:-.02em">{{ identity.name }}</h1>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;color:var(--pn-text-muted);font-size:.78rem">
+                        <span class="pm2-mono">{{ identity.mrn }}</span>
+                        <span>·</span><span>{{ identity.age }}a · ECOG {{ identity.ecog }}</span>
+                        <span>·</span>
+                        <span class="pm2-stage-pill" data-stage="{{ identity.stage }}">{{ identity.stage_label }}</span>
+                        <span>·</span><span>L{{ identity.current_line }}: {{ identity.current_regimen }}</span>
+                        <span>·</span>
+                        <span class="pm2-consent-badge" title="Consentimiento informado vigente">
+                            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                            Consent {{ identity.consent_status }}
+                        </span>
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px">
+                    <a href="/patient_profile/{{ identity.nss }}" class="pm2-btn pm2-btn--ghost">← Volver al perfil</a>
+                    <a href="/patient_profile/{{ identity.nss }}" class="pm2-btn pm2-btn--primary" style="text-decoration:none">💾 Ver decisión actualizada</a>
+                </div>
+            </div>
+        </header>
+
+        {# Header context #}
+        <div style="margin-bottom:var(--space-5)">
+            <h2 style="font-family:var(--pm-font-display);font-size:1.7rem;font-weight:700;letter-spacing:-.03em;color:#f8fbff;margin:0">Captura longitudinal adicional</h2>
+            <p style="color:var(--pn-text-muted);font-size:.86rem;margin-top:6px;max-width:78ch">
+                Solo nuevos datos longitudinales. <strong style="color:var(--pn-accent)">Anti-duplicación:</strong> los baseline capturados en el intake aparecen abajo
+                <em>read-only</em>. Para corregir un dato baseline → usar el módulo "Reconciliación clínica" (no este flow).
+            </p>
+        </div>
+
+        {# What can capture grid (quick jump) #}
+        <div style="margin-bottom:var(--space-5)">
+            <div style="color:var(--pn-accent);font-size:.7rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin-bottom:8px">
+                Qué capturar hoy · {{ what_can_capture | length }} categorías
+            </div>
+            <div class="pm2-capture-grid">
+                {% for cap in what_can_capture %}
+                <a href="#section-{{ cap.key }}" class="pm2-capture-card">
+                    <div class="pm2-capture-card-label">{{ cap.label }}</div>
+                    <div class="pm2-capture-card-meta">Cadencia: {{ cap.freq }}</div>
+                    <div class="pm2-capture-card-meta {% if 'Vencida' in cap.last_capture %}pm2-capture-card-overdue{% endif %}">
+                        Última: {{ cap.last_capture }}
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+
+        {# ── PSA section ── #}
+        <section id="section-psa_new" class="pm2-append-section">
+            <div class="pm2-append-section-head">
+                <div class="pm2-append-section-icon">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 17l6-6 4 4 8-8"/></svg>
+                </div>
+                <div>
+                    <h2 class="pm2-append-section-title">PSA history · serie temporal</h2>
+                    <p class="pm2-append-section-meta">{{ psa_history | length }} mediciones · 1 baseline locked + {{ psa_history | length - 1 }} longitudinal · cadencia mensual recomendada (mCRPC)</p>
+                </div>
+                <div class="pm2-append-section-action">
+                    <button class="pm2-btn pm2-btn--ghost" type="button" onclick="document.querySelector('#section-psa_new .pm2-append-form input[type=date]').focus()">+ Nueva medición</button>
+                </div>
+            </div>
+            <div style="max-height:280px;overflow-y:auto">
+                <table class="pm2-append-table">
+                    <thead><tr><th>Fecha</th><th>PSA (ng/mL)</th><th>Context</th><th>Source</th></tr></thead>
+                    <tbody>
+                        {% for psa in psa_history %}
+                        <tr data-locked="{{ 'true' if psa.locked else 'false' }}">
+                            <td class="pm2-mono">{{ psa.date }}</td>
+                            <td class="pm2-mono" style="font-weight:700;color:#f0fbff">{{ psa.value }}</td>
+                            <td>{{ psa.context }}</td>
+                            <td>
+                                {% if psa.locked %}
+                                <span class="pm2-baseline-locked-tag">🔒 baseline locked</span>
+                                {% else %}
+                                <span style="color:var(--pn-text-muted);font-size:.7rem">{{ psa.source }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pm2-append-form" data-append-form="psa">
+                <input type="date" class="pm2-append-form-input" name="psa_date" required>
+                <input type="number" step="0.01" class="pm2-append-form-input" placeholder="Valor (ng/mL)" name="psa_value" required>
+                <select class="pm2-append-form-input" name="psa_assay">
+                    <option value="">Assay…</option>
+                    <option>Beckman Hybritech</option>
+                    <option>Roche Elecsys</option>
+                    <option>Abbott Architect</option>
+                    <option>Siemens Atellica</option>
+                </select>
+                <input type="text" class="pm2-append-form-input" placeholder="Context (opcional)" name="psa_context">
+                <button type="button" class="pm2-btn pm2-btn--primary pm2-append-form-add" onclick="pm2AppendRow(this, 'psa')">+ Añadir</button>
+            </div>
+        </section>
+
+        {# ── Testosterone section ── #}
+        <section id="section-testosterone_history" class="pm2-append-section">
+            <div class="pm2-append-section-head">
+                <div class="pm2-append-section-icon">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v8m-4-4h8M7 3h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
+                </div>
+                <div>
+                    <h2 class="pm2-append-section-title">Testosterona · verificación de castración</h2>
+                    <p class="pm2-append-section-meta">{{ testosterone_history | length }} mediciones · decisivo para m0/m1 CRPC</p>
+                </div>
+            </div>
+            <div style="max-height:220px;overflow-y:auto">
+                <table class="pm2-append-table">
+                    <thead><tr><th>Fecha</th><th>Testosterona</th><th>Context</th><th>Source</th></tr></thead>
+                    <tbody>
+                        {% for t in testosterone_history %}
+                        <tr data-locked="{{ 'true' if t.locked else 'false' }}">
+                            <td class="pm2-mono">{{ t.date }}</td>
+                            <td class="pm2-mono" style="font-weight:700;color:#f0fbff">{{ t.value }} {{ t.unit }}</td>
+                            <td>{{ t.context }}</td>
+                            <td>
+                                {% if t.locked %}
+                                <span class="pm2-baseline-locked-tag">baseline locked</span>
+                                {% else %}
+                                <span style="color:var(--pn-text-muted);font-size:.7rem">{{ t.source }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" style="color:var(--pn-text-muted)">Sin testosterona capturada.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pm2-append-form" data-append-form="testosterone">
+                <input type="date" class="pm2-append-form-input" name="date" required>
+                <input type="number" step="0.1" min="0" class="pm2-append-form-input" placeholder="Valor (ng/dL)" name="value" required>
+                <input type="text" class="pm2-append-form-input" placeholder="Context (ADT continua / verificación CRPC)" name="context">
+                <button type="button" class="pm2-btn pm2-btn--primary pm2-append-form-add" onclick="pm2AppendRow(this, 'testosterone')">+ Añadir</button>
+            </div>
+        </section>
+
+        {# ── Lab panels section ── #}
+        <section id="section-lab_panel" class="pm2-append-section">
+            <div class="pm2-append-section-head">
+                <div class="pm2-append-section-icon">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v8.5a3.5 3.5 0 11-3.5 3.5h11A3.5 3.5 0 0115 11.5V3"/></svg>
+                </div>
+                <div>
+                    <h2 class="pm2-append-section-title">Panel de labs · Hb · ALP · LDH · Testo</h2>
+                    <p class="pm2-append-section-meta">{{ lab_panels | length }} paneles capturados · cadencia 30-60 d (mCRPC) · útil para CHAARTED biomarkers</p>
+                </div>
+                <div class="pm2-append-section-action">
+                    <button class="pm2-btn pm2-btn--ghost" type="button">+ Nuevo panel</button>
+                </div>
+            </div>
+            <div style="padding:0 18px;max-height:300px;overflow-y:auto">
+                {% for panel in lab_panels %}
+                <details style="margin-top:8px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:10px;padding:10px">
+                    <summary style="cursor:pointer;display:flex;align-items:center;gap:10px;color:#f0fbff">
+                        <span class="pm2-mono" style="color:var(--pn-accent);font-weight:700">{{ panel.date }}</span>
+                        <span style="font-size:.85rem;font-weight:600">{{ panel.panel }}</span>
+                        <span style="margin-left:auto;font-size:.7rem;color:var(--pn-text-muted)">{{ panel.metrics | length }} valores</span>
+                    </summary>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;margin-top:10px">
+                        {% for label, val in panel.metrics %}
+                        <div style="padding:6px 8px;background:var(--surface-1);border-radius:6px">
+                            <div style="color:var(--pn-text-muted);font-size:.66rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase">{{ label }}</div>
+                            <div class="pm2-mono" style="color:#f0fbff;font-size:.82rem;font-weight:700">{{ val }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </details>
+                {% endfor %}
+            </div>
+            <div class="pm2-append-form" data-append-form="lab">
+                <input type="date" class="pm2-append-form-input" placeholder="Fecha" name="lab_date">
+                <input type="number" step="0.1" class="pm2-append-form-input" placeholder="Hb (g/dL)" name="hb">
+                <input type="number" step="1" class="pm2-append-form-input" placeholder="ALP (U/L)" name="alp">
+                <input type="number" step="1" class="pm2-append-form-input" placeholder="LDH (U/L)" name="ldh">
+                <input type="number" step="1" class="pm2-append-form-input" placeholder="Testo (ng/dL)" name="testo">
+                <button type="button" class="pm2-btn pm2-btn--primary pm2-append-form-add" onclick="pm2AppendRow(this, 'lab')">+ Añadir</button>
+            </div>
+        </section>
+
+        {# ── Imaging events section ── #}
+        <section id="section-imaging" class="pm2-append-section">
+            <div class="pm2-append-section-head">
+                <div class="pm2-append-section-icon">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3M9 21h6a1 1 0 001-1v-4a1 1 0 011-1h2"/></svg>
+                </div>
+                <div>
+                    <h2 class="pm2-append-section-title">Imaging events</h2>
+                    <p class="pm2-append-section-meta">{{ imaging_events | length }} estudios · PSMA/CT/bone scan · ad-hoc según decisión clínica</p>
+                </div>
+            </div>
+            <table class="pm2-append-table">
+                <thead><tr><th>Fecha</th><th>Modalidad</th><th>Tipo</th><th>Resultado</th><th>Decisión vinculada</th></tr></thead>
+                <tbody>
+                    {% for img in imaging_events %}
+                    <tr>
+                        <td class="pm2-mono">{{ img.date }}</td>
+                        <td>{{ img.modality }}</td>
+                        <td>{{ img.type }}</td>
+                        <td>{{ img.result }}</td>
+                        <td style="color:var(--pn-accent);font-size:.74rem">{{ img.linked_decision }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="pm2-append-form" data-append-form="imaging">
+                <input type="date" class="pm2-append-form-input" placeholder="Fecha" name="img_date">
+                <select class="pm2-append-form-input" name="img_modality">
+                    <option value="">Modalidad…</option>
+                    <option>PSMA-PET 68Ga</option>
+                    <option>PSMA-PET 18F</option>
+                    <option>CT TAP</option>
+                    <option>Gammagrama óseo</option>
+                    <option>RM próstata</option>
+                    <option>RM cerebro</option>
+                </select>
+                <input type="text" class="pm2-append-form-input" placeholder="Tipo (re-stage / progresión / baseline)" name="img_type">
+                <input type="text" class="pm2-append-form-input" placeholder="Resultado (interpretación)" name="img_result">
+                <button type="button" class="pm2-btn pm2-btn--primary pm2-append-form-add" onclick="pm2AppendRow(this, 'imaging')">+ Añadir</button>
+            </div>
+        </section>
+
+        {# ── Treatment lines ── #}
+        <section id="section-treatment" class="pm2-append-section">
+            <div class="pm2-append-section-head">
+                <div class="pm2-append-section-icon">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.6 5.4a9 9 0 11-12.7-12.7"/></svg>
+                </div>
+                <div>
+                    <h2 class="pm2-append-section-title">Líneas de tratamiento</h2>
+                    <p class="pm2-append-section-meta">{{ treatment_lines | length }} líneas registradas (incluye históricas) · capturar inicio / fin / switch</p>
+                </div>
+            </div>
+            <table class="pm2-append-table">
+                <thead><tr><th>L#</th><th>Régimen</th><th>Tipo</th><th>Contexto</th><th>Inicio</th><th>Fin</th><th>Status</th><th>Best response</th></tr></thead>
+                <tbody>
+                    {% for tx in treatment_lines %}
+                    <tr {% if tx.line == 0 %}data-locked="true"{% endif %}>
+                        <td><span class="pm2-state-chip pm2-line-{{ tx.line if tx.line in [1,2,3,4] else 1 }}">L{{ tx.line }}</span></td>
+                        <td class="pm2-mono">{{ tx.regimen }}</td>
+                        <td>{{ tx.line_type_label }}</td>
+                        <td>{{ tx.line_context }}</td>
+                        <td class="pm2-mono">{{ tx.start }}</td>
+                        <td class="pm2-mono">{{ tx.end }}</td>
+                        <td>
+                            {% if 'Curso' in tx.status %}
+                            <span class="pm2-state-chip pm2-state-chip--primary">{{ tx.status }}</span>
+                            {% elif 'Falla' in tx.status or 'Progresión' in tx.status %}
+                            <span class="pm2-state-chip pm2-state-chip--warn">{{ tx.status }}</span>
+                            {% else %}
+                            <span class="pm2-state-chip">{{ tx.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td style="color:var(--pn-text-muted);font-size:.74rem">{{ tx.best_response }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="pm2-append-form" data-append-form="treatment">
+                <input type="number" min="1" max="10" class="pm2-append-form-input" placeholder="Línea #" name="tx_line" required>
+                <select class="pm2-append-form-input" name="tx_regimen" required>
+                    <option value="">Régimen...</option>
+                    <option value="ADT_LHRH_AGONIST">ADT sola</option>
+                    <option value="ADT_ABIRATERONE">ADT + abiraterona</option>
+                    <option value="ADT_ENZALUTAMIDE">ADT + enzalutamida</option>
+                    <option value="ADT_APALUTAMIDE">ADT + apalutamida</option>
+                    <option value="ADT_DAROLUTAMIDE">ADT + darolutamida</option>
+                    <option value="ADT_DOCETAXEL">ADT + docetaxel</option>
+                    <option value="ADT_DAROLUTAMIDE_DOCETAXEL">ADT + darolutamida + docetaxel</option>
+                    <option value="ADT_ABIRATERONE_DOCETAXEL">ADT + abiraterona + docetaxel</option>
+                    <option value="OLAPARIB">Olaparib</option>
+                    <option value="TALAZOPARIB_ENZALUTAMIDE">Talazoparib + enzalutamida</option>
+                    <option value="NIRAPARIB_ABIRATERONE">Niraparib + abiraterona</option>
+                    <option value="CABAZITAXEL">Cabazitaxel</option>
+                    <option value="LU177_PSMA617">Lu-177 PSMA-617</option>
+                    <option value="RADIUM_223">Radio-223</option>
+                </select>
+                <select class="pm2-append-form-input" name="line_of_therapy_context" required>
+                    <option value="">Contexto...</option>
+                    <option value="mHSPC_initial">mHSPC inicial</option>
+                    <option value="m0_CRPC_first_line">m0 CRPC primera línea</option>
+                    <option value="mCRPC_first_line">mCRPC primera línea</option>
+                    <option value="mCRPC_post_ARPI_pre_taxane">mCRPC post-ARPI pre-taxano</option>
+                    <option value="mCRPC_post_taxane">mCRPC post-taxano</option>
+                    <option value="mCRPC_post_PARP">mCRPC post-PARP</option>
+                    <option value="mCRPC_post_Lu177">mCRPC post-Lu177</option>
+                    <option value="later_line">Líneas posteriores</option>
+                </select>
+                <input type="date" class="pm2-append-form-input" placeholder="Inicio" name="tx_start" required>
+                <input type="date" class="pm2-append-form-input" placeholder="Fin (opcional)" name="tx_end">
+                <select class="pm2-append-form-input" name="tx_status">
+                    <option value="">Status…</option>
+                    <option>Curso · activo</option>
+                    <option>Completado</option>
+                    <option>Falla · progresión</option>
+                    <option>Falla · toxicidad</option>
+                    <option>Discontinuado · paciente</option>
+                </select>
+                <button type="button" class="pm2-btn pm2-btn--primary pm2-append-form-add" onclick="pm2AppendRow(this, 'treatment_change')">+ Añadir línea</button>
+            </div>
+        </section>
+
+        {# ── Clinical events ── #}
+        <section id="section-event" class="pm2-append-section">
+            <div class="pm2-append-section-head">
+                <div class="pm2-append-section-icon">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.4-1.4A2 2 0 0118 14V11a6 6 0 10-12 0v3a2 2 0 01-.6 1.4L4 17h5"/></svg>
+                </div>
+                <div>
+                    <h2 class="pm2-append-section-title">Eventos clínicos</h2>
+                    <p class="pm2-append-section-meta">{{ clinical_events | length }} eventos · BCR · progresión · tox · SRE · genomic · state transitions</p>
+                </div>
+            </div>
+            <table class="pm2-append-table">
+                <thead><tr><th>Fecha</th><th>Tipo</th><th>Descripción</th></tr></thead>
+                <tbody>
+                    {% for ev in clinical_events %}
+                    <tr {% if ev.type == 'Diagnosis' %}data-locked="true"{% endif %}>
+                        <td class="pm2-mono">{{ ev.date }}</td>
+                        <td>
+                            {% if ev.type == 'Genomic' %}<span class="pm2-state-chip" style="background:rgba(168,87,232,.18);color:#d8b4fe;border-color:rgba(168,87,232,.4);font-size:.66rem">{{ ev.type }}</span>
+                            {% elif ev.type == 'Progression' %}<span class="pm2-state-chip pm2-state-chip--danger" style="font-size:.66rem">{{ ev.type }}</span>
+                            {% elif ev.type == 'Treatment' %}<span class="pm2-state-chip pm2-state-chip--primary" style="font-size:.66rem">{{ ev.type }}</span>
+                            {% elif ev.type == 'Imaging' %}<span class="pm2-state-chip" style="background:var(--clinical-info-soft);color:#c5e8ff;border-color:var(--clinical-info-edge);font-size:.66rem">{{ ev.type }}</span>
+                            {% elif ev.type == 'State_transition' %}<span class="pm2-state-chip pm2-state-chip--warn" style="font-size:.66rem">{{ ev.type }}</span>
+                            {% else %}<span class="pm2-state-chip" style="font-size:.66rem">{{ ev.type }}</span>{% endif %}
+                        </td>
+                        <td>{{ ev.label }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="pm2-append-form" data-append-form="event">
+                <input type="date" class="pm2-append-form-input" placeholder="Fecha" name="ev_date">
+                <select class="pm2-append-form-input" name="ev_type">
+                    <option value="">Tipo…</option>
+                    <option>BCR detectada</option>
+                    <option>Progresión PCWG3</option>
+                    <option>SRE (skeletal event)</option>
+                    <option>Toxicidad CTCAE ≥3</option>
+                    <option>Genomic finding</option>
+                    <option>State transition</option>
+                    <option>Hospitalización</option>
+                </select>
+                <input type="text" class="pm2-append-form-input pm2-append-form-input--wide" placeholder="Descripción" name="ev_desc" style="grid-column:span 2">
+                <button type="button" class="pm2-btn pm2-btn--primary pm2-append-form-add" onclick="pm2AppendRow(this, 'clinical_event')">+ Añadir evento</button>
+            </div>
+        </section>
+
+        {# ── PRO scores ── #}
+        <section id="section-pro" class="pm2-append-section">
+            <div class="pm2-append-section-head">
+                <div class="pm2-append-section-icon">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z"/></svg>
+                </div>
+                <div>
+                    <h2 class="pm2-append-section-title">PRO scores · BPI · ESAS · PHQ-9 · GAD-7</h2>
+                    <p class="pm2-append-section-meta">{{ pro_scores | length }} mediciones · cadencia cada visita · ASCO PCO recommended</p>
+                </div>
+            </div>
+            <table class="pm2-append-table">
+                <thead><tr><th>Fecha</th><th>Tool</th><th>Score</th><th>Interpretación</th></tr></thead>
+                <tbody>
+                    {% for pro in pro_scores %}
+                    <tr>
+                        <td class="pm2-mono">{{ pro.date }}</td>
+                        <td><strong style="color:#f0fbff">{{ pro.tool }}</strong></td>
+                        <td class="pm2-mono" style="font-weight:700;color:var(--pn-accent)">{{ pro.value }}</td>
+                        <td style="color:var(--pn-text-muted);font-size:.74rem">{{ pro.interp }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="pm2-append-form" data-append-form="pro">
+                <input type="date" class="pm2-append-form-input" placeholder="Fecha" name="pro_date">
+                <select class="pm2-append-form-input" name="pro_tool">
+                    <option value="">Tool…</option>
+                    <option>FACT-P</option>
+                    <option>EORTC QLQ-C30</option>
+                    <option>GAD-7 (0-21)</option>
+                </select>
+                <input type="number" step="1" min="0" class="pm2-append-form-input" placeholder="Score" name="pro_value">
+                <button type="button" class="pm2-btn pm2-btn--primary pm2-append-form-add" onclick="pm2AppendRow(this, 'pro_scores')">+ Añadir score</button>
+            </div>
+        </section>
+
+        {# ── LXC — Captura ECOG longitudinal (gate 73 ECOG decline) ── #}
+        <section class="pm2-append-section">
+            <header>
+                <h3>📊 ECOG performance status (longitudinal · gate 73)</h3>
+                <p class="pm2-append-section-meta">Captura per-visita · sin esto, gate 73 (ECOG decline) NO dispara</p>
+            </header>
+            <div class="pm2-append-form" data-append-form="ecog">
+                <input type="date" class="pm2-append-form-input" name="date" required max="">
+                <select class="pm2-append-form-input" name="score" required>
+                    <option value="">ECOG…</option>
+                    <option value="0">0 — fully active</option>
+                    <option value="1">1 — restricted strenuous, ambulatory</option>
+                    <option value="2">2 — ambulatory ≥50% waking, no work</option>
+                    <option value="3">3 — limited self-care, ≥50% bed/chair</option>
+                    <option value="4">4 — completely disabled, totally bed/chair</option>
+                </select>
+                <select class="pm2-append-form-input" name="assessment_context">
+                    <option value="routine_visit">Visita rutinaria</option>
+                    <option value="pre_treatment">Pre-tratamiento</option>
+                    <option value="progression_assessment">Evaluación progresión</option>
+                </select>
+                <button type="button" class="pm2-btn pm2-btn--primary" onclick="pm2AppendRow(this, 'ecog')">+ Añadir ECOG</button>
+            </div>
+        </section>
+
+        {# ── LXC — BPI 11-item Pain (gate 74 BPI escalation) ── #}
+        <section class="pm2-append-section">
+            <header>
+                <h3>🩹 BPI Brief Pain Inventory (11-item · gate 74)</h3>
+                <p class="pm2-append-section-meta">Worst/Least/Average/Now + interferencia 7-item · sin esto, gate 74 + palliative RT eligibility no dispara</p>
+            </header>
+            <div class="pm2-append-form" data-append-form="bpi">
+                <input type="date" class="pm2-append-form-input" name="date" required>
+                <input type="number" min="0" max="10" class="pm2-append-form-input" placeholder="Worst (0-10)" name="worst" required>
+                <input type="number" min="0" max="10" class="pm2-append-form-input" placeholder="Least (0-10)" name="least">
+                <input type="number" min="0" max="10" class="pm2-append-form-input" placeholder="Average (0-10)" name="average" required>
+                <input type="number" min="0" max="10" class="pm2-append-form-input" placeholder="Now (0-10)" name="now">
+                <input type="number" min="0" max="70" class="pm2-append-form-input" placeholder="Interference avg (sum 7-item)" name="interference_avg">
+                <button type="button" class="pm2-btn pm2-btn--primary" onclick="pm2AppendRow(this, 'bpi')">+ Añadir BPI</button>
+            </div>
+        </section>
+
+        {# ── LXC — ESAS 9-item (palliative pathway) ── #}
+        <section class="pm2-append-section">
+            <header>
+                <h3>💊 ESAS Edmonton Symptom Assessment (9-item)</h3>
+                <p class="pm2-append-section-meta">Cada síntoma 0-10 (sum 0-90) · gates 75-77 palliative pathway</p>
+            </header>
+            <div class="pm2-append-form" data-append-form="esas">
+                <input type="date" class="pm2-append-form-input" name="date" required>
+                <input type="number" min="0" max="10" class="pm2-append-form-input" placeholder="Pain" name="pain">
+                <input type="number" min="0" max="10" class="pm2-append-form-input" placeholder="Tiredness" name="tiredness">
+                <input type="number" min="0" max="10" class="pm2-append-form-input" placeholder="Drowsy" name="drowsiness">
+                <input type="number" min="0" max="10" class="pm2-append-form-input" placeholder="Nausea" name="nausea">
+                <input type="number" min="0" max="10" class="pm2-append-form-input" placeholder="Appetite" name="appetite">
+                <input type="number" min="0" max="10" class="pm2-append-form-input" placeholder="Dyspnea" name="dyspnea">
+                <input type="number" min="0" max="10" class="pm2-append-form-input" placeholder="Depression" name="depression">
+                <input type="number" min="0" max="10" class="pm2-append-form-input" placeholder="Anxiety" name="anxiety">
+                <input type="number" min="0" max="10" class="pm2-append-form-input" placeholder="Wellbeing" name="wellbeing">
+                <button type="button" class="pm2-btn pm2-btn--primary" onclick="pm2AppendRow(this, 'esas')">+ Añadir ESAS</button>
+            </div>
+        </section>
+
+        {# ── LXC — PHQ-9 Depression Screening ── #}
+        <section class="pm2-append-section">
+            <header>
+                <h3>🧠 PHQ-9 Depression (NCCN cada 3 visitas)</h3>
+                <p class="pm2-append-section-meta">Score 0-27 · ≥10 = moderate depression → psicooncología referral</p>
+            </header>
+            <div class="pm2-append-form" data-append-form="phq9">
+                <input type="date" class="pm2-append-form-input" name="date" required>
+                <input type="number" min="0" max="27" class="pm2-append-form-input" placeholder="Score total (0-27)" name="total_score" required>
+                <select class="pm2-append-form-input" name="risk_level">
+                    <option value="">Risk level (auto)…</option>
+                    <option value="minimal">0-4 minimal</option>
+                    <option value="mild">5-9 mild</option>
+                    <option value="moderate">10-14 moderate</option>
+                    <option value="moderately_severe">15-19 mod severe</option>
+                    <option value="severe">20-27 severe</option>
+                </select>
+                <button type="button" class="pm2-btn pm2-btn--primary" onclick="pm2AppendRow(this, 'phq9')">+ Añadir PHQ-9</button>
+            </div>
+        </section>
+
+        {# ── LXC — CTCAE Toxicity Tracking ── #}
+        <section class="pm2-append-section">
+            <header>
+                <h3>⚠ CTCAE v5.0 toxicity (per-visita)</h3>
+                <p class="pm2-append-section-meta">Sistema + término + grado · IEC 62304 §7 risk management</p>
+            </header>
+            <div class="pm2-append-form" data-append-form="ctcae">
+                <input type="date" class="pm2-append-form-input" name="date" required>
+                <select class="pm2-append-form-input" name="system" required>
+                    <option value="">Sistema…</option>
+                    <option>Hematologic</option>
+                    <option>Cardiovascular</option>
+                    <option>Gastrointestinal</option>
+                    <option>Neurological</option>
+                    <option>Renal</option>
+                    <option>Hepatic</option>
+                    <option>Skin</option>
+                    <option>Endocrine</option>
+                    <option>Constitutional</option>
+                </select>
+                <input type="text" class="pm2-append-form-input" placeholder="Término CTCAE (e.g., neutropenia)" name="term" required>
+                <select class="pm2-append-form-input" name="grade" required>
+                    <option value="">Grado…</option>
+                    <option value="1">G1 mild</option>
+                    <option value="2">G2 moderate</option>
+                    <option value="3">G3 severe (hospitalization)</option>
+                    <option value="4">G4 life-threatening</option>
+                    <option value="5">G5 death</option>
+                </select>
+                <button type="button" class="pm2-btn pm2-btn--primary" onclick="pm2AppendRow(this, 'ctcae')">+ Añadir CTCAE</button>
+            </div>
+        </section>
+
+        {# ── LXC — PSMA-PET structured (gate 71 PSMA progression auto-trigger) ── #}
+        <section class="pm2-append-section">
+            <header>
+                <h3>🎯 PSMA-PET structured (gate 71 + VISION/PSMAfore)</h3>
+                <p class="pm2-append-section-meta">SUVmax + tracer + lesion count · sin esto, gate 71 NO dispara y VISION eligibility no se evalúa</p>
+            </header>
+            <div class="pm2-append-form" data-append-form="psma_pet">
+                <input type="date" class="pm2-append-form-input" name="date" required>
+                <select class="pm2-append-form-input" name="tracer" required>
+                    <option value="">Tracer…</option>
+                    <option value="Ga68_PSMA_11">Ga-68 PSMA-11</option>
+                    <option value="F18_DCFPyL">F-18 DCFPyL (Pylarify)</option>
+                    <option value="F18_PSMA_1007">F-18 PSMA-1007</option>
+                </select>
+                <input type="number" step="0.1" min="0" class="pm2-append-form-input" placeholder="SUVmax dominant lesion" name="suvmax" required>
+                <input type="number" min="0" class="pm2-append-form-input" placeholder="Total lesion count" name="lesion_count">
+                <input type="number" step="0.1" min="0" class="pm2-append-form-input" placeholder="PSMA score (miPSMA 0-3)" name="mi_psma_score">
+                <select class="pm2-append-form-input" name="distribution">
+                    <option value="">Distribution…</option>
+                    <option value="prostate_only">Prostate only</option>
+                    <option value="nodal">Nodal (pelvis)</option>
+                    <option value="distant_nodal">Distant nodal</option>
+                    <option value="bone">Bone</option>
+                    <option value="visceral">Visceral</option>
+                    <option value="multi_site">Multi-site</option>
+                </select>
+                <button type="button" class="pm2-btn pm2-btn--primary" onclick="pm2AppendRow(this, 'psma_pet')">+ Añadir PSMA-PET</button>
+            </div>
+        </section>
+
+        {# ── LXC — Bone scan structured CHAARTED HV/LV ── #}
+        <section class="pm2-append-section">
+            <header>
+                <h3>🦴 Bone scan structured (CHAARTED HV/LV criterio)</h3>
+                <p class="pm2-append-section-meta">Lesion count per-site · ≥4 con ≥1 extra-axial = HV → triplet eligibility</p>
+            </header>
+            <div class="pm2-append-form" data-append-form="bone_scan">
+                <input type="date" class="pm2-append-form-input" name="date" required>
+                <input type="number" min="0" class="pm2-append-form-input" placeholder="Pelvis" name="pelvis_count">
+                <input type="number" min="0" class="pm2-append-form-input" placeholder="Spine" name="spine_count">
+                <input type="number" min="0" class="pm2-append-form-input" placeholder="Femur" name="femur_count">
+                <input type="number" min="0" class="pm2-append-form-input" placeholder="Humerus" name="humerus_count">
+                <input type="number" min="0" class="pm2-append-form-input" placeholder="Skull/Ribs" name="skull_ribs_count">
+                <select class="pm2-append-form-input" name="extra_axial">
+                    <option value="">Extra-axial?…</option>
+                    <option value="yes">Yes — HV criterion met</option>
+                    <option value="no">No — axial only</option>
+                </select>
+                <button type="button" class="pm2-btn pm2-btn--primary" onclick="pm2AppendRow(this, 'bone_scan')">+ Añadir bone scan</button>
+            </div>
+        </section>
+
+        {# ── LXC — Visceral mets desglose (Halabi nomogram) ── #}
+        <section class="pm2-append-section">
+            <header>
+                <h3>🫁 Visceral mets desglose (Halabi nomogram)</h3>
+                <p class="pm2-append-section-meta">Hepatic vs lung diferente pronóstico (peso x2 hepatic en Halabi)</p>
+            </header>
+            <div class="pm2-append-form" data-append-form="visceral_mets">
+                <input type="date" class="pm2-append-form-input" name="date" required>
+                <select class="pm2-append-form-input" name="liver_metastasis">
+                    <option value="0">Liver: NO</option>
+                    <option value="1">Liver: YES</option>
+                </select>
+                <select class="pm2-append-form-input" name="lung_metastasis">
+                    <option value="0">Lung: NO</option>
+                    <option value="1">Lung: YES</option>
+                </select>
+                <select class="pm2-append-form-input" name="adrenal_metastasis">
+                    <option value="0">Adrenal: NO</option>
+                    <option value="1">Adrenal: YES</option>
+                </select>
+                <select class="pm2-append-form-input" name="brain_metastasis">
+                    <option value="0">Brain: NO</option>
+                    <option value="1">Brain: YES</option>
+                </select>
+                <input type="text" class="pm2-append-form-input" placeholder="RECIST target lesions (comma-sep mm)" name="recist_targets_mm">
+                <button type="button" class="pm2-btn pm2-btn--primary" onclick="pm2AppendRow(this, 'visceral_mets')">+ Añadir visceral</button>
+            </div>
+        </section>
+
+        {# ── LXC — HRR germinal vs somatic separados (gate 61 HARD_BLOCK + PROfound elig) ── #}
+        <section class="pm2-append-section">
+            <header>
+                <h3>🧬 HRR genomic — germinal (germline test)</h3>
+                <p class="pm2-append-section-meta">Test germinal vs somatic son criterios distintos para PARP. PROfound permite ambos · ARASENS solo germinal · NCCN PROS-H obligatorio en metastásico</p>
+            </header>
+            <div class="pm2-append-form" data-append-form="hrr_germinal">
+                <input type="date" class="pm2-append-form-input" name="date" required>
+                <select class="pm2-append-form-input" name="germline_testing_done" required>
+                    <option value="">¿Test germinal?…</option>
+                    <option value="1">Sí · realizado</option>
+                    <option value="0">No · pendiente</option>
+                </select>
+                <select class="pm2-append-form-input" name="germline_pathogenic_variant">
+                    <option value="">Variante…</option>
+                    <option value="ninguna">Ninguna patogénica</option>
+                    <option value="BRCA2">BRCA2</option>
+                    <option value="BRCA1">BRCA1</option>
+                    <option value="ATM">ATM</option>
+                    <option value="PALB2">PALB2</option>
+                    <option value="CHEK2">CHEK2</option>
+                    <option value="MSH2">MSH2 (Lynch)</option>
+                    <option value="MLH1">MLH1 (Lynch)</option>
+                    <option value="MSH6">MSH6 (Lynch)</option>
+                    <option value="PMS2">PMS2 (Lynch)</option>
+                    <option value="otro">Otro variant</option>
+                </select>
+                <input type="text" class="pm2-append-form-input" placeholder="Lab / panel utilizado" name="lab_panel">
+                <button type="button" class="pm2-btn pm2-btn--primary" onclick="pm2AppendRow(this, 'hrr_germinal')">+ Añadir HRR germinal</button>
+            </div>
+        </section>
+
+        <section class="pm2-append-section">
+            <header>
+                <h3>🧬 HRR genomic — somatic (tumor tissue or ctDNA)</h3>
+                <p class="pm2-append-section-meta">Somatic testing amplía candidatos PARPi aunque germinal sea negativo · biomarker_source crítico</p>
+            </header>
+            <div class="pm2-append-form" data-append-form="hrr_somatic">
+                <input type="date" class="pm2-append-form-input" name="date" required>
+                <select class="pm2-append-form-input" name="somatic_testing_done" required>
+                    <option value="">¿Test somatic?…</option>
+                    <option value="1">Sí · realizado</option>
+                    <option value="0">No · pendiente</option>
+                </select>
+                <select class="pm2-append-form-input" name="biomarker_source">
+                    <option value="">Source…</option>
+                    <option value="tissue_primary">Tejido primario (RP/biopsia)</option>
+                    <option value="metastatic_biopsy">Biopsia metastásica (preferred CRPC)</option>
+                    <option value="ctDNA">ctDNA (líquida)</option>
+                </select>
+                <select class="pm2-append-form-input" name="somatic_pathogenic_variant">
+                    <option value="">Variante…</option>
+                    <option value="ninguna">Ninguna patogénica</option>
+                    <option value="BRCA2">BRCA2</option>
+                    <option value="BRCA1">BRCA1</option>
+                    <option value="ATM">ATM</option>
+                    <option value="PALB2">PALB2</option>
+                    <option value="CDK12">CDK12</option>
+                    <option value="CHEK2">CHEK2</option>
+                    <option value="otro">Otro</option>
+                </select>
+                <input type="text" class="pm2-append-form-input" placeholder="Lab (Tempus/Foundation/Caris)" name="lab_panel">
+                <button type="button" class="pm2-btn pm2-btn--primary" onclick="pm2AppendRow(this, 'hrr_somatic')">+ Añadir HRR somatic</button>
+            </div>
+        </section>
+
+        {# ── Baseline locked (read-only) ── #}
+        <div class="pm2-baseline-locked" id="baseline-locked">
+            <div class="pm2-baseline-head" onclick="(function(el){const body=document.querySelector('#baseline-locked .pm2-baseline-body');const collapsed=body.dataset.collapsed === 'true';body.dataset.collapsed = collapsed ? 'false' : 'true';el.querySelector('[data-toggle-icon]').textContent = collapsed ? '▼' : '▶';})(this)">
+                <h3>
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                    Datos baseline (capturados en intake · NO re-capturable)
+                    <span class="pm2-baseline-locked-tag">🔒 locked · click para expandir</span>
+                </h3>
+                <span style="color:var(--pn-text-soft);font-size:1rem" data-toggle-icon>▶</span>
+            </div>
+            <div class="pm2-baseline-body" data-collapsed="true">
+                <div class="pm2-baseline-group">
+                    <div class="pm2-baseline-group-title">Demografía</div>
+                    {% for k, v in baseline_locked.demographics %}
+                    <div class="pm2-baseline-row"><span>{{ k }}</span><strong>{{ v }}</strong></div>
+                    {% endfor %}
+                </div>
+                <div class="pm2-baseline-group">
+                    <div class="pm2-baseline-group-title">Diagnóstico</div>
+                    {% for k, v in baseline_locked.diagnosis %}
+                    <div class="pm2-baseline-row"><span>{{ k }}</span><strong>{{ v }}</strong></div>
+                    {% endfor %}
+                </div>
+                <div class="pm2-baseline-group">
+                    <div class="pm2-baseline-group-title">Histología</div>
+                    {% for k, v in baseline_locked.histology %}
+                    <div class="pm2-baseline-row"><span>{{ k }}</span><strong>{{ v }}</strong></div>
+                    {% endfor %}
+                </div>
+                <div class="pm2-baseline-group">
+                    <div class="pm2-baseline-group-title">Genómica</div>
+                    {% for k, v in baseline_locked.genomics %}
+                    <div class="pm2-baseline-row"><span>{{ k }}</span><strong>{{ v }}</strong></div>
+                    {% endfor %}
+                </div>
+                <div class="pm2-baseline-group">
+                    <div class="pm2-baseline-group-title">Performance basal</div>
+                    {% for k, v in baseline_locked.performance_baseline %}
+                    <div class="pm2-baseline-row"><span>{{ k }}</span><strong>{{ v }}</strong></div>
+                    {% endfor %}
+                </div>
+                <div style="grid-column:1/-1;padding:10px;background:var(--clinical-info-soft);border-radius:8px;color:#c5e8ff;font-size:.74rem;line-height:1.5">
+                    💡 <strong style="color:#f0fbff">Anti-duplicación:</strong> estos datos se capturaron en el intake inicial y permanecen
+                    inmutables (read-only) para preservar la cadena de custodia clínica. Para corregirlos → módulo
+                    <span class="pm2-mono" style="color:var(--pn-accent)">/reconciliacion-clinica</span> (queda en audit trail).
+                </div>
+            </div>
+        </div>
+
+        <footer style="padding:1.5rem;text-align:center;color:var(--pn-text-soft);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;border-top:1px solid var(--border-subtle);margin-top:1rem">
+            ProstaMed v2 demo · Captura longitudinal · {{ what_can_capture | length }} categorías · 6 widgets append-only · baseline locked
+        </footer>
+    </main>
+
+    {# ── Right rail: smart hints ── #}
+    <aside class="pm2-result-rail" aria-label="Smart hints">
+        <div>
+            <h2 class="pm2-intake-rail-title">Smart hints</h2>
+            <p style="color:var(--pn-text-soft);font-size:.7rem;margin-top:2px">Cadencia NCCN · datos vencidos · alertas accionables</p>
+        </div>
+
+        {% for hint in smart_hints %}
+        <div class="pm2-hint-card" data-severity="{{ hint.severity }}">
+            <div class="pm2-hint-title">{{ hint.title }}</div>
+            <div class="pm2-hint-msg">{{ hint.msg }}</div>
+            <a class="pm2-hint-action" href="#">{{ hint.action }} →</a>
+        </div>
+        {% endfor %}
+
+        <div style="margin-top:auto;padding-top:1rem;border-top:1px solid var(--border-subtle);color:var(--pn-text-soft);font-size:.7rem;line-height:1.55">
+            <strong style="color:var(--pn-accent);font-size:.66rem;letter-spacing:.18em;text-transform:uppercase">Patrón append-only</strong>
+            <p style="margin:6px 0 0">Captura solo añade. Nunca modifica baseline. Cada append queda con timestamp + user + FAUBOT_RELEASE para audit trail FDA SaMD.</p>
+        </div>
+    </aside>
+</div>
+
+<script src="{{ url_for('static', filename='js/clinical_intelligence_v2.js') }}"></script>
+<script>
+/* ─────────────────────────────────────────────────────────────────────────
+ * Faubot LXXXVI #67F — Longitudinal Capture wired al endpoint REAL (Fase 2)
+ * ─────────────────────────────────────────────────────────────────────────
+ * pm2AppendRow ahora hace fetch a POST /api/longitudinal/{nss}/append:
+ *   · Envía {kind, payload} con shape correcto según el kind
+ *   · Toast feedback (success / duplicate / error) bottom-right
+ *   · Inserta row DOM SOLO si DB write OK
+ *   · Si decision_changed=true → toast extra "✓ Decisión actualizada"
+ *   · Limpia inputs tras éxito
+ * ──────────────────────────────────────────────────────────────────────── */
+
+const PM2_NSS = "{{ identity.nss }}";
+
+/* Toast utility — idempotente, comparte CSS con patient_profile_v2 */
+(function () {
+    if (window.pm2Toast) return;
+    function ensureHost() {
+        let h = document.getElementById('pm2-toast-host');
+        if (!h) {
+            h = document.createElement('div');
+            h.id = 'pm2-toast-host';
+            h.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:420px;';
+            document.body.appendChild(h);
+        }
+        return h;
+    }
+    window.pm2Toast = function (level, msg) {
+        const host = ensureHost();
+        const colors = {
+            success: { bg: 'rgba(16,185,129,0.96)', edge: '#10b981' },
+            warn:    { bg: 'rgba(245,158,11,0.96)', edge: '#f59e0b' },
+            error:   { bg: 'rgba(239,68,68,0.96)', edge: '#ef4444' },
+            info:    { bg: 'rgba(6,182,212,0.96)', edge: '#06b6d4' },
+        };
+        const c = colors[level] || colors.info;
+        const t = document.createElement('div');
+        t.style.cssText = `padding:12px 16px;background:${c.bg};border-left:4px solid ${c.edge};border-radius:8px;color:#0b1325;font-weight:600;font-size:.85rem;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,.4);`;
+        t.textContent = msg;
+        host.appendChild(t);
+        setTimeout(() => {
+            t.style.transition = 'opacity .3s, transform .3s';
+            t.style.opacity = '0';
+            t.style.transform = 'translateY(10px)';
+            setTimeout(() => t.remove(), 320);
+        }, 5000);
+    };
+})();
+
+/* Build payload shape per kind (mapea form field names → API expected keys). */
+function pm2BuildPayload(form, kind) {
+    const get = (name) => {
+        const el = form.querySelector(`[name="${name}"]`);
+        return el ? (el.value || null) : null;
+    };
+    if (kind === 'psa') {
+        return {
+            date: get('psa_date'),
+            value: parseFloat(get('psa_value')),
+            assay: get('psa_assay'),
+            context: get('psa_context'),
+        };
+    }
+    if (kind === 'lab') {
+        const out = { date: get('lab_date') };
+        ['hb', 'alp', 'ldh', 'testo'].forEach((f) => {
+            const v = get(f);
+            if (v !== null && v !== '') out[f] = parseFloat(v);
+        });
+        return out;
+    }
+    // generic — recolecta todos los inputs no vacíos
+    const out = {};
+    form.querySelectorAll('input, select').forEach((i) => {
+        if (i.name && i.value) out[i.name] = i.value;
+    });
+    return out;
+}
+
+/* Validate required + show field-specific toast on missing. */
+function pm2ValidateForm(form, kind) {
+    // LXC — Validación frontend exhaustiva (Pilar 8 validation_rule_missing)
+    const missing = [];
+    form.querySelectorAll('input, select').forEach((i) => {
+        if (i.required && !i.value) {
+            missing.push(i.placeholder || i.name);
+        }
+    });
+    if (missing.length) {
+        window.pm2Toast('warn', `Faltan campos: ${missing.join(', ')}`);
+        return false;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    // 1. All date fields must be ≤ today
+    for (const dateInput of form.querySelectorAll('input[type="date"]')) {
+        if (dateInput.value && dateInput.value > today) {
+            window.pm2Toast('warn', `Fecha futura inválida: ${dateInput.name} = ${dateInput.value}`);
+            return false;
+        }
+    }
+
+    // 2. All number inputs must respect min/max
+    for (const numInput of form.querySelectorAll('input[type="number"]')) {
+        if (!numInput.value) continue;
+        const v = parseFloat(numInput.value);
+        if (isNaN(v)) {
+            window.pm2Toast('warn', `${numInput.name}: valor no numérico`);
+            return false;
+        }
+        const min = parseFloat(numInput.min);
+        const max = parseFloat(numInput.max);
+        if (!isNaN(min) && v < min) {
+            window.pm2Toast('warn', `${numInput.name} = ${v} debe ser ≥ ${min}`);
+            return false;
+        }
+        if (!isNaN(max) && v > max) {
+            window.pm2Toast('warn', `${numInput.name} = ${v} debe ser ≤ ${max}`);
+            return false;
+        }
+    }
+
+    // 3. Kind-specific clinical validations
+    if (kind === 'psa') {
+        const v = parseFloat(form.querySelector('[name="psa_value"]')?.value);
+        if (isNaN(v) || v < 0) { window.pm2Toast('warn', 'PSA debe ser ≥ 0'); return false; }
+        if (v > 10000) { window.pm2Toast('warn', 'PSA > 10000 ng/mL improbable, verificar unidades'); return false; }
+    }
+    if (kind === 'testosterone') {
+        const v = parseFloat(form.querySelector('[name="value"]')?.value);
+        if (isNaN(v) || v < 0) { window.pm2Toast('warn', 'Testosterona debe ser ≥ 0 ng/dL'); return false; }
+        if (v > 2000) { window.pm2Toast('warn', 'Testosterona > 2000 ng/dL improbable, verificar unidades'); return false; }
+    }
+    if (kind === 'ecog') {
+        const v = parseInt(form.querySelector('[name="score"]')?.value);
+        if (![0,1,2,3,4].includes(v)) { window.pm2Toast('warn', 'ECOG debe ser 0-4'); return false; }
+    }
+    if (kind === 'phq9') {
+        const v = parseInt(form.querySelector('[name="total_score"]')?.value);
+        if (isNaN(v) || v < 0 || v > 27) { window.pm2Toast('warn', 'PHQ-9 debe ser 0-27'); return false; }
+    }
+    if (kind === 'bpi') {
+        ['worst','least','average','now'].forEach(k => {
+            const v = parseFloat(form.querySelector(`[name="${k}"]`)?.value);
+            if (!isNaN(v) && (v < 0 || v > 10)) { window.pm2Toast('warn', `BPI ${k} debe ser 0-10`); }
+        });
+    }
+    if (kind === 'ctcae') {
+        const g = parseInt(form.querySelector('[name="grade"]')?.value);
+        if (![1,2,3,4,5].includes(g)) { window.pm2Toast('warn', 'CTCAE grade debe ser 1-5'); return false; }
+    }
+    if (kind === 'treatment_change') {
+        const line = parseInt(form.querySelector('[name="tx_line"]')?.value);
+        if (!Number.isInteger(line) || line < 1) { window.pm2Toast('warn', 'La línea terapéutica debe ser ≥ 1'); return false; }
+        const regimen = form.querySelector('[name="tx_regimen"]')?.value;
+        if (!regimen) { window.pm2Toast('warn', 'Seleccione un régimen terapéutico'); return false; }
+        const start = form.querySelector('[name="tx_start"]')?.value;
+        const end = form.querySelector('[name="tx_end"]')?.value;
+        if (!start) { window.pm2Toast('warn', 'Capture fecha de inicio de línea'); return false; }
+        if (end && end < start) { window.pm2Toast('warn', 'La fecha de fin no puede ser anterior al inicio'); return false; }
+    }
+    if (kind === 'psma_pet') {
+        const suv = parseFloat(form.querySelector('[name="suvmax"]')?.value);
+        if (isNaN(suv) || suv < 0) { window.pm2Toast('warn', 'SUVmax debe ser ≥ 0'); return false; }
+        if (suv > 100) { window.pm2Toast('warn', 'SUVmax > 100 improbable, verificar'); return false; }
+    }
+    return true;
+}
+
+/* Insert DOM row tras éxito (preserva UX previa de feedback inmediato). */
+function pm2InsertRowDom(btn, kind, values) {
+    const section = btn.closest('.pm2-append-section');
+    const tbody = section ? section.querySelector('table tbody') : null;
+    if (!tbody) return;
+    const tr = document.createElement('tr');
+    tr.style.background = 'rgba(16,185,129,0.08)';
+    if (kind === 'psa') {
+        tr.innerHTML = `<td class="pm2-mono">${values.date || '—'}</td>
+                        <td class="pm2-mono" style="font-weight:700;color:#67e8f9">${values.value != null ? values.value : '—'}</td>
+                        <td>${values.context || 'longitudinal'}</td>
+                        <td><span style="color:var(--clinical-success);font-size:.7rem;font-weight:700">✓ recién añadido · DB</span></td>`;
+    } else {
+        const cells = Object.entries(values).filter(([, v]) => v != null && v !== '').map(([k, v]) => `${k}=${v}`).join(' · ');
+        tr.innerHTML = `<td class="pm2-mono" colspan="8" style="color:var(--clinical-success)">✓ ${kind} guardado: ${cells}</td>`;
+    }
+    tbody.insertBefore(tr, tbody.firstChild);
+}
+
+/* Main append handler — wired al endpoint real. */
+async function pm2AppendRow(btn, kind) {
+    const form = btn.closest('.pm2-append-form');
+    if (!form) return;
+    if (!pm2ValidateForm(form, kind)) return;
+
+    const payload = pm2BuildPayload(form, kind);
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Guardando…';
+
+    try {
+        const res = await fetch(`/api/longitudinal/${encodeURIComponent(PM2_NSS)}/append`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind, payload }),
+        });
+        const body = await res.json().catch(() => ({}));
+
+        if (res.status === 409) {
+            window.pm2Toast('warn', `Duplicado: ya existe ${kind} con esa fecha`);
+            return;
+        }
+        if (!res.ok || body.success === false) {
+            window.pm2Toast('error', body.error || `Error ${res.status} al guardar ${kind}`);
+            return;
+        }
+
+        // ÉXITO — DB write confirmado por backend
+        pm2InsertRowDom(btn, kind, payload);
+
+        if (body.decision_changed) {
+            const newDir = body.delta?.new?.direction || 'actualizada';
+            window.pm2Toast('success', `✓ ${kind} guardado · Decisión actualizada → ${newDir.slice(0, 60)}`);
+        } else {
+            window.pm2Toast('success', `✓ ${kind} guardado · Sin cambio en decisión (${body.alerts_count || 0} alertas)`);
+        }
+
+        // Limpia inputs (excepto fecha si quiere re-capturar día siguiente — opcional)
+        form.querySelectorAll('input:not([type="hidden"]), select').forEach((i) => {
+            if (i.type !== 'date') i.value = '';
+        });
+        // Notifica a otras pestañas que tienen el perfil abierto
+        try {
+            localStorage.setItem('pm2_capture_event', JSON.stringify({
+                nss: PM2_NSS, kind, ts: Date.now(),
+                decision_changed: !!body.decision_changed,
+            }));
+        } catch (e) { /* ignore quota */ }
+    } catch (err) {
+        window.pm2Toast('error', `Network: ${err && err.message ? err.message : err}`);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+    }
+}
+
+/* Cross-tab listener: si el perfil está abierto y se captura aquí, refresca silently. */
+window.addEventListener('storage', (e) => {
+    if (e.key === 'pm2_capture_event' && window.location.pathname.includes('/patient_profile/')) {
+        // perfil abierto → ofrecer refresh in-place
+        if (window.pm2Toast) window.pm2Toast('info', '↻ Datos longitudinales actualizados desde otra pestaña');
+    }
+});
+</script>
+</body>
+</html>

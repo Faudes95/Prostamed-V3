@@ -52,7 +52,7 @@ PALLIATIVE_REQUIRED_FIELDS = [
     "anxiety_score",
     "ecog",
     "ecog_delta_3mo",
-    "weight_loss_6m_pct",
+    "weight_loss_6m_kg",
     "albumin",
     "refractory_pain",
     "visceral_crisis",
@@ -94,7 +94,7 @@ PALLIATIVE_FOLLOWUP_FIELDS = [
 
 SYMPTOM_CLUSTER_MAP = {
     "pain_cluster": ["pain", "bpi_worst_pain", "bone_pain", "neuropathic_pain", "opioid_use", "breakthrough_pain"],
-    "constitutional_cluster": ["fatigue_score", "appetite_loss", "weight_loss_6m_pct", "albumin"],
+    "constitutional_cluster": ["fatigue_score", "appetite_loss", "weight_loss_6m_kg", "albumin"],
     "respiratory_gi_cluster": ["dyspnea_score", "nausea_score", "constipation_score", "insomnia_score"],
     "psychosocial_cluster": ["depression_score", "anxiety_score", "goals_of_care_discussed", "healthcare_surrogate_designated"],
     "oncologic_emergency_cluster": PALLIATIVE_URGENT_FIELDS,
@@ -242,6 +242,15 @@ def _merge_patient_context(
         merged["pain_score"] = merged.get("pain")
     if _is_present(merged.get("ecog")) and not _is_present(merged.get("ecog_score")):
         merged["ecog_score"] = merged.get("ecog")
+    if _is_present(merged.get("weight_loss_6m_kg")) and not _is_present(merged.get("weight_loss_6m_pct")):
+        try:
+            current_weight = float(merged.get("weight_kg") or 0)
+            loss_kg = float(merged.get("weight_loss_6m_kg") or 0)
+            prior_weight = current_weight + loss_kg
+            if prior_weight > 0 and loss_kg >= 0:
+                merged["weight_loss_6m_pct"] = round((loss_kg / prior_weight) * 100, 1)
+        except (TypeError, ValueError):
+            pass
     if _is_present(merged.get("weight_loss_6m_pct")) and not _is_present(merged.get("weight_loss_pct")):
         merged["weight_loss_pct"] = merged.get("weight_loss_6m_pct")
     if _is_present(merged.get("prior_systemic_lines")) and not _is_present(merged.get("treatment_lines_exhausted")):
@@ -254,6 +263,7 @@ def _field_present(field: str, merged: dict[str, Any]) -> bool:
         "pain": ["pain", "pain_score", "bpi_worst_pain"],
         "bpi_worst_pain": ["bpi_worst_pain", "pain_score", "pain"],
         "ecog": ["ecog", "ecog_score"],
+        "weight_loss_6m_kg": ["weight_loss_6m_kg", "weight_loss_6m_pct", "weight_loss_pct", "weight_loss"],
         "weight_loss_6m_pct": ["weight_loss_6m_pct", "weight_loss_pct", "weight_loss"],
         "prior_systemic_lines": ["prior_systemic_lines", "treatment_lines_exhausted", "prior_lines"],
     }
@@ -538,7 +548,7 @@ def build_palliative_monitoring_package(
         "family_label": "Soporte paliativo longitudinal",
         "active_regimen_code": str(bundle.get("care_mode") or ""),
         "response_metrics": ["pain", "bpi_worst_pain", "fatigue_score", "dyspnea_score", "appetite_loss", "ecog"],
-        "safety_metrics": ["opioid_use", "breakthrough_pain", "bowel_regimen_started", "albumin", "weight_loss_6m_pct"],
+        "safety_metrics": ["opioid_use", "breakthrough_pain", "bowel_regimen_started", "albumin", "weight_loss_6m_kg"],
         "hold_rules": list(bundle.get("acute_palliative_alerts") or []),
         "switch_rules": list(bundle.get("trigger_reasons") or []),
         "required_visit_fields": list(bundle.get("required_visit_fields") or []),

@@ -23,5 +23,19 @@ POST_NEGATIVE_BIOPSY_SCHEMA = module_schema(
         FieldSpec("prior_biopsy_count", "Número de biopsias previas", "number", default=1, group="Biopsia previa", group_order=4, clinical_role="decision_refiner", unit="biopsias", evidence_tags=["negative_biopsy_followup"]),
         FieldSpec("repeat_biopsy_trigger", "Motivo de rebiopsia", "select", options=["PSA/PSAD", "MRI persistente", "Tacto rectal", "Historia familiar", "Sin criterio"], default="PSA/PSAD", group="Motivo de reactivación", group_order=5, clinical_role="decision_refiner", evidence_tags=["negative_biopsy_followup"]),
         FieldSpec("family_history_positive", "Historia familiar relevante", "select", options=["0", "1"], default="0", group="Motivo de reactivación", group_order=5, clinical_role="decision_refiner", evidence_tags=["family_history"]),
+        # EPIC 9 Group F (GAP-13) — Exposición explícita de los tres campos que
+        # ya eran consumidos implícitamente por el scheduling de rebiopsia pero
+        # no aparecían en el schema del dominio (se resolvían por fallback en
+        # trajectory o por longitudinal_truth cuando se propagaban desde
+        # diagnostic_workup). Con estos FieldSpec se cierra el contrato de
+        # captura post-biopsia-negativa (EAU 2026 §5.6 + NCCN PROS-D).
+        #
+        # NOTA sobre `piqual_score`: la guía EAU sugiere reportarlo, pero
+        # `rules_nccn.py` actual NO lo consume — se documenta aquí para que
+        # no se interprete como omisión; se reevaluará cuando el motor incluya
+        # un gate de calidad de mpMRI estricto (fuera de alcance EPIC 9).
+        FieldSpec("prostate_volume_ml", "Volumen prostático", "number", default="", group="Imagen actual", group_order=2, clinical_role="decision_refiner", unit="mL", evidence_tags=["psad", "mpmri"]),
+        FieldSpec("planned_biopsy_type", "Tipo de biopsia prevista en la reactivación", "select", options=["Dirigida + sistemática", "Dirigida", "Sistemática", "Pendiente"], default="Pendiente", group="Motivo de reactivación", group_order=5, clinical_role="decision_refiner", evidence_tags=["biopsy_strategy"]),
+        FieldSpec("planned_biopsy_route", "Vía de biopsia prevista", "select", options=["Transperineal", "Transrectal", "No definida"], default="No definida", group="Motivo de reactivación", group_order=5, clinical_role="decision_refiner", evidence_tags=["biopsy_strategy"]),
     ],
 )

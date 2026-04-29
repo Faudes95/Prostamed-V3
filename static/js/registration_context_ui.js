@@ -153,6 +153,64 @@
         `).join("");
     }
 
+    function renderTestosteroneHistoryRows(rows) {
+        const initialRows = rows.length ? rows : [{}];
+        return initialRows.map((row) => `
+            <div data-testosterone-history-row class="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]">
+                <label class="text-sm">
+                    <span class="mb-1 block text-slate-300">Fecha de muestra</span>
+                    <input type="date" data-history-key="sample_date" value="${escapeHtml(row.sample_date || "")}" class="pn-input w-full px-3 py-2">
+                </label>
+                <label class="text-sm">
+                    <span class="mb-1 block text-slate-300">Testosterona</span>
+                    <input type="number" step="0.01" min="0" data-history-key="testosterone_value" value="${escapeHtml(row.testosterone_value || row.value || "")}" class="pn-input w-full px-3 py-2">
+                </label>
+                <label class="text-sm">
+                    <span class="mb-1 block text-slate-300">Unidad</span>
+                    <select data-history-key="unit" class="pn-input w-full px-3 py-2">
+                        <option value="ng/dL" ${!row.unit || row.unit === "ng/dL" ? "selected" : ""}>ng/dL</option>
+                        <option value="nmol/L" ${row.unit === "nmol/L" ? "selected" : ""}>nmol/L</option>
+                    </select>
+                </label>
+                <label class="text-sm">
+                    <span class="mb-1 block text-slate-300">Contexto</span>
+                    <select data-history-key="context" class="pn-input w-full px-3 py-2">
+                        <option value="pretratamiento" ${row.context === "pretratamiento" ? "selected" : ""}>Pretratamiento</option>
+                        <option value="en adt" ${row.context === "en adt" ? "selected" : ""}>En ADT</option>
+                        <option value="postlocal" ${row.context === "postlocal" ? "selected" : ""}>Postlocal</option>
+                        <option value="otro" ${!row.context || row.context === "otro" ? "selected" : ""}>Otro</option>
+                    </select>
+                </label>
+                <label class="text-sm">
+                    <span class="mb-1 block text-slate-300">Línea terapéutica</span>
+                    <input type="number" min="1" step="1" data-history-key="line_of_therapy_number" value="${escapeHtml(row.line_of_therapy_number || "")}" class="pn-input w-full px-3 py-2" placeholder="1, 2, 3...">
+                </label>
+                <div class="flex items-end justify-end">
+                    <button type="button" class="pn-btn pn-btn-secondary" data-remove-testosterone-row>Quitar</button>
+                </div>
+                <label class="text-sm lg:col-span-2">
+                    <span class="mb-1 block text-slate-300">Contexto de línea (opcional)</span>
+                    <select data-history-key="line_of_therapy_context" class="pn-input w-full px-3 py-2">
+                        <option value="" ${!row.line_of_therapy_context ? "selected" : ""}>Sin línea documentada</option>
+                        <option value="mHSPC_initial" ${row.line_of_therapy_context === "mHSPC_initial" ? "selected" : ""}>mHSPC inicial</option>
+                        <option value="mHSPC_post_docetaxel" ${row.line_of_therapy_context === "mHSPC_post_docetaxel" ? "selected" : ""}>mHSPC post-docetaxel</option>
+                        <option value="m0_CRPC_first_line" ${row.line_of_therapy_context === "m0_CRPC_first_line" ? "selected" : ""}>m0 CRPC primera línea</option>
+                        <option value="mCRPC_first_line" ${row.line_of_therapy_context === "mCRPC_first_line" ? "selected" : ""}>mCRPC primera línea</option>
+                        <option value="mCRPC_post_ARPI_pre_taxane" ${row.line_of_therapy_context === "mCRPC_post_ARPI_pre_taxane" ? "selected" : ""}>mCRPC post-ARPI pre-taxano</option>
+                        <option value="mCRPC_post_taxane" ${row.line_of_therapy_context === "mCRPC_post_taxane" ? "selected" : ""}>mCRPC post-taxano</option>
+                        <option value="mCRPC_post_PARP" ${row.line_of_therapy_context === "mCRPC_post_PARP" ? "selected" : ""}>mCRPC post-PARP</option>
+                        <option value="mCRPC_post_Lu177" ${row.line_of_therapy_context === "mCRPC_post_Lu177" ? "selected" : ""}>mCRPC post-Lu177</option>
+                        <option value="later_line" ${row.line_of_therapy_context === "later_line" ? "selected" : ""}>Líneas posteriores</option>
+                    </select>
+                </label>
+                <label class="text-sm lg:col-span-3">
+                    <span class="mb-1 block text-slate-300">Fuente documental (opcional)</span>
+                    <input type="text" data-history-key="source" value="${escapeHtml(row.source || "")}" class="pn-input w-full px-3 py-2" placeholder="Laboratorio externo, expediente, nota clínica, etc.">
+                </label>
+            </div>
+        `).join("");
+    }
+
     function syncPsaHistoryField(scope) {
         scope.querySelectorAll("[data-psa-history-field]").forEach((wrapper) => {
             const hidden = wrapper.querySelector("[data-psa-history-input]");
@@ -170,6 +228,31 @@
             })).filter((row) => row.sample_date || row.psa_value || row.source || row.line_of_therapy_number || row.line_of_therapy_context);
             hidden.value = JSON.stringify(rows);
             const summary = wrapper.querySelector("[data-psa-history-summary]");
+            if (summary) {
+                summary.textContent = rows.length
+                    ? `${rows.length} medición(es) listas para guardarse en la serie longitudinal.`
+                    : "Sin mediciones adicionales; el basal seguirá siendo el punto canónico principal.";
+            }
+        });
+    }
+
+    function syncTestosteroneHistoryField(scope) {
+        scope.querySelectorAll("[data-testosterone-history-field]").forEach((wrapper) => {
+            const hidden = wrapper.querySelector("[data-testosterone-history-input]");
+            if (!hidden) {
+                return;
+            }
+            const rows = Array.from(wrapper.querySelectorAll("[data-testosterone-history-row]")).map((row) => ({
+                sample_date: row.querySelector('[data-history-key="sample_date"]')?.value || "",
+                testosterone_value: row.querySelector('[data-history-key="testosterone_value"]')?.value || "",
+                unit: row.querySelector('[data-history-key="unit"]')?.value || "ng/dL",
+                context: row.querySelector('[data-history-key="context"]')?.value || "otro",
+                line_of_therapy_number: row.querySelector('[data-history-key="line_of_therapy_number"]')?.value || "",
+                line_of_therapy_context: row.querySelector('[data-history-key="line_of_therapy_context"]')?.value || "",
+                source: row.querySelector('[data-history-key="source"]')?.value || "",
+            })).filter((row) => row.sample_date || row.testosterone_value || row.source || row.line_of_therapy_number || row.line_of_therapy_context);
+            hidden.value = JSON.stringify(rows);
+            const summary = wrapper.querySelector("[data-testosterone-history-summary]");
             if (summary) {
                 summary.textContent = rows.length
                     ? `${rows.length} medición(es) listas para guardarse en la serie longitudinal.`
@@ -228,6 +311,113 @@
             });
         });
         syncPsaHistoryField(scope);
+    }
+
+    function bindTestosteroneHistory(scope) {
+        scope.querySelectorAll("[data-add-testosterone-row]").forEach((button) => {
+            if (button.dataset.bound === "true") {
+                return;
+            }
+            button.dataset.bound = "true";
+            button.addEventListener("click", () => {
+                const wrapper = button.closest("[data-testosterone-history-field]");
+                const rowsContainer = wrapper?.querySelector("[data-testosterone-history-rows]");
+                if (!rowsContainer) {
+                    return;
+                }
+                rowsContainer.insertAdjacentHTML("beforeend", renderTestosteroneHistoryRows([{}]));
+                syncTestosteroneHistoryField(scope);
+                window.clinicalSelects?.syncAll(rowsContainer);
+                bindTestosteroneHistory(scope);
+            });
+        });
+
+        scope.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement) || !target.matches("[data-remove-testosterone-row]")) {
+                return;
+            }
+            const row = target.closest("[data-testosterone-history-row]") || target.closest(".grid");
+            const container = target.closest("[data-testosterone-history-field]")?.querySelector("[data-testosterone-history-rows]");
+            if (!container) {
+                return;
+            }
+            const allRows = container.querySelectorAll("[data-testosterone-history-row]");
+            if (allRows.length <= 1) {
+                row?.querySelectorAll("input").forEach((input) => { input.value = ""; });
+                row?.querySelectorAll("select").forEach((select) => { select.selectedIndex = 0; });
+            } else {
+                row?.remove();
+            }
+            syncTestosteroneHistoryField(scope);
+        });
+
+        scope.querySelectorAll("[data-testosterone-history-field]").forEach((wrapper) => {
+            wrapper.querySelectorAll("input, select").forEach((input) => {
+                if (input.dataset.boundChange === "true") {
+                    return;
+                }
+                input.dataset.boundChange = "true";
+                input.addEventListener("change", () => syncTestosteroneHistoryField(scope));
+                input.addEventListener("input", () => syncTestosteroneHistoryField(scope));
+            });
+        });
+        syncTestosteroneHistoryField(scope);
+    }
+
+    function calculateBmi(weightKg, heightCm) {
+        const weight = Number.parseFloat(weightKg);
+        const height = Number.parseFloat(heightCm);
+        if (!Number.isFinite(weight) || !Number.isFinite(height) || weight <= 0 || height <= 0) {
+            return "";
+        }
+        const heightMeters = height / 100;
+        if (!Number.isFinite(heightMeters) || heightMeters <= 0) {
+            return "";
+        }
+        return (weight / (heightMeters * heightMeters)).toFixed(1);
+    }
+
+    function bindAnthropometricDerivations(scope) {
+        const sync = () => {
+            const weightInput = scope.querySelector('[name="weight_kg"]');
+            const heightInput = scope.querySelector('[name="height_cm"]');
+            const bmiInput = scope.querySelector('[name="bmi_current"]');
+            if (bmiInput instanceof HTMLInputElement) {
+                bmiInput.readOnly = true;
+                bmiInput.value = calculateBmi(weightInput?.value || "", heightInput?.value || "");
+            }
+        };
+        ["weight_kg", "height_cm"].forEach((fieldName) => {
+            const input = scope.querySelector(`[name="${fieldName}"]`);
+            if (!(input instanceof HTMLInputElement)) {
+                return;
+            }
+            if (input.dataset.bmiBound === "true") {
+                return;
+            }
+            input.dataset.bmiBound = "true";
+            input.addEventListener("input", sync);
+            input.addEventListener("change", sync);
+        });
+        sync();
+    }
+
+    const sharedLongitudinalCapture = window.ProstaNetLongitudinalCaptureHelpers || null;
+    if (sharedLongitudinalCapture) {
+        parseHistoryValue = sharedLongitudinalCapture.parseHistoryValue;
+        renderPsaHistoryRows = (rows) => sharedLongitudinalCapture.renderHistoryRows("psa", rows);
+        renderTestosteroneHistoryRows = (rows) => sharedLongitudinalCapture.renderHistoryRows("testosterone", rows);
+        syncPsaHistoryField = (scope) => sharedLongitudinalCapture.syncHistoryField(scope, "psa");
+        syncTestosteroneHistoryField = (scope) => sharedLongitudinalCapture.syncHistoryField(scope, "testosterone");
+        bindPsaHistory = (scope) => sharedLongitudinalCapture.bindHistoryField(scope, "psa");
+        bindTestosteroneHistory = (scope) => sharedLongitudinalCapture.bindHistoryField(scope, "testosterone");
+        calculateBmi = sharedLongitudinalCapture.calculateBmi;
+        bindAnthropometricDerivations = (scope) => sharedLongitudinalCapture.bindAnthropometricDerivations(scope, {
+            weightName: "weight_kg",
+            heightName: "height_cm",
+            bmiName: "bmi_current",
+        });
     }
 
     function parseStructuredValue(value, fallback) {
@@ -738,6 +928,31 @@
             `;
         }
 
+        if (field.field_type === "testosterone_history") {
+            const rows = parseHistoryValue(value);
+            return `
+                <div class="text-sm" data-testosterone-history-field${conditionsAttr}>
+                    <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+                        <span class="block text-slate-300">${escapeHtml(field.label)}${field.required ? " *" : ""}</span>
+                        <span class="rounded-full border px-2.5 py-1 text-[11px] font-medium ${badgeTone}">${escapeHtml(field.clinical_role_label || "")}</span>
+                    </div>
+                    <input type="hidden" name="${escapeHtml(field.name)}" data-testosterone-history-input value="${escapeHtml(JSON.stringify(rows))}">
+                    <div class="space-y-3" data-testosterone-history-rows>
+                        ${rows.length ? renderTestosteroneHistoryRows(rows) : renderTestosteroneHistoryRows([{}])}
+                    </div>
+                    <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+                        <button type="button" class="pn-btn pn-btn-secondary" data-add-testosterone-row>Agregar medición</button>
+                        <span class="text-xs text-slate-400" data-testosterone-history-summary></span>
+                    </div>
+                    <div class="mt-2 space-y-1">
+                        ${field.help_text ? `<span class="block text-xs text-slate-500">${escapeHtml(field.help_text)}</span>` : ""}
+                        ${renderReferenceRange(field)}
+                        ${renderScaleContext(field)}
+                    </div>
+                </div>
+            `;
+        }
+
         if (field.field_type === "gleason_profile") {
             return `<div${conditionsAttr}>${renderGleasonProfileField(field, value, badgeTone)}</div>`;
         }
@@ -785,6 +1000,7 @@
                 ? "date"
                 : "text";
         const inputValue = value === null || value === undefined ? "" : value;
+        const readOnly = field.name === "bmi_current" ? "readonly" : "";
 
         return `
             <div class="text-sm"${conditionsAttr}>
@@ -798,6 +1014,7 @@
                     name="${escapeHtml(field.name)}"
                     value="${escapeHtml(inputValue)}"
                     class="pn-input w-full px-3 py-2"
+                    ${readOnly}
                     ${required}
                 >
                 <div class="mt-1 space-y-1">
@@ -898,8 +1115,10 @@
         `).join("");
         window.clinicalSelects?.syncAll(target);
         bindPsaHistory(target);
+        bindTestosteroneHistory(target);
         bindGleasonProfiles(target);
         bindMetastaticComponents(target);
+        bindAnthropometricDerivations(target);
         updateConditionalVisibility(target);
         if (target.dataset.conditionalBound !== "true") {
             target.dataset.conditionalBound = "true";
@@ -936,10 +1155,11 @@
         bindGleasonProfiles(form);
         bindMetastaticComponents(form);
         syncPsaHistoryField(form);
+        syncTestosteroneHistoryField(form);
         const payload = {};
         const formData = new FormData(form);
         formData.forEach((value, key) => {
-            if (key === "psa_history" || key === "ape_history") {
+            if (key === "psa_history" || key === "ape_history" || key === "testosterone_history") {
                 payload[key] = parseHistoryValue(value);
                 return;
             }
@@ -955,5 +1175,9 @@
         renderRegistrationContext,
         buildRegistrationPayload,
         syncPsaHistoryField,
+        parseHistoryValue,
+        bindPsaHistory,
+        bindTestosteroneHistory,
+        bindAnthropometricDerivations,
     };
 })();

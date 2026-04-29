@@ -1,0 +1,356 @@
+{# ProstaMed v2 demo — Ingreso de paciente (Faubot 2026-04-26 LXXVII #67D)
+   Standalone demo. NO toca producción. Logo + paleta original preservados.
+   Ruta: /demos/v2/patient_intake
+
+   PRESERVA las 4 etapas del clinical_hub quick_classifier original
+   (diagnóstico → tx local → mets → sistémica/ADT).
+   AÑADE 9 secciones con campos críticos para correct initial staging:
+     identity, diagnosis, histology, imaging, labs, metastatic, systemic,
+     genomics, performance.
+   Live staging preview rail con NCCN/CHAARTED heuristics. #}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nuevo paciente · ProstaMed v2 demo</title>
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+
+<div class="pm2-intake-shell">
+
+    {# ── Left: progress rail ── #}
+    <aside class="pm2-intake-progress" aria-label="Pasos del ingreso">
+        <div style="padding:0 var(--space-3) var(--space-4);border-bottom:1px solid var(--border-subtle);margin-bottom:var(--space-3)">
+            <img src="{{ url_for('static', filename='img/prostamed_logo_official.png') }}"
+                 alt="PROSTAMED" class="pm-logo" style="width:160px;max-height:48px;object-fit:contain;object-position:left center;filter:drop-shadow(0 6px 12px rgba(23,169,255,.16))">
+            <div style="color:rgba(191,219,254,.7);font-size:.6rem;font-weight:600;letter-spacing:.28em;text-transform:uppercase;margin-top:6px">Nuevo paciente</div>
+        </div>
+
+        <div style="color:var(--pn-text-soft);font-size:.62rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase;padding:0 var(--space-2);margin-bottom:8px">
+            Pasos · {{ stages | length }}
+        </div>
+
+        {% for stage in stages %}
+        <a href="#section-{{ stage.key }}" class="pm2-intake-progress-step {% if stage.conditional %}is-conditional{% endif %}" data-stage="{{ stage.key }}">
+            <span class="pm2-intake-progress-num">{{ loop.index }}</span>
+            <div>
+                <div class="pm2-intake-progress-label">{{ stage.label }}</div>
+                {% if stage.conditional %}<div class="pm2-intake-progress-meta">{{ stage.conditional }}</div>{% endif %}
+            </div>
+            <span class="pm2-intake-progress-meta">0/{{ stage.n_fields }}</span>
+        </a>
+        {% endfor %}
+
+        <div style="margin-top:auto;padding-top:1rem">
+            <a href="/demos/v2/patient_profile_full" class="pm2-sidebar-link" style="font-size:.78rem">
+                <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                Cancelar y volver
+            </a>
+        </div>
+    </aside>
+
+    {# ── Center: form ── #}
+    <main id="main-content" class="pm2-intake-main" tabindex="-1">
+
+        {# Header #}
+        <header style="margin-bottom:var(--space-5)">
+            <h1 style="font-family:var(--pm-font-display);font-size:1.7rem;font-weight:700;letter-spacing:-.03em;color:#f8fbff;margin:0">Nuevo paciente · estadificación inicial</h1>
+            <p style="color:var(--pn-text-muted);font-size:.88rem;margin-top:6px;max-width:64ch">
+                Captura inteligente con clasificación NCCN/CHAARTED en vivo. Los campos marcados <span class="pm2-intake-field-gap-pill">GAP</span> son nuevos respecto al intake actual; resuelven huecos identificados para correct initial staging.
+            </p>
+        </header>
+
+        {# Presets para demo rápido #}
+        <div class="pm2-intake-presets">
+            <span class="pm2-intake-presets-label">⚡ Presets de demo · click para llenar form completo</span>
+            {% for preset in presets %}
+            <button type="button" class="pm2-intake-preset-card" data-preset="{{ preset.id }}">
+                <div class="pm2-intake-preset-label">{{ preset.label }}</div>
+                <div class="pm2-intake-preset-desc">{{ preset.desc }}</div>
+                <span class="pm2-stage-pill" data-stage="{{ preset.stage_predicted }}" style="margin-top:8px;font-size:.6rem">{{ preset.stage_predicted }}</span>
+            </button>
+            {% endfor %}
+        </div>
+
+        <form data-intake-form onsubmit="pm2IntakeSubmit(event)">
+
+            {% for stage in stages %}
+            {# Faubot LXXXI #audit-pre-cortana A1 — divider antes de primera etapa avanzada #}
+            {% if stage.advanced_capture and not (loop.previtem and loop.previtem.advanced_capture) %}
+            <div class="pm2-intake-advanced-divider" style="margin: 24px 0 12px 0; padding: 12px 16px; background: linear-gradient(90deg, rgba(96,165,250,0.08), rgba(168,85,247,0.05)); border-left: 3px solid var(--clinical-info, #60a5fa); border-radius: 6px;">
+                <strong style="font-size: 14px; color: var(--clinical-info, #60a5fa);">📋 Captura clínica avanzada (gates 56-85)</strong>
+                <p style="font-size: 12px; opacity: 0.75; margin: 4px 0 0 0;">
+                    Etapas opcionales para subespecialidad. Los gates pivotales se activan según el estado clínico del paciente.
+                    Saltar si no aplica.
+                </p>
+            </div>
+            {% endif %}
+            <section id="section-{{ stage.key }}" data-stage-section="{{ stage.key }}" class="pm2-intake-section {% if stage.conditional %}is-conditional{% endif %} {% if stage.advanced_capture %}is-advanced-capture{% endif %}">
+                <header class="pm2-intake-section-head">
+                    <div>
+                        <span class="pm2-intake-section-num">{{ loop.index }}</span>
+                        <h2 class="pm2-intake-section-title">{{ stage.label }}</h2>
+                        {% if stage.gate_label %}
+                        <span class="pm2-intake-section-gate-pill" style="margin-left:8px; padding:2px 8px; background: rgba(96,165,250,0.15); color:#60a5fa; border-radius:4px; font-size:11px; font-weight:600;">{{ stage.gate_label }}</span>
+                        {% endif %}
+                        {% if stage.conditional %}
+                        <span class="pm2-intake-section-conditional-pill" style="margin-left:8px">Condicional</span>
+                        {% endif %}
+                    </div>
+                    <div class="pm2-intake-section-meta">
+                        {{ stage.required }} requeridos · {{ stage.n_fields }} totales
+                        {% if stage.conditional %}<br><span style="color:var(--clinical-warning)">{{ stage.conditional }}</span>{% endif %}
+                    </div>
+                </header>
+                {% if stage.description %}
+                <p class="pm2-intake-section-description" style="font-size:12px; opacity:0.75; margin:0 0 12px 0; padding-left: 32px;">{{ stage.description }}</p>
+                {% endif %}
+
+                <div class="pm2-intake-fields">
+                    {% for field in fields[stage.key] %}
+                    <div class="pm2-intake-field {% if field.type == 'checklist' %}pm2-intake-field--full{% endif %}"
+                         {% if field.conditional %}data-conditional="{{ field.conditional }}"{% endif %}>
+                        <label class="pm2-intake-field-label" for="field-{{ field.name }}">
+                            {{ field.label }}
+                            {% if field.required %}<span class="pm2-intake-field-required" aria-label="requerido">*</span>{% endif %}
+                            {% if field.help and 'GAP' in field.help %}<span class="pm2-intake-field-gap-pill" title="Campo nuevo v2 vs intake actual">GAP v2</span>{% endif %}
+                        </label>
+
+                        {% if field.type == 'select' %}
+                        <select id="field-{{ field.name }}" name="{{ field.name }}" class="pm2-intake-field-select">
+                            <option value="">Seleccionar…</option>
+                            {% for val, label in field.options %}
+                            <option value="{{ val }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+
+                        {% elif field.type == 'checkbox' %}
+                        <label class="pm2-intake-field-checkbox">
+                            <input type="checkbox" id="field-{{ field.name }}" name="{{ field.name }}">
+                            <span>{{ field.label }}</span>
+                        </label>
+
+                        {% elif field.type == 'checklist' %}
+                        <div class="pm2-intake-field-checklist">
+                            {% for val, label in field.options %}
+                            <label class="pm2-intake-field-checkbox">
+                                <input type="checkbox" name="{{ field.name }}" value="{{ val }}">
+                                <span>{{ label }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+
+                        {% elif field.type == 'date' %}
+                        <input type="date" id="field-{{ field.name }}" name="{{ field.name }}" class="pm2-intake-field-input">
+
+                        {% elif field.type == 'number' %}
+                        <input type="number" step="any" id="field-{{ field.name }}" name="{{ field.name }}" class="pm2-intake-field-input"
+                               {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>
+
+                        {% else %}
+                        <input type="text" id="field-{{ field.name }}" name="{{ field.name }}" class="pm2-intake-field-input"
+                               {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>
+                        {% endif %}
+
+                        {% if field.help %}
+                        <span class="pm2-intake-field-help {% if 'GAP' in field.help %}pm2-intake-field-help--gap{% endif %}">{{ field.help }}</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endfor %}
+
+            <div style="text-align:center;color:var(--pn-text-soft);font-size:.78rem;letter-spacing:.06em;margin:var(--space-6) 0">
+                ProstaMed v2 demo · Ingreso paciente · {{ stages | length }} secciones · {{ fields.values() | map('length') | sum }} campos · live staging classifier
+            </div>
+        </form>
+    </main>
+
+    {# ── Right: live staging preview rail ── #}
+    <aside class="pm2-intake-rail" aria-label="Clasificación en vivo">
+        <div>
+            <h2 class="pm2-intake-rail-title">Clasificación en vivo</h2>
+            <p style="color:var(--pn-text-soft);font-size:.7rem;margin-top:2px">Actualiza al teclear · NCCN/CHAARTED heuristics</p>
+        </div>
+
+        {# Live stage card #}
+        <div class="pm2-intake-staging-card">
+            <div class="pm2-intake-staging-pill-wrap">
+                <span class="pm2-stage-pill" data-staging-pill data-stage="diagnostic">DIAGNOSTIC</span>
+            </div>
+            <div class="pm2-intake-staging-stage" data-staging-stage>Sin clasificar</div>
+            <div class="pm2-intake-staging-sub" data-staging-sub>Captura datos para clasificar</div>
+        </div>
+
+        {# Completeness #}
+        <div class="pm2-intake-completeness">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <span class="pm2-intake-rail-section-label" style="margin-bottom:0">Completeness</span>
+                <span style="color:var(--pn-accent);font-size:.85rem;font-weight:700;font-feature-settings:'tnum'" data-completeness-pct>0%</span>
+            </div>
+            <div class="pm2-intake-completeness-bar">
+                <div class="pm2-intake-completeness-bar-fill" data-completeness-fill style="width:0%"></div>
+            </div>
+        </div>
+
+        {# Critical fields list #}
+        <div>
+            <div class="pm2-intake-rail-section-label">Campos críticos · NCCN required</div>
+            <div class="pm2-intake-rail-list" data-critical-list>
+                <div class="pm2-intake-rail-row" data-status="missing"><div class="pm2-intake-rail-row-label">PSA basal</div><div class="pm2-intake-rail-row-value">—</div></div>
+                <div class="pm2-intake-rail-row" data-status="missing"><div class="pm2-intake-rail-row-label">Gleason 1°</div><div class="pm2-intake-rail-row-value">—</div></div>
+                <div class="pm2-intake-rail-row" data-status="missing"><div class="pm2-intake-rail-row-label">ISUP</div><div class="pm2-intake-rail-row-value">—</div></div>
+            </div>
+        </div>
+
+        {# Resolved gaps (educational) #}
+        <div>
+            <div class="pm2-intake-rail-section-label">Gaps resueltos en v2</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="padding:6px 8px;background:var(--clinical-success-soft);border-left:2px solid var(--clinical-success);border-radius:6px;color:#bbf7d0;font-size:.7rem;line-height:1.35">
+                    <strong>ECOG + Charlson</strong> · NCCN required (faltaba)
+                </div>
+                <div style="padding:6px 8px;background:var(--clinical-success-soft);border-left:2px solid var(--clinical-success);border-radius:6px;color:#bbf7d0;font-size:.7rem;line-height:1.35">
+                    <strong>PI-RADS · PNI · SVI imaging</strong> · risk stratification
+                </div>
+                <div style="padding:6px 8px;background:var(--clinical-success-soft);border-left:2px solid var(--clinical-success);border-radius:6px;color:#bbf7d0;font-size:.7rem;line-height:1.35">
+                    <strong>% cores positivos · max core</strong> · CAPRA + NCCN unfav
+                </div>
+                <div style="padding:6px 8px;background:var(--clinical-success-soft);border-left:2px solid var(--clinical-success);border-radius:6px;color:#bbf7d0;font-size:.7rem;line-height:1.35">
+                    <strong>Hb · ALP · LDH · testo</strong> · labs baseline
+                </div>
+                <div style="padding:6px 8px;background:var(--clinical-success-soft);border-left:2px solid var(--clinical-success);border-radius:6px;color:#bbf7d0;font-size:.7rem;line-height:1.35">
+                    <strong>CHAARTED HV explícito</strong> · ≥4 óseas + apendicular
+                </div>
+                <div style="padding:6px 8px;background:var(--clinical-success-soft);border-left:2px solid var(--clinical-success);border-radius:6px;color:#bbf7d0;font-size:.7rem;line-height:1.35">
+                    <strong>PSMA-PET + SUVmax</strong> · staging moderno + Lu-177
+                </div>
+                <div style="padding:6px 8px;background:var(--clinical-success-soft);border-left:2px solid var(--clinical-success);border-radius:6px;color:#bbf7d0;font-size:.7rem;line-height:1.35">
+                    <strong>Family hx + germinal</strong> · NCCN GENE-1 trigger
+                </div>
+                <div style="padding:6px 8px;background:var(--clinical-success-soft);border-left:2px solid var(--clinical-success);border-radius:6px;color:#bbf7d0;font-size:.7rem;line-height:1.35">
+                    <strong>BPI pain · ESAS · PHQ-9</strong> · symptomatic / PRO
+                </div>
+            </div>
+        </div>
+    </aside>
+</div>
+
+{# ── Bottom action bar ── #}
+<div class="pm2-intake-actionbar" role="region" aria-label="Acciones">
+    <div class="pm2-intake-actionbar-status" data-actionbar-status>0/9 campos críticos · clasificación: Sin clasificar</div>
+    <div class="pm2-intake-actionbar-actions">
+        <button type="button" class="pm2-btn pm2-btn--ghost" onclick="window.location='/demos/v2/dashboard'">Cancelar</button>
+        <button type="button" class="pm2-btn pm2-btn--ghost">Guardar borrador</button>
+        <button type="submit" form="" class="pm2-btn pm2-btn--primary" onclick="document.querySelector('[data-intake-form]').dispatchEvent(new Event('submit', {cancelable:true}));">
+            Confirmar y abrir expediente →
+        </button>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/clinical_intelligence_v2.js') }}"></script>
+<script>
+/* Faubot LXXX #67E — Wire intake v2 submit to real /api/register_patient.
+   Mapea campos del intake v2 → schema del backend register_patient.
+   Tras éxito redirige a /clinical-result/<nss> (el flujo nuevo). */
+async function pm2IntakeSubmit(event) {
+    event.preventDefault();
+    const form = document.querySelector('[data-intake-form]');
+    if (!form) return;
+    const status = document.querySelector('[data-actionbar-status]');
+
+    const fd = new FormData(form);
+    const fields = {};
+    for (const [k, v] of fd.entries()) {
+        if (fields[k] !== undefined) {
+            fields[k] = [].concat(fields[k], v);
+        } else {
+            fields[k] = v;
+        }
+    }
+
+    // Anti-duplicación: si no hay nombre/MRN, generar
+    let nss = (fields.mrn || '').trim();
+    if (!nss) {
+        nss = 'V2-' + Date.now().toString(36).toUpperCase();
+    }
+    const fullName = ((fields.given_name || '') + ' ' + (fields.family_name || '')).trim();
+    if (!fullName) {
+        if (status) status.innerHTML = '<span style="color:var(--clinical-critical)">⚠ Falta nombre y apellidos del paciente</span>';
+        document.querySelector('[name="given_name"]')?.focus();
+        return;
+    }
+
+    // Map v2 fields → register_patient schema
+    const isupRaw = parseInt(fields.isup_grade || '0', 10);
+    const gleasonScore = isupRaw === 1 ? 6 : isupRaw === 2 ? 7 : isupRaw === 3 ? 7 : isupRaw === 4 ? 8 : isupRaw === 5 ? 9 : 0;
+    const payload = {
+        nss: nss,
+        full_name: fullName,
+        dob: fields.date_of_birth || null,
+        diagnosis_date: fields.diagnosis_date || null,
+        baseline_psa: parseFloat(fields.psa_baseline || '0') || 0,
+        psa: parseFloat(fields.psa_baseline || '0') || 0,
+        gleason_score: gleasonScore,
+        gleason: gleasonScore,
+        gleason_primary: parseInt(fields.gleason_primary || '0', 10) || 0,
+        gleason_secondary: parseInt(fields.gleason_secondary || '0', 10) || 0,
+        clinical_tstage: fields.clinical_tstage || null,
+        nodal_status: fields.clinical_nstage === 'N1' ? 'positive' : 'negative',
+        metastasis_site: fields.clinical_mstage || (fields.metastatic_disease_known === 'yes' ? 'M1' : 'M0'),
+        metastasis_count: parseInt(fields.bone_lesion_count || '0', 10) || 0,
+        ecog_score: parseInt(fields.ecog_score || '0', 10) || 0,
+        ecog: parseInt(fields.ecog_score || '0', 10) || 0,
+        charlson_score: parseInt(fields.charlson_score || '0', 10) || 0,
+        hemoglobin: parseFloat(fields.hemoglobin_baseline || '0') || null,
+        testosterone_baseline: parseFloat(fields.testosterone_baseline || '0') || null,
+        alkaline_phosphatase: parseFloat(fields.alkaline_phosphatase || '0') || null,
+        ldh_baseline: parseFloat(fields.ldh_baseline || '0') || null,
+        hrr_status: fields.hrr_status || null,
+        germline_pathogenic_variant: fields.germline_pathogenic_variant || null,
+        line_of_therapy: 0,
+        child_pugh_score: 'A',
+        rt_primary_received: 0,
+        // v2 audit metadata
+        _v2_intake: true,
+        _v2_capture_timestamp: new Date().toISOString(),
+    };
+
+    if (status) status.innerHTML = '<span style="color:var(--pn-accent)">⏳ Registrando paciente en ProstaMed…</span>';
+
+    try {
+        const res = await fetch('/api/register_patient', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+        });
+        const body = await res.json();
+        if (res.ok && body.success !== false) {
+            const createdNss = body.nss || payload.nss;
+            if (status) status.innerHTML = `<span style="color:var(--clinical-success)">✓ Paciente creado · NSS ${createdNss} · redirigiendo…</span>`;
+            setTimeout(() => {
+                window.location = `/clinical-result/${createdNss}`;
+            }, 800);
+        } else {
+            if (status) status.innerHTML = `<span style="color:var(--clinical-critical)">⚠ Error: ${body.error || res.status} ${body.message || ''}</span>`;
+        }
+    } catch (err) {
+        if (status) status.innerHTML = `<span style="color:var(--clinical-critical)">⚠ Network error: ${err.message}</span>`;
+    }
+}
+
+/* Botón "Confirmar y abrir expediente" → submit del form */
+document.querySelector('.pm2-intake-actionbar .pm2-btn--primary')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    document.querySelector('[data-intake-form]').dispatchEvent(new Event('submit', {cancelable: true, bubbles: true}));
+});
+</script>
+</body>
+</html>

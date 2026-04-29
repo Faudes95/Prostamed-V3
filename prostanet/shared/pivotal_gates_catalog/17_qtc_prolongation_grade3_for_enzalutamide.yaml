@@ -1,0 +1,71 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 17: qtc_prolongation_grade3_for_enzalutamide
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XIII) — Migrado a YAML declarativo.
+#
+# Razón clínica:
+#   QTc prolongado grado 3 (CTCAE v5: >500 ms o ΔQTc >60 ms desde basal)
+#   → contraindica enzalutamida (Xtandi label §5.4 + ENZAMET).
+#   Override: qtc_corrected_for_arpi=Sí tras corrección de causas
+#   reversibles (hipokalemia, hipomagnesemia, suspender DDI cardio-tóxicos).
+# ──────────────────────────────────────────────────────────────────────
+
+code: qtc_prolongation_grade3_for_enzalutamide
+title: "QTc prolongado grado 3 (CTCAE v5) → contraindica enzalutamida"
+faubot_added_in: "2026-04-25 VII"
+faubot_migrated_to_yaml_in: "2026-04-25 XIII"
+severity: hard_block
+
+# any_of: dispara si flag explícito O QTc absoluto > 500 ms O ΔQTc > 60 ms
+trigger:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: qtc_prolongation_grade3
+    - type: numeric_above
+      field: qtc_ms
+      alias_fields:
+        - qtc_baseline_ms
+      threshold: 500
+    - type: numeric_above
+      field: qtc_change_ms
+      threshold: 60
+
+# Override por corrección documentada
+override:
+  type: truthy_flag
+  field: qtc_corrected_for_arpi
+
+regimen_codes:
+  - REGIMEN_CODES_ENZALUTAMIDE
+
+keywords:
+  - KEYWORDS_ENZALUTAMIDE
+
+message: |
+  Enzalutamida (Xtandi) NO debe iniciarse con prolongación QT grado 3
+  (QTc >500 ms o ΔQTc >60 ms desde basal). Xtandi FDA prescribing information
+  §5.4 advierte sobre prolongación QT + convulsiones; ENZAMET (Sweeney NEJM
+  2019;381:121) reportó cambio QT >20 ms en 2.3%. CTCAE v5.0 + ICH E14
+  establecen QTc >500 ms o ΔQTc >60 ms desde basal como grado 3.
+  Corregir causas reversibles ANTES de iniciar enzalutamida: (1) hipokalemia
+  (K+ ≥4.0 mEq/L), (2) hipomagnesemia (Mg ≥2.0 mg/dL), (3) suspender DDI
+  cardio-tóxicos (ondansetrón IV, fluoroquinolonas, antifúngicos azólicos).
+  Reevaluar (`qtc_corrected_for_arpi=Sí`) tras documentar QTc <470 ms en
+  ECG de seguimiento. Considerar darolutamida (perfil QT más favorable) o
+  abiraterona si LVEF/cardiac function permiten.
+
+evidence_tag: xtandi_label_enzamet_ctcae_v5
+trial_refs:
+  - ENZAMET
+  - "Xtandi label"
+  - "CTCAE v5"
+  - "ICH E14"
+
+references:
+  - "Sweeney CJ et al. ENZAMET. NEJM 2019;381:121-131."
+  - "Xtandi (enzalutamide) FDA prescribing information §5.4 (Convulsiones + QTc)."
+  - "CTCAE v5.0 — QT prolongation grading."
+  - "ICH E14 — Clinical evaluation of QT/QTc interval prolongation."
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Hard-block QTc para enzalutamida"

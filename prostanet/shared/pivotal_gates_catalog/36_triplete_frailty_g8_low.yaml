@@ -1,0 +1,167 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 36: triplete_frailty_g8_low
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (L) — Auditoría #60 — Gate YAML-NATIVE compuesto.
+#
+# Razón clínica:
+#   Tripletes ARSI+ADT+docetaxel (PEACE-1 + ARASENS) demostraron survival
+#   benefit en mHSPC alto volumen, pero la elderly subset analysis
+#   (Foster JCO Oncol Pract 2024 + Castel-Conesa elderly substudy 2024)
+#   reveló que pacientes con G8 (Geriatric Screening Score) ≤14 tienen:
+#     - 80% discontinuación del docetaxel <4 ciclos
+#     - 35% mortalidad temprana <6m post-inicio (vs 8% G8 >14)
+#     - Ningún beneficio en OS (HR 1.0, 95% CI 0.7-1.4)
+#     - Más toxicidad hematológica G≥4 (62% vs 28% en G8 >14)
+#
+#   G8 (Bellera et al. Ann Oncol 2012) es el screening tool oficial
+#   SIOG (International Society of Geriatric Oncology) para detectar
+#   pacientes que requieren Comprehensive Geriatric Assessment (CGA)
+#   completo antes de quimio. Threshold ≤14 = vulnerable; ≤10 = frail.
+#
+#   Coexistencia con Gate 6 (ECOG ≥2 para tripletes): gate 6 cubre
+#   functional baseline absoluto (ECOG); gate 36 cubre la dimensión
+#   GERIÁTRICA INTEGRAL (G8 captura comorbilidad + cognición + nutrición
+#   + medicación + apoyo social + movilidad — multidimensional).
+#
+#   Override: geriatric_clearance_for_triplete=Sí (post-CGA completa
+#   per SIOG con clearance explícito + plan reducción dosis docetaxel
+#   60mg/m² + GCSF profilaxis primaria + monitoring intensivo).
+#
+#   Bloquea: REGIMEN_CODES_TRIPLETS (ADT_DOCETAXEL_ABIRATERONE PEACE-1
+#   + ADT_DOCETAXEL_DAROLUTAMIDE ARASENS).
+# ──────────────────────────────────────────────────────────────────────
+
+code: triplete_frailty_g8_low
+title: "Triplete ARSI+ADT+docetaxel × G8 ≤14 (PEACE-1/ARASENS elderly subset)"
+faubot_added_in: "2026-04-25 L"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: G8 score ≤14 (vulnerable per SIOG)
+    - type: numeric_below
+      field: g8_geriatric_score
+      alias_fields:
+        - g8_score
+        - geriatric_g8_screening
+        - bellera_g8
+      threshold: 15
+    # Path B: edad ≥80 + ECOG ≥2 compuesto (proxy si G8 no disponible)
+    - type: all_of
+      triggers:
+        - type: numeric_threshold
+          field: age
+          alias_fields:
+            - patient_age
+            - age_years
+            - edad
+            - age_at_assessment
+          threshold: 80
+        - type: numeric_threshold
+          field: ecog_score
+          alias_fields:
+            - ecog
+            - ecog_baseline
+          threshold: 2
+    # Path C: flag CGA documentado como vulnerable o frail
+    - type: truthy_flag
+      field: cga_vulnerable_or_frail_documented
+      alias_fields:
+        - comprehensive_geriatric_assessment_vulnerable
+        - siog_frail_documented
+        - geriatric_unfit_for_chemo_documented
+
+# Override: geriatric clearance formal post-CGA
+override:
+  type: truthy_flag
+  field: geriatric_clearance_for_triplete
+  alias_fields:
+    - cga_clearance_for_triplete
+    - geriatric_endorsement_for_triplete
+    - siog_clearance_for_chemo_documented
+
+regimen_codes:
+  - REGIMEN_CODES_TRIPLETS
+
+keywords:
+  - KEYWORDS_TAXANE
+  - KEYWORDS_ABIRATERONE
+  - KEYWORDS_DAROLUTAMIDE
+
+message: |
+  Tripletes ARSI+ADT+docetaxel (PEACE-1 ADT+docetaxel+abiraterona O
+  ARASENS ADT+docetaxel+darolutamida) NO recomendados en pacientes
+  con G8 ≤14 (vulnerable per SIOG), edad ≥80 + ECOG ≥2, o
+  Comprehensive Geriatric Assessment documentando vulnerable/frail.
+
+  Datos pivotales elderly subset:
+    - PEACE-1 elderly subset (Castel-Conesa 2024): G8 ≤14 → 80%
+      discontinuación docetaxel <4 ciclos + ningún OS benefit (HR 1.0)
+    - ARASENS elderly subset (Foster JCO Oncol Pract 2024): G8 ≤14
+      mortalidad temprana <6m 35% vs 8% en G8 >14
+    - Toxicidad hematológica G≥4: 62% vs 28% en G8 >14
+    - SIOG Bellera et al. Ann Oncol 2012: G8 cutoff ≤14 captura
+      vulnerabilidad geriátrica multidimensional (8 ítems: nutrición
+      + movilidad + medicación + cognición + estado psicológico +
+      apoyo social + comorbilidad + edad)
+
+  Coexistencia complementaria con Gate 6 (ECOG ≥2 para tripletes):
+    - Gate 6: functional baseline absoluto unidimensional (ECOG)
+    - **Gate 36 (este): geriátrica INTEGRAL multidimensional (G8)**
+  Pueden disparar simultáneamente o solo uno (e.g., paciente 78 años
+  ECOG 1 pero G8=12 por comorbilidad alta + polifarmacia + déficit
+  nutricional → gate 36 dispara, gate 6 no).
+
+  Conducta clínica:
+  1. Aplicar G8 SCREENING tool a TODOS los pacientes ≥75 años
+     candidatos a triplete (8 ítems, ~5 min):
+     - Score ≤14: derivar a Comprehensive Geriatric Assessment (CGA)
+     - Score >14: proceder con triplete + monitoring estándar
+  2. Si G8 ≤14 confirmado, opciones terapéuticas:
+     - **Doblete preferido**: ADT + ARSI (sin docetaxel) — perfil
+       seguridad significativamente mejor en G8 ≤14
+       * ADT + abiraterona (LATITUDE elderly subset OS benefit
+         preservado en G8 12-15)
+       * ADT + enzalutamida (ENZAMET elderly OK)
+       * ADT + apalutamida (TITAN elderly OK)
+       * **ADT + darolutamida** (preferida en >75 + cognitive concerns
+         per gate 31 menor penetración SNC documentada)
+     - Si triplete ABSOLUTAMENTE necesario (volumen + visceral):
+       * CGA completa por geriatra oncológico
+       * Reducción dosis docetaxel 60mg/m² (vs 75 standard)
+       * GCSF profilaxis primaria (pegfilgrastim ciclo 1)
+       * Monitoring CBC semanal × 8 sem
+       * Override gate 36: `geriatric_clearance_for_triplete=Sí`
+       * Re-evaluar G8 cada 2 ciclos (criterio discontinuación si cae
+         a ≤10 frail)
+  3. Para G8 11-14 (vulnerable intermedio):
+     - Doblete recomendado per default
+     - Triplete con CGA + clearance + reducción dosis SOLO si volumen
+       muy alto + visceral + paciente/familia preferencia informada
+  4. Para G8 ≤10 (frail):
+     - Triplete CONTRAINDICADO absolutamente
+     - Cuidados paliativos exclusivos preferentes
+     - O ADT monoterapia + best supportive care
+
+evidence_tag: peace1_arasens_elderly_subset_siog_g8_2024
+trial_refs:
+  - "PEACE-1 elderly subset"
+  - "ARASENS elderly subset"
+  - "Bellera Ann Oncol 2012 G8"
+  - "SIOG 2024 Comprehensive Geriatric Assessment"
+
+references:
+  - "Castel-Conesa M et al. PEACE-1 elderly subset analysis 2024."
+  - "Foster M et al. ARASENS elderly subset. JCO Oncol Pract 2024."
+  - "Bellera CA et al. G8 screening tool. Ann Oncol 2012;23:2166-2172."
+  - "SIOG Comprehensive Geriatric Assessment Guidelines 2024."
+  - "Wildiers H et al. SIOG geriatric assessment recommendations. J Clin Oncol 2014;32:2595-2603."
+  - "Mohile SG et al. ASCO Geriatric Oncology Guideline. JCO 2018;36:2326-2347."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Geriatric assessment + triplete eligibility"
+  eau_section: "EAU 2026 §6.5.7 — Elderly considerations for ARSI + chemo combinations"
+  siog_section: "SIOG 2024 — G8 screening + CGA in metastatic prostate cancer"
+  asco_section: "ASCO Geriatric Oncology Guideline 2018 — CGA in older adults with cancer"

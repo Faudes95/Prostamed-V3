@@ -1,0 +1,188 @@
+{% extends "layouts/base_clinical.html" %}
+{% from "components/pm2_sidebar.html" import pm2_sidebar %}
+
+{# Faubot LXXXV — Iteración #2: Trial Eligibility Dashboard v2.
+
+   Renderiza eligibility de los 47 trials pivotales para un paciente:
+   - Sección 1: Trials elegibles (ranked confidence)
+   - Sección 2: Trials con missing data (qué falta capturar)
+   - Sección 3: Trials no elegibles (con razones explícitas)
+   - Filtros por stage clínico y biomarker
+#}
+
+{% block title %}Trial Eligibility · {{ nss }} · ProstaMed{% endblock %}
+
+{% block content %}
+<div class="pm2-app-shell">
+  {{ pm2_sidebar(active="trials_eligibility", identity_nss=nss) }}
+
+  <main class="pm2-main">
+    <header class="pm2-header">
+      <div>
+        <h1 class="pm2-title">Trial Eligibility · {{ nss }}</h1>
+        <p class="pm2-subtitle">
+          Elegibilidad para los 47 trials pivotales en cáncer de próstata —
+          análisis basado en criterios verbatim publicados (PMID/NCT).
+        </p>
+      </div>
+      <div class="pm2-header-actions">
+        <a href="/patient_profile/{{ nss }}" class="pm2-btn pm2-btn-secondary">
+          ← Perfil del paciente
+        </a>
+      </div>
+    </header>
+
+    {# ── Summary métricas ─────────────────────────────────────────── #}
+    <section class="pm2-section">
+      <h2 class="pm2-section-title">Resumen de elegibilidad</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+        <div class="pm2-stat-card pm2-stat-success">
+          <div class="pm2-stat-value">{{ summary.eligible_count }}</div>
+          <div class="pm2-stat-label">Elegibles</div>
+        </div>
+        <div class="pm2-stat-card pm2-stat-warning">
+          <div class="pm2-stat-value">{{ summary.missing_data_count }}</div>
+          <div class="pm2-stat-label">Datos faltantes</div>
+        </div>
+        <div class="pm2-stat-card pm2-stat-muted">
+          <div class="pm2-stat-value">{{ summary.not_eligible_count }}</div>
+          <div class="pm2-stat-label">No elegibles</div>
+        </div>
+        <div class="pm2-stat-card pm2-stat-info">
+          <div class="pm2-stat-value">{{ summary.high_confidence_eligible }}</div>
+          <div class="pm2-stat-label">Alta confianza (≥85%)</div>
+        </div>
+      </div>
+    </section>
+
+    {# ── Sección 1: Trials ELEGIBLES ──────────────────────────────── #}
+    <section class="pm2-section pm2-section-success">
+      <h2 class="pm2-section-title">
+        ✅ Trials elegibles
+        <span class="pm2-badge pm2-badge-success">{{ eligible|length }}</span>
+      </h2>
+      {% if eligible %}
+        <div class="pm2-trials-grid">
+          {% for trial in eligible %}
+            <article class="pm2-trial-card pm2-trial-eligible" data-trial="{{ trial.trial_id }}" data-stage="{{ trial.stage }}">
+              <header class="pm2-trial-card-header">
+                <h3 class="pm2-trial-name">{{ trial.trial_id }}</h3>
+                <span class="pm2-confidence pm2-confidence-{% if trial.confidence >= 0.85 %}high{% elif trial.confidence >= 0.6 %}med{% else %}low{% endif %}">
+                  {{ (trial.confidence * 100) | round | int }}% confianza
+                </span>
+              </header>
+              <div class="pm2-trial-meta">
+                <span class="pm2-trial-stage">{{ trial.stage }}</span>
+                {% if trial.subgroup %}
+                  <span class="pm2-trial-subgroup">{{ trial.subgroup }}</span>
+                {% endif %}
+              </div>
+              <p class="pm2-trial-citation">{{ trial.citation }}</p>
+              {% if trial.reasons_eligible %}
+                <ul class="pm2-trial-reasons pm2-trial-reasons-positive">
+                  {% for reason in trial.reasons_eligible[:3] %}
+                    <li>{{ reason }}</li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+              <footer class="pm2-trial-footer">
+                {% if trial.pmid %}
+                  <a href="https://pubmed.ncbi.nlm.nih.gov/{{ trial.pmid }}/" target="_blank" rel="noopener">
+                    PMID {{ trial.pmid }}
+                  </a>
+                {% endif %}
+                {% if trial.nct and trial.nct.startswith('NCT') %}
+                  <a href="https://clinicaltrials.gov/study/{{ trial.nct }}" target="_blank" rel="noopener">
+                    {{ trial.nct }}
+                  </a>
+                {% endif %}
+              </footer>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="pm2-empty-state">No hay trials elegibles según los datos actuales del paciente.</p>
+      {% endif %}
+    </section>
+
+    {# ── Sección 2: Trials CON MISSING DATA ───────────────────────── #}
+    {% if missing_data %}
+      <section class="pm2-section pm2-section-warning">
+        <h2 class="pm2-section-title">
+          ⚠️ Trials con datos faltantes
+          <span class="pm2-badge pm2-badge-warning">{{ missing_data|length }}</span>
+        </h2>
+        <p class="pm2-section-help">
+          Capturar estos campos completaría la evaluación de elegibilidad.
+        </p>
+        <div class="pm2-trials-grid">
+          {% for trial in missing_data[:10] %}
+            <article class="pm2-trial-card pm2-trial-missing" data-trial="{{ trial.trial_id }}" data-stage="{{ trial.stage }}">
+              <header class="pm2-trial-card-header">
+                <h3 class="pm2-trial-name">{{ trial.trial_id }}</h3>
+                <span class="pm2-confidence pm2-confidence-low">
+                  {{ (trial.confidence * 100) | round | int }}% confianza
+                </span>
+              </header>
+              <div class="pm2-trial-meta">
+                <span class="pm2-trial-stage">{{ trial.stage }}</span>
+              </div>
+              {% if trial.missing_data %}
+                <ul class="pm2-trial-missing-list">
+                  {% for item in trial.missing_data[:5] %}
+                    <li>📋 {{ item }}</li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+              <footer class="pm2-trial-footer">
+                <a href="/patient_profile/{{ nss }}#tab-intake" class="pm2-action-link">
+                  Capturar datos →
+                </a>
+              </footer>
+            </article>
+          {% endfor %}
+        </div>
+        {% if missing_data|length > 10 %}
+          <p class="pm2-section-footer">
+            +{{ missing_data|length - 10 }} trials adicionales con datos faltantes.
+          </p>
+        {% endif %}
+      </section>
+    {% endif %}
+
+    {# ── Sección 3: Trials NO ELEGIBLES ───────────────────────────── #}
+    {% if not_eligible %}
+      <section class="pm2-section pm2-section-muted">
+        <h2 class="pm2-section-title">
+          ❌ Trials no elegibles
+          <span class="pm2-badge pm2-badge-muted">{{ not_eligible|length }}</span>
+        </h2>
+        <details class="pm2-collapsible">
+          <summary>Ver razones de exclusión ({{ not_eligible|length }} trials)</summary>
+          <div class="pm2-trials-list">
+            {% for trial in not_eligible %}
+              <div class="pm2-trial-row">
+                <strong>{{ trial.trial_id }}</strong>
+                <span class="pm2-trial-stage-inline">({{ trial.stage }})</span>
+                <ul class="pm2-trial-reasons-inline">
+                  {% for reason in trial.reasons_not_eligible[:2] %}
+                    <li>{{ reason }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+            {% endfor %}
+          </div>
+        </details>
+      </section>
+    {% endif %}
+
+    <footer class="pm2-footer">
+      <p>
+        Catálogo: 47 trials pivotales · Faubot LXXXV ·
+        Análisis basado en criterios verbatim de literatura publicada.
+        <strong>Decisiones finales son responsabilidad del médico tratante.</strong>
+      </p>
+    </footer>
+  </main>
+</div>
+{% endblock %}

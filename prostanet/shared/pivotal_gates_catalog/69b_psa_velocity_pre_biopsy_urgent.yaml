@@ -1,0 +1,180 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 69B: psa_velocity_pre_biopsy_urgent
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXXIV) — Iteración #1 — PSA velocity pre-biopsia.
+#
+# Razón clínica:
+#   PSA velocity (PSAv) en pacientes SIN cirugía o radioterapia previa
+#   es predictor de cáncer agresivo. Velocidades muy elevadas (>20 ng/mL/año)
+#   en períodos cortos (<12 meses) requieren biopsia urgente:
+#
+#   1. **PSA velocity pre-biopsia** (D'Amico criteria + EAU 2026):
+#      - PSAv >0.75 ng/mL/año: biopsia indicada (cualquier PSA)
+#      - PSAv >2.0 ng/mL/año: alta sospecha cáncer agresivo
+#      - PSAv >20 ng/mL/año: biopsia urgente <2 semanas
+#      - PSAv >50 ng/mL/año: presumptive cáncer + considerar workup
+#        extensión simultáneo
+#
+#   2. **Diferencia con gates 53-55** (post-RP/RT kinetics):
+#      - Gates 53-55 requieren `prior_radical_prostatectomy_documented`
+#        o `prior_radiation_therapy_documented`
+#      - Gate 69B aplica en pacientes SIN cirugía/RT previa
+#      - Foco: sospecha pre-diagnóstico
+#
+#   3. **Acción recomendada según velocity**:
+#      - 0.75-2 ng/mL/año: PHI/4Kscore + biopsia electiva 4-8 sem
+#      - 2-20 ng/mL/año: biopsia indicada 2-4 sem + MRI prostática
+#      - >20 ng/mL/año: biopsia urgente <2 sem + extensión simultánea
+#      - >50 ng/mL/año: presumptive cáncer agresivo + biopsia <7 días
+#
+#   Severity: soft_warning — alerta urgencia diagnóstica + acelerar
+#   workup. NO bloquea workup standard, escala timeline.
+#
+#   Coexistencia: gate 69B (pre-biopsia) ≠ gate 53 (BCR post-RP).
+#   Compatible con gate 67B (NEPC pre-bx) si LDH alta también.
+# ──────────────────────────────────────────────────────────────────────
+
+code: psa_velocity_pre_biopsy_urgent
+title: "PSA velocity >20 ng/mL/año + sin biopsia + sin RP/RT previa → biopsia urgente <2 semanas"
+faubot_added_in: "2026-04-26 LXXXIV"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: PSA velocity muy elevada + sin RP/RT previa + sin biopsia
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: psa_velocity_ng_ml_year
+          alias_fields:
+            - psa_velocity
+            - psaV
+            - velocidad_psa
+          threshold: 19  # ≥20 ng/mL/año = numeric_above 19
+        - type: truthy_flag
+          field: primary_biopsy_not_performed
+          alias_fields:
+            - sin_biopsia_primaria
+            - biopsy_not_done_yet
+        - type: all_of_falsy
+          fields:
+            - field: prior_radical_prostatectomy_documented
+              negative_tokens: [no, false, "0", ""]
+            - field: prior_radiation_therapy_documented
+              negative_tokens: [no, false, "0", ""]
+    # Path B: PSA velocity moderada (>2 ng/mL/año) + PSA absoluto elevado
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: psa_velocity_ng_ml_year
+          alias_fields:
+            - psa_velocity
+          threshold: 1.99  # ≥2 ng/mL/año
+        - type: numeric_above
+          field: psa_value
+          alias_fields:
+            - psa
+            - psa_baseline
+          threshold: 9  # ≥10 ng/mL absoluto
+        - type: truthy_flag
+          field: primary_biopsy_not_performed
+    # Path C: clinical flag explicit urgente
+    - type: truthy_flag
+      field: psa_velocity_pre_biopsy_urgent_documented
+      alias_fields:
+        - velocidad_psa_pre_bx_urgente
+
+regimen_codes: []  # Soft warning — escala urgencia diagnóstica
+
+keywords:
+  - PSA velocity pre-biopsia
+  - PSAv elevada
+  - biopsia urgente
+  - sospecha cáncer agresivo
+
+message: |
+  📊 ALERTA: PSA velocity elevada (>20 ng/mL/año) en paciente sin cirugía
+  ni radioterapia previa + sin biopsia primaria → biopsia urgente <2 semanas.
+
+  🔬 INTERPRETACIÓN PSA VELOCITY (PSAv) PRE-BIOPSIA:
+
+  | PSAv (ng/mL/año) | Implicación clínica | Acción |
+  |------------------|---------------------|--------|
+  | <0.35 | Bajo riesgo | Surveillance + repeat PSA 6m |
+  | 0.35-0.75 | Intermedio | PHI/4Kscore + repeat 3m |
+  | 0.75-2.0 | Sospecha cáncer | PHI/4Kscore + biopsia electiva 4-8 sem |
+  | 2-20 | Alta sospecha agresivo | Biopsia 2-4 sem + mpMRI prostática |
+  | **20-50** | **Muy agresivo probable** | **Biopsia urgente <2 sem + workup extensión** |
+  | >50 | Presumptive cáncer agresivo | Biopsia <7 días + extensión simultánea |
+
+  🎯 CONDUCTA RECOMENDADA POR VELOCITY:
+
+  **PSAv 20-50 ng/mL/año** (Path A trigger):
+  1. **Biopsia primaria urgente <2 semanas**:
+     - Transperineal templated o TRUS-MRI fusion
+     - 12-24 cores + lesión target si MRI hecho
+  2. **mpMRI prostática** previo a biopsia:
+     - PI-RADS scoring
+     - Identificar lesión index para target biopsy
+  3. **Workup extensión simultáneo** (no esperar biopsia):
+     - PSA total + free + ratio
+     - Testosterona + LHRH baseline
+     - LDH (NEPC marker — gate 67B)
+     - CT thorax/abdomen/pelvis si PSA muy alto
+     - Bone scan si PSA >20 o síntomas óseos
+  4. **Decisión MDT** post-resultados
+
+  **PSAv >50 ng/mL/año** (presumptive cáncer agresivo):
+  1. **Biopsia <7 días** (urgente)
+  2. **Extensión simultánea**:
+     - PSMA PET preferido (más sensible bulk disease)
+     - Considerar gate 67B pre-NEPC suspicion check
+  3. **Considerar ADT empírico** si presumptive_diagnosis_tier
+     virtually_certain (gate 67C override pathway)
+
+  **Path B (PSAv 2-20 + PSA ≥10)**:
+  1. Biopsia indicada en 2-4 semanas
+  2. PHI o 4Kscore puede refinar decisión (gate 69)
+  3. PSAD si volumen prostático disponible
+  4. mpMRI antes de biopsia
+
+  🎯 INTEGRACIÓN PATHWAYS:
+
+  **Gate 69B + gate 67B** (NEPC pre-bx): si LDH también >400 + PSA muy alto
+  → biopsia metastásica preferida (gate 66 link), sospecha NEPC variant
+
+  **Gate 69B + gate 67C** (cT4 sin biopsia): si DRE T4 + PSAv elevada
+  → biopsia metastásica + presumptive ADT con biopsia agendada 2 sem
+
+  **Gate 69B + gate 68** (urgencia oncológica): si síntomas SCC/visceral crisis
+  → emergency-first + biopsia metastásica simultánea
+
+  ⚠️ DIFERENCIA CON GATES 53-55:
+  - Gate 53/54/55: kinetics POST-RP o POST-RT (BCR scenarios)
+  - Gate 69B: kinetics PRE-DIAGNÓSTICO (pacientes sin cirugía/RT previa)
+  - Mismo helper de cálculo PSA velocity, distinto contexto clínico
+
+  🔬 EVIDENCIA:
+  - **D'Amico JNCI 1995** — PSA velocity pre-treatment criteria
+  - **Carter JNCI 2006** — PSA velocity >2 ng/mL/año mortality
+  - **EAU 2026 §5.1.2** — pre-biopsy risk calculators + PSA velocity
+  - **NCCN Prostate v5.2026 PROS-G** — PSA velocity decision criteria
+  - **Vickers J Urol 2009** — PSA velocity validation
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `psa_velocity_ng_ml_year`: PSA velocity calculada (ng/mL/año)
+  - `psa_value`: PSA total ng/mL
+  - `primary_biopsy_not_performed`: flag sin biopsia
+  - `prior_radical_prostatectomy_documented`: flag negativo (sin RP)
+  - `prior_radiation_therapy_documented`: flag negativo (sin RT)
+  - `psa_velocity_pre_biopsy_urgent_documented`: flag clínico explicit
+
+evidence_tag: psa_velocity_pre_biopsy_d_amico_1995_carter_2006_eau_2026_section_5_1_2
+trial_refs:
+  - "D'Amico JNCI 1995 (PSA velocity criteria)"
+  - "Carter JNCI 2006 (PSA velocity >2 mortality)"
+  - "EAU 2026 §5.1.2 (pre-biopsy calculators)"
+  - "NCCN Prostate v5.2026 PROS-G"
+  - "Vickers J Urol 2009 (PSA velocity validation)"

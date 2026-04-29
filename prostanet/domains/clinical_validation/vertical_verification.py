@@ -44,6 +44,11 @@ TARGET_SCENARIO_FAMILIES = (
     "m1_crpc",
     "post_prostatectomy",
     "recurrence_bcr",
+    # Auditoría #21 (cierre OOS-13): EPIC 9 añadió 18 trayectorias con
+    # `scenario_family="epic9_hardening"` (ref. Auditoría #20 línea 1570).
+    # `_filtered_trajectories` las omitía silenciosamente, provocando que
+    # `run_vertical_verification` reportara 54 seeded_cases vs 72 esperados.
+    "epic9_hardening",
 )
 DIAGNOSTIC_FAMILIES = {"diagnostic_workup", "post_negative_biopsy_followup"}
 LOCALIZED_FAMILIES = {"localized_initial", "active_surveillance"}
@@ -592,16 +597,28 @@ def _build_treatment_assertions(snapshot: dict[str, Any], *, bundle: dict[str, A
         salvage_window = _text(bundle.get("salvage_window_status"))
         state = _text(bundle.get("effective_state") or effective_state)
         if course == "persistent_psa":
-            assertions.append(
-                _assertion(
-                    "persistent_psa_does_not_auto_promote_bcr",
-                    state == "post_prostatectomy",
-                    "post_prostatectomy",
-                    state,
-                    severity="critical",
-                    message="El PSA persistente no debe promoverse solo a recurrencia bioquímica.",
+            if salvage_window == "pending_inputs":
+                assertions.append(
+                    _assertion(
+                        "persistent_psa_pending_inputs_stays_post_prostatectomy",
+                        state == "post_prostatectomy",
+                        "post_prostatectomy",
+                        state,
+                        severity="critical",
+                        message="El PSA persistente sólo debe seguir en post prostatectomía mientras faltan inputs decisivos para cerrar salvage.",
+                    )
                 )
-            )
+            elif salvage_window in {"open", "open_pending_restaging", "closed", "redirect_systemic"}:
+                assertions.append(
+                    _assertion(
+                        "persistent_psa_decisive_context_promotes_bcr",
+                        state == "recurrence_bcr",
+                        "recurrence_bcr",
+                        state,
+                        severity="critical",
+                        message="El PSA persistente con ventana de salvage ya clasificada debe operar como recurrencia bioquímica.",
+                    )
+                )
         if course == "stable_surveillance":
             assertions.append(
                 _assertion(

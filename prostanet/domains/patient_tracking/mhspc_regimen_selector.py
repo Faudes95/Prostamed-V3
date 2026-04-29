@@ -22,6 +22,7 @@ from prostanet.domains.patient_tracking.therapeutic_family_engine import (
     build_sequence_transition_bundle,
     regimen_family_code,
 )
+from prostanet.shared.advanced_support_normalizer import normalize_advanced_support_payload
 from prostanet.shared.gleason_profile import normalize_gleason_profile
 
 
@@ -41,10 +42,36 @@ REGIMEN_COMPONENTS = {
     "ADT_DOCETAXEL": ["ADT", "Docetaxel"],
     "ADT_DOCETAXEL_DAROLUTAMIDE": ["ADT", "Docetaxel", "Darolutamida"],
     "ADT_DOCETAXEL_ABIRATERONE": ["ADT", "Docetaxel", "Abiraterona"],
+    # EPIC 9 Group C (GAP-5) — TALAPRO-3 combina ADT + talazoparib +
+    # enzalutamida en mHSPC HRR-mutado (Agarwal ASCO GU 2025 LBA18). El
+    # scoring trata el régimen como precision-ARPI+PARP y solo lo activa
+    # cuando `hrr_status` es positiva; en el resto de pacientes queda
+    # hard-blocked (evita sugerir PARPi sin indicación biomarker-driven).
+    "ADT_TALAZO_ENZA_HRR": ["ADT", "Talazoparib", "Enzalutamida"],
 }
 DOCETAXEL_TRIPLETS = {
     "ADT_DOCETAXEL_DAROLUTAMIDE",
     "ADT_DOCETAXEL_ABIRATERONE",
+}
+# EPIC 9 Group C (GAP-5) — genes HRR que disparan bonus TALAPRO-3.
+# Lista alineada con TALAPRO-3 protocol (12 genes HRR) + alias canónicos
+# usados en ProstaNet (BRCA1/2, ATM, PALB2, CDK12, CHEK2, FANCA, MLH1,
+# MRE11A, NBN, RAD51B, RAD51C).
+TALAPRO3_HRR_POSITIVE_GENES = {
+    "brca1",
+    "brca2",
+    "atm",
+    "palb2",
+    "cdk12",
+    "chek2",
+    "fanca",
+    "mlh1",
+    "mre11a",
+    "nbn",
+    "rad51b",
+    "rad51c",
+    "hrr_other",
+    "other_hrr",
 }
 
 RANKING_POLICY_VERSION = "mhspc_docetaxel_hierarchical_2026_v2"
@@ -125,6 +152,46 @@ def _modifier_profile(
     frailty = str(payload.get("frailty_status", "Fit") or "Fit").strip()
     child_pugh = str(payload.get("child_pugh_score", "A") or "A").strip().upper()
     egfr = _safe_float(payload.get("egfr"))
+    # EPIC 9 Group A (GAP-1/2/3): geriatric + cardiac discriminators.
+    patient_age = _safe_int(payload.get("patient_age") or payload.get("age"))
+    qtc_baseline_ms = _safe_float(payload.get("qtc_baseline_ms") or payload.get("qtc_ms"))
+    nyha_class = str(payload.get("nyha_class") or "none").strip()
+    lvef_percent = _safe_float(payload.get("lvef_percent"))
+    # EPIC 9 Group C (GAP-5): HRR biomarker profile para TALAPRO-3.
+    # TALAPRO-3 (Agarwal ASCO GU 2025 LBA18) requiere alteración HRR
+    # trazable (12 genes). Sin biomarker positivo, el régimen ADT+
+    # talazoparib+enzalutamida queda hard-blocked para evitar
+    # exposición a PARPi sin indicación precisa.
+    hrr_status_raw = str(
+        payload.get("hrr_status")
+        or payload.get("hrr_result")
+        or ""
+    ).strip().lower()
+    hrr_gene_raw = str(
+        payload.get("hrr_gene")
+        or payload.get("hrr_gene_altered")
+        or payload.get("hrr_genes")
+        or ""
+    ).strip().lower()
+    hrr_positive = False
+    if hrr_status_raw in {"positive", "positivo", "mutated", "mutado", "altered", "hrr+"}:
+        hrr_positive = True
+    if hrr_gene_raw:
+        tokens = {t.strip() for t in hrr_gene_raw.replace(";", ",").split(",") if t.strip()}
+        if tokens & TALAPRO3_HRR_POSITIVE_GENES:
+            hrr_positive = True
+    # Flags explícitos por gen (compat con EPIC 2 captura de germline/somatic).
+    for gene_flag in (
+        "brca1_status",
+        "brca2_status",
+        "atm_status",
+        "palb2_status",
+        "cdk12_status",
+        "chek2_status",
+    ):
+        if str(payload.get(gene_flag) or "").strip().lower() in {"positive", "positivo", "mutated", "mutado", "pathogenic", "patogenico", "patogénico"}:
+            hrr_positive = True
+    hrr_tested = bool(hrr_status_raw) or bool(hrr_gene_raw) or _truthy(payload.get("hrr_testing_performed")) or _truthy(payload.get("germline_testing_performed"))
     structured_metastasis_count = (
         _structured_entry_count(payload.get("bone_site_entries"))
         + _structured_entry_count(payload.get("visceral_site_entries"))
@@ -154,11 +221,25 @@ def _modifier_profile(
         "egfr": egfr,
         "seizure_risk": _truthy(payload.get("comorbidity_seizure")),
         "cardio_risk": _truthy(payload.get("comorbidity_cardio")) or _truthy(payload.get("cv_risk_documented")),
-        "hepatic_risk": child_pugh in {"B", "C"} or _truthy(payload.get("hepatic_risk_factors")),
+        "hepatic_risk": bool((payload.get("hepatic_safety_bundle") or {}).get("hepatic_risk_present")) or child_pugh in {"B", "C"},
+        "active_liver_disease": _truthy(payload.get("active_liver_disease"))
+        or bool((payload.get("hepatic_safety_bundle") or {}).get("hepatic_risk_present")),
         "renal_risk_severe": egfr is not None and egfr < 30,
-        "ddi_reviewed": _truthy(payload.get("drug_interaction_reviewed")),
-        "current_medications_present": bool(str(payload.get("current_medications") or "").strip()),
-        "cognitive_risk": _truthy(payload.get("cognitive_risk")) or frailty.lower() == "frail",
+        "ddi_reviewed": str(payload.get("ddi_review_status") or "").strip().lower() == "completed",
+        "current_medications_present": bool(payload.get("normalized_medication_list")) or bool(str(payload.get("current_medications") or "").strip()),
+        "g8_score": _safe_float(payload.get("g8_score") or docetaxel.get("g8_score")),
+        "mini_cog_score": _safe_float(payload.get("mini_cog_score") or payload.get("mini_cog") or docetaxel.get("mini_cog_score")),
+        "cognitive_risk": bool(
+            docetaxel.get("cognitive_risk")
+            or _truthy(payload.get("cognitive_risk"))
+            or frailty.lower() == "frail"
+        ),
+        "cognitive_risk_source": str(
+            docetaxel.get("cognitive_risk_source")
+            or ("explicit" if _truthy(payload.get("cognitive_risk")) else "frailty_derived" if frailty.lower() == "frail" else "")
+        ),
+        "geriatric_screen_status": str(docetaxel.get("geriatric_screen_status") or "").strip(),
+        "cga_status": str(docetaxel.get("cga_status") or payload.get("cga_status") or "").strip(),
         "fall_risk": _truthy(payload.get("fall_risk")) or frailty.lower() in {"vulnerable", "frail"},
         "rash_history": _truthy(payload.get("history_severe_rash")) or _truthy(payload.get("severe_rash_history")) or _truthy(payload.get("dermatitis_history")),
         "hypothyroidism": _truthy(payload.get("baseline_hypothyroidism")) or _truthy(payload.get("hypothyroidism")),
@@ -173,6 +254,29 @@ def _modifier_profile(
         "has_adverse_tertiary_pattern": bool(gleason_profile.get("has_adverse_tertiary_pattern")),
         "rt_primary_candidate": not _truthy(payload.get("rt_primary_received")),
         "mdt_context": str(payload.get("mdt_context") or ""),
+        # EPIC 9 Group A (GAP-1/2/3): geriatric and cardiac modifiers.
+        # STAMPEDE M1/AA subanálisis >75yr atenúa beneficio ARPI-doblete
+        # (OS HR 0.88 vs 0.61 <75 → penalty adicional al triplete en >=75).
+        "patient_age": patient_age,
+        "elderly_75_plus": patient_age is not None and patient_age >= 75,
+        "frail_85_plus": patient_age is not None and patient_age >= 85,
+        # ENZAMET FDA §5.4: enzalutamide prolonga QTc >20 ms en 2.3%; QTc basal
+        # >470 ms o riesgo de ΔQTc >500 ms bloquea uso relativo.
+        "qtc_baseline_ms": qtc_baseline_ms,
+        "qtc_risk": qtc_baseline_ms is not None and qtc_baseline_ms > 470.0,
+        # COU-AA-302 excluyó NYHA III/IV; FDA Zytiga §5.1 advierte HF clase III-IV.
+        # LVEF <40% indica disfunción moderada-severa independiente de síntomas.
+        "nyha_class": nyha_class,
+        "lvef_percent": lvef_percent,
+        "heart_failure_severe": (
+            nyha_class in {"III", "IV"}
+            or (lvef_percent is not None and lvef_percent < 40.0)
+        ),
+        # EPIC 9 Group C (GAP-5): HRR biomarker gate para TALAPRO-3.
+        "hrr_positive": hrr_positive,
+        "hrr_tested": hrr_tested,
+        "hrr_status_raw": hrr_status_raw,
+        "hrr_gene_raw": hrr_gene_raw,
     }
 
 
@@ -184,8 +288,12 @@ def _regimen_profile(regimen_code: str) -> dict[str, Any]:
             if "DAROLUTAMIDE" in regimen_code
             else "abiraterone"
             if "ABIRATERONE" in regimen_code
+            # EPIC 9 Group C (GAP-5) — TALAPRO-3 incluye enzalutamida
+            # como backbone ARPI; clasificar el código antes de
+            # `ADT_ENZALUTAMIDE` puro para mantener la semántica
+            # precisa del par talazoparib+enzalutamida.
             else "enzalutamide"
-            if regimen_code == "ADT_ENZALUTAMIDE"
+            if regimen_code in {"ADT_ENZALUTAMIDE", "ADT_TALAZO_ENZA_HRR"}
             else "apalutamide"
             if regimen_code == "ADT_APALUTAMIDE"
             else "none"
@@ -193,6 +301,9 @@ def _regimen_profile(regimen_code: str) -> dict[str, Any]:
             else "unknown"
         ),
         "requires_steroid": "ABIRATERONE" in regimen_code,
+        # EPIC 9 Group C (GAP-5) — flag precision-parp para tratamiento
+        # diferenciado en surfacing y evidencia TALAPRO-3.
+        "has_parp": regimen_code == "ADT_TALAZO_ENZA_HRR",
     }
 
 
@@ -215,13 +326,19 @@ def _latitude_like(modifiers: dict[str, Any]) -> bool:
 
 
 def _abiraterone_override_eligible(phenotype: dict[str, Any], modifiers: dict[str, Any]) -> bool:
+    # LATITUDE incluyó pacientes con ≥2 de {Gleason ≥8, ≥3 metástasis óseas,
+    # metástasis visceral medible}. Las metástasis viscerales NO eran un
+    # criterio obligatorio. Tampoco lo era el riesgo convulsivo (ese gate
+    # estaba presente sólo para justificar desplazar a darolutamida en su
+    # nicho de seguridad CNS). Para que el override dispare en un perfil
+    # LATITUDE clásico (Gleason 9 + ≥3 metástasis óseas + sin comorbilidad
+    # hepática/cardio/edema/esteroide + Child-Pugh A + apto + ECOG ≤1) basta
+    # con `_latitude_like` y un perfil de seguridad limpio (BUG-06-NEW).
     return bool(
         phenotype["state"] == "mcspc_high_volume_sync"
         and modifiers["docetaxel_default_intensification"] != "yes"
-        and modifiers["seizure_risk"]
         and _latitude_like(modifiers)
         and modifiers["gleason_score"] >= 8
-        and modifiers["visceral_metastases"]
         and modifiers["child_pugh"] == "A"
         and not modifiers["hepatic_risk"]
         and not modifiers["cardio_risk"]
@@ -241,11 +358,17 @@ def _trial_fit(regimen_code: str, phenotype: dict[str, Any], modifiers: dict[str
     if regimen_code == "ADT_DOCETAXEL_DAROLUTAMIDE":
         docetaxel_fit = str(docetaxel_trial_fit.get("arasens_like") or "no")
         if phenotype["is_high_volume"] and docetaxel_fit in {"matched", "partial"}:
-            fit = "matched" if phenotype["is_sync"] and docetaxel_fit == "matched" else "partial"
+            # ARASENS enrolled both sincrónico y metacrónico de alto volumen;
+            # los subgrupos preespecificados mostraron beneficio en SG
+            # consistente con independencia del momento de la metástasis. No
+            # debe penalizarse el encaje a "partial" sólo por ser metacrónico
+            # cuando la aptitud a docetaxel es plena (BUG-03-NEW).
+            fit = "matched" if docetaxel_fit == "matched" else "partial"
             rationale = (
-                "ARASENS es trial-like en alto volumen con aptitud a docetaxel."
+                "ARASENS es trial-like en alto volumen con aptitud a docetaxel, "
+                "independientemente de si la enfermedad es sincrónica o metacrónica."
                 if fit == "matched"
-                else "ARASENS sigue siendo la referencia más cercana en alto volumen metacrónico apto para docetaxel."
+                else "ARASENS sigue siendo la referencia más cercana en alto volumen apto para docetaxel."
             )
     elif regimen_code == "ADT_DOCETAXEL_ABIRATERONE":
         docetaxel_fit = str(docetaxel_trial_fit.get("peace1_like") or "no")
@@ -456,6 +579,11 @@ def _apply_modifiers(
     docetaxel_default_intensification = str(modifiers.get("docetaxel_default_intensification") or "no")
     reasons_for: list[str] = []
     reasons_against: list[str] = []
+    # BUG ERR-13: keep data-quality (captura incompleta / laboratorios vencidos /
+    # revisiones pendientes) fuera de ``reasons_against``. Esa lista debe llevar
+    # únicamente razones clínicas duras para que la UI no presente "Falta
+    # documentar interacciones" como una contraindicación.
+    data_quality_caveats: list[str] = []
     hard_block = False
     safety_modifiers_applied: list[str] = []
     clinical_priority_components = {
@@ -494,7 +622,9 @@ def _apply_modifiers(
             reasons_for.append(str(arpi_metadata.get("benefit_basis") or ""))
         if arpi_metadata.get("required_missing_fields") or arpi_metadata.get("stale_inputs"):
             clinical_priority_components["capture_completeness_penalty"] -= 18.0
-            reasons_against.append(
+            # BUG ERR-13: preferencia provisional por captura incompleta es un
+            # caveat de calidad de datos, no una contraindicación clínica.
+            data_quality_caveats.append(
                 "La preferencia molecular ARPI sigue provisional hasta completar: "
                 + ", ".join(
                     list(arpi_metadata.get("required_missing_fields") or [])
@@ -521,13 +651,18 @@ def _apply_modifiers(
     elif phenotype["state"] == "mcspc_high_volume_metachronous":
         if profile["has_docetaxel"]:
             if docetaxel_default_intensification == "yes":
-                clinical_priority_components["phenotype_bonus"] += 10.0
-                reasons_for.append("El alto volumen metacrónico mantiene elegibilidad a intensificación fuerte si la aptitud a docetaxel se conserva.")
+                # ARASENS prespecificó tanto sincrónico como metacrónico y los
+                # subgrupos mantuvieron beneficio en SG. Por eso el triplete
+                # debe competir con el mismo peso fenotípico (+14) que en HV
+                # sincrónico cuando la aptitud a docetaxel es plena
+                # (BUG-03-NEW).
+                clinical_priority_components["phenotype_bonus"] += 14.0
+                reasons_for.append("El alto volumen metacrónico mantiene discusión real de triplete cuando docetaxel es clínicamente factible, con ARASENS como respaldo prespecificado.")
             elif docetaxel_default_intensification == "conditional":
-                clinical_priority_components["phenotype_bonus"] += 2.0
+                clinical_priority_components["phenotype_bonus"] += 3.0
                 reasons_against.append("En alto volumen metacrónico el docetaxel puede ser una intensificación condicional, pero no debe liderar por defecto.")
             else:
-                clinical_priority_components["phenotype_bonus"] -= 7.0
+                clinical_priority_components["phenotype_bonus"] -= 8.0
                 reasons_against.append("En alto volumen metacrónico no apto a docetaxel, el triplete deja de ser la vía principal.")
         else:
             clinical_priority_components["phenotype_bonus"] += 8.0
@@ -551,17 +686,30 @@ def _apply_modifiers(
         if docetaxel_base_eligibility == "contraindicated":
             clinical_priority_components["safety_penalty"] -= 60.0
             hard_block = True
-            reasons_against.extend(modifiers["docetaxel"].get("docetaxel_hard_stop_reasons") or ["No apto para docetaxel."])
-            reasons_against.extend(modifiers.get("docetaxel_label_safety_reasons") or [])
+            # Deduplicate: the same hepatic-reason string is pushed to both
+            # ``docetaxel_hard_stop_reasons`` and ``docetaxel_label_safety_reasons``
+            # in clinical_scores.docetaxel_fitness, so two extends used to
+            # produce the same string twice (BUG ERR-07).
+            seen_reasons = set(reasons_against)
+            for reason in (modifiers["docetaxel"].get("docetaxel_hard_stop_reasons") or ["No apto para docetaxel."]):
+                if reason not in seen_reasons:
+                    reasons_against.append(reason)
+                    seen_reasons.add(reason)
+            for reason in (modifiers.get("docetaxel_label_safety_reasons") or []):
+                if reason not in seen_reasons:
+                    reasons_against.append(reason)
+                    seen_reasons.add(reason)
         elif modifiers.get("docetaxel_verification_status") in {"pending_labs", "stale_labs"} and modifiers.get("docetaxel_required_now"):
             penalty = 24.0 if regimen_code != "ADT_DOCETAXEL" else 10.0
             clinical_priority_components["safety_penalty"] -= penalty
-            reasons_against.append(
+            # BUG ERR-13: laboratorios vencidos o pendientes son caveats de
+            # calidad de datos — no son contraindicaciones clínicas.
+            data_quality_caveats.append(
                 "La elegibilidad actual a docetaxel sigue pendiente de validar con laboratorios vigentes; el triplete no debe cerrarse como líder todavía."
                 if modifiers.get("docetaxel_verification_status") == "pending_labs"
                 else "Los laboratorios de elegibilidad a docetaxel están vencidos; el triplete no debe cerrarse hasta actualizar la verificación."
             )
-            reasons_against.extend(modifiers.get("docetaxel_stale_inputs") or modifiers.get("docetaxel_missing_inputs") or [])
+            data_quality_caveats.extend(modifiers.get("docetaxel_stale_inputs") or modifiers.get("docetaxel_missing_inputs") or [])
         elif docetaxel_default_intensification == "conditional":
             penalty = 18.0 if regimen_code != "ADT_DOCETAXEL" else 8.0
             clinical_priority_components["toxicity_penalty"] -= penalty
@@ -570,12 +718,66 @@ def _apply_modifiers(
                 if regimen_code != "ADT_DOCETAXEL"
                 else "ADT + docetaxel sigue siendo posible con cautela, pero no debe imponerse sobre opciones mejor alineadas."
             )
+        # EPIC 9 Group B (GAP-4) — PEACE-1 validó el triplete ADT+docetaxel+
+        # abiraterona EXCLUSIVAMENTE en mHSPC de novo/sincrónico de alto volumen
+        # (Fizazi *Lancet* 2022;399:1695); extrapolar a metacrónico u
+        # oligometastásico no tiene base prospectiva. El matrix ya lo marca
+        # `triplet_fit="not_applicable"` en mcspc_high_volume_metachronous
+        # (arpi_benefit_matrix.py:164-180); aquí reforzamos con penalty
+        # estructural −30 (subido desde −20) para evitar liderazgo por inercia.
         if regimen_code == "ADT_DOCETAXEL_ABIRATERONE" and phenotype["state"] != "mcspc_high_volume_sync":
-            clinical_priority_components["phenotype_bonus"] -= 20.0
-            reasons_against.append("PEACE-1 no debe extrapolarse como backbone principal fuera del alto volumen sincrónico/de novo.")
+            clinical_priority_components["phenotype_bonus"] -= 30.0
+            reasons_against.append("PEACE-1 solo validó el triplete en mHSPC de novo/sincrónico de alto volumen; no debe extrapolarse a metacrónico ni oligometastásico.")
         if regimen_code == "ADT_DOCETAXEL" and not phenotype["is_high_volume"]:
             clinical_priority_components["phenotype_bonus"] -= 18.0
             reasons_against.append("ADT + docetaxel no debe liderar como backbone visible fuera del alto volumen.")
+        # EPIC 9 Group A (GAP-1): STAMPEDE M1/AA subanálisis >75yr atenúa
+        # beneficio ARPI-doblete (OS HR 0.88 vs 0.61 <75); en triplete esta
+        # atenuación + toxicidad docetaxel justifica penalty adicional. En
+        # ≥85yr o frágil, hard-block el triplete.
+        if regimen_code in DOCETAXEL_TRIPLETS:
+            if modifiers.get("frail_85_plus"):
+                clinical_priority_components["safety_penalty"] -= 30.0
+                hard_block = True
+                reasons_against.append(
+                    "Edad ≥85 años (o fragilidad declarada en ese grupo) contraindica el triplete por carga toxicológica acumulada; preferir doblete o ADT solo."
+                )
+                safety_modifiers_applied.append("frail_85_plus")
+            elif modifiers.get("elderly_75_plus"):
+                clinical_priority_components["phenotype_bonus"] -= 6.0
+                reasons_against.append(
+                    "Edad ≥75 años atenúa el beneficio OS del triplete (STAMPEDE M1/AA subanálisis HR 0.88 vs 0.61 <75); validar aptitud geriátrica antes de liderar con triplete."
+                )
+                safety_modifiers_applied.append("elderly_75_plus")
+
+    # EPIC 9 Group C (GAP-5) — TALAPRO-3 gate biomarker-driven.
+    # TALAPRO-3 (Agarwal ASCO GU 2025 LBA18) demostró rPFS HR≈0.67 con
+    # talazoparib + enzalutamida + ADT vs placebo + enzalutamida + ADT
+    # en mHSPC con alteración HRR (12 genes: BRCA1/2, ATM, PALB2, CDK12,
+    # CHEK2, FANCA, MLH1, MRE11A, NBN, RAD51B, RAD51C). El régimen solo
+    # entra al scoring activo cuando HRR es positiva y trazable; sin
+    # biomarker confirmado queda hard-blocked para evitar PARPi sin
+    # indicación precisa. Bonus +22 sobre `phenotype_bonus` lo coloca en
+    # cabecera junto a dobletes convencionales en HRR+.
+    if regimen_code == "ADT_TALAZO_ENZA_HRR":
+        if modifiers.get("hrr_positive"):
+            clinical_priority_components["phenotype_bonus"] += 22.0
+            reasons_for.append(
+                "Alteración HRR confirmada (BRCA1/2/ATM/PALB2/otros HRR) habilita el doblete precision-PARPi+ARPI TALAPRO-3 (Agarwal ASCO GU 2025 LBA18; rPFS HR≈0.67)."
+            )
+            safety_modifiers_applied.append("hrr_positive")
+        else:
+            clinical_priority_components["safety_penalty"] -= 50.0
+            hard_block = True
+            if modifiers.get("hrr_tested"):
+                reasons_against.append(
+                    "TALAPRO-3 requiere alteración HRR (BRCA1/2/ATM/PALB2/CDK12/CHEK2/FANCA/MLH1/MRE11A/NBN/RAD51B/RAD51C); el resultado HRR negativo/no-HRR bloquea el régimen."
+                )
+            else:
+                reasons_against.append(
+                    "TALAPRO-3 requiere test HRR documentado (germline y/o somático). Sin biomarker trazable no se ofrece talazoparib+enzalutamida; priorizar captura de HRR antes de considerar esta ruta de precisión."
+                )
+            safety_modifiers_applied.append("hrr_negative_or_untested")
 
     if regimen_code.endswith("DAROLUTAMIDE"):
         if modifiers["seizure_risk"] or modifiers["cognitive_risk"] or modifiers["fall_risk"]:
@@ -598,13 +800,28 @@ def _apply_modifiers(
             reasons_for.append("El riesgo cardiovascular favorece evitar ARPI con mayor carga de eventos centrales o esteroides.")
             safety_modifiers_applied.append("cardio_risk")
         if modifiers["renal_risk_severe"]:
-            clinical_priority_components["safety_penalty"] -= 18.0
+            clinical_priority_components["safety_penalty"] -= 22.0
             reasons_against.append("La insuficiencia renal grave desprioriza darolutamida.")
             safety_modifiers_applied.append("renal_risk_severe")
         if modifiers["child_pugh"] in {"B", "C"}:
-            clinical_priority_components["safety_penalty"] -= 18.0
-            reasons_against.append("Child-Pugh B/C desprioriza darolutamida.")
-            safety_modifiers_applied.append("hepatic_risk")
+            # Child-Pugh B/C combinado con hepatopatía activa contraindica
+            # darolutamida: el ARPI tiene metabolismo hepático predominante,
+            # en paralelo al hard-block que abiraterona ya aplica al perfil
+            # hepático equivalente (BUG-04-NEW). Sin hepatopatía activa el
+            # Child-Pugh B/C sigue sumando una penalidad fuerte pero no
+            # bloquea, dado que el patrón clínico puede aún permitir
+            # vigilancia estrecha.
+            if modifiers.get("active_liver_disease"):
+                clinical_priority_components["safety_penalty"] -= 45.0
+                hard_block = True
+                reasons_against.append(
+                    "Child-Pugh B/C con hepatopatía activa contraindica darolutamida por metabolismo hepático predominante."
+                )
+                safety_modifiers_applied.append("hepatic_risk")
+            else:
+                clinical_priority_components["safety_penalty"] -= 22.0
+                reasons_against.append("Child-Pugh B/C desprioriza darolutamida.")
+                safety_modifiers_applied.append("hepatic_risk")
         if not any([modifiers["seizure_risk"], modifiers["cognitive_risk"], modifiers["fall_risk"], modifiers["cardio_risk"]]):
             reasons_for.append("Darolutamida sigue siendo una opción válida, pero no debe liderar por inercia sin ventajas clínicas concretas.")
 
@@ -625,6 +842,14 @@ def _apply_modifiers(
         else:
             clinical_priority_components["phenotype_bonus"] += 4.0
             reasons_for.append("Enzalutamida es guideline-consistent si no existen banderas neurológicas.")
+        # EPIC 9 Group A (GAP-2): QTc basal >470 ms despioriza enzalutamida
+        # (ENZAMET FDA §5.4: prolongación QTc >20 ms en 2.3% de pacientes).
+        if modifiers.get("qtc_risk"):
+            clinical_priority_components["safety_penalty"] -= 12.0
+            reasons_against.append(
+                "QTc basal >470 ms eleva el riesgo de prolongación clínicamente relevante con enzalutamida; considerar darolutamida."
+            )
+            safety_modifiers_applied.append("qtc_risk")
 
     if regimen_code == "ADT_APALUTAMIDE":
         if modifiers["seizure_risk"]:
@@ -641,13 +866,64 @@ def _apply_modifiers(
         elif modifiers["frailty_status"].lower() != "frail":
             clinical_priority_components["phenotype_bonus"] += 3.0
             reasons_for.append("Apalutamida sigue siendo una opción sólida si no hay rash severo ni fragilidad marcada.")
+        # EPIC 9 Group A (GAP-2): QTc basal >470 ms también afecta apalutamida
+        # (FDA Erleada §5.4: prolongación QTc reportada, menor magnitud que
+        # enzalutamida pero clínicamente relevante).
+        if modifiers.get("qtc_risk"):
+            clinical_priority_components["safety_penalty"] -= 8.0
+            reasons_against.append(
+                "QTc basal >470 ms también restringe apalutamida; darolutamida es preferible en este perfil."
+            )
+            safety_modifiers_applied.append("qtc_risk")
 
     if regimen_code in {"ADT_ABIRATERONE", "ADT_DOCETAXEL_ABIRATERONE"}:
+        # EPIC 9 Group B (GAP-7) — Child-Pugh B/C dispara hard-block de
+        # abiraterona por sí solo, sin requerir `active_liver_disease`. Patrón
+        # canónico clonado desde `m1_crpc/rules_nccn.py:121`:
+        #     abiraterone_hard_block = hepatic_risk
+        # donde `hepatic_risk = hepatic_bundle.hepatic_risk_present OR
+        # child_pugh in {"B","C"}`. FDA Zytiga §2.3 recomienda reducción de
+        # dosis en CP-B y evitar en CP-C; el sistema adopta postura
+        # conservadora (hard-block en CP-B/C) siguiendo NCCN PROS-G que
+        # refleja práctica clínica oncológica. El modificador
+        # `modifiers["hepatic_risk"]` ya cubre ambos disparadores (line 163);
+        # el `or modifiers["child_pugh"] in {"B","C"}` redundante queda
+        # explícito como defensa en profundidad por si la normalización del
+        # hepatic_safety_bundle fallase.
         if modifiers["hepatic_risk"] or modifiers["child_pugh"] in {"B", "C"}:
             clinical_priority_components["safety_penalty"] -= 45.0
             hard_block = True
-            reasons_against.append("El riesgo hepático clínicamente relevante bloquea abiraterona.")
+            reasons_against.append("Child-Pugh B/C o riesgo hepático clínicamente relevante dispara hard-block de abiraterona (FDA Zytiga §2.3/§5.1; canonical pattern m1_crpc/rules_nccn.py:121).")
             safety_modifiers_applied.append("hepatic_risk")
+        # EPIC 9 Group A (GAP-3): insuficiencia cardíaca NYHA III/IV o
+        # LVEF <40% despriorizan abiraterona (COU-AA-302 excluyó NYHA III/IV;
+        # FDA Zytiga §5.1 advierte precaución en HF clase III-IV).
+        if modifiers.get("heart_failure_severe"):
+            clinical_priority_components["safety_penalty"] -= 18.0
+            reasons_against.append(
+                "Insuficiencia cardíaca NYHA III/IV o LVEF <40% desaconseja abiraterona por sobrecarga mineralocorticoide."
+            )
+            safety_modifiers_applied.append("heart_failure_severe")
+        if modifiers["seizure_risk"] or modifiers["cognitive_risk"]:
+            penalty = 22.0 if regimen_code == "ADT_DOCETAXEL_ABIRATERONE" else 12.0
+            clinical_priority_components["toxicity_penalty"] -= penalty
+            reasons_against.append(
+                "La vulnerabilidad neurocognitiva/CNS favorece un backbone con darolutamida sobre abiraterona."
+                if regimen_code == "ADT_DOCETAXEL_ABIRATERONE"
+                else "La vulnerabilidad neurocognitiva/CNS reduce la preferencia por abiraterona."
+            )
+            safety_modifiers_applied.extend(
+                item for item in ["seizure_risk", "cognitive_risk"] if modifiers.get(item)
+            )
+        if str(modifiers.get("geriatric_screen_status") or "") in {"requires_cga", "unresolved_impairment", "adapted_treatment_required"}:
+            penalty = 26.0 if regimen_code == "ADT_DOCETAXEL_ABIRATERONE" else 14.0
+            clinical_priority_components["toxicity_penalty"] -= penalty
+            reasons_against.append(
+                "La evaluación geriátrica/neurocognitiva no resuelta impide que el triplete con abiraterona lidere hoy."
+                if regimen_code == "ADT_DOCETAXEL_ABIRATERONE"
+                else "La evaluación geriátrica/neurocognitiva no resuelta desprioriza abiraterona."
+            )
+            safety_modifiers_applied.append("geriatric_screen_status")
         if modifiers["cardio_risk"] or modifiers["edema_risk"] or modifiers["steroid_risk"]:
             clinical_priority_components["safety_penalty"] -= 16.0
             reasons_against.append("El perfil cardiovascular/metabólico y la carga de esteroides despriorizan abiraterona.")
@@ -680,22 +956,24 @@ def _apply_modifiers(
         safety_modifiers_applied.append("docetaxel_fit_with_caution")
 
     if not modifiers["ddi_reviewed"]:
+        # BUG ERR-13: "Falta documentar interacciones" es un data-quality caveat,
+        # no una contraindicación clínica — se mueve fuera de ``reasons_against``.
         major_ddi_context = modifiers.get("current_medications_present")
         if regimen_code == "ADT_ENZALUTAMIDE":
             clinical_priority_components["toxicity_penalty"] -= 12.0 if major_ddi_context else 6.0
-            reasons_against.append("Falta documentar revisión de interacciones farmacológicas con un ARPI de mayor carga CYP.")
+            data_quality_caveats.append("Falta documentar revisión de interacciones farmacológicas con un ARPI de mayor carga CYP.")
             safety_modifiers_applied.append("ddi_not_reviewed")
         elif regimen_code == "ADT_APALUTAMIDE":
             clinical_priority_components["toxicity_penalty"] -= 10.0 if major_ddi_context else 5.0
-            reasons_against.append("Falta documentar revisión de interacciones farmacológicas antes de apalutamida.")
+            data_quality_caveats.append("Falta documentar revisión de interacciones farmacológicas antes de apalutamida.")
             safety_modifiers_applied.append("ddi_not_reviewed")
         elif regimen_code in {"ADT_ABIRATERONE", "ADT_DOCETAXEL_ABIRATERONE"}:
             clinical_priority_components["toxicity_penalty"] -= 6.0 if major_ddi_context else 3.0
-            reasons_against.append("La revisión DDI pendiente reduce la seguridad operativa de abiraterona.")
+            data_quality_caveats.append("La revisión DDI pendiente reduce la seguridad operativa de abiraterona.")
             safety_modifiers_applied.append("ddi_not_reviewed")
         elif regimen_code in {"ADT_DAROLUTAMIDE", "ADT_DOCETAXEL_DAROLUTAMIDE"}:
             clinical_priority_components["toxicity_penalty"] -= 4.0 if major_ddi_context else 2.0
-            reasons_against.append("Conviene cerrar la revisión de interacciones antes de darolutamida.")
+            data_quality_caveats.append("Conviene cerrar la revisión de interacciones antes de darolutamida.")
             safety_modifiers_applied.append("ddi_not_reviewed")
 
     score = _neutral_base_score(regimen_code) + sum(float(value) for value in clinical_priority_components.values())
@@ -707,6 +985,7 @@ def _apply_modifiers(
         "hard_block": hard_block,
         "reasons_for": reasons_for,
         "reasons_against": reasons_against,
+        "data_quality_caveats": data_quality_caveats,
         "trial_fit": trial_fit,
         "evidence_maturity": evidence_maturity,
         "clinical_priority_components": clinical_priority_components,
@@ -731,15 +1010,22 @@ def _build_recommendation(regimen_code: str, evaluation: dict[str, Any]) -> dict
     delivery = _regimen_delivery_summary(components)
     description = _format_component_summary(components) or _regimen_label(regimen_code)
     preference_confidence = str(evaluation.get("preference_confidence") or "definitive")
-    is_definitive_preferred = preference_confidence == "definitive"
     return {
         "regimen_code": regimen_code,
         "regimen_label": _regimen_label(regimen_code),
         "description": description,
-        "priority": "preferred" if is_definitive_preferred else "eligible",
-        "is_preferred": is_definitive_preferred,
+        # ``priority`` and ``is_preferred`` are ranking outcomes, not capture
+        # completeness flags. They are seeded as eligible/False here and
+        # stamped to preferred/True on the winning regimen after the final
+        # sort in :func:`select_mhspc_frontline_regimens`. ``preference_confidence``
+        # remains the canonical signal for provisional ARPI captures.
+        "priority": "eligible",
+        "is_preferred": False,
         "selection_rationale": list(evaluation["reasons_for"]),
         "contraindication_reasons": list(evaluation["reasons_against"]),
+        # BUG ERR-13: data quality caveats se exponen aparte para que la UI los
+        # muestre como "Pendientes de captura" y no como contraindicaciones.
+        "data_quality_caveats": list(evaluation.get("data_quality_caveats") or []),
         "pivotal_trial_fit": dict(evaluation["trial_fit"]),
         "guideline_basis": ["NCCN 5.2026 mHSPC", "EAU 2026 mHSPC"],
         "component_drugs": components,
@@ -784,6 +1070,10 @@ def _eligible_treatment_item(recommendation: dict[str, Any], *, priority: str, n
         summary_parts.append(component_summary)
     return {
         "name": recommendation.get("regimen_label", ""),
+        # BUG ERR-05: expose ``regimen_label`` as a first-class field so
+        # consumers that look it up per-row (wizard, comparative grid) stop
+        # falling back to an empty string.
+        "regimen_label": recommendation.get("regimen_label", ""),
         "description": recommendation.get("description") or recommendation.get("regimen_label", ""),
         "priority": priority,
         "notes": " ".join(part for part in summary_parts if part).strip(),
@@ -795,6 +1085,7 @@ def _eligible_treatment_item(recommendation: dict[str, Any], *, priority: str, n
         "imss_key": recommendation.get("imss_key", ""),
         "selection_rationale": list(recommendation.get("selection_rationale") or []),
         "contraindication_reasons": list(recommendation.get("contraindication_reasons") or []),
+        "data_quality_caveats": list(recommendation.get("data_quality_caveats") or []),
         "pivotal_trial_fit": recommendation.get("pivotal_trial_fit", {}),
         "clinical_priority_components": dict(recommendation.get("clinical_priority_components") or {}),
         "evidence_maturity": dict(recommendation.get("evidence_maturity") or {}),
@@ -839,18 +1130,50 @@ def _build_ranking_trace(
     alternatives: list[dict[str, Any]],
     rejected: list[dict[str, Any]],
     modifiers: dict[str, Any],
+    fallback_status: str = "normal",
 ) -> dict[str, Any]:
     if not preferred:
+        # BUG ERR-08: when no leader was found we used to return empty strings
+        # for winner_reason / why_not_* which left the front-end without any
+        # explanation precisely in the hardest cases. Populate an explicit
+        # fallback narrative so the UI can show *why* there is no preferred
+        # regimen, together with the per-regimen hard_blocks dictionary.
+        hard_blocks = {
+            item["regimen_code"]: list(item.get("contraindication_reasons") or [])
+            for item in rejected
+            if item.get("hard_block")
+        }
+        all_blocked = fallback_status == "no_candidate" or (
+            bool(rejected) and len(hard_blocks) == len(rejected)
+        )
+        fallback_msg = (
+            "Ningún régimen supera las contraindicaciones duras actuales — escalar a revisión MDT."
+            if all_blocked
+            else "Ningún régimen superó el umbral de score clínico — requiere revisión MDT."
+        )
+        abiraterone_entry = _find_regimen_entry(alternatives, rejected, "ADT_ABIRATERONE")
+        darolutamide_entry = _find_regimen_entry(alternatives, rejected, "ADT_DAROLUTAMIDE")
+        triplet_candidates = [
+            item
+            for item in alternatives + rejected
+            if _is_docetaxel_triplet(str(item.get("regimen_code") or ""))
+        ]
+        triplet_entry = max(
+            triplet_candidates,
+            key=lambda item: float(item.get("score") or 0.0),
+            default={},
+        )
         return {
             "policy_version": RANKING_POLICY_VERSION,
             "institutional_weight": INSTITUTIONAL_WEIGHT_POLICY,
-            "winner_reason": "",
-            "why_not_abiraterone": "",
-            "why_not_darolutamide": "",
-            "why_not_triplet": "",
-            "hard_blocks": {},
+            "winner_reason": fallback_msg,
+            "why_not_abiraterone": _summarize_non_leader(abiraterone_entry, leader_score=0.0),
+            "why_not_darolutamide": _summarize_non_leader(darolutamide_entry, leader_score=0.0),
+            "why_not_triplet": _summarize_non_leader(triplet_entry, leader_score=0.0) if triplet_entry else "Triplete no viable — ver bloqueos de docetaxel.",
+            "hard_blocks": hard_blocks,
             "evidence_basis": [],
             "safety_basis": [],
+            "fallback_status": fallback_status or ("no_candidate" if all_blocked else "no_threshold"),
             "docetaxel_base_eligibility": modifiers.get("docetaxel_base_eligibility", ""),
             "docetaxel_verification_status": modifiers.get("docetaxel_verification_status", ""),
             "docetaxel_block_type": modifiers.get("docetaxel_block_type", ""),
@@ -882,6 +1205,7 @@ def _build_ranking_trace(
     return {
         "policy_version": RANKING_POLICY_VERSION,
         "institutional_weight": INSTITUTIONAL_WEIGHT_POLICY,
+        "fallback_status": fallback_status or "normal",
         "winner_reason": " ".join(list(preferred.get("selection_rationale") or [])[:3]).strip(),
         "why_not_abiraterone": (
             "Abiraterona es el régimen líder actual."
@@ -924,7 +1248,7 @@ def select_mhspc_frontline_regimens(
     *,
     docetaxel_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    payload = payload or {}
+    payload = normalize_advanced_support_payload(payload or {}, state=state)
     get_mhspc_frontline_reference()
     phenotype = _phenotype_profile(state, payload)
     modifiers = _modifier_profile(payload, state=phenotype["state"], docetaxel_bundle=docetaxel_bundle)
@@ -983,13 +1307,70 @@ def select_mhspc_frontline_regimens(
     scored.sort(key=lambda item: (float(item.get("score") or 0), item.get("regimen_label", "")), reverse=True)
     rejected.sort(key=lambda item: (float(item.get("score") or 0), item.get("regimen_label", "")))
 
-    preferred = dict(scored[0]) if scored else {}
+    fallback_status = "normal"
+    no_preferred_reason = ""
+    if scored:
+        # Stamp the winner. ``_build_recommendation`` seeds every regimen as
+        # ``eligible``/``False``; the final sort decides who is preferred.
+        # ``eligibility_status`` is added so the local ``preferred`` dict
+        # matches the shape produced by ``build_global_ranking`` for the
+        # comparative bundle, keeping consumers like ``patient_profile.html``
+        # consistent regardless of which path populates the field.
+        scored[0]["is_preferred"] = True
+        scored[0]["priority"] = "preferred"
+        scored[0]["eligibility_status"] = "preferred"
+        preferred = dict(scored[0])
+    else:
+        # BUG ERR-01: when every regimen is either hard-blocked or below the
+        # safety/score threshold, the selector used to return ``preferred = {}``
+        # leaving the UI with an empty recommendation. Recover in two tiers:
+        #   1) If at least one rejected regimen is NOT hard-blocked (it only
+        #      failed the score threshold) promote the best of that subset as
+        #      a ``conditional_fallback`` so the clinician still receives a
+        #      candidate, flagged as provisional.
+        #   2) If every regimen is hard-blocked, keep ``preferred = {}`` but
+        #      populate ``no_preferred_reason`` with the aggregated hard-block
+        #      explanations so the front-end explains why there is no leader.
+        soft_candidates = [item for item in rejected if not item.get("hard_block")]
+        if soft_candidates:
+            soft_candidates.sort(
+                key=lambda item: (float(item.get("score") or 0), item.get("regimen_label", "")),
+                reverse=True,
+            )
+            fallback = dict(soft_candidates[0])
+            fallback["is_preferred"] = True
+            fallback["priority"] = "conditional_fallback"
+            fallback["eligibility_status"] = "conditional_fallback"
+            fallback["preference_confidence"] = "provisional"
+            fallback["fallback_reason"] = (
+                "Ningún régimen superó el umbral de score clínico — promoción condicional tras revisión MDT."
+            )
+            preferred = fallback
+            fallback_status = "soft_fallback"
+            # Remove the promoted candidate from ``rejected`` so it is not
+            # counted twice in downstream consumers.
+            rejected = [item for item in rejected if item.get("regimen_code") != fallback.get("regimen_code")]
+        else:
+            preferred = {}
+            fallback_status = "no_candidate"
+            aggregated_reasons: list[str] = []
+            seen_fallback_reasons: set[str] = set()
+            for item in rejected:
+                for reason in list(item.get("contraindication_reasons") or []):
+                    if reason and reason not in seen_fallback_reasons:
+                        aggregated_reasons.append(reason)
+                        seen_fallback_reasons.add(reason)
+            no_preferred_reason = (
+                "Ningún régimen supera las contraindicaciones duras actuales — escalar a revisión MDT. "
+                + "; ".join(aggregated_reasons[:5])
+            ).strip()
     alternatives = [dict(item, is_preferred=False, priority="eligible") for item in scored[1:4]]
     ranking_trace = _build_ranking_trace(
         preferred=preferred,
         alternatives=scored[1:],
         rejected=rejected,
         modifiers=modifiers,
+        fallback_status=fallback_status,
     )
 
     eligible_treatments = []
@@ -1021,8 +1402,35 @@ def select_mhspc_frontline_regimens(
                     else "eligible_nonpreferred"
                 ),
                 "why_this_rank": list(item.get("selection_rationale") or []),
+                # BUG ERR-13: separar hard_blocks (clínicos) de
+                # data_quality_caveats (captura/documentación).
                 "hard_blocks": list(item.get("contraindication_reasons") or []),
                 "caution_flags": list(item.get("contraindication_reasons") or []),
+                "data_quality_caveats": list(item.get("data_quality_caveats") or []),
+                "excluded_from_ranking": False,
+            }
+        )
+        if family_code not in family_order:
+            family_order.append(family_code)
+    # BUG ERR-14: surface rejected regimens in the comparative matrix as well,
+    # marked as excluded. Without this, the "all regimens considered" view can
+    # be missing any ARPI/triplet that was hard-blocked, making it impossible
+    # for the UI to explain why a family is absent.
+    for item in rejected:
+        family_code = regimen_family_code(item.get("regimen_code"))
+        grouped.setdefault(family_code, []).append(
+            {
+                **_eligible_treatment_item(item, priority=str(item.get("priority") or "not_recommended")),
+                "family_code": family_code,
+                "family_label": item.get("therapy_class_label") or family_code,
+                "eligibility_status": (
+                    "hard_blocked" if item.get("hard_block") else "score_below_threshold"
+                ),
+                "why_this_rank": list(item.get("selection_rationale") or []),
+                "hard_blocks": list(item.get("contraindication_reasons") or []),
+                "caution_flags": list(item.get("contraindication_reasons") or []),
+                "data_quality_caveats": list(item.get("data_quality_caveats") or []),
+                "excluded_from_ranking": True,
             }
         )
         if family_code not in family_order:
@@ -1062,6 +1470,12 @@ def select_mhspc_frontline_regimens(
         field_values=payload,
     )
 
+    # BUG ERR-06: expose the reasons both as the top-level dict AND as a
+    # ``rejection_reasons`` field on each rejected row so consumers that
+    # iterate ``frontline_regimen_rejections`` and read
+    # ``item.rejection_reasons`` no longer see an empty list.
+    for item in rejected:
+        item["rejection_reasons"] = list(item.get("contraindication_reasons") or [])
     rejection_reasons = {
         item["regimen_code"]: list(item.get("contraindication_reasons") or [])
         for item in rejected
@@ -1093,7 +1507,10 @@ def select_mhspc_frontline_regimens(
         "institutional_weight": INSTITUTIONAL_WEIGHT_POLICY,
         "ranking_trace": ranking_trace,
         "preferred_regimen": preferred,
+        "overall_preferred_frontline_regimen": preferred,
         "preferred_frontline_regimen": preferred,
+        "fallback_status": fallback_status,
+        "no_preferred_reason": no_preferred_reason,
         "alternative_regimens": alternatives,
         "rejected_regimens": rejected,
         "rejection_reasons": rejection_reasons,
@@ -1112,16 +1529,31 @@ def select_mhspc_frontline_regimens(
             for item in scored + rejected
         },
         "arpi_required_fields": list(arpi_capture_contract.get("arpi_required_fields") or []),
+        "arpi_decision_required_fields": list(arpi_capture_contract.get("arpi_decision_required_fields") or []),
+        "arpi_monitoring_required_fields": list(arpi_capture_contract.get("arpi_monitoring_required_fields") or []),
         "arpi_missing_inputs": list(arpi_capture_contract.get("arpi_missing_inputs") or []),
         "arpi_stale_inputs": list(arpi_capture_contract.get("arpi_stale_inputs") or []),
+        "arpi_decision_missing_inputs": list(arpi_capture_contract.get("arpi_decision_missing_inputs") or []),
+        "arpi_decision_stale_inputs": list(arpi_capture_contract.get("arpi_decision_stale_inputs") or []),
+        "arpi_monitoring_missing_inputs": list(arpi_capture_contract.get("arpi_monitoring_missing_inputs") or []),
+        "arpi_monitoring_stale_inputs": list(arpi_capture_contract.get("arpi_monitoring_stale_inputs") or []),
         "arpi_profile_completeness": str(arpi_capture_contract.get("arpi_profile_completeness") or ""),
         "arpi_preference_readiness": str(arpi_capture_contract.get("arpi_preference_readiness") or ""),
         "arpi_selection_contract": arpi_capture_contract,
     }
 
 
-def preferred_non_triplet_regimen_label(state: str, payload: dict[str, Any] | None = None) -> str:
-    selected = select_mhspc_frontline_regimens(state, payload)
+def preferred_non_triplet_regimen_label(
+    state: str,
+    payload: dict[str, Any] | None = None,
+    *,
+    selector_bundle: dict[str, Any] | None = None,
+) -> str:
+    # BUG ERR-15: evitar una segunda pasada completa del selector cuando ya
+    # contamos con ``selector_bundle``. Cuando no existe un doblete visible
+    # devolvemos "" en lugar del placeholder genérico para que la UI oculte la
+    # sección en lugar de mostrar texto de relleno.
+    selected = selector_bundle if selector_bundle is not None else select_mhspc_frontline_regimens(state, payload)
     preferred = dict(selected.get("preferred_regimen") or {})
     if preferred and not _is_docetaxel_triplet(str(preferred.get("regimen_code", ""))):
         return str(preferred.get("regimen_label") or "")
@@ -1129,4 +1561,8 @@ def preferred_non_triplet_regimen_label(state: str, payload: dict[str, Any] | No
         regimen_code = str(item.get("regimen_code") or "")
         if not _is_docetaxel_triplet(regimen_code):
             return str(item.get("regimen_label") or "")
-    return "ADT + ARPI según elegibilidad clínica"
+    for item in selected.get("frontline_regimen_rankings") or []:
+        regimen_code = str(item.get("regimen_code") or "")
+        if not _is_docetaxel_triplet(regimen_code):
+            return str(item.get("regimen_label") or "")
+    return ""

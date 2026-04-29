@@ -1,0 +1,153 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 55B: psma_pet_preferred_for_nmcrpc_low_psa
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXXIV) — Iteración #1 — Imaging modality nmCRPC.
+#
+# Razón clínica:
+#   En nmCRPC con PSA bajo (0.5-2 ng/mL), PSMA-PET/CT es **más sensible**
+#   que CT/bone scan convencional para detectar metástasis ocultas.
+#   Múltiples estudios pivotales nmCRPC (SPARTAN/PROSPER/ARAMIS) usaron
+#   imaging convencional en su diseño, pero NCCN v5.2026 + EAU 2026
+#   ahora recomiendan PSMA-PET preferentemente cuando PSA <2 ng/mL:
+#
+#   1. **Sensibilidad PSMA-PET vs convencional**:
+#      - PSA <0.5: PSMA-PET sensibilidad 50-65% vs CT/bone scan ~10%
+#      - PSA 0.5-2: PSMA-PET sensibilidad 70-85% vs CT/bone scan ~30%
+#      - PSA 2-5: PSMA-PET sensibilidad 85-95% vs CT/bone scan ~50%
+#      - PSA >5: PSMA-PET sensibilidad >95% vs CT/bone scan ~70%
+#
+#   2. **Implicación clínica**:
+#      - Paciente "M0" por imaging convencional + PSADT ≤10m
+#      - PSMA-PET puede revelar lesiones M1 ocultas → reclasificar como mCRPC
+#      - Esto cambia tratamiento (no SPARTAN/PROSPER/ARAMIS sino mCRPC pathway)
+#
+#   3. **PROMISE study (Hofman Lancet 2020;395:1208)**:
+#      - PSMA-PET superior a CT/bone scan en staging M
+#      - 27% de pacientes "M0" reclasificados M1 por PSMA-PET
+#
+#   Severity: informational — alerta consideración modalidad PSMA-PET
+#   en pacientes nmCRPC con PSA bajo. NO bloquea tratamiento basado
+#   en imaging convencional (válido per trials).
+#
+#   Coexistencia: gate 55B + gate 55 (PSADT progressive m0CRPC).
+# ──────────────────────────────────────────────────────────────────────
+
+code: psma_pet_preferred_for_nmcrpc_low_psa
+title: "PSMA-PET preferred sobre CT/bone scan en nmCRPC con PSA <2 ng/mL → mayor sensibilidad detección oculta"
+faubot_added_in: "2026-04-26 LXXXIV"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: nmCRPC + PSA bajo + sin PSMA-PET hecho
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: m0_crpc_state_confirmed
+          alias_fields:
+            - m0CRPC_confirmed
+            - estado_m0crpc_confirmado
+        - type: numeric_above
+          field: psa_value
+          alias_fields:
+            - psa
+            - psa_baseline
+          threshold: 0.49  # ≥0.5 ng/mL
+        - type: numeric_below
+          field: psa_value
+          alias_fields:
+            - psa
+          threshold: 2.01  # ≤2 ng/mL (rango óptimo PSMA superior)
+        - type: string_match
+          field: imaging_modality_used_for_m_staging
+          alias_fields:
+            - imaging_modality_used
+            - modality_m_staging
+          patterns:
+            - CT_only
+            - CT_plus_bone_scan
+            - Desconocido
+    # Path B: imaging modality flag explícito
+    - type: truthy_flag
+      field: psma_pet_preferred_recommendation_documented
+      alias_fields:
+        - psma_pet_recomendado_documentado
+
+regimen_codes: []  # Gate informativo — sugiere modalidad imaging
+
+keywords:
+  - PSMA PET
+  - imaging modality
+  - nmCRPC
+  - SPARTAN
+  - PROSPER
+  - ARAMIS
+  - PROMISE
+
+message: |
+  📊 INFORMATIVO: Paciente nmCRPC con PSA 0.5-2 ng/mL → considerar
+  **PSMA-PET/CT** sobre CT+bone scan convencional para staging M.
+
+  🔬 EVIDENCIA SENSIBILIDAD POR PSA RANGE:
+
+  | PSA (ng/mL) | PSMA-PET | CT/bone scan |
+  |-------------|----------|--------------|
+  | <0.5 | 50-65% | ~10% |
+  | **0.5-2** | **70-85%** | **~30%** |
+  | 2-5 | 85-95% | ~50% |
+  | >5 | >95% | ~70% |
+
+  🎯 IMPLICACIÓN CLÍNICA:
+
+  **Caso 1: Paciente M0 por imaging convencional**
+  - PSADT ≤10m (gate 55) + PSA 1.5 ng/mL + CT/bone scan negativo
+  - Considera: PSMA-PET puede detectar lesiones ocultas
+  - Si PSMA-PET positivo → reclasificar mCRPC, NO SPARTAN/PROSPER/ARAMIS
+  - Manejo: mCRPC pathway (ARPI + radioligand si PSMA-positive)
+
+  **Caso 2: Paciente M0 confirmado por PSMA-PET**
+  - PSADT ≤10m + PSA 1.5 + PSMA-PET negativo
+  - Confirmación robusta nmCRPC
+  - Manejo: ARPI elección (apalutamida/enzalutamida/darolutamida)
+  - Mejor candidato para SPARTAN/PROSPER/ARAMIS criteria
+
+  🎯 CONDUCTA RECOMENDADA:
+
+  1. **Si imaging convencional negativo + PSA 0.5-2**:
+     - Solicitar PSMA-PET/CT antes de iniciar ARPI nmCRPC
+     - Reclasificar M-stage según PSMA-PET findings
+     - Documentar `imaging_modality_used_for_m_staging = "PSMA_PET"`
+
+  2. **Si PSMA-PET no disponible**:
+     - CT thorax/abdomen/pelvis con contraste + bone scan Tc-99m
+     - Considerar fluciclovine PET (alternativa si PSMA no disponible)
+     - Documentar limitación en HC
+
+  3. **Si PSMA-PET positivo (lesión nueva)**:
+     - Reclasificar como M1 (mCRPC)
+     - NO iniciar ARPI nmCRPC (SPARTAN/PROSPER/ARAMIS)
+     - Iniciar pathway mCRPC: ARPI + considerar radioligand (gate 71/13)
+
+  🔬 EVIDENCIA:
+  - **PROMISE (Hofman Lancet 2020;395:1208)** — PSMA-PET superior CT/bone scan
+  - **SPARTAN (Smith JAMA Oncol 2018)** — diseño con CT/bone scan (válido)
+  - **NCCN Prostate v5.2026 PROS-O** — PSMA-PET preferred PSA <2
+  - **EAU 2026 §6.5.4** — imaging modality recommendations
+  - **AUA Guidelines 2024** — PSMA-PET integration
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `m0_crpc_state_confirmed`: flag estado nmCRPC
+  - `psa_value`: PSA actual ng/mL
+  - `imaging_modality_used_for_m_staging`: select (CT_only | CT_plus_bone_scan |
+    PSMA_PET | PSMA_PET_plus_CT | MRI_whole_body | FDG_PET)
+  - `psma_pet_preferred_recommendation_documented`: flag clínico explicit
+
+evidence_tag: psma_pet_promise_2020_nccn_pros_o_eau_2026_6_5_4
+trial_refs:
+  - "PROMISE (Hofman Lancet 2020;395:1208)"
+  - "SPARTAN (Smith JAMA Oncol 2018)"
+  - "NCCN Prostate v5.2026 PROS-O"
+  - "EAU 2026 §6.5.4"
+  - "AUA Guidelines 2024"

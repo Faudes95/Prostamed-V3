@@ -1,3 +1,4 @@
+# IEC 62304 §5.5 (Unit verification)
 from __future__ import annotations
 
 import json
@@ -197,6 +198,12 @@ def _build_bundle(patient_id):
     return payload["crpc_copilot_bundle"]
 
 
+def _build_longitudinal_bundle(patient_id):
+    payload = tracking_db.refresh_longitudinal_intelligence(patient_id, force_recompute=True)
+    assert payload
+    return payload
+
+
 def _register_patient(client, *, nss, full_name):
     response = client.post("/api/register_patient", json=make_patient_payload(nss=nss, full_name=full_name))
     assert response.status_code == 200
@@ -269,6 +276,43 @@ def test_crpc_copilot_routes_adt_progression_to_m1_crpc_when_castrate_and_m1(app
 
     assert bundle["effective_state"] == "m1_crpc"
     assert "metast" in bundle["routing_reason"].lower()
+
+
+def test_crpc_copilot_exits_m0_crpc_when_psma_only_already_documents_m1(app_client, monkeypatch):
+    _enable_crpc_copilot(monkeypatch)
+    client, db_path = app_client
+    patient_id = _register_patient(client, nss="CRPC-ROUTE-PSMA-001", full_name="CRPC PSMA M1")
+    _seed_latest_assessment_state(db_path, patient_id, "m0_crpc")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "current_adt_context": "ADT continua",
+            "conventional_imaging_status": "M0",
+            "progression_pattern": "biochemical_only",
+            "psa": 4.8,
+        },
+    )
+    _insert_structured_psma_imaging(
+        db_path,
+        patient_id,
+        study_date="2026-03-20",
+        psma_result="diseminado",
+        uptake_pattern="diseminado",
+        conventional_stage="M0",
+        psma_stage="M1b",
+        lesion_locations=["hueso"],
+        total_lesions=2,
+    )
+
+    payload = tracking_db.refresh_longitudinal_intelligence(patient_id, force_recompute=True)
+    bundle = payload["crpc_copilot_bundle"]
+
+    assert bundle["effective_state"] == "adt_progression_verification"
+    assert payload["signals"]["metastatic_stage_resolved"] == "M1b"
+    assert payload["signals"]["metastatic_detection_basis"] == "psma_only"
+    assert payload["signals"]["nmcrpc_eligible"] is False
+    assert "m1" in payload["signals"]["nmcrpc_ineligibility_reason"].lower()
 
 
 def test_crpc_copilot_prefers_latest_followup_imaging_over_stale_assessment(app_client, monkeypatch):
@@ -387,6 +431,9 @@ def test_m0_crpc_prioritizes_darolutamide_when_seizure_risk_is_present(app_clien
             "castrate_testosterone_confirmed": 1,
             "current_adt_context": "ADT continua",
             "psadt_months": 6.0,
+            "imaging_negative": 1,
+            "conventional_imaging_modality": "TC + gammagrama óseo",
+            "conventional_imaging_date": "2026-03-10",
             "comorbidity_seizure": "1",
             "seizure_history": 1,
         },
@@ -411,6 +458,32 @@ def test_m0_crpc_prioritizes_darolutamide_when_seizure_risk_is_present(app_clien
     assert bundle["sequence_candidates"][1]["imss_key"]
 
 
+def test_m0_crpc_requires_negative_imaging_before_arpi_intensification(app_client, monkeypatch):
+    _enable_crpc_copilot(monkeypatch)
+    client, db_path = app_client
+    patient_id = _register_patient(client, nss="CRPC-M0-001B", full_name="m0 Reestadificación")
+    _seed_latest_assessment_state(db_path, patient_id, "m0_crpc")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "testosterone_value": 18,
+            "castrate_testosterone_confirmed": 1,
+            "current_adt_context": "ADT continua",
+            "psadt_months": 6.0,
+            "comorbidity_seizure": "1",
+            "seizure_history": 1,
+        },
+    )
+
+    bundle = _build_bundle(patient_id)
+
+    assert bundle["systemic_regimen_scope"] == "nmcrpc_arpi"
+    assert "reestadific" in bundle["rule_based_recommendation"]["recommended_action"].lower()
+    assert bundle["preferred_frontline_regimen"]["regimen_code"] == "RESTAGING"
+    assert bundle["sequence_transition_bundle"]["active_family"] == "observation_family"
+
+
 def test_m0_crpc_with_psadt_above_ten_favors_observation_before_escalation(app_client, monkeypatch):
     _enable_crpc_copilot(monkeypatch)
     client, db_path = app_client
@@ -429,8 +502,8 @@ def test_m0_crpc_with_psadt_above_ten_favors_observation_before_escalation(app_c
 
     bundle = _build_bundle(patient_id)
 
-    assert "monitor" in bundle["rule_based_recommendation"]["recommended_action"].lower()
-    assert "vigilar" in bundle["crpc_schedule_overlay"]["schedule_primary_intent"].lower()
+    assert "reestadific" in bundle["rule_based_recommendation"]["recommended_action"].lower()
+    assert bundle["preferred_frontline_regimen"]["regimen_code"] == "RESTAGING"
 
 
 def test_m1_crpc_blocks_abiraterone_when_hepatic_risk_is_relevant(app_client, monkeypatch):
@@ -939,3 +1012,46 @@ def test_dashboard_research_intelligence_exposes_crpc_copilot_summary(app_client
     assert dashboard_response.status_code == 200
     dashboard_html = dashboard_response.get_data(as_text=True)
     assert "Copiloto CRPC" in dashboard_html
+
+
+def test_crpc_runtime_blocks_nmcrpc_release_when_psma_only_upstaging_remains_unadjudicated(app_client, monkeypatch):
+    _enable_crpc_copilot(monkeypatch)
+    client, db_path = app_client
+    patient_id = _register_patient(client, nss="CRPC-ROUTE-PSMA-001", full_name="CRPC PSMA Only")
+    _seed_latest_assessment_state(db_path, patient_id, "m0_crpc")
+    _update_latest_assessment_input(
+        db_path,
+        patient_id,
+        {
+            "testosterone_value": 18,
+            "castrate_testosterone_confirmed": 1,
+            "current_adt_context": "ADT continua",
+            "conventional_imaging_status": "M0",
+            "conventional_imaging_date": "2026-03-01",
+            "progression_pattern": "biochemical_only",
+            "dxa_baseline_done": 1,
+            "calcium_vitd_started": 1,
+            "bone_protection_started": 1,
+            "hba1c": 5.8,
+            "total_cholesterol": 180,
+            "creatinine": 0.9,
+            "mini_cog_score": 4,
+        },
+    )
+    _insert_structured_psma_imaging(
+        db_path,
+        patient_id,
+        study_date="2026-04-02",
+        psma_result="oligometastatic",
+        conventional_stage="M0",
+        psma_stage="M1a",
+        uptake_pattern="oligometastatic",
+    )
+
+    longitudinal_bundle = _build_longitudinal_bundle(patient_id)
+    readiness = longitudinal_bundle["therapeutic_readiness_bundle"]
+
+    assert longitudinal_bundle["effective_state"] in {"m0_crpc", "m1_crpc"}
+    assert readiness["readiness_status"] == "blocked_by_missing_data"
+    assert readiness["adjudication_gate_status"] == "blocked_by_missing_data"
+    assert any("nmcrpc" in blocker.lower() or "adjudicación" in blocker.lower() for blocker in readiness["release_blockers"])

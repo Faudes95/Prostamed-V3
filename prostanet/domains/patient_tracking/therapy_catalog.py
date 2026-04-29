@@ -20,6 +20,15 @@ ADVANCED_STATE_SCOPE = [
     "advanced",
 ]
 
+# EPIC 8 — ámbito de terapias focales (HIFU / crio / TULSA). Son opciones de
+# tratamiento local en escenarios seleccionados (intermedio favorable
+# unilateral, NCCN PROS-C cat 2B) y por eso se incluyen en el catálogo con
+# state_scope acotado para no contaminar flujos sistémicos avanzados.
+FOCAL_STATE_SCOPE = [
+    "localized_initial",
+    "focal_therapy",
+]
+
 THERAPY_CLASS_LABELS = {
     "observation": "Observación / sin sistémico",
     "androgen_axis": "Eje androgénico",
@@ -28,6 +37,9 @@ THERAPY_CLASS_LABELS = {
     "parp": "PARP / precisión",
     "radioligand": "Radioligandos / radiofármacos",
     "immunotherapy": "Inmunoterapia",
+    "focal_ablation": "Terapia focal local",
+    "platinum_chemotherapy": "Quimioterapia basada en platino",
+    "clinical_trial": "Ensayo clínico",
 }
 
 THERAPY_CLASS_ORDER = {
@@ -38,6 +50,9 @@ THERAPY_CLASS_ORDER = {
     "parp": 4,
     "radioligand": 5,
     "immunotherapy": 6,
+    "focal_ablation": 7,
+    "platinum_chemotherapy": 8,
+    "clinical_trial": 9,
 }
 
 THERAPY_REGIMENS = [
@@ -192,6 +207,37 @@ THERAPY_REGIMENS = [
         "agents": ["Niraparib", "Abiraterona"],
         "evidence_tags": ["MAGNITUDE"],
     },
+    # EPIC 9 Group C (GAP-5) — TALAPRO-3 (Agarwal ASCO GU 2025 LBA18):
+    # primera combinación PARPi+ARPI+ADT positiva en mHSPC HRR-mutado
+    # (HR≈0.67 rPFS). Diferenciada de TALAZOPARIB_ENZALUTAMIDE (mCRPC,
+    # TALAPRO-2) por incluir ADT y por aplicar solo a mHSPC HRR+.
+    # hrr_required=True y regulatory_pending=True sinalizan al motor que
+    # (a) debe bloquearse si HRR no es trazable, (b) la UI debe mostrar
+    # badge "pendiente aprobación regulatoria" hasta que FDA/EMA
+    # emitan etiqueta formal.
+    {
+        "regimen_code": "ADT_TALAZO_ENZA_HRR",
+        "label_clinico": "ADT + talazoparib + enzalutamida (HRR+)",
+        "state_scope": [
+            "mcspc_oligo_metachronous",
+            "mcspc_low_volume_sync_oligo",
+            "mcspc_high_volume_sync",
+            "mcspc_high_volume_metachronous",
+            "mcspc_high_volume",
+        ],
+        "management_tracks": ["on_parp", "on_arpi", "systemic_surveillance", "palliative_overlay"],
+        "line_contexts": ["mHSPC_initial"],
+        "therapy_class": "parp",
+        "contains_adt": True,
+        "agents": ["ADT", "Talazoparib", "Enzalutamida"],
+        "evidence_tags": ["TALAPRO-3", "pivotal_abstract"],
+        "hrr_required": True,
+        "regulatory_pending": True,
+        "reference_dosing": {
+            "Talazoparib": "0.5 mg oral al día",
+            "Enzalutamida": "160 mg oral al día",
+        },
+    },
     {
         "regimen_code": "RUCAPARIB",
         "label_clinico": "Rucaparib",
@@ -234,7 +280,108 @@ THERAPY_REGIMENS = [
         "therapy_class": "immunotherapy",
         "contains_adt": False,
         "agents": ["Pembrolizumab"],
-        "evidence_tags": ["MSI-H", "TMB-high"],
+        "evidence_tags": ["MSI-H", "dMMR", "TMB-high", "KEYNOTE-158", "KEYNOTE-199"],
+    },
+    {
+        # Auditoría Pacientes Insignia 2026-04-21 (§A.4) — IMPACT.
+        "regimen_code": "SIPULEUCEL_T",
+        "label_clinico": "Sipuleucel-T",
+        "state_scope": ADVANCED_STATE_SCOPE,
+        "management_tracks": ["systemic_surveillance", "palliative_overlay"],
+        "line_contexts": ["first_line_mcrpc", "post_arpi_pre_taxane"],
+        "therapy_class": "cellular_immunotherapy",
+        "contains_adt": False,
+        "agents": ["Sipuleucel-T"],
+        "evidence_tags": ["IMPACT", "Kantoff-2010"],
+    },
+    {
+        # Auditoría Pacientes Insignia 2026-04-21 (§A.4) — CONTACT-02.
+        "regimen_code": "CABOZANTINIB_ATEZOLIZUMAB",
+        "label_clinico": "Cabozantinib + Atezolizumab",
+        "state_scope": ADVANCED_STATE_SCOPE,
+        "management_tracks": ["systemic_surveillance", "palliative_overlay"],
+        "line_contexts": ["post_arpi_pre_taxane", "mCRPC_post_taxane"],
+        "therapy_class": "io_tki_combo",
+        "contains_adt": False,
+        "agents": ["Cabozantinib", "Atezolizumab"],
+        "evidence_tags": ["CONTACT-02", "Agarwal-2024"],
+    },
+    {
+        "regimen_code": "CARBOPLATIN_ETOPOSIDE_NEPC",
+        "label_clinico": "Carboplatino + etopósido (NEPC)",
+        "state_scope": ADVANCED_STATE_SCOPE,
+        "management_tracks": ["systemic_surveillance", "palliative_overlay"],
+        "line_contexts": ["mCRPC_post_taxane", "later_line"],
+        "therapy_class": "platinum_chemotherapy",
+        "contains_adt": False,
+        "agents": ["Carboplatino", "Etopósido"],
+        "evidence_tags": ["Aparicio-2013", "Aggarwal-2018", "Beltran-2016", "NCCN-PROS-J"],
+    },
+    {
+        "regimen_code": "CISPLATIN_DOCETAXEL_NEPC",
+        "label_clinico": "Cisplatino + docetaxel (NEPC)",
+        "state_scope": ADVANCED_STATE_SCOPE,
+        "management_tracks": ["systemic_surveillance", "palliative_overlay"],
+        "line_contexts": ["mCRPC_post_taxane", "later_line"],
+        "therapy_class": "platinum_chemotherapy",
+        "contains_adt": False,
+        "agents": ["Cisplatino", "Docetaxel"],
+        "evidence_tags": ["Aparicio-2013", "Aggarwal-2018", "NCCN-PROS-J"],
+    },
+    {
+        "regimen_code": "CARBOPLATIN_ETOPOSIDE",
+        "label_clinico": "Carboplatino ± etopósido (rechallenge HRR)",
+        "state_scope": ADVANCED_STATE_SCOPE,
+        "management_tracks": ["systemic_surveillance", "palliative_overlay"],
+        "line_contexts": ["mCRPC_post_taxane", "later_line"],
+        "therapy_class": "platinum_chemotherapy",
+        "contains_adt": False,
+        "agents": ["Carboplatino", "Etopósido"],
+        "evidence_tags": ["Schmid-2022", "Mateo-2020"],
+    },
+    {
+        "regimen_code": "CLINICAL_TRIAL_POST_PARP",
+        "label_clinico": "Ensayo clínico dirigido post-PARP",
+        "state_scope": ADVANCED_STATE_SCOPE,
+        "management_tracks": ["systemic_surveillance"],
+        "line_contexts": ["mCRPC_post_taxane", "later_line"],
+        "therapy_class": "clinical_trial",
+        "contains_adt": False,
+        "agents": ["Ensayo"],
+        "evidence_tags": ["NCCN-PROS-11"],
+    },
+    {
+        "regimen_code": "FOCAL_HIFU",
+        "label_clinico": "HIFU focal (ultrasonido focalizado de alta intensidad)",
+        "state_scope": FOCAL_STATE_SCOPE,
+        "management_tracks": ["focal_post_procedure"],
+        "line_contexts": ["localized_focal"],
+        "therapy_class": "focal_ablation",
+        "contains_adt": False,
+        "agents": ["HIFU"],
+        "evidence_tags": ["NCCN-PROS-C-2B", "Stabile-2019", "Guillaumier-2018"],
+    },
+    {
+        "regimen_code": "FOCAL_CRYOABLATION",
+        "label_clinico": "Crioablación focal",
+        "state_scope": FOCAL_STATE_SCOPE,
+        "management_tracks": ["focal_post_procedure"],
+        "line_contexts": ["localized_focal"],
+        "therapy_class": "focal_ablation",
+        "contains_adt": False,
+        "agents": ["Crioablación"],
+        "evidence_tags": ["NCCN-PROS-C-2B", "Ward-2012"],
+    },
+    {
+        "regimen_code": "FOCAL_TULSA",
+        "label_clinico": "TULSA-Pro (ultrasonido transuretral)",
+        "state_scope": FOCAL_STATE_SCOPE,
+        "management_tracks": ["focal_post_procedure"],
+        "line_contexts": ["localized_focal"],
+        "therapy_class": "focal_ablation",
+        "contains_adt": False,
+        "agents": ["TULSA-Pro"],
+        "evidence_tags": ["NCCN-PROS-C-2B", "Klotz-2021"],
     },
 ]
 
@@ -308,6 +455,15 @@ TRIAL_BACKBONE_MAP = {
         "fractions": "25-39 fracciones según plan",
         "note": "SPPORT/NRG 0534 apoya ampliar volumen ganglionar y añadir ADT corta en salvage seleccionado.",
     },
+    "RADICALS-HD": {
+        "label": "RT de salvage + ADT prolongada adaptada al riesgo",
+        "description": "Comparó distintas duraciones de ADT asociadas a radioterapia postoperatoria.",
+        "dose": "RT postoperatoria + ADT 6-24 meses según brazo",
+        "route": "Radioterapia externa + Supresión androgénica",
+        "schedule": "RT postoperatoria con intensificación hormonal adaptada al riesgo",
+        "duration": "6 vs 24 meses",
+        "note": "RADICALS-HD informa la discusión moderna de duración hormonal postoperatoria más allá del molde histórico de RTOG 9601.",
+    },
     "RADICALS-RT": {
         "label": "Estrategia de salvage temprano vs RT adyuvante",
         "description": "Comparó RT adyuvante inmediata frente a RT de salvage temprana post-RP.",
@@ -373,6 +529,13 @@ REGIMEN_ALIASES = {
     "talazoparib + enzalutamide": "TALAZOPARIB_ENZALUTAMIDE",
     "niraparib + abiraterona": "NIRAPARIB_ABIRATERONE",
     "niraparib + abiraterone": "NIRAPARIB_ABIRATERONE",
+    # EPIC 9 Group C (GAP-5) — TALAPRO-3 aliases
+    "adt + talazoparib + enzalutamida": "ADT_TALAZO_ENZA_HRR",
+    "adt + talazoparib + enzalutamide": "ADT_TALAZO_ENZA_HRR",
+    "talazoparib + enzalutamida + adt": "ADT_TALAZO_ENZA_HRR",
+    "talazoparib + enzalutamide + adt": "ADT_TALAZO_ENZA_HRR",
+    "talapro-3": "ADT_TALAZO_ENZA_HRR",
+    "talapro3": "ADT_TALAZO_ENZA_HRR",
     "rucaparib": "RUCAPARIB",
     "lutecio-177 psma-617": "LU177_PSMA617",
     "lu177 psma617": "LU177_PSMA617",
@@ -391,7 +554,40 @@ REGIMEN_ALIASES = {
     "radium223": "RADIUM223",
     "radio 223": "RADIUM223",
     "pembrolizumab": "PEMBROLIZUMAB",
+    # Auditoría Pacientes Insignia 2026-04-21 (§A.4) — IMPACT + CONTACT-02.
+    "sipuleucel": "SIPULEUCEL_T",
+    "sipuleucel t": "SIPULEUCEL_T",
+    "sipuleucel-t": "SIPULEUCEL_T",
+    "cabozantinib + atezolizumab": "CABOZANTINIB_ATEZOLIZUMAB",
+    "cabozantinib atezolizumab": "CABOZANTINIB_ATEZOLIZUMAB",
+    "cabo atezo": "CABOZANTINIB_ATEZOLIZUMAB",
     "acetato de abiraterona": "ADT_ABIRATERONE",
+    "carboplatino + etoposido": "CARBOPLATIN_ETOPOSIDE_NEPC",
+    "carboplatino + etopósido": "CARBOPLATIN_ETOPOSIDE_NEPC",
+    "carboplatin + etoposide": "CARBOPLATIN_ETOPOSIDE_NEPC",
+    "carboplatin etoposide nepc": "CARBOPLATIN_ETOPOSIDE_NEPC",
+    "carbo etopósido": "CARBOPLATIN_ETOPOSIDE_NEPC",
+    "cisplatino + docetaxel": "CISPLATIN_DOCETAXEL_NEPC",
+    "cisplatin + docetaxel": "CISPLATIN_DOCETAXEL_NEPC",
+    "cisplatino docetaxel nepc": "CISPLATIN_DOCETAXEL_NEPC",
+    "carbo rechallenge": "CARBOPLATIN_ETOPOSIDE",
+    "carboplatino rechallenge": "CARBOPLATIN_ETOPOSIDE",
+    "ensayo post parp": "CLINICAL_TRIAL_POST_PARP",
+    "ensayo clínico post parp": "CLINICAL_TRIAL_POST_PARP",
+    "hifu": "FOCAL_HIFU",
+    "hifu focal": "FOCAL_HIFU",
+    "ultrasonido focalizado": "FOCAL_HIFU",
+    "ultrasonido focalizado de alta intensidad": "FOCAL_HIFU",
+    "high intensity focused ultrasound": "FOCAL_HIFU",
+    "crioablacion": "FOCAL_CRYOABLATION",
+    "crioablación": "FOCAL_CRYOABLATION",
+    "crio": "FOCAL_CRYOABLATION",
+    "crio focal": "FOCAL_CRYOABLATION",
+    "cryoablation": "FOCAL_CRYOABLATION",
+    "tulsa": "FOCAL_TULSA",
+    "tulsa pro": "FOCAL_TULSA",
+    "tulsa-pro": "FOCAL_TULSA",
+    "ultrasonido transuretral": "FOCAL_TULSA",
 }
 
 
@@ -521,6 +717,11 @@ def normalize_regimen_code(value: Any) -> str:
         "lu177": "LU177_PSMA617",
         "radium": "RADIUM223",
         "radio223": "RADIUM223",
+        "carboplatino etopos": "CARBOPLATIN_ETOPOSIDE_NEPC",
+        "carboplatin etopos": "CARBOPLATIN_ETOPOSIDE_NEPC",
+        "cisplatino docetax": "CISPLATIN_DOCETAXEL_NEPC",
+        "cisplatin docetax": "CISPLATIN_DOCETAXEL_NEPC",
+        "ensayo post parp": "CLINICAL_TRIAL_POST_PARP",
     }
     for token, regimen_code in fuzzy_tokens.items():
         if token in normalized or token in compact:

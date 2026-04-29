@@ -1,0 +1,163 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 38: sipuleucel_t_febrile_neutropenia_post_leukapheresis
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LI) — Auditoría #53 — Gate YAML-NATIVE.
+#
+# Razón clínica:
+#   Sipuleucel-T (Provenge) requiere leukapheresis pre-cada-infusión
+#   (3 dosis cada 2 sem). El proceso induce neutropenia transitoria
+#   ~48-72h post-leukapheresis. Pacientes con baseline ANC bajo o
+#   inmunocomprometidos pueden desarrollar febrile neutropenia G≥3
+#   (T ≥38.3°C + ANC <500) post-procedimiento — IMPACT documentó
+#   3.2% incidencia febrile neutropenia + 0.8% sepsis G≥3 attributable.
+#
+#   Threshold canónico (Provenge label §5.2 + IMPACT protocol §6.5):
+#     - Path A: temperatura ≥38.3°C + ANC <500 (definición CTCAE v5
+#       febrile neutropenia G≥3 absoluta)
+#     - Path B: ANC baseline <1500 + sin GCSF profiláctico planeado
+#       (signal alto riesgo descompensación post-leukapheresis)
+#     - Path C: flag explícito febrile_neutropenia_for_immunotherapy
+#       documentado en infusion previa
+#
+#   Override: gcsf_prophylaxis_active_for_sipuleucel=Sí
+#   (pegfilgrastim 6mg SC día +1 post-leukapheresis + monitoring CBC
+#   diario × 5d + ANC ≥1500 confirmado pre-cada infusión).
+#
+#   Bloquea: REGIMEN_CODES_SIPULEUCEL_T (Provenge específicamente).
+#
+#   Coexistencia con Gate 37 (sipuleucel_t_severe_irr): gate 37 cubre
+#   IRR (acute reaction durante infusión); gate 38 cubre febrile
+#   neutropenia post-leukapheresis (delayed AE). Pueden disparar
+#   simultáneamente o en momentos distintos del ciclo.
+# ──────────────────────────────────────────────────────────────────────
+
+code: sipuleucel_t_febrile_neutropenia_post_leukapheresis
+title: "Sipuleucel-T × febrile neutropenia post-leukapheresis (IMPACT + Provenge §5.2)"
+faubot_added_in: "2026-04-25 LI"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: febrile neutropenia G≥3 actual (T ≥38.3 + ANC <500)
+    - type: all_of
+      triggers:
+        - type: numeric_threshold
+          field: temperature_celsius
+          alias_fields:
+            - temperature
+            - body_temperature_c
+            - fever_celsius
+          threshold: 38.3
+        - type: numeric_below
+          field: anc
+          alias_fields:
+            - absolute_neutrophil_count
+            - neutrophils_absolute
+            - anc_current
+          threshold: 500
+    # Path B: ANC baseline <1500 + sin GCSF profilaxis (alto riesgo)
+    - type: all_of
+      triggers:
+        - type: numeric_below
+          field: anc
+          alias_fields:
+            - absolute_neutrophil_count
+            - anc_current
+          threshold: 1500
+        - type: truthy_flag
+          field: no_gcsf_prophylaxis_planned
+          alias_fields:
+            - gcsf_not_planned
+            - sin_profilaxis_gcsf
+    # Path C: flag explícito febrile neutropenia documentado en infusion previa
+    - type: truthy_flag
+      field: febrile_neutropenia_for_immunotherapy
+      alias_fields:
+        - febrile_neutropenia_post_sipuleucel
+        - sepsis_post_leukapheresis_documented
+        - prior_febrile_event_immunotherapy
+
+# Override: GCSF profilaxis activa + monitoring estricto
+override:
+  type: truthy_flag
+  field: gcsf_prophylaxis_active_for_sipuleucel
+  alias_fields:
+    - pegfilgrastim_prophylaxis_documented
+    - filgrastim_prophylaxis_active
+    - sipuleucel_neutropenia_prophylaxis_active
+
+regimen_codes:
+  - REGIMEN_CODES_SIPULEUCEL_T
+
+keywords:
+  - KEYWORDS_SIPULEUCEL_T
+
+message: |
+  Sipuleucel-T (Provenge) NO debe administrarse en pacientes con
+  febrile neutropenia activa (T ≥38.3°C + ANC <500), ANC baseline
+  <1500 sin GCSF profiláctico planeado, o historia febrile neutropenia
+  post-leukapheresis previa. IMPACT trial (Kantoff NEJM 2010): 3.2%
+  incidencia febrile neutropenia + 0.8% sepsis G≥3 attributable a
+  leukapheresis + cytokine release.
+
+  Mecanismo:
+    - Leukapheresis remueve neutrófilos circulantes (drop transitorio
+      30-50% en 48-72h)
+    - Cytokine release post-activación T-cell ex vivo deprime
+      megakariopoiesis temporal
+    - Pacientes con baseline ANC <1500 tienen reserva limitada para
+      compensar este insulto procedimental
+    - Riesgo cumulativo con dosis 2 (peak 7-10d post-leukapheresis 1)
+
+  Coexistencia complementaria con Gate 37 (IRR):
+    - Gate 37: IRR durante infusion (acute, immune-mediated)
+    - **Gate 38 (este): febrile neutropenia post-leukapheresis (delayed,
+      hematologic)**
+  Pueden disparar simultáneamente (paciente IRR-prone Y baseline ANC
+  bajo) o en momentos distintos del ciclo.
+
+  Conducta clínica:
+  1. CBC + ANC PRE-cada leukapheresis (criterio absoluto: ANC ≥1500
+     para proceder).
+  2. Si ANC 1000-1499 baseline: GCSF profilaxis planeada PRE-leukapheresis
+     - Pegfilgrastim 6mg SC día -1 (24h pre-procedimiento)
+     - O filgrastim 5 µg/kg/d × 3-5d hasta ANC ≥3000
+  3. Si paciente desarrolla febrile neutropenia post-leukapheresis:
+     - Hospitalización + cultivos sangre/orina + Rx tórax
+     - Antibióticos amplios espectro empíricos:
+       * Piperacilina/tazobactam 4.5g IV q6h O
+       * Cefepima 2g IV q8h O
+       * Meropenem 1g IV q8h si shock séptico
+     - GCSF rescue (filgrastim 5 µg/kg/d) hasta ANC ≥1500 sostenido
+     - Holding de Provenge dosis 2 hasta resolución completa + CGA
+       hematológico
+  4. Reintroducción solo con override `gcsf_prophylaxis_active_for_sipuleucel=Sí`:
+     - Pegfilgrastim 6mg SC día +1 post-leukapheresis (NO post-infusión)
+     - Monitoring CBC diario × 5d post-leukapheresis
+     - ANC ≥1500 confirmado pre-CADA infusión Provenge
+     - Si nueva febrile neutropenia → discontinuación PERMANENTE
+  5. Si reintroducción NO posible:
+     - Enzalutamida/apalutamida (mCRPC asymptomatic NO-leukapheresis)
+     - Abiraterona + prednisona (COU-AA-302)
+     - Lu-177-PSMA-617 si PSMA+ (gates 13-14-30 monitor)
+
+evidence_tag: impact_kantoff_nejm_2010_provenge_label_section_5_2
+trial_refs:
+  - "IMPACT"
+  - "Kantoff NEJM 2010"
+  - "Provenge label §5.2 hematologic"
+  - "CTCAE v5"
+
+references:
+  - "Kantoff PW et al. IMPACT. NEJM 2010;363:411-422 + supplementary hematologic safety."
+  - "Provenge (sipuleucel-T) FDA prescribing information §5.2 (Hematologic Adverse Reactions)."
+  - "Smith MR et al. Sipuleucel-T leukapheresis safety review. Urology 2012."
+  - "CTCAE v5.0 — Febrile neutropenia + sepsis grading."
+  - "ASCO/IDSA Guidelines on Outpatient Management of Fever and Neutropenia 2018."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Sipuleucel-T leukapheresis monitoring + GCSF prophylaxis"
+  eau_section: "EAU 2026 §6.6.4 — Immunotherapy hematologic safety"
+  asco_section: "ASCO Febrile Neutropenia Guidelines 2018"

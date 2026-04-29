@@ -1,0 +1,209 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 45: checkpoint_inhibitor_colitis_grade3_plus
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LVII) — Auditoría #54 — Gate YAML-NATIVE.
+#
+# Razón clínica:
+#   Pembrolizumab/nivolumab/atezolizumab tienen WARNING regulatorio sobre
+#   colitis immune-related (irAE GI). Mecanismo: desinhibición células T
+#   → infiltrado linfocítico CD8+ en mucosa colónica → ulceración +
+#   pérdida criptas + desgranulación neutrófila → diarrea + dolor
+#   abdominal + perforación en casos severos.
+#
+#   Datos de KEYNOTE-365/921 + CheckMate-650 (nivo+ipi) + KeyLynk-010:
+#     - Diarrhea ANY GRADE: 18-34% pembro/nivo (vs 12% placebo)
+#     - Colitis G≥3 (severa, hospitalización): 1.4-3.8%
+#     - Colitis G≥4 (life-threatening, perforación, peritonitis):
+#       0.3-0.9%
+#     - **Mortalidad colitis G≥3 sin tratamiento: 5-12%** (mayoría por
+#       perforación intestinal); con esteroides + infliximab si refractaria
+#       baja a <1%
+#     - Tiempo medio aparición: 5-10 sem (rango 1-30)
+#     - Discontinuación PERMANENTE por colitis G≥3: 2.1-3.2%
+#     - **Combo nivo+ipi (CheckMate-650) tiene tasa 2-3× MÁS ALTA**
+#       (colitis G≥3 ~10% vs nivo solo ~3%)
+#
+#   Threshold canónico (NCCN IO Toxicity 2024 §GI-1 + CTCAE v5):
+#     - Path A: colitis CTCAE G≥3 (severa, intervención hospitalaria,
+#       hemorragia, perforación, peritonitis)
+#     - Path B: diarrhea CTCAE G≥3 (>7 episodios/d, hospitalización,
+#       limitando self-care ADL)
+#     - Path C: bowel_perforation_for_checkpoint_inhibitor flag
+#       (life-threatening, requiere cirugía urgente)
+#     - Path D: colitis_immune_documented_for_checkpoint flag
+#       (biopsia con infiltrado linfocítico T CD8+, sin pathógeno)
+#     - Path E: hematochezia_severe_for_checkpoint flag (sangrado
+#       digestivo low documentado)
+#
+#   Override: colitis_resolved_for_checkpoint_inhibitor=Sí
+#   (post-resolución completa CTCAE G≤1 + colonoscopia control sin
+#   ulceración + esteroides taper + GI endorsement).
+#
+#   Coexistencia con Gates 43+44+46 (eje irAE checkpoint inhibitors).
+#   Bloquea: REGIMEN_CODES_CHECKPOINT_INHIBITORS.
+# ──────────────────────────────────────────────────────────────────────
+
+code: checkpoint_inhibitor_colitis_grade3_plus
+title: "Checkpoint inhibitor × colitis irAE G≥3 (KEYNOTE/CheckMate + NCCN IO Toxicity 2024)"
+faubot_added_in: "2026-04-25 LVII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: colitis CTCAE G≥3 (severa)
+    - type: numeric_threshold
+      field: colitis_ctcae_grade
+      alias_fields:
+        - colitis_grade
+        - gi_irae_ctcae_grade
+        - immune_colitis_grade
+        - ic_ctcae_grade
+      threshold: 3
+    # Path B: diarrhea CTCAE G≥3 (>7 epis/d, hospitalización)
+    - type: numeric_threshold
+      field: diarrhea_ctcae_grade
+      alias_fields:
+        - diarrhea_grade
+        - diarrhea_severity_ctcae
+        - gi_diarrhea_grade
+      threshold: 3
+    # Path C: bowel perforation (life-threatening)
+    - type: truthy_flag
+      field: bowel_perforation_for_checkpoint_inhibitor
+      alias_fields:
+        - intestinal_perforation_for_checkpoint
+        - colon_perforation_for_io
+        - peritonitis_for_checkpoint_inhibitor
+    # Path D: flag clínico colitis immune documentada
+    - type: truthy_flag
+      field: colitis_immune_documented_for_checkpoint
+      alias_fields:
+        - immune_colitis_documented
+        - checkpoint_colitis_documented
+        - irae_colitis_for_pembrolizumab
+        - autoimmune_colitis_for_checkpoint_inhibitor
+    # Path E: hematochezia severa (sangrado digestivo low)
+    - type: truthy_flag
+      field: hematochezia_severe_for_checkpoint
+      alias_fields:
+        - rectal_bleeding_severe_for_checkpoint
+        - lower_gi_bleed_for_checkpoint_inhibitor
+        - severe_hemorrhagic_colitis_for_io
+
+# Override: post-resolución completa + colonoscopia clear + GI endorsement
+override:
+  type: truthy_flag
+  field: colitis_resolved_for_checkpoint_inhibitor
+  alias_fields:
+    - immune_colitis_resolved
+    - checkpoint_colitis_recovered
+    - irae_colitis_normalized
+
+regimen_codes:
+  - REGIMEN_CODES_CHECKPOINT_INHIBITORS
+
+keywords:
+  - KEYWORDS_CHECKPOINT_INHIBITORS
+
+message: |
+  Checkpoint inhibitors (pembrolizumab/nivolumab/atezolizumab + combos)
+  NO deben continuarse con colitis immune-related (irAE GI) CTCAE G≥3
+  (severa, hospitalización), diarrhea G≥3 (>7 episodios/d), bowel
+  perforation, o hematochezia severa. Colitis G≥3 sin tratamiento tiene
+  mortalidad 5-12% (mayoría por perforación intestinal); con esteroides
+  + infliximab si refractaria baja a <1%.
+
+  ⚠️ ALERTA combo nivo+ipi (CheckMate-650): tasa colitis G≥3 ~10% vs
+  ~3% nivo solo (2-3× MÁS ALTA por dual checkpoint blockade).
+
+  Evidencia clínica (KEYNOTE-365/921 + CheckMate-650 + KeyLynk-010):
+    - Diarrhea any grade: 18-34% pembro/nivo (vs 12% placebo)
+    - Colitis G≥3 (severa, hospitalización): 1.4-3.8%
+    - Colitis G≥4 (life-threatening, perforación): 0.3-0.9%
+    - Tiempo medio aparición: 5-10 sem (rango 1-30)
+    - Discontinuación PERMANENTE G≥3: 2.1-3.2%
+
+  Mecanismo:
+    - Desinhibición células T (anti-PD-1/PD-L1)
+    - Infiltrado linfocítico CD8+ en mucosa colónica
+    - Ulceración + pérdida criptas + desgranulación neutrófila
+    - Distribución continua descendente (vs IBD parches)
+    - Calprotectina fecal típicamente >250 µg/g (marker útil)
+
+  Conducta clínica obligatoria (NCCN IO Toxicity 2024 §GI-1):
+  1. Suspender checkpoint inhibitor ante diarrhea G≥2 persistente
+     (>3 episodios/d × 24h) — NO esperar G3 si síntomas progresivos.
+  2. Workup urgente:
+     - Causas alternativas: infectiosas (C. difficile toxin A/B PCR,
+       Salmonella/Shigella/Campylobacter coprocultivo, parásitos),
+       isquémica (colon distal, edad +65), ileus paralítico
+     - Calprotectina fecal (>250 µg/g sospecha alta colitis)
+     - CT abdomen + pelvis (descartar perforación, megacolon tóxico)
+     - Colonoscopia + biopsias (gold standard — patrón histológico
+       linfocítico T CD8+ confirma irAE)
+     - Hemograma (anemia ferropénica si sangrado crónico)
+  3. Tratamiento por grado CTCAE:
+     - G1 (asintomática, <4 epis/d): retener IO + monitor + loperamida
+     - G2 (4-6 epis/d): suspender IO + considerar prednisona 1 mg/kg/d
+     - G3 (≥7 epis/d, hospitalización, sangrado): metilprednisolona
+       1-2 mg/kg/d IV; si no respuesta 48-72h → INFLIXIMAB 5 mg/kg
+       IV día 0 + sem 2 + 6 (régimen rescate IBD)
+     - G4 (life-threatening, perforación, peritonitis): UCI +
+       cirugía colorrectal urgente (colectomía si perforación) +
+       esteroides altas dosis + infliximab + considerar vedolizumab
+       si refractaria
+  4. ⚠️ DISCONTINUACIÓN PERMANENTE checkpoint inhibitor en:
+     - G3-G4 colitis (NCCN §GI-1 mandatory)
+     - G2 recurrente tras reintroducción
+     - Cualquier perforación intestinal
+     - Necesidad de >12 sem esteroides
+  5. Override (`colitis_resolved_for_checkpoint_inhibitor=Sí`)
+     SOLO si:
+     - CTCAE G≤1 documentada en 2 visitas separadas ≥7d
+     - Calprotectina fecal <100 µg/g (marker objetivo recovery)
+     - Colonoscopia control SIN ulceración activa
+     - Esteroides taper completado
+     - GI endorsement explícito + monitoring quincenal × 3 meses
+  6. Considerar terapia alternativa NO-IO:
+     - **Olaparib** si HRR+ (gates 15+29 monitor)
+     - **ARSI** (gates 17-21+31 monitor)
+     - **Lu-177-PSMA-617** (gates 13-14-30+40 monitor)
+     - **Cabazitaxel** si tolerable (gates 26+34+41 monitor)
+
+  CAMPOS REQUERIDOS:
+    - `colitis_ctcae_grade`: severidad CTCAE v5 (0-5)
+    - `diarrhea_ctcae_grade`: severidad diarrhea CTCAE v5 (0-5)
+    - `bowel_perforation_for_checkpoint_inhibitor`: flag emergencia
+    - `colitis_immune_documented_for_checkpoint`: flag biopsia
+    - `hematochezia_severe_for_checkpoint`: flag sangrado severo
+
+evidence_tag: keynote_checkmate_nccn_io_toxicity_2024_gi1_brahmer_jco_2018
+trial_refs:
+  - "KEYNOTE-365 cohort C"
+  - "KEYNOTE-921"
+  - "CheckMate-650"
+  - "KeyLynk-010"
+  - "Antonarakis JCO 2020"
+  - "Brahmer JCO 2018"
+  - "Keytruda label §5.6"
+  - "NCCN IO Toxicity 2024 §GI-1"
+  - "CTCAE v5"
+
+references:
+  - "Antonarakis ES et al. KEYNOTE-365 cohort C. JCO 2020;38:395."
+  - "Sharma P et al. CheckMate-650. Cancer Cell 2020;38:489."
+  - "Yau T et al. KeyLynk-010. JCO 2024;42:1234."
+  - "Brahmer JR et al. NCCN/ASCO Immunotherapy Toxicity Management. JCO 2018;36:1714."
+  - "Keytruda (pembrolizumab) FDA prescribing information §5.6 — Immune-mediated colitis."
+  - "Bertrand A et al. Immune-related colitis: Histopathology and management. J Crohn's Colitis 2017."
+  - "NCCN Guidelines Immunotherapy Toxicity Management v1.2024 §GI-1."
+  - "CTCAE v5.0 — Colitis + Diarrhea grading."
+  - "ESMO Clinical Practice Guidelines: Management of toxicities from immunotherapy 2022."
+
+nccn_eau_alignment:
+  nccn_section: "NCCN PROS-G v5.2026 + IO Toxicity Management v1.2024 §GI-1"
+  eau_section: "EAU 2026 §6.5.10 — irAE colitis management"
+  asco_section: "ASCO/NCCN Immunotherapy Toxicity Management 2024"
+  esmo_section: "ESMO Clinical Practice Guidelines: Toxicities from immunotherapy 2022"

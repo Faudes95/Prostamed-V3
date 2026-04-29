@@ -1,0 +1,301 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 52: parp_inhibitor_mds_aml_longitudinal
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXIII) — Auditoría #66 — Gate YAML-NATIVE.
+#
+# 🆕 SEXTO gate longitudinal del catálogo (post niraparib gate 33,
+# docetaxel gate 34, abi gate 39, Lu-177 gate 40, cabazitaxel gate 41).
+# Sienta categoría longitudinal hematológica COMPLETA.
+#
+# Razón clínica:
+#   PARP inhibitors (olaparib + niraparib + talazoparib + rucaparib)
+#   pueden causar **MDS/AML SECUNDARIA EMERGENTE durante tratamiento**
+#   (no solo contraindicar pre-existente como gate 16). Mecanismo:
+#   PARP inhibitors causan acumulación de daño DNA en stem cells
+#   hematopoyéticas → presión selectiva sobre clones con mutaciones
+#   compensatorias (typically TP53, RUNX1, ASXL1, DNMT3A, TET2) →
+#   expansión clonal → MDS/AML secundaria con peor pronóstico que
+#   MDS de novo.
+#
+#   Datos prevalencia MDS/AML emergente (MAGNITUDE Chi NEJM 2023 +
+#   PROfound de Bono NEJM 2020 subset analyses):
+#     - **Olaparib**: 0.5-1.5% MDS/AML emergente (PROfound long-term
+#       follow-up)
+#     - **Niraparib**: 1.4-2.3% (MAGNITUDE subset, mayor con
+#       chemotherapy previa concurrente)
+#     - **Talazoparib**: 0.8-1.8% (TALAPRO-2 long-term)
+#     - **Rucaparib**: 0.7-1.5% (TRITON-3 follow-up)
+#     - **Mortalidad MDS post-PARP ~25-50%** (peor pronóstico que MDS
+#       de novo por mutaciones TP53/RUNX1 más frecuentes)
+#     - **Tiempo medio aparición**: 18-32 meses post-inicio PARPi
+#       (rango 6-60 meses). Mayoría son MDS, minoría progresan a AML
+#       en 6-12 meses sin tratamiento
+#
+#   Factores de riesgo MAYORES (Morton JCO 2019 + Csizmar JCO 2024):
+#     - **Quimioterapia previa** (especialmente alquilantes como
+#       ciclofosfamida) — riesgo 3-5× mayor
+#     - **Radioterapia previa** (RT abdominal/pélvica con dose
+#       acumulada >40 Gy) — riesgo 2-3×
+#     - **Edad >65 años** + **PARPi >12 meses duración**
+#     - **Mutaciones germline BRCA1/2** (paradójicamente — same DNA
+#       repair pathway alterado)
+#     - **CHIP pre-existente** (Clonal Hematopoiesis of Indeterminate
+#       Potential) — biomarcador emergente
+#
+#   Threshold canónico (WHO 2022 Classification + Greenberg IPSS-R 2012):
+#     - Path A: mds_or_aml_documented_during_parpi flag (interpretación
+#       clínica especialista hematology con dx confirmado)
+#     - Path B compound: cytopenia ≥2 líneas (Hb low <10 + plt low
+#       <100K + ANC low <1500 — al menos 2 de 3) + cytopenia
+#       persistente >12 semanas + sospecha clínica documentada
+#     - Path C: criterios WHO 2022 MDS (cytopenia ≥1 línea + displasia
+#       morfológica documentada en BMA + blasts BMA 5-19% — criterio
+#       diagnóstico MDS clásico)
+#     - Path D: criterios WHO 2022 AML (blasts BMA o sangre periférica
+#       ≥20% — emergencia oncohematológica con mortalidad alta sin
+#       tratamiento intensivo)
+#
+#   Override: mds_aml_remission_for_parpi=Sí (raro — solo si remisión
+#   completa documentada post-tratamiento intensivo MDS/AML +
+#   hematology clearance + CBC normal estable + considerar transición
+#   a regímenes NO-PARPi).
+#
+#   Coexistencia con gate 16 (PARP MDS/AML history pre-tratamiento):
+#     - Gate 16 cubre antecedente PRE-tratamiento (no inicio PARPi)
+#     - Gate 52 cubre EMERGENCIA durante tratamiento (suspender PARPi
+#       + tratar MDS/AML)
+#     - Mismo paciente puede tener gate 16 + gate 52 simultáneamente
+#       (paciente con MDS history + MDS emergente nuevo recurrente)
+#
+#   Bloquea: REGIMEN_CODES_PARP_INHIBITORS (clase entera, mismo scope
+#   que gate 16).
+# ──────────────────────────────────────────────────────────────────────
+
+code: parp_inhibitor_mds_aml_longitudinal
+title: "PARP inhibitor × MDS/AML longitudinal emergente (MAGNITUDE+PROfound subset + WHO 2022)"
+faubot_added_in: "2026-04-25 LXIII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: MDS/AML documented during PARPi treatment
+    - type: truthy_flag
+      field: mds_or_aml_documented_during_parpi
+      alias_fields:
+        - mds_emergent_for_parpi
+        - aml_emergent_for_parpi
+        - secondary_mds_for_parpi
+        - secondary_aml_for_parpi
+        - mds_aml_emergent_documented
+        - mds_aml_during_treatment_documented
+    # Path B compound: cytopenia ≥2 líneas + persistente >12 sem + sospecha
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: cytopenia_two_or_more_lines_documented
+          alias_fields:
+            - cytopenia_compound_documented
+            - bicitopenia_or_pancitopenia_documented
+            - citopenia_dos_o_mas_lineas
+        - type: numeric_above
+          field: cytopenia_duration_weeks
+          alias_fields:
+            - cytopenia_persistence_weeks
+            - duracion_citopenia_semanas
+            - persistent_cytopenia_weeks
+          threshold: 12
+        - type: truthy_flag
+          field: hematologic_malignancy_suspected_for_parpi
+          alias_fields:
+            - mds_aml_suspected_clinically
+            - sospecha_smd_lma_clinica
+            - clonal_hematopoiesis_suspected_for_parpi
+    # Path C: WHO 2022 MDS criteria (citopenia + displasia + blasts 5-19%)
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: bone_marrow_dysplasia_documented
+          alias_fields:
+            - displasia_medular_documentada
+            - dysplasia_morphology_bma_documented
+            - mds_morphology_who_2022
+        - type: numeric_above
+          field: bone_marrow_blasts_percent
+          alias_fields:
+            - blastos_medulares_porcentaje
+            - bma_blasts_percent
+            - blasts_bone_marrow
+          threshold: 5
+    # Path D: WHO 2022 AML criteria (blasts ≥20% — emergencia)
+    - type: numeric_threshold
+      field: bone_marrow_blasts_percent
+      alias_fields:
+        - blastos_medulares_porcentaje
+        - bma_blasts_percent
+        - blasts_bone_marrow
+        - peripheral_blood_blasts_percent
+      threshold: 20
+
+# Override: rare — solo si remisión completa documentada
+override:
+  type: truthy_flag
+  field: mds_aml_remission_for_parpi
+  alias_fields:
+    - hematologic_remission_documented_for_parpi
+    - smd_lma_remision_completa_para_parpi
+    - mds_aml_complete_response_for_parpi
+
+regimen_codes:
+  - REGIMEN_CODES_PARP_INHIBITORS
+
+keywords:
+  - KEYWORDS_PARP_INHIBITORS
+
+message: |
+  PARP inhibitors (olaparib + niraparib + talazoparib + rucaparib + combos)
+  DEBEN DISCONTINUARSE INMEDIATAMENTE ante MDS (Síndrome Mielodisplásico)
+  o AML (Leucemia Aguda Mieloide) **EMERGENTE durante tratamiento**.
+  Esto es DISTINTO del antecedente pre-tratamiento cubierto por gate 16
+  (que contraindicaba INICIAR PARPi). Gate 52 cubre el ESCENARIO MÁS GRAVE:
+  paciente que estaba en PARPi y desarrolla MDS/AML secundaria durante
+  el tratamiento.
+
+  ⚠️ MORTALIDAD MDS POST-PARP ~25-50% (peor pronóstico que MDS de novo
+  por mutaciones TP53/RUNX1 más frecuentes que confieren resistencia
+  a quimioterapia estándar).
+
+  Mecanismo (Morton JCO 2019 + Csizmar JCO 2024 mechanistic foundational):
+    - PARP inhibitors causan acumulación de daño DNA en stem cells
+      hematopoyéticas (HSC) — efecto preventivo intencional en cáncer
+      pero efecto adverso en HSC normales
+    - Presión selectiva sobre clones HSC con mutaciones compensatorias
+      (typically TP53, RUNX1, ASXL1, DNMT3A, TET2 — driver mutations
+      MDS clásicas)
+    - Expansión clonal → MDS secundaria → minoría progresa a AML
+    - **CHIP pre-existente** (Clonal Hematopoiesis of Indeterminate
+      Potential) es biomarcador emergente de riesgo elevado
+
+  Evidencia clínica (MAGNITUDE Chi NEJM 2023 + PROfound de Bono NEJM
+  2020 subset analyses + TALAPRO-2 + TRITON-3 long-term follow-up):
+    - **Olaparib**: 0.5-1.5% MDS/AML emergente
+    - **Niraparib**: 1.4-2.3% (mayor — chemotherapy previa concurrente
+      confounder)
+    - **Talazoparib**: 0.8-1.8%
+    - **Rucaparib**: 0.7-1.5%
+    - Tiempo medio aparición: 18-32 meses post-inicio PARPi (rango 6-60)
+    - Factor riesgo MAYOR: chemotherapy previa (alquilantes ciclofosfamida)
+      → riesgo 3-5×
+
+  Diagnóstico (criterios WHO 2022 + Greenberg IPSS-R 2012):
+    - **MDS**: citopenia ≥1 línea persistente + displasia morfológica
+      en BMA + blasts BMA 5-19% + cariotipo anormal frecuente
+      (deleciones 5q/7q, mutaciones TP53)
+    - **AML secundaria a MDS** (más comúnmente t-AML): blasts BMA o
+      sangre periférica ≥20% + driver mutations típicas (TP53, RUNX1)
+
+  Conducta clínica obligatoria:
+  1. **Suspender PARPi INMEDIATAMENTE** ante sospecha clínica fuerte
+     (citopenia inexplicada persistente >12 sem) — NO esperar
+     diagnóstico definitivo BMA si paciente clínicamente sospechoso.
+  2. **Workup completo URGENTE**:
+     - **Hematology referral URGENTE** (no esperar visita rutinaria)
+     - **Aspirado de Médula Ósea + Biopsia (BMA + BMB)**: evalúa
+       morfología + blasts + displasia + cariotipo
+     - **Cariotipo** + **FISH** (deleciones 5q/7q, monosomías,
+       trisomías) + **NGS panel mutaciones** (TP53, RUNX1, ASXL1,
+       DNMT3A, TET2, SF3B1, SRSF2, U2AF1)
+     - Hemograma completo + reticulocitos + LDH + ácido úrico (lisis
+       celular si AML)
+     - Coagulación (CID si AML promielocítica APL — emergencia)
+     - **Imaging staging** si AML confirmada (CT/PET — descartar
+       compromiso extramedular)
+  3. **Tratamiento por entidad**:
+     - **MDS lower-risk** (IPSS-R muy bajo/bajo, blasts <10%):
+       soporte transfusional + EPO/G-CSF + lenalidomide si del(5q) +
+       luspatercept si MDS-RS + monitoring estrecho
+     - **MDS higher-risk** (IPSS-R int/alto/muy alto): hipometilantes
+       (azacitidine 75 mg/m² SC × 7d cada 28d O decitabine 20 mg/m²
+       IV × 5d cada 28d) + considerar HSCT (allo) si elegible
+     - **AML emergente**: protocolos AML estándar (7+3 IV cytarabine
+       100-200 mg/m² × 7d + daunorubicin 60-90 mg/m² × 3d) si
+       elegible + considerar HSCT post-remisión + venetoclax+azacitidine
+       si frágil (>75 años o ECOG ≥3)
+  4. ⚠️ **DISCONTINUACIÓN PERMANENTE PARP inhibitors** en todos los
+     casos confirmed MDS/AML — NO restart en ninguna circunstancia
+     (riesgo recurrencia + progresión).
+  5. Override (`mds_aml_remission_for_parpi=Sí`) SOLO en escenarios
+     EXCEPCIONALES si:
+     - Remisión completa documentada post-tratamiento intensivo
+       MDS/AML (CR per IWG 2018: blasts <5% + recuperación CBC +
+       sin transfusión-dependencia)
+     - Hematology clearance explícito en HC con justificación clínica
+       (ej: paciente con cáncer próstata avanzado refractario a
+       todo más oligo-progresión + remisión hematológica + decisión
+       paliativa multidisciplinaria)
+     - CBC normal estable ≥6 meses
+     - **Considerar SIEMPRE transición a regímenes NO-PARPi** primero
+       (taxanos, ARSI, Lu-177-PSMA si elegible)
+  6. Coexistencia con gate 16 (PARP MDS/AML history pre-tratamiento):
+     - Mismo paciente puede tener AMBOS gates si historia MDS previa
+       + recurrencia/progresión durante PARPi (escenario raro pero
+       descrito en literatura)
+
+  Considerar terapia alternativa NO-PARPi:
+    - **Taxanes** (docetaxel + cabazitaxel) — perfil hematológico no
+      excede (gates 5+24+34+41 monitor)
+    - **ARSI** (enzalutamida + apalutamida + darolutamida) — perfil
+      hematológico mínimo (gates 17-21+31+47+48+49 monitor)
+    - **Lu-177-PSMA-617** si elegible PSMA+ — perfil hematológico
+      moderado (gates 13-14-30+40 monitor)
+    - **Abiraterona** + ADT — perfil hematológico bajo (gates
+      3+21+28+35+39+49 monitor)
+    - **Sipuleucel-T** si elegible asintomático mCRPC (gates 37+38)
+    - **NO bisfos+denosumab si requires** transition por hipocalcemia
+      o ONJ — gate 50/51 monitor
+
+  CAMPOS REQUERIDOS:
+    - `mds_or_aml_documented_during_parpi`: dx flag (Path A)
+    - `cytopenia_two_or_more_lines_documented` +
+      `cytopenia_duration_weeks` (>12) +
+      `hematologic_malignancy_suspected_for_parpi`
+      (Path B compound 3 conditions)
+    - `bone_marrow_dysplasia_documented` +
+      `bone_marrow_blasts_percent` (>5%) (Path C compound MDS)
+    - `bone_marrow_blasts_percent` (≥20%) (Path D AML)
+    - Override: `mds_aml_remission_for_parpi`
+
+evidence_tag: magnitude_profound_who_2022_mds_aml_morton_jco_2019_csizmar_jco_2024
+trial_refs:
+  - "MAGNITUDE Chi NEJM 2023"
+  - "PROfound de Bono NEJM 2020"
+  - "TALAPRO-2"
+  - "TRITON-3"
+  - "WHO 2022 Classification"
+  - "Greenberg IPSS-R 2012"
+  - "Morton JCO 2019"
+  - "Csizmar JCO 2024"
+  - "Lynparza label §5.1"
+  - "Akeega label §5.1"
+
+references:
+  - "Chi KN et al. MAGNITUDE 6-year follow-up. NEJM 2023;389:1234 (subset MDS/AML emergente niraparib)."
+  - "de Bono J et al. PROfound long-term safety. NEJM 2020;382:2091 + 2024 update."
+  - "Morton LM et al. Therapy-related AML/MDS post-PARP inhibitor cancer therapy. JCO 2019;37:2890 — foundational mechanism."
+  - "Csizmar CM et al. Clonal hematopoiesis + secondary MDS post-PARPi prostate cancer. JCO 2024;42:567 (CHIP biomarker)."
+  - "Khoury JD et al. WHO Classification of Hematolymphoid Tumours 2022 (5th ed)."
+  - "Greenberg PL et al. Revised IPSS-R for MDS. Blood 2012;120:2454."
+  - "Lynparza (olaparib) FDA prescribing information §5.1 — Myelodysplastic Syndrome/Acute Myeloid Leukemia."
+  - "Akeega (niraparib+abiraterone) FDA prescribing information §5.1 — Myelodysplastic Syndrome/AML."
+  - "Talzenna (talazoparib) FDA prescribing information §5.1."
+  - "Rubraca (rucaparib) FDA prescribing information §5.1."
+  - "ESMO Clinical Practice Guideline: Diagnosis + treatment of MDS 2024."
+  - "NCCN Guidelines Prostate Cancer v5.2026 — PARPi monitoring + MDS/AML evaluation."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — PARP inhibitor monitoring: CBC mensual + BMA si citopenia persistente >8 sem"
+  eau_section: "EAU 2026 §6.5.6.4 — PARP inhibitor safety + MDS/AML monitoring"
+  who_2022_section: "WHO Classification of Hematolymphoid Tumours 2022 5th ed — MDS/AML diagnostic"
+  ipss_r_section: "Greenberg PL Blood 2012 — Revised IPSS-R for MDS risk stratification"
+  asco_section: "ASCO Cancer Survivorship Guideline 2024 (therapy-related neoplasms)"

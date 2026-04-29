@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from prostanet.shared.metastatic_profile import derive_legacy_metastasis, derive_mhspc_burden_context
+from prostanet.shared.metastatic_profile import (
+    derive_legacy_metastasis,
+    derive_mhspc_burden_context,
+    resolve_metastatic_state_context,
+)
 from prostanet.shared.systemic_progression import resolve_systemic_progression_context
 
 from prostanet.application.module_registry import ModuleRegistry
@@ -831,6 +835,67 @@ def _derive_conventional_imaging_status(patient: dict[str, Any], state: str) -> 
     return "NOT_RESTAGED"
 
 
+def _build_metastatic_signal_payload(
+    patient: dict[str, Any],
+    latest_assessment: dict[str, Any] | None,
+    truth_values: dict[str, Any],
+    latest_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = dict(patient.get("baseline") or {})
+    latest_snapshot = dict(latest_snapshot or patient.get("latest_signal_snapshot") or {})
+    latest_followup = _latest(patient.get("follow_ups", []), "visit_date")
+    latest_inputs = dict((latest_assessment or patient.get("latest_assessment") or {}).get("input_snapshot") or {})
+    latest_stage_visit = _latest(patient.get("stage_visits", []), "visit_date", "created_at", "recorded_at")
+    stage_payload = ((latest_stage_visit.get("visit_bundle") or {}).get("payload") or {}) if latest_stage_visit else {}
+    for source in (truth_values, latest_inputs, latest_snapshot, latest_followup, stage_payload):
+        if not isinstance(source, dict):
+            continue
+        for key, value in source.items():
+            if value not in (None, "", [], {}):
+                payload[key] = value
+    psma_profile = patient.get("psma_structured_profile") or {}
+    if isinstance(psma_profile, dict) and psma_profile.get("available"):
+        overlay = {
+            "psma_pet_done": "1",
+            "psma_positive": "1" if psma_profile.get("psma_positive") else "0",
+            "psma_result": psma_profile.get("psma_result"),
+            "psma_radioligand": psma_profile.get("psma_radioligand"),
+            "psma_rads_score": psma_profile.get("psma_rads_score"),
+            "psma_uptake_pattern": psma_profile.get("psma_uptake_pattern"),
+            "psma_stage_after_psma": psma_profile.get("psma_stage_after_psma"),
+            "conventional_stage_before_psma": psma_profile.get("conventional_stage_before_psma"),
+            "psma_study_date": psma_profile.get("study_date"),
+        }
+        for key, value in overlay.items():
+            if value not in (None, "", [], {}) and payload.get(key) in (None, "", [], {}):
+                payload[key] = value
+        if payload.get("conventional_imaging_status") in (None, "", [], {}) and psma_profile.get("conventional_stage_before_psma"):
+            payload["conventional_imaging_status"] = psma_profile.get("conventional_stage_before_psma")
+    latest_psma = {}
+    for study in patient.get("imaging") or []:
+        if "psma" in str(study.get("study_type") or "").lower():
+            latest_psma = dict(study)
+            break
+    if latest_psma:
+        findings = latest_psma.get("findings") if isinstance(latest_psma.get("findings"), dict) else {}
+        for key in (
+            "psma_result",
+            "psma_radioligand",
+            "psma_rads_score",
+            "psma_uptake_pattern",
+            "conventional_stage_before_psma",
+            "psma_stage_after_psma",
+        ):
+            value = latest_psma.get(key) or findings.get(key)
+            if value not in (None, "", [], {}) and payload.get(key) in (None, "", [], {}):
+                payload[key] = value
+        if payload.get("psma_study_date") in (None, "", [], {}) and latest_psma.get("study_date"):
+            payload["psma_study_date"] = latest_psma.get("study_date")
+        if payload.get("psma_pet_done") in (None, "", [], {}):
+            payload["psma_pet_done"] = "1"
+    return payload
+
+
 def build_state_classifier_payload(patient: dict[str, Any], latest_assessment: dict[str, Any] | None = None) -> dict[str, Any]:
     reconciliation = build_reconciled_state(patient, latest_assessment)
     state = reconciliation.get("reconciled_state") or _current_state(patient, latest_assessment)
@@ -925,6 +990,25 @@ def build_clinical_signals(patient: dict[str, Any], latest_assessment: dict[str,
     latest_biopsy = _latest(patient.get("biopsies", []), "biopsy_date")
     latest_mri = _latest(patient.get("mri_facts", []), "fact_date")
     latest_imaging = _latest(patient.get("imaging", []), "study_date")
+    metastatic_payload = _build_metastatic_signal_payload(patient, latest_assessment, truth_values)
+    metastatic_state_context = resolve_metastatic_state_context(metastatic_payload)
+    metastatic_stage_resolved = str(metastatic_state_context.get("metastatic_stage_resolved") or "M0")
+    metastatic_detection_basis = str(metastatic_state_context.get("metastatic_detection_basis") or "unknown")
+    psma_only_upstaging = bool(
+        metastatic_detection_basis == "psma_only"
+        and metastatic_stage_resolved not in {"", "M0"}
+    )
+    nmcrpc_eligible = bool(
+        state == "m0_crpc"
+        and metastatic_stage_resolved == "M0"
+        and str(metastatic_payload.get("conventional_imaging_status") or "").upper() in {"", "M0", "NOT_RESTAGED"}
+    )
+    nmcrpc_ineligibility_reason = ""
+    if metastatic_stage_resolved != "M0":
+        nmcrpc_ineligibility_reason = (
+            f"M1 documentado ({metastatic_stage_resolved}) por {metastatic_detection_basis}; "
+            "no corresponde liberar carril nmCRPC."
+        )
     bcr = patient.get("bcr") or {}
     signals = []
     critical_missing = []
@@ -1128,7 +1212,11 @@ def build_clinical_signals(patient: dict[str, Any], latest_assessment: dict[str,
             if alert not in active_safety:
                 active_safety.append(alert)
 
-    ready_to_restage = bool(awaiting_review) or any(item.get("status") == "warning" for item in signals if item.get("key") in {"possible_bcr", "histologic_progression"})
+    ready_to_restage = (
+        bool(awaiting_review)
+        or bool(metastatic_state_context.get("restaging_update_required"))
+        or any(item.get("status") == "warning" for item in signals if item.get("key") in {"possible_bcr", "histologic_progression"})
+    )
     return ClinicalSignalSet(
         state=state,
         management_track=management_track,
@@ -1151,6 +1239,17 @@ def build_clinical_signals(patient: dict[str, Any], latest_assessment: dict[str,
         "progression_gate_reason": reconciliation.get("progression_gate_reason", ""),
         "systemic_progression_context_resolved": reconciliation.get("systemic_progression_context_resolved", "none"),
         "supporting_evidence": reconciliation.get("supporting_evidence", {}),
+        "metastatic_state_bundle": metastatic_state_context,
+        "metastatic_stage_resolved": metastatic_stage_resolved,
+        "metastatic_stage_label": metastatic_state_context.get("metastatic_stage_label") or metastatic_stage_resolved,
+        "m_substage_resolved": metastatic_stage_resolved,
+        "metastatic_detection_basis": metastatic_detection_basis,
+        "psma_only_upstaging": psma_only_upstaging,
+        "nmcrpc_eligible": nmcrpc_eligible,
+        "nmcrpc_ineligibility_reason": nmcrpc_ineligibility_reason,
+        "restaging_update_required": bool(metastatic_state_context.get("restaging_update_required")),
+        "restaging_currentness_status": metastatic_state_context.get("restaging_currentness_status", "unknown"),
+        "restaging_update_reason": metastatic_state_context.get("restaging_update_reason", ""),
         "longitudinal_truth_snapshot": truth_snapshot,
         "latest_clinically_decisive_visit": truth_snapshot.get("latest_clinically_decisive_visit", {}),
         "laboratory_intelligence_summary": {

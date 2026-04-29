@@ -164,7 +164,20 @@ class PalliativePathwayService:
             recs.extend([
                 "Adyuvante óseo: considerar denosumab/zoledronato si no iniciado",
                 "Evaluar RT paliativa para lesión ósea sintomática (8 Gy dosis única o 30 Gy/10 fx)",
-                "Considerar Ra-223 si metástasis óseas sintomáticas sin metástasis viscerales",
+                # Faubot 2026-04-24 — guardar consistencia con el gate
+                # `no_bone_protective_agent` de pivotal_contraindication_gates:
+                # ERA-223 (Smith Lancet Oncol 2019;20:408) demostró exceso de
+                # fracturas con Ra-223 + abiraterona sin agente óseo (28% vs
+                # 12%). PEACE-3 (Tombal ESMO 2024) volvió obligatorio el agente
+                # óseo concomitante. Reflejamos ambos prerrequisitos en el
+                # texto para que la rama paliativa no contradiga el filtro.
+                (
+                    "Considerar Ra-223 si metástasis óseas sintomáticas sin "
+                    "metástasis viscerales — verificar agente protector óseo "
+                    "(denosumab/zoledronato) iniciado ≥6 sem antes o concomitante "
+                    "y NO combinar con abiraterona (ERA-223 / PEACE-3: exceso de "
+                    "fracturas)"
+                ),
             ])
 
         if neuropathic:

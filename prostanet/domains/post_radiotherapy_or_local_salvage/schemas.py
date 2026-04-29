@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from prostanet.shared.contracts import FieldSpec, module_schema
+from prostanet.shared.advanced_support_fields import (
+    oncologic_emergency_fields,
+    pivotal_gate_supporting_fields,
+)
 
 
 POST_RT_LOCAL_SALVAGE_SCHEMA = module_schema(
@@ -39,5 +43,14 @@ POST_RT_LOCAL_SALVAGE_SCHEMA = module_schema(
         FieldSpec("anesthesia_surgical_fitness", "Aptitud quirúrgica/anestésica", "select", options=["Fit", "Vulnerable", "No apto"], default="Fit", group="Factibilidad de salvage local", group_order=5, clinical_role="required"),
         FieldSpec("salvage_expertise_available", "Existe expertise local para salvage complejo", "select", options=["0", "1", "Desconocido"], default="Desconocido", group="Factibilidad de salvage local", group_order=5, clinical_role="required"),
         FieldSpec("ecog_score", "ECOG", "select", options=["0", "1", "2", "3"], default="0", group="Factibilidad de salvage local", group_order=5, clinical_role="decision_refiner"),
+        # ── Triaje de emergencias oncológicas (Brecha 2026-04-23) ──────
+        # NCCN Oncologic Emergencies v3.2026 + Loblaw 2012 + EAU §6.5.5.
+        # Post-RT con fallo Phoenix puede debutar con progresión visceral u
+        # ósea sintomática; el triaje permite escalar antes del salvage local.
+        *oncologic_emergency_fields(role="decision_refiner", group_order=70),
+        # ── Soportes pivotal gates 56-70 (Faubot LXXV/LXXVI/LXXVII #67A/B/C) ──
+        # Captura UI: PSA bounce post-RT (gate 54), prior pelvic RT contra
+        # re-RT (gate 58), salvage RT consideration (gate 70), atypical (gate 67).
+        *pivotal_gate_supporting_fields(role="decision_refiner", group_order=81),
     ],
 )

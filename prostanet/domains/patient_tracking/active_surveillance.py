@@ -123,6 +123,83 @@ AS_PROTOCOLS = {
         },
         "evidence_tags": ["Royal Marsden AS protocol"],
     },
+    "Canary_PASS": {
+        # Multi-center norteamericano con énfasis en biopsia confirmatoria estructurada
+        # y RMmp integrada. Admite ISUP 1 con umbral PSAD 0.15, requiere biopsia
+        # confirmatoria a 6-12 meses (no aplazable). Referencia: Newcomb LF et al.
+        # J Urol 2016;195:313 (Canary PASS cohort).
+        "label": "Canary PASS",
+        "criteria": {
+            "isup_max": 1,
+            "cores_positive_max": 3,
+            "max_involvement_pct": 50,
+            "psa_max": 15,
+            "tstage_max": "T2a",
+            "psad_max": 0.15,
+        },
+        "schedule": {
+            "psa_interval_months": 3,
+            "mri_interval_months": 12,
+            "rebiopsy_interval_months": 6,   # biopsia confirmatoria 6-12m
+            "rebiopsy_ongoing_months": 24,
+            "dre_interval_months": 12,
+        },
+        "evidence_tags": ["Canary PASS Newcomb J Urol 2016", "Category 2A NCCN AS"],
+    },
+    "UCSF": {
+        # UCSF AS permite intermedio favorable selecto (GG2 ≤33% pattern 4 y
+        # <33% cores) si Decipher bajo/intermedio. Referencia: Welty CJ et al.
+        # J Urol 2015;193:807 y Cooperberg MR et al. JCO 2018 (Decipher in AS).
+        "label": "UCSF",
+        "criteria": {
+            "isup_max": 2,               # admite favorable intermediate selecto
+            "cores_positive_max": 4,     # hasta 33% cores
+            "max_involvement_pct": 50,
+            "psa_max": 15,
+            "tstage_max": "T2b",
+            "psad_max": 0.20,
+            "decipher_score_max": 0.60,  # Decipher favorable/intermediate
+            "no_cribriform": True,
+            "no_intraductal": True,
+        },
+        "schedule": {
+            "psa_interval_months": 3,
+            "mri_interval_months": 12,
+            "rebiopsy_interval_months": 12,
+            "rebiopsy_ongoing_months": 24,
+            "dre_interval_months": 6,
+        },
+        "evidence_tags": [
+            "UCSF AS Welty J Urol 2015",
+            "Cooperberg Decipher JCO 2018",
+            "Category 2A NCCN AS favorable intermediate",
+        ],
+    },
+    "Sunnybrook": {
+        # Protocolo dirigido por cinética PSA (Klotz). Umbral PSADT <3 años dispara
+        # re-estadificación. Admite PSA hasta 20 y T2c en pacientes seleccionados
+        # con esperanza de vida >10 años. Referencia: Klotz L et al. JCO 2015;33:272.
+        "label": "Sunnybrook (Klotz)",
+        "criteria": {
+            "isup_max": 1,
+            "cores_positive_max": 3,
+            "max_involvement_pct": 50,
+            "psa_max": 20,
+            "tstage_max": "T2c",
+        },
+        "schedule": {
+            "psa_interval_months": 3,
+            "mri_interval_months": 24,   # MRI no obligatoria en protocolo original
+            "rebiopsy_interval_months": 12,
+            "rebiopsy_ongoing_months": 48,  # cada 3-5 años si PSADT estable
+            "dre_interval_months": 6,
+        },
+        "evidence_tags": [
+            "Sunnybrook AS Klotz JCO 2015",
+            "PSA kinetics-driven surveillance",
+            "Category 2A NCCN AS",
+        ],
+    },
 }
 
 T_STAGE_ORDER = {
@@ -290,6 +367,12 @@ class ActiveSurveillanceService:
             cribriform = cribriform.lower() in ("true", "1", "si", "sí", "yes")
         if isinstance(intraductal, str):
             intraductal = intraductal.lower() in ("true", "1", "si", "sí", "yes")
+        # Decipher score numérico (UCSF requiere ≤0.60); retrocompat con categórico.
+        decipher_score = _safe_float(
+            patient.get("decipher_score_numeric")
+            or patient.get("decipher_score")
+        )
+        decipher_categorical = str(patient.get("genomic_classifier_result", "") or "").lower()
 
         for protocol_id, protocol in AS_PROTOCOLS.items():
             criteria = protocol["criteria"]
@@ -357,6 +440,22 @@ class ActiveSurveillanceService:
                 met["no_intraductal"] = not intraductal
                 if not met["no_intraductal"]:
                     failed.append("Carcinoma intraductal presente — excluye de este protocolo")
+
+            # Decipher score (UCSF exige ≤0.60). Retrocompat: si no hay score numérico,
+            # usar categórico — "Alto" bloquea, cualquier otro valor (o ausencia) pasa.
+            if "decipher_score_max" in criteria:
+                if decipher_score is not None:
+                    met["decipher"] = decipher_score <= criteria["decipher_score_max"]
+                    if not met["decipher"]:
+                        failed.append(
+                            f"Decipher {decipher_score:.2f} > máximo {criteria['decipher_score_max']} "
+                            "(alto riesgo biológico)"
+                        )
+                elif decipher_categorical == "alto":
+                    met["decipher"] = False
+                    failed.append("Decipher categórico 'Alto' — excluye de UCSF AS")
+                else:
+                    met["decipher"] = True  # no falla si no disponible
 
             eligible = all(met.values())
             results.append(ASEligibilityCriteria(
@@ -829,8 +928,24 @@ class ActiveSurveillanceService:
         elif overdue or any(t.severity == "monitoring_intensification" for t in active_triggers):
             tone = "warning"
 
+        # EPIC 9 hardening / Auditoría #21 (cierre OOS-2): `has_data` también debe
+        # ser True cuando el paciente documenta signos de AS reales (biopsia
+        # confirmatoria completada, MRIs registradas, eligibilidad evaluada)
+        # aunque `enrollment_protocol` esté vacío por falta de enrollment_date.
+        # Esto refleja la realidad clínica: un paciente con confirmatory biopsy
+        # hecha + MRI está en AS aunque el seed/EHR no incluya la fecha exacta
+        # de inicio del protocolo.
+        has_data = bool(
+            protocol.enrollment_protocol
+            or protocol.schedule
+            or protocol.reclassification_triggers
+            or protocol.confirmatory_biopsy_done
+            or protocol.total_mris_on_as
+            or protocol.total_biopsies_on_as
+            or eligible_protocols
+        )
         return {
-            "has_data": bool(protocol.enrollment_protocol or protocol.schedule or protocol.reclassification_triggers),
+            "has_data": has_data,
             "status": protocol.status,
             "tone": tone,
             "enrollment_date": protocol.enrollment_date,
@@ -851,3 +966,78 @@ class ActiveSurveillanceService:
             "exit_treatment": protocol.exit_treatment,
             "conversion_rate_context": protocol.conversion_rate_context,
         }
+
+
+# ── Wrapper longitudinal (EPIC 5) ────────────────────────────────────────────
+
+def detect_reclassification_longitudinal(
+    snapshots: Any,
+) -> list[ASReclassificationTrigger]:
+    """Fachada retrocompat: devuelve sólo la lista de triggers longitudinales.
+
+    El engine completo (probabilidad, cinética, siguiente acción) vive en
+    `prostanet.domains.patient_tracking.active_surveillance_longitudinal`.
+    Importar de ahí directamente si se necesita el reporte enriquecido.
+    """
+    from prostanet.domains.patient_tracking.active_surveillance_longitudinal import (
+        detect_reclassification_longitudinal as _engine,
+    )
+    return _engine(snapshots).triggers
+
+
+# ── Ranking de protocolos por grupo de riesgo NCCN (EPIC 5) ──────────────────
+
+# Prioridad de protocolo según grupo NCCN. El primer elegible de la lista es el
+# "recommended_protocol". NCCN PROS-C v5.2026 enumera AS como cat 1 en muy bajo
+# y bajo; cat 2A para intermedio favorable selecto. Referencias por protocolo
+# embebidas en AS_PROTOCOLS[*]["evidence_tags"].
+_PROTOCOL_RANKING_BY_NCCN_GROUP: dict[str, list[str]] = {
+    "VERY LOW": ["NCCN_very_low", "PRIAS", "Canary_PASS", "Royal_Marsden", "Sunnybrook"],
+    "LOW": ["NCCN_low", "Canary_PASS", "PRIAS", "Royal_Marsden", "Sunnybrook"],
+    "FAVORABLE INTERMEDIATE": ["UCSF", "NCCN_favorable_intermediate"],
+    # UNFAVORABLE+/HIGH/VERY HIGH no son candidatos a AS como 1a línea.
+}
+
+
+def rank_recommended_protocols(
+    patient: dict[str, Any],
+    nccn_group: str,
+) -> list[dict[str, Any]]:
+    """Ranking de protocolos de VA para el paciente según grupo NCCN.
+
+    Devuelve lista ordenada con `{protocol, label, eligible, rank, reasons}`.
+    El primero elegible es el `recommended_protocol`; consumidores downstream
+    (UI, profile_compass) muestran alternativas para transparencia.
+    """
+    normalized_group = (nccn_group or "").upper().strip()
+    preferred_order = _PROTOCOL_RANKING_BY_NCCN_GROUP.get(normalized_group, [])
+    if not preferred_order:
+        return []
+
+    eligibility_results = ActiveSurveillanceService.check_eligibility(patient, "")
+    eligibility_by_id = {e.protocol: e for e in eligibility_results}
+
+    ranking: list[dict[str, Any]] = []
+    for idx, protocol_id in enumerate(preferred_order):
+        e = eligibility_by_id.get(protocol_id)
+        config = AS_PROTOCOLS.get(protocol_id, {})
+        ranking.append({
+            "protocol": protocol_id,
+            "label": config.get("label", protocol_id),
+            "rank": idx + 1,
+            "eligible": bool(e and e.eligible),
+            "evidence_tags": list(config.get("evidence_tags", [])),
+            "reasons_not_eligible": list(e.criteria_failed) if e and not e.eligible else [],
+        })
+    return ranking
+
+
+def recommended_protocol(
+    patient: dict[str, Any],
+    nccn_group: str,
+) -> str:
+    """Atajo: ID del primer protocolo elegible en el ranking, o '' si ninguno."""
+    for item in rank_recommended_protocols(patient, nccn_group):
+        if item["eligible"]:
+            return item["protocol"]
+    return ""

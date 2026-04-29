@@ -42,7 +42,9 @@ from prostanet.domains.patient_tracking.vertical_runtime import (
 from prostanet.engine.confidence_scoring import ConfidenceScorer
 from prostanet.shared.ddi_engine import DDIEngine
 from prostanet.shared.feature_flags import resolve_feature_flags
+from prostanet.shared.metastatic_profile import resolve_metastatic_state_context
 from prostanet.shared.presentation_text import state_display_label
+from prostanet.shared.systemic_regimen_scope import build_systemic_regimen_scope_contract
 
 
 CRPC_VERTICAL_STATES = {"adt_progression_verification", "m0_crpc", "m1_crpc"}
@@ -354,11 +356,24 @@ class CRPCCopilotService:
             agent_outputs=[model_like_output],
             guideline_result=module_result,
         )
+        # Faubot 2026-04-25 (IX) — Pre-compute delta de gates pivotal antes
+        # de _build_why_changed_today para que la narrativa clínica del
+        # delta esté disponible para incluirse en why_changed_today.
+        from prostanet.shared.pivotal_gate_delta import (
+            compute_pivotal_gates_delta,
+            extract_previous_pivotal_gates,
+        )
+        _current_pivotal_gates = list(module_result.get("pivotal_contraindication_gates") or [])
+        _previous_pivotal_gates = extract_previous_pivotal_gates(latest_assessment)
+        _pivotal_gates_delta_pre = compute_pivotal_gates_delta(
+            _current_pivotal_gates, _previous_pivotal_gates
+        )
         why_changed_today = self._build_why_changed_today(
             payload,
             state_family=state_family,
             routing_reason=routing_reason,
             safety_gates=safety_gates,
+            pivotal_gates_delta=_pivotal_gates_delta_pre,
         )
         why_changed_today = prepend_metastatic_context(why_changed_today, metastatic_composition_summary)
         crpc_schedule_overlay = self._build_schedule_overlay(
@@ -385,6 +400,8 @@ class CRPCCopilotService:
             final_presented_recommendation=final_presented_recommendation,
             blocking_groups=blocking_groups,
             blocked_by_overlay=blocked_by_overlay,
+            current_pivotal_gates=_current_pivotal_gates,
+            previous_pivotal_gates=_previous_pivotal_gates,
         )
         guideline_basis = self._guideline_basis(module_result)
         evidence_basis_current_visit = build_evidence_basis_current_visit(
@@ -416,6 +433,15 @@ class CRPCCopilotService:
             "histopathology_summary": histopathology_summary,
             "routing_reason": routing_reason,
             "metastatic_composition_summary": metastatic_composition_summary,
+            "systemic_regimen_scope": str(
+                module_result.get("systemic_regimen_scope")
+                or build_systemic_regimen_scope_contract(state_family, module_result).get("scope")
+                or "not_applicable"
+            ),
+            "systemic_regimen_scope_contract": dict(
+                module_result.get("systemic_regimen_scope_contract")
+                or build_systemic_regimen_scope_contract(state_family, module_result)
+            ),
             "rule_based_recommendation": rule_based_recommendation,
             "ai_advisory_overlay": ai_advisory_overlay,
             "final_presented_recommendation": final_presented_recommendation,
@@ -451,6 +477,12 @@ class CRPCCopilotService:
                 "clinical_pattern": psma_profile.get("clinical_pattern", ""),
             },
             "trigger_event": trigger_event or "longitudinal_refresh",
+            # Faubot 2026-04-24 (III) — propagar trazabilidad de gates pivotal
+            # y not_recommended desde los servicios m0_crpc/m1_crpc/adt_progression.
+            "pivotal_contraindication_gates": list(
+                module_result.get("pivotal_contraindication_gates") or []
+            ),
+            "not_recommended": list(module_result.get("not_recommended") or []),
         }
 
     def _disabled_bundle(self, *, state: str, runtime_mode: str, status: str) -> dict[str, Any]:
@@ -464,6 +496,8 @@ class CRPCCopilotService:
             "runtime_mode": runtime_mode,
             "rule_based_source_of_truth": True,
             "effective_management_track": "",
+            "systemic_regimen_scope": "not_applicable",
+            "systemic_regimen_scope_contract": build_systemic_regimen_scope_contract(state, {}),
             "histopathology_summary": "",
             "metastatic_composition_summary": {"available": False},
             "rule_based_recommendation": {},
@@ -481,6 +515,9 @@ class CRPCCopilotService:
             "decision_delta_since_last_visit": {"available": False},
             "crpc_schedule_overlay": {},
             "sequence_summary": [],
+            # Faubot 2026-04-24 (III) — paridad con bundle activo.
+            "pivotal_contraindication_gates": [],
+            "not_recommended": [],
         }
 
     def _build_runtime_patient(
@@ -605,6 +642,8 @@ class CRPCCopilotService:
             or latest_treatment.get("line_of_therapy")
             or regimen_json.get("line_of_therapy_number")
         )
+        explicit_castrate_status = _normalize_text(payload.get("castrate_testosterone_status"))
+        explicit_castrate_flag = payload.get("castrate_testosterone_confirmed")
         testosterone_value = _safe_float(
             payload.get("testosterone")
             or payload.get("testosterone_value")
@@ -616,8 +655,16 @@ class CRPCCopilotService:
         if testosterone_value is not None:
             payload["testosterone_value"] = testosterone_value
             payload["testosterone"] = payload.get("testosterone") or testosterone_value
-            payload["castrate_testosterone_status"] = payload.get("castrate_testosterone_status") or ("confirmed_castrate" if testosterone_value <= 50 else "not_castrate")
-            payload["castrate_testosterone_confirmed"] = 1 if testosterone_value <= 50 else 0
+        if not _is_present(payload.get("castrate_testosterone_status")):
+            if explicit_castrate_flag not in (None, ""):
+                payload["castrate_testosterone_status"] = "confirmed_castrate" if str(explicit_castrate_flag).strip() in {"1", "true", "yes", "si", "sí"} else "not_castrate"
+            elif testosterone_value is not None:
+                payload["castrate_testosterone_status"] = "confirmed_castrate" if testosterone_value <= 50 else "not_castrate"
+        if payload.get("castrate_testosterone_confirmed") in (None, ""):
+            if explicit_castrate_status:
+                payload["castrate_testosterone_confirmed"] = 1 if explicit_castrate_status == "confirmed_castrate" else 0
+            elif testosterone_value is not None:
+                payload["castrate_testosterone_confirmed"] = 1 if testosterone_value <= 50 else 0
         payload["current_adt_context"] = payload.get("current_adt_context") or payload.get("drug_scheme") or payload.get("current_treatment") or "ADT en curso"
         payload["progression_pattern"] = payload.get("progression_pattern") or "biochemical_only"
         payload["conventional_imaging_status"] = _normalize_text(payload.get("conventional_imaging_status") or "NOT_RESTAGED").upper()
@@ -645,11 +692,30 @@ class CRPCCopilotService:
             if payload["psma_negative_dominant_lesions"] in (None, ""):
                 payload["psma_negative_dominant_lesions"] = 1 if psma_profile.get("psma_negative_dominant_lesions") else 0
             payload["psma_stage_after_psma"] = payload.get("psma_stage_after_psma") or psma_profile.get("psma_stage_after_psma")
+        metastatic_context = resolve_metastatic_state_context(payload)
+        payload["metastatic_stage_resolved"] = (
+            payload.get("metastatic_stage_resolved")
+            or metastatic_context.get("metastatic_stage_resolved")
+            or "M0"
+        )
+        payload["metastatic_detection_basis"] = (
+            payload.get("metastatic_detection_basis")
+            or metastatic_context.get("metastatic_detection_basis")
+            or "unknown"
+        )
+        payload["restaging_update_required"] = bool(
+            payload.get("restaging_update_required") or metastatic_context.get("restaging_update_required")
+        )
+        payload["restaging_update_reason"] = (
+            payload.get("restaging_update_reason")
+            or metastatic_context.get("restaging_update_reason")
+            or ""
+        )
         return payload
 
     def _resolve_state_family(self, state: str, payload: dict[str, Any]) -> tuple[str, str]:
-        if state != "adt_progression_verification":
-            return state, ""
+        metastatic_context = resolve_metastatic_state_context(payload)
+        metastatic_stage_resolved = str(metastatic_context.get("metastatic_stage_resolved") or "M0").strip()
         testosterone = _safe_float(payload.get("testosterone_value"))
         castrate_confirmed = str(payload.get("castrate_testosterone_status") or "").strip() == "confirmed_castrate"
         if testosterone is not None and testosterone <= 50:
@@ -658,6 +724,14 @@ class CRPCCopilotService:
         psma_rads = _normalize_text(payload.get("psma_rads_score"))
         psma_uptake = _normalize_text(payload.get("psma_uptake_pattern")).lower()
         progression_pattern = _normalize_text(payload.get("progression_pattern")).lower()
+        if metastatic_stage_resolved != "M0":
+            if not castrate_confirmed:
+                return "adt_progression_verification", "M1 ya documentado; falta testosterona en rango de castración para cerrar enfermedad resistente."
+            if progression_pattern in {"mixed", "discordant"} or psma_rads == "3" or psma_uptake in {"indeterminado", "discordante"}:
+                return "adt_progression_verification", "M1 ya documentado, pero la trayectoria sigue discordante y obliga a correlacionar progresión resistente antes de cerrar m1 CRPC."
+            return "m1_crpc", "La castración ya está confirmada y el caso ya corresponde a enfermedad metastásica (M1)."
+        if state != "adt_progression_verification":
+            return state, ""
         if not castrate_confirmed:
             return "adt_progression_verification", "Falta testosterona en rango de castración para salir del carril de verificación."
         if progression_pattern in {"mixed", "discordant"} or psma_rads == "3" or psma_uptake in {"indeterminado", "discordante"}:
@@ -1268,6 +1342,7 @@ class CRPCCopilotService:
         state_family: str,
         routing_reason: str,
         safety_gates: list[dict[str, Any]],
+        pivotal_gates_delta: dict[str, Any] | None = None,
     ) -> list[str]:
         notes = []
         testosterone = _safe_float(payload.get("testosterone_value"))
@@ -1291,7 +1366,14 @@ class CRPCCopilotService:
             notes.append(f"Bloqueos de seguridad activos: {', '.join(blocked[:3])}.")
         if state_family == "m1_crpc" and not blocked:
             notes.append("La secuenciación mCRPC puede recalcularse hoy con biomarcadores, línea previa y seguridad.")
-        return notes[:6]
+        # Faubot 2026-04-25 (IX) — narrativa clínica del delta de gates pivotal.
+        if pivotal_gates_delta:
+            from prostanet.shared.pivotal_gate_delta import (
+                describe_gate_delta_in_clinical_language,
+            )
+            gate_notes = describe_gate_delta_in_clinical_language(pivotal_gates_delta)
+            notes.extend(gate_notes)
+        return notes[:8]  # +2 slots por las nuevas narrativas de delta
 
     def _build_schedule_overlay(
         self,

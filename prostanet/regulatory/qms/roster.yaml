@@ -1,0 +1,69 @@
+# QMS Roles Roster — ProstaMed
+# Per ISO 13485:2016 §5.5.1 (responsibility, authority, communication)
+# + 21 CFR §820.20(b)(1) (Management responsibility)
+#
+# Each role MUST have:
+#   - name: full legal name
+#   - email: institutional email
+#   - title: formal title
+#   - assigned_at: ISO date
+#   - approved_by: management representative
+
+document: "QMS Roles Roster"
+faubot_release: "2026-04-27 LXXXVIII"
+last_updated: "2026-04-27"
+
+quality_lead:
+  name: "TBD — pending assignment"
+  email: ""
+  title: "Quality Lead / Management Representative"
+  responsibilities:
+    - "Oversight of QMS per ISO 13485"
+    - "Management review chairperson"
+    - "CAPA system owner (SOP-CAPA-003)"
+    - "Internal audit coordinator"
+    - "Liaison with notified body / FDA inspectors"
+  assigned_at: null
+  approved_by: null
+
+software_lead:
+  name: "TBD — pending assignment"
+  email: ""
+  title: "Software Engineering Lead"
+  responsibilities:
+    - "IEC 62304 §5 lifecycle execution"
+    - "Software Development Plan owner"
+    - "Code review approver for clinical decision modules"
+    - "Architecture decisions logged in DHF"
+    - "SBOM maintenance + CVE remediation"
+  assigned_at: null
+  approved_by: null
+
+clinical_lead:
+  name: "TBD — pending assignment"
+  email: ""
+  title: "Chief Medical Officer / Clinical Lead"
+  responsibilities:
+    - "Clinical evidence validation (CLINICAL_EVIDENCE_2026.md)"
+    - "Pivotal gates clinical sign-off (89 gates)"
+    - "Trial eligibility logic clinical review (47 trials)"
+    - "FMEA hazard severity scoring (clinical impact)"
+    - "Post-market clinical surveillance"
+    - "Liaison with multidisciplinary tumor boards"
+  assigned_at: null
+  approved_by: null
+
+# Optional roles (not blocking minimum compliance)
+regulatory_consultant:
+  name: ""
+  external: true
+  scope: "510(k) submission preparation + FDA correspondence"
+
+cybersecurity_consultant:
+  name: ""
+  external: true
+  scope: "STRIDE threat model review + penetration testing"
+
+clinical_data_manager:
+  name: ""
+  scope: "Prospective cohort enrollment + data quality monitoring"
