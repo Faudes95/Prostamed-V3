@@ -1,0 +1,47 @@
+code: actinium_225_psma_investigational
+title: "Ac-225-PSMA investigacional x candidato post Lu-177/PSMA"
+faubot_added_in: "2026-04-26 LXXIX"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: lutetium_177_psma_progression_documented
+          alias_fields:
+            - progression_post_lu177_psma
+        - type: truthy_flag
+          field: psma_pet_positive_current
+          alias_fields:
+            - psma_positive_current
+    - type: truthy_flag
+      field: actinium_225_psma_candidate
+      alias_fields:
+        - ac225_psma_candidate
+        - candidato_actinio_225_psma
+    - type: truthy_flag
+      field: actinium_225_trial_enrollment_active
+      alias_fields:
+        - ac225_trial_enrolled
+
+regimen_codes: []
+keywords:
+  - Actinium-225
+  - Ac-225
+  - alpha therapy
+  - PSMA
+
+message: |
+  Candidato potencial a Ac-225-PSMA investigacional. Confirmar PSMA-PET
+  positivo actual, progresion post Lu-177 si aplica, funcion renal/salival,
+  xerostomia basal y disponibilidad de ensayo o centro experto.
+
+evidence_tag: ac225_psma_kratochwil_sathekge_violet_investigational
+trial_refs:
+  - "Kratochwil JNM 2016"
+  - "Sathekge JNM 2024"
+  - "VIOLET NCT05477576"
+  - "NCCN Prostate v5.2026 PROS-O"

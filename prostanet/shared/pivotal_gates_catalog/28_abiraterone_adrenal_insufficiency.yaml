@@ -1,0 +1,88 @@
+code: abiraterone_adrenal_insufficiency
+title: "Abiraterona x insuficiencia adrenal (Zytiga label 5.4)"
+faubot_added_in: "2026-04-25 XLIII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    - type: numeric_below
+      field: cortisol_basal_am_ug_dl
+      alias_fields:
+        - cortisol_basal
+        - cortisol_morning
+        - am_cortisol
+        - cortisol_serum_am
+      threshold: 5
+    - type: numeric_below
+      field: cortisol_post_cosyntropin_ug_dl
+      alias_fields:
+        - cosyntropin_stim_cortisol
+        - acth_stim_cortisol
+        - synacthen_cortisol_60min
+      threshold: 18
+    - type: truthy_flag
+      field: adrenal_insufficiency_active
+      alias_fields:
+        - addison_disease_documented
+        - secondary_adrenal_insufficiency
+        - panhypopituitarism
+        - chronic_steroid_suppression
+    - type: all_of
+      triggers:
+        - type: numeric_below
+          field: sodium_serum_mmol_l
+          alias_fields:
+            - sodium
+            - na_serum
+          threshold: 130
+        - type: numeric_above
+          field: potassium_serum_mmol_l
+          alias_fields:
+            - potassium
+            - k_serum
+          threshold: 5.5
+        - type: truthy_flag
+          field: severe_fatigue_addison_like
+          alias_fields:
+            - addison_like_fatigue
+            - fatigue_adrenal_crisis
+
+override:
+  type: truthy_flag
+  field: corticosteroid_replacement_therapy_documented
+  alias_fields:
+    - steroid_replacement_documented
+    - prednisone_replacement_documented
+    - hydrocortisone_replacement_documented
+
+regimen_codes:
+  - REGIMEN_CODES_ABIRATERONE
+keywords:
+  - KEYWORDS_ABIRATERONE
+
+message: |
+  Zytiga/abiraterona no debe iniciarse o continuarse con insuficiencia
+  adrenal activa sin terapia de reemplazo corticoide documentada.
+  El bloqueo se activa por cortisol AM <5 ug/dL, respuesta post-
+  cosyntropin <18 ug/dL, flag clínico de insuficiencia adrenal, o el
+  complejo hipoNa + hiperK + fatiga compatible con crisis adrenal.
+
+  Conducta: confirmar eje HPA, tratar causas reversibles, iniciar
+  prednisona o hidrocortisona de reemplazo, educar al paciente sobre
+  dosis de estrés, y documentar plan de manejo de crisis adrenal antes
+  de reintroducir abiraterona.
+
+evidence_tag: zytiga_couaa_latitude_adrenal_insufficiency
+trial_refs:
+  - COU-AA-301
+  - COU-AA-302
+  - LATITUDE
+  - "Zytiga label 5.4"
+references:
+  - "Zytiga FDA prescribing information section 5.4: adrenocortical insufficiency."
+  - "COU-AA-301."
+  - "COU-AA-302."
+  - "LATITUDE."
+  - "Addison Society UK Clinical Guidelines 2023."

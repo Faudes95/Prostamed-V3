@@ -1,0 +1,58 @@
+code: cachexia_pharmacotherapy_consideration
+title: "Cachexia x consideracion farmacoterapia/nutricion"
+faubot_added_in: "2026-04-26 LXXIX"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    - type: numeric_above
+      field: weight_loss_percent_6mo
+      alias_fields:
+        - weight_loss_6m_pct
+      threshold: 5
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: weight_loss_percent_6mo
+          threshold: 2
+        - type: numeric_below
+          field: bmi
+          alias_fields:
+            - bmi_current
+          threshold: 20
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: weight_loss_percent_6mo
+          threshold: 2
+        - type: truthy_flag
+          field: sarcopenia_documented
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: appetite_loss_documented
+        - type: truthy_flag
+          field: cachexia_clinical_diagnosed
+
+regimen_codes: []
+keywords:
+  - cachexia
+  - weight loss
+  - sarcopenia
+  - appetite
+
+message: |
+  Criterios compatibles con caquexia cancer asociada: perdida de peso
+  >5% en 6 meses, o >2% con BMI <20/sarcopenia, o diagnostico clinico
+  con anorexia. Considerar intervencion nutricional, ejercicio adaptado,
+  control inflamatorio/sintomas y farmacoterapia seleccionada segun ASCO.
+
+evidence_tag: fearon_cachexia_asco_nccn_cachexia
+trial_refs:
+  - "Fearon Lancet Oncology 2011"
+  - "Loprinzi JCO 1990"
+  - "Cochrane 2013 megestrol"
+  - "ASCO 2020 Cancer Cachexia guidelines"
+  - "NCCN Cancer Cachexia v1.2026"

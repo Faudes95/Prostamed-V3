@@ -1,0 +1,72 @@
+code: checkpoint_inhibitor_hepatitis_grade3_plus
+title: "Checkpoint inhibitor x hepatitis immune-mediated G3+"
+faubot_added_in: "2026-04-25 LVII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    - type: numeric_above
+      field: ast
+      alias_fields:
+        - sgot
+        - ast_iu_l
+        - ast_value
+      threshold: 200
+    - type: numeric_above
+      field: alt
+      alias_fields:
+        - sgpt
+        - alt_iu_l
+        - alt_value
+      threshold: 200
+    - type: numeric_above
+      field: bilirubin
+      alias_fields:
+        - bilirubin_total
+        - total_bilirubin_mg_dl
+      threshold: 3
+    - type: numeric_threshold
+      field: hepatitis_ctcae_grade
+      alias_fields:
+        - immune_hepatitis_grade
+        - hepatic_irae_ctcae_grade
+      threshold: 3
+    - type: truthy_flag
+      field: hepatitis_immune_documented_for_checkpoint
+      alias_fields:
+        - immune_hepatitis_documented
+        - checkpoint_hepatitis_documented
+
+override:
+  type: truthy_flag
+  field: hepatic_function_recovered_for_checkpoint_inhibitor
+  alias_fields:
+    - immune_hepatitis_resolved
+    - checkpoint_hepatitis_recovered
+
+regimen_codes:
+  - REGIMEN_CODES_CHECKPOINT_INHIBITORS
+keywords:
+  - KEYWORDS_CHECKPOINT_INHIBITORS
+
+message: |
+  Checkpoint inhibitors deben suspenderse ante hepatitis immune-mediated
+  G3+ o bioquimica compatible: AST/ALT >200 IU/L, bilirrubina >3 mg/dL,
+  hepatitis CTCAE >=3 o documentacion clinica de hepatitis inmune.
+  Requiere manejo tipo NCCN IO Toxicity HEP-1, esteroides sistemicos y
+  descarte de etiologias infecciosas, obstructivas o medicamentosas.
+
+evidence_tag: keynote_checkmate_keytruda_label_hepatitis_nccn_io_toxicity
+trial_refs:
+  - "KEYNOTE-365 cohort C"
+  - "KEYNOTE-921"
+  - "KeyLynk-010"
+  - "CheckMate-9KD"
+  - "Keytruda label 5.5"
+  - "NCCN IO Toxicity 2024 HEP-1"
+  - "CTCAE v5"
+references:
+  - "Brahmer JCO 2018."
+  - "Keytruda FDA prescribing information: immune-mediated hepatitis."
