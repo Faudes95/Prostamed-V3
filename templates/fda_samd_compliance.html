@@ -1,0 +1,145 @@
+{# Faubot LXXXVIII — FDA SaMD Compliance Dashboard #}
+{% extends "layouts/base_clinical.html" %}
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
+<style>
+.fda-shell { padding: 24px; max-width: 1400px; margin: 0 auto; }
+.fda-header { margin-bottom: 24px; }
+.fda-aggregate { font-size: 3rem; font-weight: 800; color: var(--clinical-info); margin: 0; line-height: 1; }
+.fda-aggregate-target { font-size: 1rem; color: var(--pn-text-muted); }
+.fda-pillar-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 24px 0; }
+.fda-pillar { background: var(--surface-2); border-radius: 12px; padding: 16px; border-left: 4px solid var(--clinical-info); }
+.fda-pillar.pillar-perfect { border-left-color: var(--clinical-success); }
+.fda-pillar.pillar-warning { border-left-color: var(--clinical-warning); }
+.fda-pillar.pillar-critical { border-left-color: var(--clinical-critical); }
+.fda-pillar-id { font-size: .7rem; color: var(--pn-accent); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+.fda-pillar-name { font-weight: 700; color: #f0fbff; font-size: .92rem; margin: 6px 0; }
+.fda-pillar-score { font-size: 2rem; font-weight: 800; color: #f0fbff; }
+.fda-bar { width: 100%; height: 8px; background: var(--surface-3); border-radius: 4px; overflow: hidden; margin: 8px 0; }
+.fda-bar-fill { height: 100%; background: linear-gradient(90deg, var(--clinical-info), var(--clinical-success)); transition: width .4s; }
+.fda-pillar-meta { font-size: .76rem; color: var(--pn-text-muted); display: flex; justify-content: space-between; margin-top: 4px; }
+.fda-section { background: var(--surface-2); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+.fda-section-title { font-weight: 700; color: #f0fbff; font-size: 1rem; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+.fda-gap-list { display: flex; flex-direction: column; gap: 8px; }
+.fda-gap { padding: 10px 12px; background: var(--surface-3); border-radius: 8px; font-size: .82rem; }
+.fda-gap-meta { font-size: .68rem; color: var(--pn-text-muted); }
+.fda-projection { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.fda-projection-card { background: var(--surface-3); padding: 12px; border-radius: 8px; }
+.fda-projection-label { font-size: .66rem; color: var(--pn-text-muted); text-transform: uppercase; letter-spacing: .12em; }
+.fda-projection-value { font-size: 1.5rem; font-weight: 800; color: var(--clinical-info); margin-top: 4px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pm2-app-shell">
+    {% from "components/pm2_sidebar.html" import pm2_sidebar with context %}
+    {{ pm2_sidebar(
+        active='fda_compliance',
+        faubot_release=(audit_dims_v2.version.faubot_release if audit_dims_v2 and audit_dims_v2.version else 'LXXXVIII'),
+        gates_count=(audit_dims_v2.version.gates_active_count if audit_dims_v2 and audit_dims_v2.version else 89)
+    ) }}
+    <div class="pm2-app-main">
+        <div class="fda-shell">
+
+            <header class="fda-header">
+                <div style="font-size:.7rem;color:var(--clinical-info);font-weight:700;letter-spacing:.18em;text-transform:uppercase;">FDA SaMD Compliance Closure Loop · LXXXVIII</div>
+                <h1 style="font-family:var(--pm-font-display);font-size:1.7rem;font-weight:800;letter-spacing:-.02em;color:#f8fbff;margin:6px 0;">7 Pilares · Progress automatizado hacia 510(k) submission ready</h1>
+                <div style="display:flex;align-items:baseline;gap:24px;margin-top:16px;">
+                    <div>
+                        <p class="fda-aggregate">{{ snapshot.aggregate }}%</p>
+                        <p class="fda-aggregate-target">target 100% · cap retro 96% · {{ snapshot.total_gaps }} gaps abiertos</p>
+                    </div>
+                    <div style="border-left:1px solid var(--border-default);padding-left:24px;">
+                        <div style="font-size:.7rem;color:var(--pn-text-muted);text-transform:uppercase;letter-spacing:.12em;">Δ vs anterior</div>
+                        <div style="font-size:1.5rem;font-weight:700;color:{% if snapshot.delta and snapshot.delta > 0 %}var(--clinical-success){% else %}var(--pn-text-muted){% endif %};">
+                            {{ '+' if snapshot.delta and snapshot.delta > 0 else '' }}{{ snapshot.delta }}pp
+                        </div>
+                    </div>
+                    <div style="border-left:1px solid var(--border-default);padding-left:24px;">
+                        <div style="font-size:.7rem;color:var(--pn-text-muted);text-transform:uppercase;letter-spacing:.12em;">Top gap</div>
+                        <div style="font-family:ui-monospace,monospace;color:var(--clinical-warning);">{{ snapshot.gap_top or 'none' }}</div>
+                    </div>
+                </div>
+            </header>
+
+            <section class="fda-section">
+                <h2 class="fda-section-title">📊 Progress per pillar</h2>
+                <div class="fda-pillar-grid">
+                    {% for key, ps in snapshot.scores.items() %}
+                    {% set tone = 'pillar-perfect' if ps.score >= 95 else ('pillar-warning' if ps.score >= 50 else 'pillar-critical') %}
+                    <div class="fda-pillar {{ tone }}">
+                        <div class="fda-pillar-id">{{ key.upper() }} · weight {{ ps.weight }}</div>
+                        <div class="fda-pillar-name">{{ ps.name }}</div>
+                        <div class="fda-pillar-score">{{ ps.score }}%</div>
+                        <div class="fda-bar"><div class="fda-bar-fill" style="width:{{ ps.score }}%"></div></div>
+                        <div class="fda-pillar-meta">
+                            <span>{{ ps.gap_count }} gaps</span>
+                            <span>{% for k, v in ps.details.items() %}{{ k }}={{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="fda-section">
+                <h2 class="fda-section-title">⏱ Projection ETA hacia 96% (cap automatizado)</h2>
+                <div class="fda-projection">
+                    <div class="fda-projection-card">
+                        <div class="fda-projection-label">Iterations needed</div>
+                        <div class="fda-projection-value">{{ projection.iterations or '—' }}</div>
+                    </div>
+                    <div class="fda-projection-card">
+                        <div class="fda-projection-label">Days (cron diario)</div>
+                        <div class="fda-projection-value">{{ projection.days_to_target or '—' }}</div>
+                    </div>
+                    <div class="fda-projection-card">
+                        <div class="fda-projection-label">Weeks</div>
+                        <div class="fda-projection-value">{{ projection.weeks_to_target or '—' }}</div>
+                    </div>
+                    <div class="fda-projection-card">
+                        <div class="fda-projection-label">Months</div>
+                        <div class="fda-projection-value">{{ projection.months_to_target or '—' }}</div>
+                    </div>
+                </div>
+                <p style="margin-top:16px;font-size:.78rem;color:var(--pn-text-muted);">
+                    Mean delta empírico: ~+0.4pp/iteration. Para alcanzar 100%, requerido protocolo prospectivo humano-firmado (out-of-loop · ~12 meses calendario).
+                </p>
+            </section>
+
+            <section class="fda-section">
+                <h2 class="fda-section-title">🚨 Top gaps abiertos (per pillar)</h2>
+                <div class="fda-gap-list">
+                    {% for key, ps in snapshot.scores.items() %}
+                        {% if ps.gaps %}
+                        {% for gap in ps.gaps[:2] %}
+                        <div class="fda-gap">
+                            <strong style="color:{{ 'var(--clinical-critical)' if gap.severity >= 8 else 'var(--clinical-warning)' if gap.severity >= 5 else '#cbd5e1' }};">P{{ gap.pillar_id }}</strong>
+                            <strong style="color:#f0fbff;">{{ gap.kind }}</strong>
+                            <span class="fda-gap-meta">sev={{ gap.severity }} · {{ gap.effort_h }}h</span>
+                            <div style="margin-top:4px;color:var(--pn-text-muted);font-size:.78rem;">{{ gap.description }}</div>
+                            {% if gap.artifact_path %}<div style="font-size:.7rem;color:var(--pn-accent);font-family:ui-monospace,monospace;">→ {{ gap.artifact_path }}</div>{% endif %}
+                        </div>
+                        {% endfor %}
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="fda-section">
+                <h2 class="fda-section-title">🔧 API endpoints</h2>
+                <div style="display:flex;flex-direction:column;gap:6px;font-family:ui-monospace,monospace;font-size:.78rem;">
+                    <code><a href="/api/compliance/snapshot" style="color:var(--pn-accent);">GET /api/compliance/snapshot</a> · current snapshot JSON</code>
+                    <code><a href="/api/compliance/history?days=30" style="color:var(--pn-accent);">GET /api/compliance/history?days=30</a> · time series</code>
+                    <code><a href="/api/compliance/proposals?limit=30" style="color:var(--pn-accent);">GET /api/compliance/proposals?limit=30</a> · loop proposals</code>
+                    <code><a href="/api/compliance/rollbacks" style="color:var(--pn-accent);">GET /api/compliance/rollbacks</a> · rollback events</code>
+                    <code><a href="/api/compliance/projection?target=96" style="color:var(--pn-accent);">GET /api/compliance/projection?target=96</a> · ETA</code>
+                </div>
+            </section>
+
+            <p style="text-align:center;color:var(--pn-text-muted);font-size:.78rem;margin-top:24px;">
+                Faubot Agentic Loop · {{ snapshot.faubot_release }} · auto-mejora iterativa cron daily 06:00 UTC
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

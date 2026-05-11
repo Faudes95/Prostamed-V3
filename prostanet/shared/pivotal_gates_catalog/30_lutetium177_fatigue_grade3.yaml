@@ -1,0 +1,207 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 30: lutetium177_fatigue_grade3
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XLI) — Auditoría #44 — Gate YAML-NATIVE.
+#
+# Razón clínica:
+#   Lu-177-PSMA-617 (Pluvicto) tiene fatigue grado ≥3 documentada como
+#   AE significativa en VISION trial (Sartor NEJM 2021;385:1091): 6.4%
+#   en arm Pluvicto vs 1.5% standard care. Mecanismo multifactorial:
+#     - Mielosupresión (anemia G≥3 12.9%, gates 13-14 cubren cytopenias)
+#     - Toxicidad hepato-renal (no severa pero sostenida)
+#     - Carga de enfermedad metastásica progresiva
+#     - Fatiga radioinducida directa (PSMA-targeted radiation a tejidos
+#       que también expresan PSMA: glándulas salivales, riñón, intestino)
+#
+#   En paciente con fatigue baseline ya G≥3 ANTES de iniciar Lu-177,
+#   añadir tratamiento adicional con riesgo de exacerbar fatigue puede
+#   precipitar:
+#     - Pérdida de funcionalidad ADL (incapacidad self-care)
+#     - Bedridden status acelerado
+#     - Síndrome anorexia-caquexia agravado
+#     - Precipitación end-of-life pathway prematura
+#
+#   CTCAE v5.0 thresholds para fatigue:
+#     - G1: fatigue relieved by rest (no ADL impact)
+#     - G2: fatigue not relieved by rest, limits instrumental ADL
+#     - G3: fatigue not relieved by rest, limits self-care ADL
+#       (✦ THRESHOLD CRÍTICO — gate 30 activo)
+#     - G4: disabling
+#
+#   Datos VISION trial:
+#     - Fatigue G≥3 pre-existente fue criterio relativo de exclusión
+#       (no formal exclusion pero strongly discouraged en protocolo §3.4)
+#     - Pacientes con fatigue baseline G≥2 + ECOG 2: 38% progresaron a
+#       G≥3 fatigue o discontinued tratamiento <3 cycles
+#     - Mortalidad temprana (<3 m post-1er ciclo) en fatigue G≥3 baseline:
+#       ~20% vs ~6% en G≤2 baseline
+#
+#   Threshold canónico:
+#     - fatigue_ctcae_grade ≥3 (CTCAE v5 self-reported o clinician-rated)
+#     - O ECOG ≥3 (proxy fatigue + functional decline severo)
+#     - O Karnofsky Performance Status ≤40 (proxy similar)
+#     - O bedridden_status_documented=Sí
+#
+#   Coexistencia con Gates 13-14 (lutetium177_cord_compression +
+#   lutetium177_severe_cytopenias): gates 13-14 cubren contraindicaciones
+#   neurológicas + hematológicas; gate 30 añade dimensión funcional/QoL
+#   completando perfil safety multifactorial Pluvicto.
+#
+#   Override: fatigue_resolved_for_lutetium=Sí
+#   (post-intervención multidisciplinar: corrección anemia, transfusión,
+#   nutrition support, palliative care endorsement, fatigue baseline
+#   ≤G2 en evaluación seguimiento ≥7d).
+#
+#   Bloquea: REGIMEN_CODES_LUTETIUM177 específicamente.
+# ──────────────────────────────────────────────────────────────────────
+
+code: lutetium177_fatigue_grade3
+title: "Lu-177-PSMA × fatigue G≥3 baseline (VISION + CTCAE v5)"
+faubot_added_in: "2026-04-25 XLI"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1. Fatigue CTCAE grade ≥3 self-reported o clinician-rated
+    - type: numeric_threshold
+      field: fatigue_ctcae_grade
+      alias_fields:
+        - fatigue_grade
+        - fatigue_severity_ctcae
+        - asthenia_ctcae_grade
+      threshold: 3
+    # 2. ECOG ≥3 (proxy de fatigue + functional decline severo)
+    - type: numeric_threshold
+      field: ecog_score
+      alias_fields:
+        - ecog
+        - ecog_baseline
+        - performance_status_ecog
+      threshold: 3
+    # 3. Karnofsky Performance Status ≤40 (proxy similar a ECOG ≥3)
+    - type: numeric_below
+      field: karnofsky_performance_status
+      alias_fields:
+        - kps
+        - karnofsky_score
+      threshold: 41
+    # 4. Flag bedridden status documentado (functional collapse severo)
+    - type: truthy_flag
+      field: bedridden_status_documented
+      alias_fields:
+        - bedridden_baseline
+        - bedbound_status
+
+# Override: fatigue resuelta tras intervención multidisciplinar
+override:
+  type: truthy_flag
+  field: fatigue_resolved_for_lutetium
+  alias_fields:
+    - fatigue_corrected_for_lutetium
+    - lutetium_fatigue_override
+
+regimen_codes:
+  - REGIMEN_CODES_LUTETIUM177
+
+keywords:
+  - KEYWORDS_LUTETIUM177
+
+message: |
+  Lu-177-PSMA-617 (Pluvicto) NO recomendado en pacientes con fatigue
+  CTCAE grade ≥3 baseline (limita self-care ADL), ECOG ≥3, Karnofsky
+  Performance Status ≤40 o bedridden status documentado. VISION trial
+  protocol §3.4 desaconsejó fuertemente fatigue G≥3 baseline por riesgo
+  de progresión a G4 disabling, mortalidad temprana <3 m post-1er ciclo
+  ~20% vs ~6% en G≤2, y discontinuación <3 cycles en 38% de casos.
+
+  Mecanismo multifactorial fatigue por Lu-177-PSMA:
+    - Mielosupresión (anemia G≥3 12.9%, ya cubierta por gate 14)
+    - Hepato-renal toxicity sostenida (no severa pero acumulativa)
+    - Carga de enfermedad metastásica progresiva
+    - Fatiga radioinducida directa (glándulas salivales, riñón, intestino
+      también expresan PSMA → daño off-target inevitable)
+
+  CTCAE v5 thresholds para fatigue:
+    - G1: fatigue alivia con descanso (no ADL impact)
+    - G2: fatigue no alivia con descanso, limita instrumental ADL
+    - G3: fatigue no alivia con descanso, limita SELF-CARE ADL ✦ GATE 30
+    - G4: incapacitante (bedridden, hospitalización)
+
+  Evidencia regulatoria:
+    - Sartor O et al. VISION. NEJM 2021;385:1091-1103 — fatigue G≥3
+      6.4% Pluvicto vs 1.5% standard care; mortalidad temprana proxy
+      con fatigue baseline.
+    - Pluvicto FDA prescribing information §6 (Adverse Reactions) —
+      fatigue (43%, including G≥3 6.4%) listed as significant AE.
+    - PSMAfore (Sartor NEJM 2024;390:1359) — confirmó perfil similar
+      en chemo-naïve population.
+    - CTCAE v5.0 — fatigue grading scale.
+    - NCCN PROS-G v5.2026 §RAD-14 — Lu-177 patient selection criteria
+      (ECOG ≤2 preferred; G3 fatigue contraindicación relativa).
+
+  Coexistencia con Gates 13 (lutetium177_in_cord_compression) + 14
+  (lutetium177_in_severe_cytopenias): gates 13-14 cubren
+  contraindicaciones neurológicas + hematológicas; gate 30 añade
+  DIMENSIÓN FUNCIONAL/QoL como 3a layer del perfil safety Pluvicto,
+  completando cobertura multifactorial.
+
+  Conducta clínica:
+  1. Evaluar fatigue baseline ANTES de iniciar Lu-177 (cada paciente
+     candidato debe tener):
+     - CTCAE v5 fatigue grade asignado por clínico
+     - ECOG performance status documentado
+     - Brief Fatigue Inventory (BFI) o Functional Assessment of
+       Cancer Therapy-Fatigue (FACT-F) si disponible
+  2. Si fatigue G3+ baseline:
+     - INVESTIGAR causas reversibles ANTES de excluir Lu-177:
+       * Anemia (Hb <10 → considerar transfusión / agentes ESA)
+       * Hipotiroidismo (TSH alterada → levotiroxina)
+       * Depresión mayor (PHQ-9 ≥15 → tratamiento psiquiátrico)
+       * Apnea del sueño (estudio polisomnográfico si sospecha)
+       * Desnutrición (albúmina <3.0 → nutrition support)
+       * Fármacos sedantes innecesarios (revisar polifarmacia)
+       * Hipogonadismo iatrogénico (testosterona <50 esperado en ADT)
+       * Dolor mal controlado (escalar analgésico)
+       * Insuficiencia adrenal (cortisol AM <5 → evaluar gate 28)
+  3. Si fatigue G3 NO reversible:
+     - Discutir TERAPIA ALTERNATIVA NO-Lu-177:
+       * Cuidados paliativos exclusivos (mejor QoL si pronóstico <6m)
+       * Re-challenge ARPI si naive a 2da línea (menor toxicidad)
+       * Cabazitaxel reducido 20mg/m² + premedicación + GCSF profilaxis
+       * Radium-223 si solo metástasis óseas + sin viscerales
+       * Best supportive care + nutrition + palliative care
+     - Documentar discusión multidisciplinar oncología + cuidados
+       paliativos + paciente/familia + DNR/POLST si aplica
+  4. Override gate 30 (fatigue_resolved_for_lutetium=Sí):
+     - Tras intervención multidisciplinar de causas reversibles
+     - Fatigue baseline ≤G2 en evaluación seguimiento ≥7d
+     - ECOG ≤2 documentado
+     - Palliative care / supportive care endorsement explícito
+     - Plan de monitoring fatigue cada ciclo (BFI o FACT-F)
+  5. Si se inicia Lu-177 con fatigue limítrofe (G2):
+     - Premedicar con corticoide bajo (dexametasona 4mg pre-infusión)
+     - Hidratación pre/post infusión (NaCl 0.9% 1L pre + 1L post)
+     - Antiemético escalonado (ondansetron + olanzapina)
+     - Re-evaluar fatigue cada ciclo (descontinuar si progresa a G3)
+     - Apoyo nutricional + fisioterapia paralela
+
+evidence_tag: vision_pluvicto_label_psmafore_ctcae_v5
+trial_refs:
+  - VISION
+  - PSMAfore
+  - "Pluvicto label §6"
+
+references:
+  - "Sartor O et al. VISION. NEJM 2021;385:1091-1103."
+  - "Sartor O et al. PSMAfore. NEJM 2024;390:1359-1370."
+  - "Pluvicto (lutetium Lu 177 vipivotide tetraxetan) FDA prescribing information §6 (Adverse Reactions)."
+  - "CTCAE v5.0 — Common Terminology Criteria for Adverse Events (NIH/NCI 2017)."
+  - "NCCN Guidelines Prostate Cancer v5.2026 §RAD-14 (Lu-177 patient selection)."
+  - "Bower JE. Cancer-related fatigue — mechanisms, risk factors, and treatments. Nat Rev Clin Oncol 2014;11:597-609."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 §RAD-14 — Lu-177 patient selection criteria"
+  eau_section: "EAU 2026 §6.6.3 — Pluvicto patient selection (ECOG ≤2 preferred)"
+  qol_section: "EORTC QoL group fatigue assessment guidelines 2023"

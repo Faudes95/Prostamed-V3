@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1305 540" width="1305" height="540" role="img" aria-labelledby="title desc">
+  <title id="title">PROSTAMED</title>
+  <desc id="desc">Logotipo institucional con icono prostático y letras PROSTAMED en color cian.</desc>
+
+  <defs>
+    <linearGradient id="wordmark_cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8cf3ff"/>
+      <stop offset="100%" stop-color="#63ddff"/>
+    </linearGradient>
+    <filter id="wordmark_glow" x="-20%" y="-30%" width="140%" height="180%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feColorMatrix
+        in="blur"
+        type="matrix"
+        values="1 0 0 0 0
+                0 1 0 0 0
+                0 0 1 0 0
+                0 0 0 0.25 0"
+        result="softGlow"
+      />
+      <feMerge>
+        <feMergeNode in="softGlow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <image href="/static/img/prostamed_logo.svg" x="24" y="70" width="360" height="360" preserveAspectRatio="xMidYMid meet" />
+
+  <g filter="url(#wordmark_glow)">
+    <text
+      x="410"
+      y="252"
+      fill="url(#wordmark_cyan)"
+      font-family="Arial, Helvetica, sans-serif"
+      font-size="102"
+      font-weight="700"
+      letter-spacing="-2"
+    >PROSTA</text>
+
+    <text
+      x="858"
+      y="252"
+      fill="url(#wordmark_cyan)"
+      font-family="Arial, Helvetica, sans-serif"
+      font-size="102"
+      font-weight="700"
+      letter-spacing="-2"
+    >MED</text>
+
+    <ellipse
+      cx="1010"
+      cy="212"
+      rx="152"
+      ry="68"
+      fill="none"
+      stroke="#22ff57"
+      stroke-width="7"
+      opacity="0.95"
+    />
+
+    <line x1="382" y1="305" x2="452" y2="305" stroke="#6cdfff" stroke-width="3" opacity="0.75" />
+    <line x1="1068" y1="305" x2="1140" y2="305" stroke="#6cdfff" stroke-width="3" opacity="0.75" />
+
+    <text
+      x="472"
+      y="316"
+      fill="#7ae7ff"
+      font-family="Arial, Helvetica, sans-serif"
+      font-size="28"
+      font-weight="600"
+      letter-spacing="4.8"
+      opacity="0.92"
+    >SALUD • DIAGNÓSTICO • PRECISIÓN</text>
+  </g>
+</svg>

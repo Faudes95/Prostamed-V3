@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <radialGradient id="t1_lobe_l" cx="38%" cy="40%" r="52%">
+      <stop offset="0%" stop-color="#4cc8f0"/><stop offset="45%" stop-color="#1a8fd4"/>
+      <stop offset="80%" stop-color="#0d5fa0"/><stop offset="100%" stop-color="#062d55"/>
+    </radialGradient>
+    <radialGradient id="t1_lobe_r" cx="62%" cy="40%" r="52%">
+      <stop offset="0%" stop-color="#4cc8f0"/><stop offset="45%" stop-color="#1a8fd4"/>
+      <stop offset="80%" stop-color="#0d5fa0"/><stop offset="100%" stop-color="#062d55"/>
+    </radialGradient>
+    <filter id="t1_sh"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.3"/></filter>
+  </defs>
+  <!-- Línea de base (piso pélvico) -->
+  <line x1="30" y1="170" x2="170" y2="170" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+  <!-- Lóbulo izquierdo -->
+  <path d="M 92 70 C 78 62, 48 58, 32 72 C 16 86, 14 116, 22 136 C 30 156, 50 166, 66 164 C 80 162, 90 154, 94 142 C 98 130, 96 106, 94 90 Z"
+        fill="url(#t1_lobe_l)" filter="url(#t1_sh)"/>
+  <!-- Lóbulo derecho -->
+  <path d="M 108 70 C 122 62, 152 58, 168 72 C 184 86, 186 116, 178 136 C 170 156, 150 166, 134 164 C 120 162, 110 154, 106 142 C 102 130, 104 106, 106 90 Z"
+        fill="url(#t1_lobe_r)" filter="url(#t1_sh)"/>
+  <!-- Surco central -->
+  <path d="M 100 65 C 99 90, 98 120, 100 168" stroke="#041e45" stroke-width="2" fill="none" opacity="0.4"/>
+  <!-- Venas -->
+  <path d="M 55 80 C 50 100, 48 120, 52 145" stroke="#38b8e8" stroke-width="0.8" fill="none" opacity="0.35"/>
+  <path d="M 145 80 C 150 100, 152 120, 148 145" stroke="#38b8e8" stroke-width="0.8" fill="none" opacity="0.35"/>
+  <!-- Brillos -->
+  <ellipse cx="55" cy="90" rx="12" ry="8" fill="white" opacity="0.12" transform="rotate(-10,55,90)"/>
+  <ellipse cx="145" cy="90" rx="12" ry="8" fill="white" opacity="0.10" transform="rotate(10,145,90)"/>
+  <!-- Contorno punteado "sin tumor visible" -->
+  <rect x="55" y="95" width="30" height="25" rx="4" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,2" opacity="0.5"/>
+  <!-- Etiqueta -->
+  <text x="100" y="192" text-anchor="middle" fill="#94a3b8" font-family="Arial,sans-serif" font-size="11" font-style="italic">Sin tumor visible</text>
+</svg>

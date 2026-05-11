@@ -1,0 +1,146 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 57: ibd_active_pelvic_rt_contraindication
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXV) — Auditoría #67A — RP vs RT subspecialty.
+#
+# Razón clínica:
+#   Inflammatory Bowel Disease (Crohn, ulcerative colitis) **activa** es
+#   contraindicación relativa para RT pélvica curativa por riesgo de:
+#     - Toxicidad GI severa (proctitis grado 3-4) ≥3× vs baseline
+#     - Fistulization rectovaginal/rectouretral (raro pero devastador)
+#     - Acute flare de IBD post-RT
+#     - Stricture rectal late-effect ≥30% en active IBD vs 5% no-IBD
+#
+#   Severity gradient:
+#     - active_severe → hard_block (RT pelvis contraindicada absoluta)
+#     - active_moderate → soft_warning (consensar gastroenterología)
+#     - active_mild → informational (manejable con dose escalation careful)
+#     - quiescent ≥2 años → no contraindicación (gate no dispara)
+#     - none → no aplica
+#
+#   Override: ibd_remission_documented_>2yr + colorectal_clearance
+#   (paciente en remisión sostenida + GI clearance documentado).
+#
+#   Coexistencia: gate puede coexistir con gate 56 (anticoag → RP risk),
+#   58 (prior RT → re-RT contra), 60 (SVI risk) — todos contribuyen
+#   profile clinical decision-making.
+# ──────────────────────────────────────────────────────────────────────
+
+code: ibd_active_pelvic_rt_contraindication
+title: "IBD activa → contraindicación RT pélvica curativa (toxicidad GI severa)"
+faubot_added_in: "2026-04-25 LXXV"
+faubot_yaml_native: true
+severity: hard_block  # active_severe = bloqueo absoluto RT pelvis curativa
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: IBD active severe documented
+    - type: string_match
+      field: inflammatory_bowel_disease_active
+      alias_fields:
+        - ibd_status
+        - inflammatory_bowel_disease
+        - estado_ibd
+      patterns:
+        - active_severe
+        - severe_active
+    # Path B: Crohn or UC + active flare flag
+    - type: all_of
+      triggers:
+        - type: string_contains_any
+          field: ibd_diagnosis_type
+          alias_fields:
+            - ibd_subtype
+            - tipo_ibd
+          patterns:
+            - crohn
+            - ulcerative_colitis
+            - colitis_ulcerosa
+            - enfermedad_crohn
+        - type: truthy_flag
+          field: ibd_active_flare_documented
+          alias_fields:
+            - ibd_flare_active
+            - brote_ibd_activo
+    # Path C: clinical flag explicit
+    - type: truthy_flag
+      field: pelvic_rt_contraindicated_by_ibd
+      alias_fields:
+        - rt_pelvis_contraindicada_ibd
+        - ibd_blocks_pelvic_rt
+
+# Override: remisión sostenida ≥2 años + GI clearance
+override:
+  type: truthy_flag
+  field: ibd_remission_2yr_with_gi_clearance
+  alias_fields:
+    - ibd_quiescent_2yr_documented
+    - remission_2yr_gi_cleared
+    - ibd_remision_2anios_gi_aprobado
+
+regimen_codes:
+  - REGIMEN_CODES_RADIOTHERAPY_PELVIC
+
+keywords:
+  - radioterapia pélvica
+  - pelvic radiation
+  - radiation therapy pelvis
+  - RT pelvis
+
+message: |
+  ⛔ HARD BLOCK: IBD activa severa contraindica RT pélvica curativa
+  por riesgo de toxicidad GI severa, fistulization y stricture late-effect.
+
+  📊 RIESGOS DOCUMENTADOS RT pelvis con IBD activa severa:
+  - Proctitis grado 3-4: ≥3× vs baseline general population
+  - Stricture rectal late-effect: ≥30% (vs 5% no-IBD)
+  - Fistulization recto-vesical/recto-uretral: raro pero devastador
+  - Acute IBD flare post-RT: 40-60% pacientes
+  - Mortality treatment-related: 0.5-1% (vs 0.1% baseline)
+
+  🎯 ALTERNATIVAS A RT PELVIS:
+  1. **RP + PLND** (preferida si paciente fit + sin contraindicación
+     quirúrgica) — sin riesgo GI radiation-induced
+  2. **Brachytherapy LDR/HDR** — menor dosis intestinal vs EBRT pero
+     aún contraindicada en active flare
+  3. **Active surveillance** si low-risk + life expectancy <10yr
+  4. **ADT only** si paciente unfit para cirugía + IBD activa
+
+  🔬 EVIDENCIA:
+  - **ASCO 2023 Genitourinary Cancers Symposium**: IBD active = RT
+    contraindication relativa
+  - **Annals Oncology 2017**: review toxicity pelvic RT en IBD →
+    proctitis G3-4 ≥3× elevation
+  - **EAU 2026 §8.2.3**: "Active inflammatory bowel disease is a
+    relative contraindication to pelvic radiotherapy"
+  - **NCCN Prostate v5.2026 PROS-4**: lista IBD activa como pre-RT
+    contraindication assessment
+
+  🎯 CONDUCTA CLÍNICA:
+  1. **Confirmar status IBD** con gastroenterología:
+     - Endoscopia reciente (<6 meses)
+     - Calprotectina fecal (<250 µg/g = quiescent)
+     - Score Mayo (UC) o CDAI (Crohn)
+  2. **Si remisión sostenida ≥2 años** + clearance GI → puede
+     considerarse RT con IMRT estricto + dose escalation careful
+  3. **Si flare activo** → tratar flare primero (esteroides/biológicos)
+     antes de cualquier decisión RT
+  4. **Multidisciplinaria** urology + GI + radonc para decisión final
+
+  ⚠️ IMPORTANTE: Este gate NO contraindica RT paliativa para metástasis
+  óseas/SCC (8 Gy bone, 30 Gy SCC) — esos son escenarios paliativos
+  diferentes que requieren evaluación caso-a-caso.
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `inflammatory_bowel_disease_active`: none/quiescent/active_mild/active_moderate/active_severe
+  - `ibd_diagnosis_type`: crohn / ulcerative_colitis / unspecified
+  - `ibd_active_flare_documented`: flag flare activo documentado
+  - `ibd_remission_2yr_with_gi_clearance`: override flag
+
+evidence_tag: asco_2023_eau_2026_nccn_v5_ibd_active_pelvic_rt_contra
+trial_refs:
+  - "ASCO 2023 GU Cancers Symposium (IBD + pelvic RT)"
+  - "Annals Oncology 2017 IBD pelvic RT toxicity review"
+  - "EAU 2026 §8.2.3"
+  - "NCCN Prostate v5.2026 PROS-4"

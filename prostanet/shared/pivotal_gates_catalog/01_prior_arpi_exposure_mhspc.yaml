@@ -1,0 +1,49 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 1: prior_arpi_exposure_mhspc
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XI) — Migrado a YAML declarativo.
+# Originalmente función Python en `pivotal_contraindication_gates.py`.
+#
+# Razón clínica:
+#   ARANOTE (Saad Lancet Oncol 2024;25:1422) excluyó pacientes con
+#   exposición previa a ARPI (enzalutamida/abiraterona/apalutamida/
+#   darolutamida) en contexto previo. NO es candidato a darolutamida
+#   monoterapia mHSPC sin documentar resistencia.
+# ──────────────────────────────────────────────────────────────────────
+
+code: prior_arpi_exposure_mhspc
+title: "Exposición previa a ARPI en mHSPC"
+faubot_added_in: "2026-04-23 I"
+faubot_migrated_to_yaml_in: "2026-04-25 XI"
+severity: hard_block
+
+trigger:
+  type: truthy_flag
+  field: prior_arpi_exposure_mhspc
+  alias_fields: []
+
+# Sin override clínico — la exposición previa a ARPI no es reversible.
+override: null
+
+regimen_codes:
+  - REGIMEN_CODES_DAROLUTAMIDE
+
+keywords:
+  - KEYWORDS_DAROLUTAMIDE
+
+message: |
+  Darolutamida monoterapia en mHSPC NO recomendada por exposición previa
+  a ARPI (ARANOTE excluyó pacientes con ARPI previo). Considerar
+  intensificación con docetaxel + ARPI distinto o cambio de mecanismo si
+  hay resistencia documentada (Saad Lancet Oncol 2024;25:1422).
+
+evidence_tag: saad_lancet_oncol_2024_aranote
+trial_refs:
+  - ARANOTE
+
+# Documentación adicional (opcional, no consumida por el loader)
+references:
+  - "Saad F, et al. Darolutamide vs placebo in mHSPC. Lancet Oncol 2024;25:1422-1432."
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — ARPI sequencing"
+  eau_section: "EAU 2026 §6.6.4 — mHSPC intensification"

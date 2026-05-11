@@ -1,0 +1,1274 @@
+document: DHF Traceability Matrix
+faubot_release: 2026-04-27 LXXXVIII
+last_updated: '2026-04-27'
+methodology: ISO 13485 §7.3 + 21 CFR §820.30 + IEC 62304 §5.1
+row_schema:
+- req_id
+- description
+- code_path
+- test_id
+- mitigation_id
+rows:
+- req_id: REQ-GATE-prior_arpi_exposure_mhspc
+  description: prior_arpi_exposure_mhspc
+  code_path: prostanet/shared/pivotal_gates_catalog/01_prior_arpi_exposure_mhspc.yaml
+  test_id: test_pivotal_prior_arpi_exposure_mhspc
+  mitigation_id: MIT-Gprior_arpi_exposure_mhspc
+  pillar: 4
+  evidence_source:
+  - ARANOTE
+- req_id: REQ-GATE-severe_neuropathy_grade3
+  description: severe_neuropathy_grade3
+  code_path: prostanet/shared/pivotal_gates_catalog/02_severe_neuropathy_grade3.yaml
+  test_id: test_pivotal_severe_neuropathy_grade3
+  mitigation_id: MIT-Gsevere_neuropathy_grade3
+  pillar: 4
+  evidence_source:
+  - TAX-327
+  - TROPIC
+  - CHAARTED
+- req_id: REQ-GATE-uncontrolled_hypertension
+  description: uncontrolled_hypertension
+  code_path: prostanet/shared/pivotal_gates_catalog/03_uncontrolled_hypertension.yaml
+  test_id: test_pivotal_uncontrolled_hypertension
+  mitigation_id: MIT-Guncontrolled_hypertension
+  pillar: 4
+  evidence_source:
+  - LATITUDE
+  - PEACE-1
+  - COU-AA-301
+  - COU-AA-302
+  - CONTACT-02
+- req_id: REQ-GATE-severe_heart_failure_nyha_iii_iv
+  description: severe_heart_failure_nyha_iii_iv
+  code_path: prostanet/shared/pivotal_gates_catalog/04_severe_heart_failure_nyha_iii_iv.yaml
+  test_id: test_pivotal_severe_heart_failure_nyha_iii_iv
+  mitigation_id: MIT-Gsevere_heart_failure_nyha_iii_iv
+  pillar: 4
+  evidence_source:
+  - LATITUDE
+  - PEACE-1
+  - COU-AA-301
+  - COU-AA-302
+- req_id: REQ-GATE-uncontrolled_diabetes
+  description: uncontrolled_diabetes
+  code_path: prostanet/shared/pivotal_gates_catalog/05_uncontrolled_diabetes.yaml
+  test_id: test_pivotal_uncontrolled_diabetes
+  mitigation_id: MIT-Guncontrolled_diabetes
+  pillar: 4
+  evidence_source:
+  - IPATential150
+- req_id: REQ-GATE-ecog_2_or_more_for_triplets
+  description: ecog_2_or_more_for_triplets
+  code_path: prostanet/shared/pivotal_gates_catalog/06_ecog_2_or_more_for_triplets.yaml
+  test_id: test_pivotal_ecog_2_or_more_for_triplets
+  mitigation_id: MIT-Gecog_2_or_more_for_triplets
+  pillar: 4
+  evidence_source:
+  - ARASENS
+  - PEACE-1
+- req_id: REQ-GATE-darolutamide_hypersensitivity
+  description: darolutamide_hypersensitivity
+  code_path: prostanet/shared/pivotal_gates_catalog/07_darolutamide_hypersensitivity.yaml
+  test_id: test_pivotal_darolutamide_hypersensitivity
+  mitigation_id: MIT-Gdarolutamide_hypersensitivity
+  pillar: 4
+  evidence_source:
+  - ARAMIS
+  - ARASENS
+  - Nubeqa label
+- req_id: REQ-GATE-polysorbate_hypersensitivity
+  description: polysorbate_hypersensitivity
+  code_path: prostanet/shared/pivotal_gates_catalog/08_polysorbate_hypersensitivity.yaml
+  test_id: test_pivotal_polysorbate_hypersensitivity
+  mitigation_id: MIT-Gpolysorbate_hypersensitivity
+  pillar: 4
+  evidence_source:
+  - TROPIC
+  - CARD
+- req_id: REQ-GATE-no_bone_protective_agent
+  description: no_bone_protective_agent
+  code_path: prostanet/shared/pivotal_gates_catalog/09_no_bone_protective_agent.yaml
+  test_id: test_pivotal_no_bone_protective_agent
+  mitigation_id: MIT-Gno_bone_protective_agent
+  pillar: 4
+  evidence_source:
+  - ERA-223
+  - PEACE-3
+- req_id: REQ-GATE-creatinine_clearance_lt_30
+  description: creatinine_clearance_lt_30
+  code_path: prostanet/shared/pivotal_gates_catalog/10_creatinine_clearance_lt_30.yaml
+  test_id: test_pivotal_creatinine_clearance_lt_30
+  mitigation_id: MIT-Gcreatinine_clearance_lt_30
+  pillar: 4
+  evidence_source:
+  - TRITON-3
+- req_id: REQ-GATE-radium223_in_cord_compression
+  description: radium223_in_cord_compression
+  code_path: prostanet/shared/pivotal_gates_catalog/11_radium223_in_cord_compression.yaml
+  test_id: test_pivotal_radium223_in_cord_compression
+  mitigation_id: MIT-Gradium223_in_cord_compression
+  pillar: 4
+  evidence_source:
+  - ALSYMPCA
+  - Xofigo label
+  - Loblaw 2012
+- req_id: REQ-GATE-radium223_in_hypocalcemia
+  description: radium223_in_hypocalcemia
+  code_path: prostanet/shared/pivotal_gates_catalog/12_radium223_in_hypocalcemia.yaml
+  test_id: test_pivotal_radium223_in_hypocalcemia
+  mitigation_id: MIT-Gradium223_in_hypocalcemia
+  pillar: 4
+  evidence_source:
+  - ALSYMPCA
+  - Xofigo label
+- req_id: REQ-GATE-lutetium177_in_cord_compression
+  description: lutetium177_in_cord_compression
+  code_path: prostanet/shared/pivotal_gates_catalog/13_lutetium177_in_cord_compression.yaml
+  test_id: test_pivotal_lutetium177_in_cord_compression
+  mitigation_id: MIT-Glutetium177_in_cord_compression
+  pillar: 4
+  evidence_source:
+  - VISION
+  - PSMAfore
+  - TheraP
+  - Pluvicto label
+- req_id: REQ-GATE-lutetium177_in_severe_cytopenias
+  description: lutetium177_in_severe_cytopenias
+  code_path: prostanet/shared/pivotal_gates_catalog/14_lutetium177_in_severe_cytopenias.yaml
+  test_id: test_pivotal_lutetium177_in_severe_cytopenias
+  mitigation_id: MIT-Glutetium177_in_severe_cytopenias
+  pillar: 4
+  evidence_source:
+  - VISION
+  - Pluvicto label
+- req_id: REQ-GATE-parp_inhibitor_in_severe_cytopenias
+  description: parp_inhibitor_in_severe_cytopenias
+  code_path: prostanet/shared/pivotal_gates_catalog/15_parp_inhibitor_in_severe_cytopenias.yaml
+  test_id: test_pivotal_parp_inhibitor_in_severe_cytopenias
+  mitigation_id: MIT-Gparp_inhibitor_in_severe_cytopenias
+  pillar: 4
+  evidence_source:
+  - PROfound
+  - MAGNITUDE
+  - TALAPRO-2
+  - TALAPRO-3
+  - PROpel
+  - TRITON-3
+- req_id: REQ-GATE-parp_inhibitor_in_mds_aml_history
+  description: parp_inhibitor_in_mds_aml_history
+  code_path: prostanet/shared/pivotal_gates_catalog/16_parp_inhibitor_in_mds_aml_history.yaml
+  test_id: test_pivotal_parp_inhibitor_in_mds_aml_history
+  mitigation_id: MIT-Gparp_inhibitor_in_mds_aml_history
+  pillar: 4
+  evidence_source:
+  - PROfound
+  - MAGNITUDE
+  - TALAPRO-2
+  - TRITON-3
+  - Lynparza label
+  - Akeega label
+  - Talzenna label
+  - Rubraca label
+- req_id: REQ-GATE-qtc_prolongation_grade3_for_enzalutamide
+  description: qtc_prolongation_grade3_for_enzalutamide
+  code_path: prostanet/shared/pivotal_gates_catalog/17_qtc_prolongation_grade3_for_enzalutamide.yaml
+  test_id: test_pivotal_qtc_prolongation_grade3_for_enzalutamide
+  mitigation_id: MIT-Gqtc_prolongation_grade3_for_enzalutamide
+  pillar: 4
+  evidence_source:
+  - ENZAMET
+  - Xtandi label
+  - CTCAE v5
+  - ICH E14
+- req_id: REQ-GATE-lvef_decline_for_apalutamide
+  description: lvef_decline_for_apalutamide
+  code_path: prostanet/shared/pivotal_gates_catalog/18_lvef_decline_for_apalutamide.yaml
+  test_id: test_pivotal_lvef_decline_for_apalutamide
+  mitigation_id: MIT-Glvef_decline_for_apalutamide
+  pillar: 4
+  evidence_source:
+  - TITAN
+  - SPARTAN
+  - Erleada label
+  - ASCO/ESC Cardio-Oncology 2022
+- req_id: REQ-GATE-arsi_in_cognitive_decline_grade2
+  description: arsi_in_cognitive_decline_grade2
+  code_path: prostanet/shared/pivotal_gates_catalog/19_arsi_in_cognitive_decline_grade2.yaml
+  test_id: test_pivotal_arsi_in_cognitive_decline_grade2
+  mitigation_id: MIT-Garsi_in_cognitive_decline_grade2
+  pillar: 4
+  evidence_source:
+  - UCSF Cohort 2024
+  - SIOG Geriatric Oncology Guidelines
+  - Xtandi label post-marketing
+  - CTCAE v5
+- req_id: REQ-GATE-arsi_in_seizure_history_grade3
+  description: arsi_in_seizure_history_grade3
+  code_path: prostanet/shared/pivotal_gates_catalog/20_arsi_in_seizure_history_grade3.yaml
+  test_id: test_pivotal_arsi_in_seizure_history_grade3
+  mitigation_id: MIT-Garsi_in_seizure_history_grade3
+  pillar: 4
+  evidence_source:
+  - PREVAIL
+  - AFFIRM
+  - TITAN
+  - SPARTAN
+  - ARASENS
+  - Xtandi label §5.2
+  - Erleada label §5.4
+  - Nubeqa label §5.4
+  - CTCAE v5
+- req_id: REQ-GATE-abiraterone_hepatotoxicity_grade3
+  description: abiraterone_hepatotoxicity_grade3
+  code_path: prostanet/shared/pivotal_gates_catalog/21_abiraterone_hepatotoxicity_grade3.yaml
+  test_id: test_pivotal_abiraterone_hepatotoxicity_grade3
+  mitigation_id: MIT-Gabiraterone_hepatotoxicity_grade3
+  pillar: 4
+  evidence_source:
+  - COU-AA-301
+  - COU-AA-302
+  - LATITUDE
+  - STAMPEDE
+  - Zytiga label §5.1
+  - CTCAE v5
+- req_id: REQ-GATE-niraparib_in_severe_thrombocytopenia
+  description: niraparib_in_severe_thrombocytopenia
+  code_path: prostanet/shared/pivotal_gates_catalog/22_niraparib_in_severe_thrombocytopenia.yaml
+  test_id: test_pivotal_niraparib_in_severe_thrombocytopenia
+  mitigation_id: MIT-Gniraparib_in_severe_thrombocytopenia
+  pillar: 4
+  evidence_source:
+  - MAGNITUDE
+  - Akeega label §5.1
+  - Zejula label §5.1
+  - CTCAE v5
+- req_id: REQ-GATE-niraparib_hypertension_grade3_magnitude
+  description: niraparib_hypertension_grade3_magnitude
+  code_path: prostanet/shared/pivotal_gates_catalog/23_niraparib_hypertension_grade3_magnitude.yaml
+  test_id: test_pivotal_niraparib_hypertension_grade3_magnitude
+  mitigation_id: MIT-Gniraparib_hypertension_grade3_magnitude
+  pillar: 4
+  evidence_source:
+  - MAGNITUDE
+  - Akeega label §5.2
+  - Zejula label §5.3
+  - CTCAE v5
+- req_id: REQ-GATE-docetaxel_neuropathy_longitudinal_grade2_post_4_cycles
+  description: docetaxel_neuropathy_longitudinal_grade2_post_4_cycles
+  code_path: prostanet/shared/pivotal_gates_catalog/24_docetaxel_neuropathy_longitudinal_grade2_post_4_cycles.yaml
+  test_id: test_pivotal_docetaxel_neuropathy_longitudinal_grade2_post_4_cycles
+  mitigation_id: MIT-Gdocetaxel_neuropathy_longitudinal_grade2_post_4_cycles
+  pillar: 4
+  evidence_source:
+  - TAX-327
+  - TROPIC
+  - CHAARTED
+  - CARD
+  - CTCAE v5
+- req_id: REQ-GATE-ipatasertib_hyperglycemia_grade3
+  description: ipatasertib_hyperglycemia_grade3
+  code_path: prostanet/shared/pivotal_gates_catalog/25_ipatasertib_hyperglycemia_grade3.yaml
+  test_id: test_pivotal_ipatasertib_hyperglycemia_grade3
+  mitigation_id: MIT-Gipatasertib_hyperglycemia_grade3
+  pillar: 4
+  evidence_source:
+  - IPATential150
+  - CTCAE v5
+- req_id: REQ-GATE-cabazitaxel_hypersensitivity_grade3
+  description: cabazitaxel_hypersensitivity_grade3
+  code_path: prostanet/shared/pivotal_gates_catalog/26_cabazitaxel_hypersensitivity_grade3.yaml
+  test_id: test_pivotal_cabazitaxel_hypersensitivity_grade3
+  mitigation_id: MIT-Gcabazitaxel_hypersensitivity_grade3
+  pillar: 4
+  evidence_source:
+  - TROPIC
+  - CARD
+  - Jevtana label §4
+  - CTCAE v5
+- req_id: REQ-GATE-radium223_high_fracture_risk_frax
+  description: radium223_high_fracture_risk_frax
+  code_path: prostanet/shared/pivotal_gates_catalog/27_radium223_high_fracture_risk_frax.yaml
+  test_id: test_pivotal_radium223_high_fracture_risk_frax
+  mitigation_id: MIT-Gradium223_high_fracture_risk_frax
+  pillar: 4
+  evidence_source:
+  - ERA-223
+  - PEACE-3
+  - Xofigo label §5.4
+  - WHO FRAX 2008
+  - NOF 2022
+- req_id: REQ-GATE-abiraterone_adrenal_insufficiency
+  description: abiraterone_adrenal_insufficiency
+  code_path: prostanet/shared/pivotal_gates_catalog/28_abiraterone_adrenal_insufficiency.yaml
+  test_id: test_pivotal_abiraterone_adrenal_insufficiency
+  mitigation_id: MIT-Gabiraterone_adrenal_insufficiency
+  pillar: 4
+  evidence_source:
+  - COU-AA-301
+  - COU-AA-302
+  - LATITUDE
+  - Zytiga label §5.4
+  - Addison Society UK 2023
+- req_id: REQ-GATE-olaparib_renal_dysfunction_grade3
+  description: olaparib_renal_dysfunction_grade3
+  code_path: prostanet/shared/pivotal_gates_catalog/29_olaparib_renal_dysfunction_grade3.yaml
+  test_id: test_pivotal_olaparib_renal_dysfunction_grade3
+  mitigation_id: MIT-Golaparib_renal_dysfunction_grade3
+  pillar: 4
+  evidence_source:
+  - PROfound
+  - PROpel
+  - Lynparza label §2.3
+- req_id: REQ-GATE-lutetium177_fatigue_grade3
+  description: lutetium177_fatigue_grade3
+  code_path: prostanet/shared/pivotal_gates_catalog/30_lutetium177_fatigue_grade3.yaml
+  test_id: test_pivotal_lutetium177_fatigue_grade3
+  mitigation_id: MIT-Glutetium177_fatigue_grade3
+  pillar: 4
+  evidence_source:
+  - VISION
+  - PSMAfore
+  - Pluvicto label §6
+- req_id: REQ-GATE-enzalutamide_cognitive_decline_elderly
+  description: enzalutamide_cognitive_decline_elderly
+  code_path: prostanet/shared/pivotal_gates_catalog/31_enzalutamide_cognitive_decline_elderly.yaml
+  test_id: test_pivotal_enzalutamide_cognitive_decline_elderly
+  mitigation_id: MIT-Genzalutamide_cognitive_decline_elderly
+  pillar: 4
+  evidence_source:
+  - UCSF Cognitive Aging Cohort 2024
+  - Marcum JAMA Oncol 2024
+  - ENZAMET subset analysis
+  - Xtandi label §5.4 + post-marketing
+  - SIOG Geriatric Assessment
+- req_id: REQ-GATE-darolutamide_hepatotoxicity_grade3
+  description: darolutamide_hepatotoxicity_grade3
+  code_path: prostanet/shared/pivotal_gates_catalog/32_darolutamide_hepatotoxicity_grade3.yaml
+  test_id: test_pivotal_darolutamide_hepatotoxicity_grade3
+  mitigation_id: MIT-Gdarolutamide_hepatotoxicity_grade3
+  pillar: 4
+  evidence_source:
+  - ARANOTE
+  - ARASENS
+  - ARAMIS
+  - Nubeqa label §6
+  - CTCAE v5
+- req_id: REQ-GATE-niraparib_thrombocytopenia_rapid_drop
+  description: niraparib_thrombocytopenia_rapid_drop
+  code_path: prostanet/shared/pivotal_gates_catalog/33_niraparib_thrombocytopenia_rapid_drop.yaml
+  test_id: test_pivotal_niraparib_thrombocytopenia_rapid_drop
+  mitigation_id: MIT-Gniraparib_thrombocytopenia_rapid_drop
+  pillar: 4
+  evidence_source:
+  - MAGNITUDE subset analysis
+  - Chi NEJM 2023
+  - Akeega label §5.1 dose modification
+  - CTCAE v5
+- req_id: REQ-GATE-docetaxel_neutropenia_rapid_drop
+  description: docetaxel_neutropenia_rapid_drop
+  code_path: prostanet/shared/pivotal_gates_catalog/34_docetaxel_neutropenia_rapid_drop.yaml
+  test_id: test_pivotal_docetaxel_neutropenia_rapid_drop
+  mitigation_id: MIT-Gdocetaxel_neutropenia_rapid_drop
+  pillar: 4
+  evidence_source:
+  - TAX-327 supplementary
+  - STAMPEDE Arm C
+  - Taxotere label §5
+  - CTCAE v5
+- req_id: REQ-GATE-arsi_abiraterone_vte_risk_high
+  description: arsi_abiraterone_vte_risk_high
+  code_path: prostanet/shared/pivotal_gates_catalog/35_arsi_abiraterone_vte_risk_high.yaml
+  test_id: test_pivotal_arsi_abiraterone_vte_risk_high
+  mitigation_id: MIT-Garsi_abiraterone_vte_risk_high
+  pillar: 4
+  evidence_source:
+  - COU-AA-302
+  - LATITUDE
+  - PREVAIL
+  - Klil-Drori EJC 2019 meta
+  - Khorana score
+  - IMPROVE score
+- req_id: REQ-GATE-triplete_frailty_g8_low
+  description: triplete_frailty_g8_low
+  code_path: prostanet/shared/pivotal_gates_catalog/36_triplete_frailty_g8_low.yaml
+  test_id: test_pivotal_triplete_frailty_g8_low
+  mitigation_id: MIT-Gtriplete_frailty_g8_low
+  pillar: 4
+  evidence_source:
+  - PEACE-1 elderly subset
+  - ARASENS elderly subset
+  - Bellera Ann Oncol 2012 G8
+  - SIOG 2024 Comprehensive Geriatric Assessment
+- req_id: REQ-GATE-sipuleucel_t_severe_irr
+  description: sipuleucel_t_severe_irr
+  code_path: prostanet/shared/pivotal_gates_catalog/37_sipuleucel_t_severe_irr.yaml
+  test_id: test_pivotal_sipuleucel_t_severe_irr
+  mitigation_id: MIT-Gsipuleucel_t_severe_irr
+  pillar: 4
+  evidence_source:
+  - IMPACT
+  - Kantoff NEJM 2010
+  - Provenge label §5.1 IRR
+  - CTCAE v5
+- req_id: REQ-GATE-sipuleucel_t_febrile_neutropenia_post_leukapheresis
+  description: sipuleucel_t_febrile_neutropenia_post_leukapheresis
+  code_path: prostanet/shared/pivotal_gates_catalog/38_sipuleucel_t_febrile_neutropenia_post_leukapheresis.yaml
+  test_id: test_pivotal_sipuleucel_t_febrile_neutropenia_post_leukapheresis
+  mitigation_id: MIT-Gsipuleucel_t_febrile_neutropenia_post_leukapheresis
+  pillar: 4
+  evidence_source:
+  - IMPACT
+  - Kantoff NEJM 2010
+  - Provenge label §5.2 hematologic
+  - CTCAE v5
+- req_id: REQ-GATE-abiraterone_alp_rapid_rise_longitudinal
+  description: abiraterone_alp_rapid_rise_longitudinal
+  code_path: prostanet/shared/pivotal_gates_catalog/39_abiraterone_alp_rapid_rise_longitudinal.yaml
+  test_id: test_pivotal_abiraterone_alp_rapid_rise_longitudinal
+  mitigation_id: MIT-Gabiraterone_alp_rapid_rise_longitudinal
+  pillar: 4
+  evidence_source:
+  - LATITUDE supplementary
+  - Fizazi NEJM 2017 long-term safety
+  - Zytiga §5.1
+  - Zytiga §2.4 dose modification
+  - ASCO Liver Toxicity 2024
+- req_id: REQ-GATE-lutetium177_hb_rapid_drop_longitudinal
+  description: lutetium177_hb_rapid_drop_longitudinal
+  code_path: prostanet/shared/pivotal_gates_catalog/40_lutetium177_hb_rapid_drop_longitudinal.yaml
+  test_id: test_pivotal_lutetium177_hb_rapid_drop_longitudinal
+  mitigation_id: MIT-Glutetium177_hb_rapid_drop_longitudinal
+  pillar: 4
+  evidence_source:
+  - VISION supplementary
+  - Sartor NEJM 2021 long-term safety
+  - Pluvicto label §6
+  - ASCO Anemia in Cancer 2024
+  - CTCAE v5
+- req_id: REQ-GATE-cabazitaxel_hb_rapid_drop_longitudinal
+  description: cabazitaxel_hb_rapid_drop_longitudinal
+  code_path: prostanet/shared/pivotal_gates_catalog/41_cabazitaxel_hb_rapid_drop_longitudinal.yaml
+  test_id: test_pivotal_cabazitaxel_hb_rapid_drop_longitudinal
+  mitigation_id: MIT-Gcabazitaxel_hb_rapid_drop_longitudinal
+  pillar: 4
+  evidence_source:
+  - TROPIC supplementary
+  - CARD subset
+  - de Bono Lancet 2010
+  - de Wit NEJM 2019
+  - Jevtana label §6
+  - ASCO Anemia in Cancer 2024
+- req_id: REQ-GATE-apalutamide_severe_rash_sjs_ten
+  description: apalutamide_severe_rash_sjs_ten
+  code_path: prostanet/shared/pivotal_gates_catalog/42_apalutamide_severe_rash_sjs_ten.yaml
+  test_id: test_pivotal_apalutamide_severe_rash_sjs_ten
+  mitigation_id: MIT-Gapalutamide_severe_rash_sjs_ten
+  pillar: 4
+  evidence_source:
+  - SPARTAN
+  - TITAN
+  - Erleada label §5.2
+  - Smith NEJM 2018;378:1408
+  - Chi NEJM 2019;381:13
+  - FDA post-marketing SJS/TEN reports
+  - CTCAE v5
+- req_id: REQ-GATE-checkpoint_inhibitor_pneumonitis_grade2_plus
+  description: checkpoint_inhibitor_pneumonitis_grade2_plus
+  code_path: prostanet/shared/pivotal_gates_catalog/43_checkpoint_inhibitor_pneumonitis_grade2_plus.yaml
+  test_id: test_pivotal_checkpoint_inhibitor_pneumonitis_grade2_plus
+  mitigation_id: MIT-Gcheckpoint_inhibitor_pneumonitis_grade2_plus
+  pillar: 4
+  evidence_source:
+  - KEYNOTE-365 cohort C
+  - KEYNOTE-921
+  - Antonarakis JCO 2020
+  - Petrylak JCO 2024
+  - Brahmer JCO 2018
+  - Keytruda label §5.4
+  - NCCN IO Toxicity 2024 §PNEU-1
+  - CTCAE v5
+- req_id: REQ-GATE-checkpoint_inhibitor_hepatitis_grade3_plus
+  description: checkpoint_inhibitor_hepatitis_grade3_plus
+  code_path: prostanet/shared/pivotal_gates_catalog/44_checkpoint_inhibitor_hepatitis_grade3_plus.yaml
+  test_id: test_pivotal_checkpoint_inhibitor_hepatitis_grade3_plus
+  mitigation_id: MIT-Gcheckpoint_inhibitor_hepatitis_grade3_plus
+  pillar: 4
+  evidence_source:
+  - KEYNOTE-365 cohort C
+  - KEYNOTE-921
+  - KeyLynk-010
+  - CheckMate-9KD
+  - Yau JCO 2024
+  - Brahmer JCO 2018
+  - Keytruda label §5.5
+  - NCCN IO Toxicity 2024 §HEP-1
+  - CTCAE v5
+- req_id: REQ-GATE-checkpoint_inhibitor_colitis_grade3_plus
+  description: checkpoint_inhibitor_colitis_grade3_plus
+  code_path: prostanet/shared/pivotal_gates_catalog/45_checkpoint_inhibitor_colitis_grade3_plus.yaml
+  test_id: test_pivotal_checkpoint_inhibitor_colitis_grade3_plus
+  mitigation_id: MIT-Gcheckpoint_inhibitor_colitis_grade3_plus
+  pillar: 4
+  evidence_source:
+  - KEYNOTE-365 cohort C
+  - KEYNOTE-921
+  - CheckMate-650
+  - KeyLynk-010
+  - Antonarakis JCO 2020
+  - Brahmer JCO 2018
+  - Keytruda label §5.6
+  - NCCN IO Toxicity 2024 §GI-1
+  - CTCAE v5
+- req_id: REQ-GATE-checkpoint_inhibitor_endocrinopathy_new_onset
+  description: checkpoint_inhibitor_endocrinopathy_new_onset
+  code_path: prostanet/shared/pivotal_gates_catalog/46_checkpoint_inhibitor_endocrinopathy_new_onset.yaml
+  test_id: test_pivotal_checkpoint_inhibitor_endocrinopathy_new_onset
+  mitigation_id: MIT-Gcheckpoint_inhibitor_endocrinopathy_new_onset
+  pillar: 4
+  evidence_source:
+  - KEYNOTE-365 cohort C
+  - KEYNOTE-921
+  - CheckMate-9KD
+  - KeyLynk-010
+  - CheckMate-650
+  - Sznol JCO 2017
+  - Brahmer JCO 2018
+  - Keytruda label §5.7
+  - NCCN IO Toxicity 2024 §END-1
+- req_id: REQ-GATE-psa_flare_arpi_pseudoprogression
+  description: psa_flare_arpi_pseudoprogression
+  code_path: prostanet/shared/pivotal_gates_catalog/47_psa_flare_arpi_pseudoprogression.yaml
+  test_id: test_pivotal_psa_flare_arpi_pseudoprogression
+  mitigation_id: MIT-Gpsa_flare_arpi_pseudoprogression
+  pillar: 5
+  evidence_source:
+  - PCWG3 Scher JCO 2016
+  - PREVAIL
+  - AFFIRM
+  - SPARTAN
+  - TITAN
+  - ARASENS
+  - Gleave ASCO 2018
+  - Bryce Ann Oncol 2017
+- req_id: REQ-GATE-enzalutamide_hyponatremia_siadh
+  description: enzalutamide_hyponatremia_siadh
+  code_path: prostanet/shared/pivotal_gates_catalog/48_enzalutamide_hyponatremia_siadh.yaml
+  test_id: test_pivotal_enzalutamide_hyponatremia_siadh
+  mitigation_id: MIT-Genzalutamide_hyponatremia_siadh
+  pillar: 4
+  evidence_source:
+  - PREVAIL
+  - AFFIRM
+  - Beer NEJM 2014
+  - Scher NEJM 2012
+  - Bartter NEJM 1967
+  - Verbalis Endocrine Society 2014
+  - Xtandi label §6
+  - CTCAE v5
+- req_id: REQ-GATE-abiraterone_hypokalemia_grade3
+  description: abiraterone_hypokalemia_grade3
+  code_path: prostanet/shared/pivotal_gates_catalog/49_abiraterone_hypokalemia_grade3.yaml
+  test_id: test_pivotal_abiraterone_hypokalemia_grade3
+  mitigation_id: MIT-Gabiraterone_hypokalemia_grade3
+  pillar: 4
+  evidence_source:
+  - COU-AA-302
+  - LATITUDE
+  - Ryan NEJM 2013
+  - Fizazi NEJM 2017
+  - Zytiga label §5.4
+  - Yamada Endocr Rev 2017
+  - ASCO Cardio-Oncology 2024
+  - CTCAE v5
+- req_id: REQ-GATE-bone_targeted_hypocalcemia_extended
+  description: bone_targeted_hypocalcemia_extended
+  code_path: prostanet/shared/pivotal_gates_catalog/50_bone_targeted_hypocalcemia_extended.yaml
+  test_id: test_pivotal_bone_targeted_hypocalcemia_extended
+  mitigation_id: MIT-Gbone_targeted_hypocalcemia_extended
+  pillar: 4
+  evidence_source:
+  - ALSYMPCA
+  - VISION
+  - Henry JCO 2011
+  - Fizazi Lancet 2011
+  - Saad JNCI 2002
+  - Major Cancer 2001
+  - Parker NEJM 2013
+  - Sartor NEJM 2021
+  - ASCO Bone Health 2024
+  - ESMO Bone Health 2024
+  - Xofigo label
+  - Pluvicto label
+  - Xgeva label
+  - Zometa label
+  - CTCAE v5
+- req_id: REQ-GATE-bone_targeted_osteonecrosis_jaw
+  description: bone_targeted_osteonecrosis_jaw
+  code_path: prostanet/shared/pivotal_gates_catalog/51_bone_targeted_osteonecrosis_jaw.yaml
+  test_id: test_pivotal_bone_targeted_osteonecrosis_jaw
+  mitigation_id: MIT-Gbone_targeted_osteonecrosis_jaw
+  pillar: 4
+  evidence_source:
+  - AAOMS 2022 Position Paper
+  - ASCO Bone Health 2024
+  - Ruggiero JOMS 2014
+  - Khan JBMR 2015
+  - ADA 2022 ONJ Prevention
+  - Henry JCO 2011
+  - Fizazi Lancet 2011
+  - Stopeck JCO 2010
+  - Xgeva label §5.5
+  - Zometa label §5.4
+- req_id: REQ-GATE-parp_inhibitor_mds_aml_longitudinal
+  description: parp_inhibitor_mds_aml_longitudinal
+  code_path: prostanet/shared/pivotal_gates_catalog/52_parp_inhibitor_mds_aml_longitudinal.yaml
+  test_id: test_pivotal_parp_inhibitor_mds_aml_longitudinal
+  mitigation_id: MIT-Gparp_inhibitor_mds_aml_longitudinal
+  pillar: 4
+  evidence_source:
+  - MAGNITUDE Chi NEJM 2023
+  - PROfound de Bono NEJM 2020
+  - TALAPRO-2
+  - TRITON-3
+  - WHO 2022 Classification
+  - Greenberg IPSS-R 2012
+  - Morton JCO 2019
+  - Csizmar JCO 2024
+  - Lynparza label §5.1
+  - Akeega label §5.1
+- req_id: REQ-GATE-psa_velocity_bcr_aggressive
+  description: psa_velocity_bcr_aggressive
+  code_path: prostanet/shared/pivotal_gates_catalog/53_psa_velocity_bcr_aggressive.yaml
+  test_id: test_pivotal_psa_velocity_bcr_aggressive
+  mitigation_id: MIT-Gpsa_velocity_bcr_aggressive
+  pillar: 5
+  evidence_source:
+  - Stephenson JCO 2009
+  - Pound JAMA 1999
+  - Freedland JAMA 2005
+  - GETUG-AFU-16
+  - RTOG-9601
+  - EAU 2026 §6.4.1
+  - NCCN PROS-G v5.2026
+- req_id: REQ-GATE-psa_bounce_post_rt_pseudoprogression
+  description: psa_bounce_post_rt_pseudoprogression
+  code_path: prostanet/shared/pivotal_gates_catalog/54_psa_bounce_post_rt_pseudoprogression.yaml
+  test_id: test_pivotal_psa_bounce_post_rt_pseudoprogression
+  mitigation_id: MIT-Gpsa_bounce_post_rt_pseudoprogression
+  pillar: 5
+  evidence_source:
+  - Crook IJROBP 2010
+  - Pickles IJROBP 2011
+  - Kuban IJROBP 2003
+  - RTOG-ASTRO Phoenix 2006
+  - PCWG3 Scher JCO 2016
+  - EAU 2026 §6.4.2
+  - NCCN PROS-G v5.2026
+- req_id: REQ-GATE-psa_doubling_time_progressive
+  description: psa_doubling_time_progressive
+  code_path: prostanet/shared/pivotal_gates_catalog/55_psa_doubling_time_progressive.yaml
+  test_id: test_pivotal_psa_doubling_time_progressive
+  mitigation_id: MIT-Gpsa_doubling_time_progressive
+  pillar: 5
+  evidence_source:
+  - SPARTAN (Smith NEJM 2018)
+  - PROSPER (Hussain NEJM 2018)
+  - ARAMIS (Fizazi NEJM 2019)
+  - Sternberg NEJM 2020 PROSPER OS
+  - Fizazi NEJM 2020;383:1040 ARAMIS OS
+  - EAU 2026 §6.5.4
+  - NCCN PROS-G v5.2026 m0CRPC
+- req_id: REQ-GATE-psma_pet_preferred_for_nmcrpc_low_psa
+  description: psma_pet_preferred_for_nmcrpc_low_psa
+  code_path: prostanet/shared/pivotal_gates_catalog/55b_psma_pet_preferred_for_nmcrpc_low_psa.yaml
+  test_id: test_pivotal_psma_pet_preferred_for_nmcrpc_low_psa
+  mitigation_id: MIT-Gpsma_pet_preferred_for_nmcrpc_low_psa
+  pillar: 5
+  evidence_source:
+  - PROMISE (Hofman Lancet 2020;395:1208)
+  - SPARTAN (Smith JAMA Oncol 2018)
+  - NCCN Prostate v5.2026 PROS-O
+  - EAU 2026 §6.5.4
+  - AUA Guidelines 2024
+- req_id: REQ-GATE-anticoagulant_rp_bleeding_risk
+  description: anticoagulant_rp_bleeding_risk
+  code_path: prostanet/shared/pivotal_gates_catalog/56_anticoagulant_rp_bleeding_risk.yaml
+  test_id: test_pivotal_anticoagulant_rp_bleeding_risk
+  mitigation_id: MIT-Ganticoagulant_rp_bleeding_risk
+  pillar: 5
+  evidence_source:
+  - NCCN Prostate v5.2026 PROS-3
+  - Stolzenburg J Urol 2008 (bleeding anticoag RP)
+  - EAU 2026 §7.3.1 (perioperative anticoagulation)
+- req_id: REQ-GATE-ibd_active_pelvic_rt_contraindication
+  description: ibd_active_pelvic_rt_contraindication
+  code_path: prostanet/shared/pivotal_gates_catalog/57_ibd_active_pelvic_rt_contraindication.yaml
+  test_id: test_pivotal_ibd_active_pelvic_rt_contraindication
+  mitigation_id: MIT-Gibd_active_pelvic_rt_contraindication
+  pillar: 4
+  evidence_source:
+  - ASCO 2023 GU Cancers Symposium (IBD + pelvic RT)
+  - Annals Oncology 2017 IBD pelvic RT toxicity review
+  - EAU 2026 §8.2.3
+  - NCCN Prostate v5.2026 PROS-4
+- req_id: REQ-GATE-prior_pelvic_rt_re_irradiation_contraindication
+  description: prior_pelvic_rt_re_irradiation_contraindication
+  code_path: prostanet/shared/pivotal_gates_catalog/58_prior_pelvic_rt_re_irradiation_contraindication.yaml
+  test_id: test_pivotal_prior_pelvic_rt_re_irradiation_contraindication
+  mitigation_id: MIT-Gprior_pelvic_rt_re_irradiation_contraindication
+  pillar: 4
+  evidence_source:
+  - EAU 2026 §8.2.1
+  - NCCN Prostate v5.2026 PROS-3
+  - ASTRO/AUA 2022 Salvage Brachytherapy Consensus
+  - Tetar IJROBP 2018 (re-RT pelvic toxicity)
+- req_id: REQ-GATE-turp_brachytherapy_contraindication
+  description: turp_brachytherapy_contraindication
+  code_path: prostanet/shared/pivotal_gates_catalog/59_turp_brachytherapy_contraindication.yaml
+  test_id: test_pivotal_turp_brachytherapy_contraindication
+  mitigation_id: MIT-Gturp_brachytherapy_contraindication
+  pillar: 4
+  evidence_source:
+  - AAPM TG-137 (Brachytherapy guidelines)
+  - ABS 2020 LDR Brachytherapy Consensus
+  - NCCN Prostate v5.2026 PROS-4
+  - Stone IJROBP 2007 (post-TURP brachy outcomes)
+- req_id: REQ-GATE-svi_risk_high_rp_efficiency_warning
+  description: svi_risk_high_rp_efficiency_warning
+  code_path: prostanet/shared/pivotal_gates_catalog/60_svi_risk_high_rp_efficiency_warning.yaml
+  test_id: test_pivotal_svi_risk_high_rp_efficiency_warning
+  mitigation_id: MIT-Gsvi_risk_high_rp_efficiency_warning
+  pillar: 5
+  evidence_source:
+  - MSKCC SVI Nomogram Stephenson JCO 2006;24:3973
+  - Grubbs IJROBP 2016 (SVI RP efficiency)
+  - Kibel JCO 2009 (SVI positive margins)
+  - RADICALS-RT Parker Lancet 2020
+  - EORTC 22961 (RT+ADT 36m high-risk)
+  - NCCN Prostate v5.2026 PROS-3
+- req_id: REQ-GATE-hrr_status_required_before_parp_inhibitor
+  description: hrr_status_required_before_parp_inhibitor
+  code_path: prostanet/shared/pivotal_gates_catalog/61_hrr_status_required_before_parp_inhibitor.yaml
+  test_id: test_pivotal_hrr_status_required_before_parp_inhibitor
+  mitigation_id: MIT-Ghrr_status_required_before_parp_inhibitor
+  pillar: 4
+  evidence_source:
+  - NCCN Prostate v5.2026 PROS-2 (category 1)
+  - PROfound (de Bono NEJM 2020;382:2091)
+  - PROpel (Clarke NEJM 2022;386:3077)
+  - TALAPRO-2 (Agarwal NEJM 2023;388:1859)
+  - MAGNITUDE (Chi JCO 2023;41:3339)
+  - EAU 2026 §6.5.6 (HRR testing mandatory)
+  - FDA olaparib label HRR+ companion diagnostic
+- req_id: REQ-GATE-ar_v7_positive_arpi_resistance_pathway
+  description: ar_v7_positive_arpi_resistance_pathway
+  code_path: prostanet/shared/pivotal_gates_catalog/62_ar_v7_positive_arpi_resistance_pathway.yaml
+  test_id: test_pivotal_ar_v7_positive_arpi_resistance_pathway
+  mitigation_id: MIT-Gar_v7_positive_arpi_resistance_pathway
+  pillar: 5
+  evidence_source:
+  - PROPHECY (Armstrong NEJM 2019;381:1314)
+  - Antonarakis JCO 2017;35:2149 (CTC AR-V7 validation)
+  - Scher JAMA Oncol 2016;2:1441 (AR-V7 nuclear localization)
+  - ARMOR3-SV NCT02807805 (niclosamide + abi)
+  - NCCN Prostate v5.2026 PROS-2 (category 2B)
+  - Epic Sciences AR-V7 FDA companion diagnostic
+- req_id: REQ-GATE-cdk12_alteration_immunotherapy_eligibility
+  description: cdk12_alteration_immunotherapy_eligibility
+  code_path: prostanet/shared/pivotal_gates_catalog/63_cdk12_alteration_immunotherapy_eligibility.yaml
+  test_id: test_pivotal_cdk12_alteration_immunotherapy_eligibility
+  mitigation_id: MIT-Gcdk12_alteration_immunotherapy_eligibility
+  pillar: 5
+  evidence_source:
+  - Antonarakis JCO 2020 (pembrolizumab mCRPC CDK12+)
+  - Wu Cell 2018;173:1770 (TDP CDK12 phenotype)
+  - PROfound Cohort B (de Bono NEJM 2020;382:2091)
+  - NCCN Prostate v5.2026 PROS-2 (category 2B)
+  - EAU 2026 §6.5.7
+  - KEYNOTE-365/199 mCRPC pembrolizumab subgroup
+  - CheckMate 650 nivolumab + ipilimumab mCRPC
+- req_id: REQ-GATE-comprehensive_hrd_phenotype_high
+  description: comprehensive_hrd_phenotype_high
+  code_path: prostanet/shared/pivotal_gates_catalog/64_comprehensive_hrd_phenotype_high.yaml
+  test_id: test_pivotal_comprehensive_hrd_phenotype_high
+  mitigation_id: MIT-Gcomprehensive_hrd_phenotype_high
+  pillar: 5
+  evidence_source:
+  - Cheng JCO 2014;32:3050 (platinum HRR+ mCRPC)
+  - Pomerantz Eur Urol 2017 (HRD prostate cancer)
+  - Aparicio Eur Urol 2024 (HRD NEPC platinum)
+  - Mateo Ann Oncol 2020 (comprehensive HRD assessment)
+  - PROpel/TALAPRO-2/MAGNITUDE PARP combinations
+  - Myriad MyChoice CDx HRD (FDA companion diagnostic)
+  - NCCN Prostate v5.2026 PROS-2
+  - EAU 2026 §6.5.6
+- req_id: REQ-GATE-msi_mmr_reflex_testing_lynch_family
+  description: msi_mmr_reflex_testing_lynch_family
+  code_path: prostanet/shared/pivotal_gates_catalog/65_msi_mmr_reflex_testing_lynch_family.yaml
+  test_id: test_pivotal_msi_mmr_reflex_testing_lynch_family
+  mitigation_id: MIT-Gmsi_mmr_reflex_testing_lynch_family
+  pillar: 5
+  evidence_source:
+  - KEYNOTE-158 (Marabelle Lancet Oncol 2020)
+  - KEYNOTE-199 (Antonarakis JCO 2020 mCRPC dMMR)
+  - Le NEJM 2015 (proof-of-concept dMMR pembrolizumab)
+  - Nava Rodrigues Eur Urol 2018 (dMMR mCRPC)
+  - NCCN Prostate v5.2026 PROS-H (category 2A Lynch testing)
+  - EAU 2026 §6.5.5
+  - FDA pembrolizumab tumor agnostic dMMR/MSI-H approval 2017
+  - Amsterdam II + Bethesda Lynch criteria
+- req_id: REQ-GATE-metastatic_biopsy_pathway_when_primary_impractical
+  description: metastatic_biopsy_pathway_when_primary_impractical
+  code_path: prostanet/shared/pivotal_gates_catalog/66_metastatic_biopsy_pathway_when_primary_impractical.yaml
+  test_id: test_pivotal_metastatic_biopsy_pathway_when_primary_impractical
+  mitigation_id: MIT-Gmetastatic_biopsy_pathway_when_primary_impractical
+  pillar: 5
+  evidence_source:
+  - NCCN Prostate v5.2026 PROS-1
+  - EAU 2026 §5.1.4 (metastatic biopsy)
+  - Aparicio Eur Urol 2024 (NEPC biopsy mandatory)
+- req_id: REQ-GATE-atypical_histology_escalation_nepc_intraductal
+  description: atypical_histology_escalation_nepc_intraductal
+  code_path: prostanet/shared/pivotal_gates_catalog/67_atypical_histology_escalation_nepc_intraductal.yaml
+  test_id: test_pivotal_atypical_histology_escalation_nepc_intraductal
+  mitigation_id: MIT-Gatypical_histology_escalation_nepc_intraductal
+  pillar: 4
+  evidence_source:
+  - Aparicio Eur Urol 2024 (NEPC management)
+  - Beltran JCO 2018 (NEPC molecular landscape)
+  - Kweldam Eur Urol 2017 (IDC adverse prognostic)
+  - Kweldam Histopathology 2015 (cribriform pattern)
+  - Risbridger Nat Rev Cancer 2018 (IDC molecular)
+  - NCCN Prostate v5.2026 PROS-A (NEPC pathway)
+  - NCCN Prostate v5.2026 PROS-1 (IDC adverse feature)
+  - EAU 2026 §6.6 (NEPC management)
+- req_id: REQ-GATE-nepc_pre_biopsy_risk_suspicion
+  description: nepc_pre_biopsy_risk_suspicion
+  code_path: prostanet/shared/pivotal_gates_catalog/67b_nepc_pre_biopsy_risk_suspicion.yaml
+  test_id: test_pivotal_nepc_pre_biopsy_risk_suspicion
+  mitigation_id: MIT-Gnepc_pre_biopsy_risk_suspicion
+  pillar: 5
+  evidence_source:
+  - Aparicio Eur Urol 2024 (NEPC management)
+  - Beltran JCO 2018 (NEPC molecular)
+  - Mostaghel JCO 2014 (small cell suspicion criteria)
+  - NCCN Prostate v5.2026 PROS-A
+  - EAU 2026 §6.6
+- req_id: REQ-GATE-ct4_requires_histology_confirmation
+  description: ct4_requires_histology_confirmation
+  code_path: prostanet/shared/pivotal_gates_catalog/67c_ct4_requires_histology_confirmation.yaml
+  test_id: test_pivotal_ct4_requires_histology_confirmation
+  mitigation_id: MIT-Gct4_requires_histology_confirmation
+  pillar: 4
+  evidence_source:
+  - NCCN Prostate v5.2026 PROS-2
+  - EAU 2026 §5.3 (biopsy indications)
+  - AUA Guidelines 2024 (pre-treatment confirmation)
+  - PCWG3 (Scher JCO 2016)
+- req_id: REQ-GATE-oncologic_emergency_diagnostic_integration
+  description: oncologic_emergency_diagnostic_integration
+  code_path: prostanet/shared/pivotal_gates_catalog/68_oncologic_emergency_diagnostic_integration.yaml
+  test_id: test_pivotal_oncologic_emergency_diagnostic_integration
+  mitigation_id: MIT-Goncologic_emergency_diagnostic_integration
+  pillar: 4
+  evidence_source:
+  - Patchell Lancet 2005;366:643 (SCC surgery + RT)
+  - Loblaw JCO 2012;30:1271 (SCC management)
+  - Major NEJM 2016;374:1739 (malignant hypercalcemia)
+  - NCCN Prostate v5.2026 PROS-X
+  - EAU 2026 §11 (oncology emergencies)
+- req_id: REQ-GATE-pre_biopsy_risk_calculators_phi_4kscore
+  description: pre_biopsy_risk_calculators_phi_4kscore
+  code_path: prostanet/shared/pivotal_gates_catalog/69_pre_biopsy_risk_calculators_phi_4kscore.yaml
+  test_id: test_pivotal_pre_biopsy_risk_calculators_phi_4kscore
+  mitigation_id: MIT-Gpre_biopsy_risk_calculators_phi_4kscore
+  pillar: 5
+  evidence_source:
+  - Loeb J Urol 2015 (PHI validation)
+  - Parekh JCO 2015 (4Kscore validation)
+  - Vickers J Urol 2009 (PSA velocity)
+  - Roobol Eur Urol 2015 (PSA density EAU cutoffs)
+  - NCCN Prostate v5.2026 PROS-G
+  - EAU 2026 §5.1.2
+- req_id: REQ-GATE-psa_velocity_pre_biopsy_urgent
+  description: psa_velocity_pre_biopsy_urgent
+  code_path: prostanet/shared/pivotal_gates_catalog/69b_psa_velocity_pre_biopsy_urgent.yaml
+  test_id: test_pivotal_psa_velocity_pre_biopsy_urgent
+  mitigation_id: MIT-Gpsa_velocity_pre_biopsy_urgent
+  pillar: 5
+  evidence_source:
+  - D'Amico JNCI 1995 (PSA velocity criteria)
+  - Carter JNCI 2006 (PSA velocity >2 mortality)
+  - EAU 2026 §5.1.2 (pre-biopsy calculators)
+  - NCCN Prostate v5.2026 PROS-G
+  - Vickers J Urol 2009 (PSA velocity validation)
+- req_id: REQ-GATE-localized_bcr_adjuvant_trials_completion
+  description: localized_bcr_adjuvant_trials_completion
+  code_path: prostanet/shared/pivotal_gates_catalog/70_localized_bcr_adjuvant_trials_completion.yaml
+  test_id: test_pivotal_localized_bcr_adjuvant_trials_completion
+  mitigation_id: MIT-Glocalized_bcr_adjuvant_trials_completion
+  pillar: 5
+  evidence_source:
+  - PROTECT (Hamdy NEJM 2023;388:1547)
+  - SPCG-4 (Bill-Axelson NEJM 2014;370:932)
+  - PIVOT (Wilt NEJM 2017;377:132)
+  - SWOG-8794 (Thompson J Urol 2009;181:956)
+  - ARO 96-02 (Wiegel JCO 2014;32:3924)
+  - RAVES (Kneebone Lancet Oncol 2020;21:1331)
+  - ARTISTIC (Vale Lancet Oncol 2020;21:1341)
+  - RTOG 9601 (Shipley NEJM 2017;376:417)
+  - SPPORT (Pollack Lancet 2022;399:1886)
+  - GETUG-AFU 16 (Carrie Lancet Oncol 2016;17:747)
+- req_id: REQ-GATE-psma_pet_progression_auto_trigger
+  description: psma_pet_progression_auto_trigger
+  code_path: prostanet/shared/pivotal_gates_catalog/71_psma_pet_progression_auto_trigger.yaml
+  test_id: test_pivotal_psma_pet_progression_auto_trigger
+  mitigation_id: MIT-Gpsma_pet_progression_auto_trigger
+  pillar: 5
+  evidence_source:
+  - PCWG3 (Scher JCO 2016;34:1402)
+  - PERCIST 1.0 (Wahl JNM 2009;50:122S)
+  - RECIST 1.1 (Eisenhauer EJC 2009;45:228)
+  - PROMISE (Hofman Lancet 2020;395:1208)
+  - VISION (Sartor NEJM 2021;385:1091)
+  - NCCN Prostate v5.2026 PROS-O
+- req_id: REQ-GATE-visceral_metastasis_new_appearance
+  description: visceral_metastasis_new_appearance
+  code_path: prostanet/shared/pivotal_gates_catalog/72_visceral_metastasis_new_appearance.yaml
+  test_id: test_pivotal_visceral_metastasis_new_appearance
+  mitigation_id: MIT-Gvisceral_metastasis_new_appearance
+  pillar: 5
+  evidence_source:
+  - CHAARTED (Sweeney NEJM 2015)
+  - VISION (Sartor NEJM 2021;385:1091)
+  - CARD (de Wit NEJM 2019)
+  - PCWG3 (Scher JCO 2016;34:1402)
+  - Aparicio Eur Urol 2024 (NEPC visceral)
+  - NCCN Prostate v5.2026 PROS-G
+- req_id: REQ-GATE-structured_pain_progression_bpi
+  description: structured_pain_progression_bpi
+  code_path: prostanet/shared/pivotal_gates_catalog/73_structured_pain_progression_bpi.yaml
+  test_id: test_pivotal_structured_pain_progression_bpi
+  mitigation_id: MIT-Gstructured_pain_progression_bpi
+  pillar: 5
+  evidence_source:
+  - BPI Cleeland Ann Acad Med Singapore 1994;23:129
+  - PCWG3 (Scher JCO 2016;34:1402)
+  - NCCN Pain v2.2026
+  - Hartsell JNCI 2005;97:798
+  - NCCN Prostate v5.2026 PROS-O
+- req_id: REQ-GATE-ecog_decline_alert
+  description: ecog_decline_alert
+  code_path: prostanet/shared/pivotal_gates_catalog/74_ecog_decline_alert.yaml
+  test_id: test_pivotal_ecog_decline_alert
+  mitigation_id: MIT-Gecog_decline_alert
+  pillar: 5
+  evidence_source:
+  - Oken Am J Clin Oncol 1982;5:649 (ECOG validation)
+  - PCWG3 (Scher JCO 2016;34:1402)
+  - CHAARTED (Sweeney NEJM 2015)
+  - CARD (de Wit NEJM 2019)
+  - NCCN Prostate v5.2026 PROS-G
+  - EAU 2026 §10 (palliative care)
+- req_id: REQ-GATE-composite_progression_rpfs_reroute
+  description: composite_progression_rpfs_reroute
+  code_path: prostanet/shared/pivotal_gates_catalog/75_composite_progression_rpfs_reroute.yaml
+  test_id: test_pivotal_composite_progression_rpfs_reroute
+  mitigation_id: MIT-Gcomposite_progression_rpfs_reroute
+  pillar: 5
+  evidence_source:
+  - PCWG3 (Scher JCO 2016;34:1402)
+  - CHAARTED (Sweeney NEJM 2015)
+  - STAMPEDE (James Lancet 2016)
+  - PEACE-1 (Fizazi Lancet 2022)
+  - ARASENS (Smith NEJM 2022)
+  - CARD (de Wit NEJM 2019)
+  - VISION (Sartor NEJM 2021)
+  - PROfound (de Bono NEJM 2020)
+  - ALSYMPCA (Parker NEJM 2013)
+  - NCCN Prostate v5.2026 PROS-O
+- req_id: REQ-GATE-samarium_153_edtmp_eligibility
+  description: samarium_153_edtmp_eligibility
+  code_path: prostanet/shared/pivotal_gates_catalog/76_samarium_153_edtmp_eligibility.yaml
+  test_id: test_pivotal_samarium_153_edtmp_eligibility
+  mitigation_id: MIT-Gsamarium_153_edtmp_eligibility
+  pillar: 5
+  evidence_source:
+  - Sartor JCO 2004;22:2869 (Sm-153 randomized)
+  - Quadramet FDA label 1997
+  - NCCN Prostate v5.2026 PROS-O
+  - EAU 2026 §10.3 (bone-targeted radiopharm)
+  - ASCO 2018 Bone-Targeted Therapy guidelines
+- req_id: REQ-GATE-iodine_131_mibg_nepc_eligibility
+  description: iodine_131_mibg_nepc_eligibility
+  code_path: prostanet/shared/pivotal_gates_catalog/77_iodine_131_mibg_nepc_eligibility.yaml
+  test_id: test_pivotal_iodine_131_mibg_nepc_eligibility
+  mitigation_id: MIT-Giodine_131_mibg_nepc_eligibility
+  pillar: 5
+  evidence_source:
+  - Bombardieri Eur J Nucl Med 2010;37:2436
+  - NETTER-1 Strosberg NEJM 2017 (Lu-177-DOTATATE NET)
+  - Aparicio Eur Urol 2024 (NEPC review)
+  - NCCN Neuroendocrine v3.2025
+  - PRRT consensus guidelines
+- req_id: REQ-GATE-actinium_225_psma_investigational
+  description: actinium_225_psma_investigational
+  code_path: prostanet/shared/pivotal_gates_catalog/78_actinium_225_psma_investigational.yaml
+  test_id: test_pivotal_actinium_225_psma_investigational
+  mitigation_id: MIT-Gactinium_225_psma_investigational
+  pillar: 5
+  evidence_source:
+  - Kratochwil JNM 2016;57:1941 (Ac-225-PSMA case series)
+  - Sathekge JNM 2024 (multi-center cohort)
+  - Sathekge Lancet Oncol 2024 (TAT review)
+  - VIOLET trial NCT05477576 (randomized fase II)
+  - NCCN Prostate v5.2026 PROS-O
+  - EAU 2026 §10.3
+- req_id: REQ-GATE-palliative_sedation_protocol_initiation
+  description: palliative_sedation_protocol_initiation
+  code_path: prostanet/shared/pivotal_gates_catalog/79_palliative_sedation_protocol_initiation.yaml
+  test_id: test_pivotal_palliative_sedation_protocol_initiation
+  mitigation_id: MIT-Gpalliative_sedation_protocol_initiation
+  pillar: 4
+  evidence_source:
+  - EAPC Cherny Palliat Med 2009;23:581
+  - ASCO 2017 Palliative Care Integration
+  - WHO Palliative Care Definition 2002
+  - Schildmann J Pain Symptom Manage 2014
+  - NCCN Palliative Care v2.2026
+  - EAU 2026 §10
+- req_id: REQ-GATE-esas_severity_alert
+  description: esas_severity_alert
+  code_path: prostanet/shared/pivotal_gates_catalog/80_esas_severity_alert.yaml
+  test_id: test_pivotal_esas_severity_alert
+  mitigation_id: MIT-Gesas_severity_alert
+  pillar: 5
+  evidence_source:
+  - Bruera J Palliat Care 1991;7:6 (ESAS original)
+  - Hui Cancer 2014;120:875 (ESAS revised)
+  - NCCN Distress Management v3.2026
+  - ASCO 2017 Palliative Care Integration
+  - EAPC Symptom Assessment guidelines
+  - EAU 2026 §10
+- req_id: REQ-GATE-phq9_depression_referral
+  description: phq9_depression_referral
+  code_path: prostanet/shared/pivotal_gates_catalog/81_phq9_depression_referral.yaml
+  test_id: test_pivotal_phq9_depression_referral
+  mitigation_id: MIT-Gphq9_depression_referral
+  pillar: 5
+  evidence_source:
+  - Kroenke JGIM 2001;16:606 (PHQ-9 validation)
+  - Cipriani Lancet 2018;391:1357 (antidepressants meta)
+  - NCCN Distress Management v3.2026
+  - ASCO 2014 Depression in Cancer Patients
+  - EAU 2026 §10
+- req_id: REQ-GATE-gad7_anxiety_referral
+  description: gad7_anxiety_referral
+  code_path: prostanet/shared/pivotal_gates_catalog/82_gad7_anxiety_referral.yaml
+  test_id: test_pivotal_gad7_anxiety_referral
+  mitigation_id: MIT-Ggad7_anxiety_referral
+  pillar: 5
+  evidence_source:
+  - Spitzer Arch Intern Med 2006;166:1092 (GAD-7 validation)
+  - Cipriani Lancet 2018;391:1357 (antidepressants meta)
+  - Bandelow World J Biol Psychiatry 2017 (anxiety guidelines)
+  - NCCN Distress Management v3.2026
+  - ASCO 2014 Anxiety in Cancer Patients
+- req_id: REQ-GATE-palliative_rt_decision_engine
+  description: palliative_rt_decision_engine
+  code_path: prostanet/shared/pivotal_gates_catalog/83_palliative_rt_decision_engine.yaml
+  test_id: test_pivotal_palliative_rt_decision_engine
+  mitigation_id: MIT-Gpalliative_rt_decision_engine
+  pillar: 5
+  evidence_source:
+  - Hartsell JNCI 2005;97:798 (RTOG 9714 bone pain)
+  - Lutz Pract Radiat Oncol 2017 (ASTRO bone mets)
+  - Patchell Lancet 2005;366:643 (SCC surgery+RT)
+  - Loblaw JCO 2012;30:1271 (SCC management)
+  - Yamamoto Lancet Oncol 2014 (SRS brain mets)
+  - STOMP (Ost JCO 2018)
+  - ORIOLE (Phillips JAMA Oncol 2020)
+  - SABR-COMET (Palma Lancet 2019)
+  - STAMPEDE arm M1 RT (Parker Lancet 2018)
+  - NCCN Prostate v5.2026 PROS-O
+  - EAU 2026 §10.4
+- req_id: REQ-GATE-oligometastatic_sbrt_eligibility
+  description: oligometastatic_sbrt_eligibility
+  code_path: prostanet/shared/pivotal_gates_catalog/84_oligometastatic_sbrt_eligibility.yaml
+  test_id: test_pivotal_oligometastatic_sbrt_eligibility
+  mitigation_id: MIT-Goligometastatic_sbrt_eligibility
+  pillar: 5
+  evidence_source:
+  - STOMP (Ost JCO 2018;36:446)
+  - ORIOLE (Phillips JAMA Oncol 2020;6:650)
+  - SABR-COMET (Palma Lancet 2019;393:2051)
+  - STAMPEDE arm M1 RT (Parker Lancet 2018;392:2353)
+  - Lievens Radiother Oncol 2020 (ESTRO/EORTC consensus)
+  - NCCN Prostate v5.2026 PROS-O
+  - EAU 2026 §6.4
+- req_id: REQ-GATE-cachexia_pharmacotherapy_consideration
+  description: cachexia_pharmacotherapy_consideration
+  code_path: prostanet/shared/pivotal_gates_catalog/85_cachexia_pharmacotherapy_consideration.yaml
+  test_id: test_pivotal_cachexia_pharmacotherapy_consideration
+  mitigation_id: MIT-Gcachexia_pharmacotherapy_consideration
+  pillar: 5
+  evidence_source:
+  - Fearon Lancet Oncol 2011;12:489 (cachexia definition)
+  - Loprinzi JCO 1990 (megestrol RCT)
+  - Cochrane 2013 megestrol meta-analysis
+  - ROMANA trials Currow JCO 2018 (anamorelin)
+  - Navari JCO 2020 (olanzapine appetite)
+  - NCCN Cancer Cachexia v1.2026
+  - ASCO 2020 Cancer Cachexia guidelines
+  - EAU 2026 §10
+- req_id: REQ-STAGE-screening
+  description: Stage-aware schema for screening
+  code_path: prostanet/domains/screening/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-screening
+  pillar: 5
+- req_id: REQ-STAGE-diagnostic_workup
+  description: Stage-aware schema for diagnostic_workup
+  code_path: prostanet/domains/diagnostic_workup/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-diagnostic_workup
+  pillar: 5
+- req_id: REQ-STAGE-localized_initial
+  description: Stage-aware schema for localized_initial
+  code_path: prostanet/domains/localized_initial/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-localized_initial
+  pillar: 5
+- req_id: REQ-STAGE-post_prostatectomy
+  description: Stage-aware schema for post_prostatectomy
+  code_path: prostanet/domains/post_prostatectomy/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-post_prostatectomy
+  pillar: 5
+- req_id: REQ-STAGE-recurrence_bcr
+  description: Stage-aware schema for recurrence_bcr
+  code_path: prostanet/domains/recurrence_bcr/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-recurrence_bcr
+  pillar: 5
+- req_id: REQ-STAGE-post_radiotherapy_followup
+  description: Stage-aware schema for post_radiotherapy_followup
+  code_path: prostanet/domains/post_radiotherapy_followup/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-post_radiotherapy_followup
+  pillar: 5
+- req_id: REQ-STAGE-post_radiotherapy_or_local_salvage
+  description: Stage-aware schema for post_radiotherapy_or_local_salvage
+  code_path: prostanet/domains/post_radiotherapy_or_local_salvage/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-post_radiotherapy_or_local_salvage
+  pillar: 5
+- req_id: REQ-STAGE-post_negative_biopsy_followup
+  description: Stage-aware schema for post_negative_biopsy_followup
+  code_path: prostanet/domains/post_negative_biopsy_followup/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-post_negative_biopsy_followup
+  pillar: 5
+- req_id: REQ-STAGE-mcspc_oligo_metachronous
+  description: Stage-aware schema for mcspc_oligo_metachronous
+  code_path: prostanet/domains/mcspc_oligo_metachronous/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-mcspc_oligo_metachronous
+  pillar: 5
+- req_id: REQ-STAGE-mcspc_low_volume_sync_oligo
+  description: Stage-aware schema for mcspc_low_volume_sync_oligo
+  code_path: prostanet/domains/mcspc_low_volume_sync_oligo/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-mcspc_low_volume_sync_oligo
+  pillar: 5
+- req_id: REQ-STAGE-mcspc_high_volume_sync
+  description: Stage-aware schema for mcspc_high_volume_sync
+  code_path: prostanet/domains/mcspc_high_volume_sync/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-mcspc_high_volume_sync
+  pillar: 5
+- req_id: REQ-STAGE-mcspc_high_volume_metachronous
+  description: Stage-aware schema for mcspc_high_volume_metachronous
+  code_path: prostanet/domains/mcspc_high_volume_metachronous/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-mcspc_high_volume_metachronous
+  pillar: 5
+- req_id: REQ-STAGE-mcspc_high_volume
+  description: Stage-aware schema for mcspc_high_volume
+  code_path: prostanet/domains/mcspc_high_volume/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-mcspc_high_volume
+  pillar: 5
+- req_id: REQ-STAGE-adt_progression_verification
+  description: Stage-aware schema for adt_progression_verification
+  code_path: prostanet/domains/adt_progression_verification/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-adt_progression_verification
+  pillar: 5
+- req_id: REQ-STAGE-m0_crpc
+  description: Stage-aware schema for m0_crpc
+  code_path: prostanet/domains/m0_crpc/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-m0_crpc
+  pillar: 5
+- req_id: REQ-STAGE-m1_crpc
+  description: Stage-aware schema for m1_crpc
+  code_path: prostanet/domains/m1_crpc/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-m1_crpc
+  pillar: 5
+- req_id: REQ-STAGE-focal_therapy
+  description: Stage-aware schema for focal_therapy
+  code_path: prostanet/domains/focal_therapy/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-focal_therapy
+  pillar: 5
+- req_id: REQ-STAGE-survivorship_and_toxicity_followup
+  description: Stage-aware schema for survivorship_and_toxicity_followup
+  code_path: prostanet/domains/survivorship_and_toxicity_followup/schemas.py
+  test_id: test_audit_lxxxvi_cde_auditable_real::test_g2847_18_stages_resolve_without_error
+  mitigation_id: MIT-STAGE-survivorship_and_toxicity_followup
+  pillar: 5
+- req_id: REQ-CDE-AUDIT
+  description: Decision audit 5-dimensions endpoint
+  code_path: prostanet/shared/decision_audit_builder.py
+  test_id: tests/test_decision_audit_endpoint.py
+  mitigation_id: MIT-002
+  pillar: 7
+- req_id: REQ-RECOMPUTE-HOOK
+  description: Post-append recompute hook (LXXXVI Fase 1A)
+  code_path: app.py:_recompute_after_append
+  test_id: tests/test_audit_lxxxvi_cde_auditable_real::test_g2861
+  mitigation_id: MIT-001
+  pillar: 7
+- req_id: REQ-WHATIF-SIM
+  description: What-if simulator (no DB write)
+  code_path: app.py:api_simulate_what_if
+  test_id: tests/test_audit_lxxxvi_cde_auditable_real::test_g2855
+  mitigation_id: MIT-014
+  pillar: 7
+- req_id: REQ-INTAKE-WIZARD
+  description: Stage-Aware Progressive Intake 3-step wizard
+  code_path: templates/intake_stage_aware_v2.html
+  test_id: tests/test_audit_lxxxvi_cde_auditable_real::test_g2852
+  mitigation_id: MIT-005
+  pillar: 7
+- req_id: REQ-AGENTIC-LOOP
+  description: Faubot Agentic Loop (LXXXVII bootstrap)
+  code_path: prostanet/agentic/improvement_loop.py
+  test_id: tests/test_audit_lxxxvii_agentic_loop_bootstrap.py
+  mitigation_id: MIT-016
+  pillar: 7
+- req_id: REQ-COMPLIANCE-SCORER
+  description: FDA SaMD compliance scorer (LXXXVIII)
+  code_path: prostanet/agentic/compliance_scorer.py
+  test_id: tests/test_audit_lxxxviii_compliance_scorer.py
+  mitigation_id: MIT-017
+  pillar: 7
+summary:
+  total_rows: 113
+  rows_by_pillar:
+    p4: 59
+    p5: 48
+    p7: 6

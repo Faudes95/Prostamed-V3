@@ -1,0 +1,135 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 87: taxane_diarrhea_grade3_plus
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.A) — Tier 1 Adverse Event Coverage Closure.
+#
+# Razón clínica:
+#   Taxanes (docetaxel + cabazitaxel) tienen incidencia significativa
+#   de diarrhea G3+ que requiere hard_block para hold/dose-modify:
+#
+#   - **TAX-327 (Tannock NEJM 2004;351:1502)**: docetaxel diarrhea any
+#     grade 31.6%, G3 1.6%
+#   - **CHAARTED (Sweeney NEJM 2015;373:737)**: docetaxel diarrhea G3-4
+#     5%, neutropenic febrile in setting of diarrhea complicada
+#   - **TROPIC (de Bono Lancet 2010;376:1147)**: cabazitaxel diarrhea
+#     any grade 47%, G3 6.2% (mucho mayor que docetaxel)
+#   - **CARD (de Wit NEJM 2019;381:2506)**: cabazitaxel post-doce+ARPI
+#     diarrhea G3 ~7%
+#
+#   Mecanismo: enterocyte toxicity directa + citokinas pro-inflamatorias
+#   + alteración microbiota.
+#
+#   Implicación clínica G3 (≥7 stools/day, hospitalization indicated):
+#   - HOLD taxane next cycle hasta resolución <G2
+#   - Loperamida 4mg + 2mg post cada deposición (max 16mg/24h)
+#   - Diphenhydramine + atropine si secretory severe
+#   - IV fluids si dehydration
+#   - Stool culture (descartar C. difficile, especialmente post-ATB)
+#   - Octreotide 100-150 mcg SC TID si refractory >48h
+#
+#   G4 (life-threatening): hard_block tratamiento + ICU consideration.
+#   Reducir dose 25% al re-iniciar tras recovery.
+#
+#   Override: si paciente bajo manejo agresivo IV + GI consult ya
+#   activo, considerar reducción dose vs hold.
+# ──────────────────────────────────────────────────────────────────────
+
+code: taxane_diarrhea_grade3_plus
+title: "Taxane × diarrhea G3+ → HOLD next cycle + manejo agresivo"
+faubot_added_in: "2026-04-30 LXCVI.A"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: CTCAE grade ≥3
+    - type: numeric_threshold
+      field: diarrhea_ctcae_grade
+      alias_fields:
+        - diarrhea_grade
+        - diarrea_grado_ctcae
+        - diarrea_grade
+      threshold: 3
+    # Path B: dehydration documented (proxy G3+)
+    - type: truthy_flag
+      field: diarrhea_with_dehydration_documented
+      alias_fields:
+        - diarrea_con_deshidratacion
+        - diarrhea_dehydration
+
+regimen_codes:
+  - REGIMEN_CODES_TAXANE
+
+override:
+  type: truthy_flag
+  field: taxane_diarrhea_aggressive_management_documented
+  alias_fields:
+    - diarrhea_octreotide_initiated
+    - gi_consult_active
+
+keywords:
+  - diarrhea
+  - diarrea
+  - docetaxel
+  - cabazitaxel
+  - taxane
+  - CTCAE
+  - dehydration
+
+message: |
+  🚨 HARD BLOCK: Diarrhea G3+ bajo taxane → HOLD next cycle hasta
+  resolución <G2 + manejo agresivo.
+
+  🎯 EVIDENCIA INCIDENCIA POR TRIAL:
+
+  | Trial | Régimen | Diarrhea G3 % |
+  |-------|---------|----------------|
+  | TAX-327 | Docetaxel | 1.6% |
+  | CHAARTED | Docetaxel + ADT | ~5% |
+  | TROPIC | Cabazitaxel | 6.2% |
+  | CARD | Cabazitaxel post-doce | ~7% |
+
+  🎯 MANEJO ESCALONADO G3:
+
+  1. **Inmediato (G3 = ≥7 stools/day, hospitalización indicada)**:
+     - HOLD taxane next cycle
+     - Loperamida 4mg loading + 2mg post cada deposición (max 16mg/24h)
+     - IV fluids + electrolyte replacement
+     - NPO if severe + slowly advance diet
+
+  2. **Workup secondary**:
+     - Stool C. difficile + culture (especialmente si ATB recent)
+     - CBC + chemistries (electrolytes)
+     - Imaging si concern obstrucción/perforación
+
+  3. **Si refractory >48h Loperamida max dose**:
+     - Octreotide 100-150 mcg SC TID
+     - GI consult
+     - Considerar diphenhydramine + atropine
+
+  4. **Re-iniciar tratamiento**:
+     - Wait until <G2 sustained ≥48h
+     - Dose reduction 25% (e.g., docetaxel 75 → 60 mg/m²)
+     - Premedicación profilaxis Loperamida next cycle
+
+  5. **Si G4 (life-threatening)**:
+     - HARD BLOCK indefinido
+     - ICU monitoring
+     - Consider switch a non-taxane regimen
+
+  ⚠️ OVERRIDE: documentar `taxane_diarrhea_aggressive_management_documented`
+  permite continuar con dose reduction 25% si manejo IV + GI consult activos.
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `diarrhea_ctcae_grade`: int 0-4 (CTCAE v5.0)
+  - `diarrhea_with_dehydration_documented`: bool
+
+evidence_tag: taxane_diarrhea_tax327_chaarted_tropic_card_2004_2019
+trial_refs:
+  - "TAX-327 (Tannock NEJM 2004;351:1502)"
+  - "CHAARTED (Sweeney NEJM 2015;373:737)"
+  - "TROPIC (de Bono Lancet 2010;376:1147)"
+  - "CARD (de Wit NEJM 2019;381:2506)"
+  - "CTCAE v5.0 (NCI 2017)"
+  - "NCCN Supportive Care v1.2026"

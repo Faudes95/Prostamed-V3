@@ -1,0 +1,33 @@
+code: parp_inhibitor_in_mds_aml_history
+title: "MDS/AML history before PARP inhibitor"
+faubot_added_in: "2026-05-11 Clinical Memory recovery"
+severity: hard_block
+trigger:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: mds_aml_history
+      alias_fields:
+        - prior_mds_aml_history
+    - type: truthy_flag
+      field: mds_history
+    - type: truthy_flag
+      field: aml_history
+override:
+  type: truthy_flag
+  field: mds_aml_remission_for_parpi
+regimen_codes:
+  - REGIMEN_CODES_PARPI
+keywords:
+  - PARP
+  - olaparib
+  - niraparib
+  - talazoparib
+message: |
+  MDS/AML history is a hard safety block for PARP inhibitor release until
+  hematology review and remission context are explicitly documented.
+evidence_tag: parp_labels_mds_aml_warning
+trial_refs:
+  - PROfound
+  - MAGNITUDE
+  - TALAPRO-2

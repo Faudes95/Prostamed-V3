@@ -1,0 +1,2 @@
+"""Localized initial disease domain."""
+

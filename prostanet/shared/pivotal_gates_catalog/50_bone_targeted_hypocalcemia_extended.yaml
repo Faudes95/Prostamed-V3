@@ -1,0 +1,296 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 50: bone_targeted_hypocalcemia_extended
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXI) — Auditoría #64 — Gate YAML-NATIVE.
+#
+# 🆕 EXTIENDE GATE 12 (limitado solo a Ra-223) → CLASE ENTERA
+# BONE-TARGETED. Sienta categoría bone-modifying agents completa
+# preparada para futuros gates (#65 osteonecrosis mandíbula post-bisfos
+# +denosumab life-threatening, hipocalcemia post-cirugía).
+#
+# Razón clínica:
+#   Bone-targeted (radiopharmaceuticals + bisfosfonatos + denosumab)
+#   son piedra angular del manejo de metástasis óseas en mCRPC.
+#   Prescritos en >70% pacientes mCRPC con M1b óseas (NCCN PROS-G
+#   v5.2026 Class IA). Mecanismo común: bloqueo osteoclastos →
+#   ↓resorción ósea → ↓liberación Ca al torrente sanguíneo →
+#   hipocalcemia + secundario hiperparatiroidismo (PTH alto) +
+#   hipovitaminosis D contribuye.
+#
+#   Mecanismo específico por agente:
+#     - Ra-223 (Xofigo): alfa-emisor selectivo a hueso turnover alto
+#       → daño osteoclasto + inhibición remodelado (gate 12 actual)
+#     - Lu-177-PSMA-617 (Pluvicto): beta-emisor selectivo a PSMA
+#       (también afecta hueso por uptake óseo metástasico)
+#     - Denosumab (Xgeva): anticuerpo monoclonal anti-RANKL → bloquea
+#       activación osteoclastos directamente
+#     - Bisfosfonatos (zoledronato, pamidronato, alendronato): se
+#       depositan en hueso, inhiben osteoclastos por apoptosis
+#       (zoledronato más potente IV)
+#
+#   Datos prevalencia hipocalcemia G≥3:
+#     - **Denosumab (Xgeva 120 mg subQ q4 sem)**: Henry JCO 2011 +
+#       Fizazi Lancet 2011 → 6-13% G≥3 (mayor que bisfos por
+#       potencia anti-resorción)
+#     - **Zoledronato (Zometa 4 mg IV q4 sem)**: Saad JNCI 2002 +
+#       Major Cancer 2001 → 4-9% G≥3
+#     - **Pamidronato/Alendronato**: 3-6% G≥3 (perfil bajo)
+#     - **Ra-223 (Xofigo)**: ALSYMPCA Parker NEJM 2013 → 3-5% G≥3
+#     - **Lu-177-PSMA-617**: VISION Sartor NEJM 2021 → 2-4% G≥3
+#     - **Mortalidad ~2% por tetania + arritmias ventriculares +
+#       convulsiones** sin reconocimiento
+#     - Tiempo medio aparición: 2-12 sem (rango 1-26)
+#
+#   Threshold canónico (CTCAE v5 + ASCO Bone Health 2024 + Henry/
+#   Fizazi 2011):
+#     - Path A: Ca corregido por albúmina <8.0 mg/dL (CTCAE v5 G≥3
+#       severo — sintomático, parestesias periorales, tetania
+#       latente). Cálculo: Ca corregido = Ca medido + 0.8 ×
+#       (4.0 - albúmina g/dL)
+#     - Path B: Ca <7.0 mg/dL (CTCAE v5 G≥4 emergencia — tetania
+#       franca, laringoespasmo, convulsiones, arritmia)
+#     - Path C: Ca ionizado <1.0 mmol/L (gold standard — no afectado
+#       por albúmina; equivale aprox a Ca total <8.0 mg/dL en
+#       paciente normoalbumineémico)
+#     - Path D: Criterios tetania compound (Chvostek positivo +
+#       Trousseau positivo + parestesias periorales/digitales —
+#       patrón clínico patognomónico)
+#     - Path E: hypocalcemia_documented_for_bone_targeted flag
+#       (interpretación clínica especialista)
+#
+#   PROFILAXIS MANDATORIA (ASCO Bone Health 2024 + ESMO 2024):
+#     - **Vitamina D3 2000-5000 IU/d** (objetivo 25-OH-vitD ≥30 ng/mL)
+#     - **Calcio elemental 1000-1200 mg/d** (carbonato o citrato)
+#     - **Monitoring quincenal × 8 sem**: Ca + albúmina + PTH +
+#       25-OH-vitD + creatinina (denosumab + bisfos también
+#       nefrotóxicos en pacientes con CrCl <30)
+#     - Si déficit pre-existente: corregir vitD ≥30 ng/mL ANTES de
+#       primera dosis bone-targeted
+#
+#   Override: hypocalcemia_resolved_for_bone_targeted=Sí
+#   (Ca corregido ≥8.5 mg/dL documentado en 2 mediciones ≥7d +
+#   suplementación vitD + Ca documentada activa + 25-OH-vitD ≥30
+#   ng/mL + endocrinology endorsement + monitoring quincenal × 8 sem
+#   post-reintroducción).
+#
+#   Coexistencia con gate 12 (Ra-223 limitado) — gate 50 es SUPERSET.
+#   Gate 12 sigue válido para back-compat pero gate 50 cubre escenarios
+#   amplios. Mismo paciente con Ra-223 + denosumab activa AMBOS gates
+#   (test g1779 valida).
+#
+#   Bloquea: REGIMEN_CODES_BONE_TARGETED (clase entera).
+# ──────────────────────────────────────────────────────────────────────
+
+code: bone_targeted_hypocalcemia_extended
+title: "Bone-targeted (Ra-223+Lu-177+denosumab+bisfos) × hipocalcemia G≥3 (ASCO Bone Health 2024 + Henry/Fizazi 2011)"
+faubot_added_in: "2026-04-25 LXI"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: Ca corregido por albúmina <8.0 mg/dL (CTCAE v5 G≥3 severo)
+    - type: numeric_below
+      field: corrected_calcium
+      alias_fields:
+        - calcium_corrected_albumin
+        - calcium_corregido_albumina
+        - ca_corrected
+        - calcio_corregido
+      threshold: 8.0
+    # Path B: Ca <7.0 mg/dL (CTCAE v5 G≥4 emergencia — tetania franca)
+    - type: numeric_below
+      field: corrected_calcium
+      alias_fields:
+        - calcium_corrected_albumin
+        - calcium_corregido_albumina
+        - ca_corrected
+        - calcio_corregido
+      threshold: 7.0
+    # Path C: Ca ionizado <1.0 mmol/L (gold standard, sin afectación albúmina)
+    - type: numeric_below
+      field: ionized_calcium_mmol_l
+      alias_fields:
+        - ionized_calcium
+        - calcium_ionized
+        - calcio_ionizado
+        - ca_ionized
+      threshold: 1.0
+    # Path D: Criterios tetania compound (patognomónico)
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: chvostek_sign_positive
+          alias_fields:
+            - chvostek_positivo
+            - signo_chvostek
+        - type: truthy_flag
+          field: trousseau_sign_positive
+          alias_fields:
+            - trousseau_positivo
+            - signo_trousseau
+        - type: truthy_flag
+          field: perioral_paresthesias_documented
+          alias_fields:
+            - parestesias_periorales
+            - perioral_tingling_documented
+            - tetany_symptoms_documented
+    # Path E: flag clínico documentado por endocrinólogo/oncólogo
+    - type: truthy_flag
+      field: hypocalcemia_documented_for_bone_targeted
+      alias_fields:
+        - hypocalcemia_for_bone_targeted_documented
+        - bone_targeted_hypocalcemia_documented
+        - severe_hypocalcemia_for_bone_modifying
+
+# Override: post-resolución Ca + suplementación + endocrinology endorsement
+override:
+  type: truthy_flag
+  field: hypocalcemia_resolved_for_bone_targeted
+  alias_fields:
+    - calcium_recovered_for_bone_targeted
+    - hipocalcemia_normalizada_para_bone_targeted
+    - ca_normalized_for_bone_targeted
+    - hypocalcemia_corrected_for_bone_targeted
+
+regimen_codes:
+  - REGIMEN_CODES_BONE_TARGETED
+
+keywords:
+  - KEYWORDS_BONE_TARGETED
+
+message: |
+  Bone-targeted agents (Ra-223 / Lu-177-PSMA / denosumab / bisfosfonatos)
+  NO deben iniciarse o continuarse con hipocalcemia G≥3 (Ca corregido
+  por albúmina <8.0 mg/dL, Ca ionizado <1.0 mmol/L, o criterios tetania).
+  Hipocalcemia G≥4 (Ca <7.0 mg/dL) es EMERGENCIA — riesgo tetania franca
+  + laringoespasmo + convulsiones + arritmias con mortalidad ~2% sin
+  reconocimiento.
+
+  Mecanismo común (ASCO Bone Health 2024 + Henry JCO 2011 + Fizazi Lancet
+  2011): bone-targeted bloquea osteoclastos → ↓resorción ósea →
+  ↓liberación Ca al torrente sanguíneo → hipocalcemia + secundario
+  hiperparatiroidismo (PTH alto) + hipovitaminosis D contribuye.
+
+  Distintivo por agente:
+    - **Denosumab (Xgeva)**: 6-13% G≥3 (mayor potencia anti-RANKL —
+      bloqueo directo activación osteoclastos)
+    - **Zoledronato (Zometa)**: 4-9% G≥3 (bisfos IV más potente)
+    - **Pamidronato/Alendronato**: 3-6% G≥3 (perfil bajo)
+    - **Ra-223 (Xofigo)**: 3-5% G≥3 (ALSYMPCA Parker NEJM 2013)
+    - **Lu-177-PSMA (Pluvicto)**: 2-4% G≥3 (VISION Sartor NEJM 2021)
+
+  PROFILAXIS MANDATORIA pre-inicio (ASCO Bone Health 2024):
+    - **Vitamina D3 2000-5000 IU/d** (objetivo 25-OH-vitD ≥30 ng/mL)
+    - **Calcio elemental 1000-1200 mg/d** (carbonato o citrato)
+    - **Monitoring quincenal × 8 sem**: Ca + albúmina + PTH + 25-OH-vitD
+      + creatinina (denosumab + bisfos también nefrotóxicos en pacientes
+      CrCl <30)
+    - Si déficit pre-existente: corregir vitD ≥30 ng/mL ANTES de primera
+      dosis bone-targeted
+
+  Conducta clínica obligatoria:
+  1. Suspender bone-targeted INMEDIATAMENTE ante Ca <8.0 mg/dL
+     documentado (Path A) o tetania clínica (Path D).
+  2. Workup completo:
+     - Ca total + albúmina sérica → calcular Ca corregido
+       = Ca medido + 0.8 × (4.0 - albúmina g/dL)
+     - Ca ionizado (gold standard, sin afectación albúmina)
+     - Magnesio sérico (hipomagnesemia coexistente común — debe
+       corregir Mg ANTES de Ca por interferencia función PTH)
+     - Fósforo sérico (descartar hipofosfatemia o hiperfosfatemia
+       secundaria a IRA)
+     - PTH intacta + 25-OH-vitD (descartar hipoparatiroidismo
+       primario o hipovitaminosis D)
+     - Creatinina + CrCl (denosumab/bisfos nefrotóxicos si CrCl <30)
+     - ECG (QT prolongation por hipocalcemia + signos tetania)
+  3. Tratamiento por severidad:
+     - **G2 (Ca 8.0-8.4)**: continuar bone-targeted SI asintomática +
+       suplementar Ca oral 1500-2000 mg/d + vitD 5000 IU/d +
+       monitor Ca cada 24-48h
+     - **G3 (Ca 7.0-8.0)**: suspender bone-targeted + Ca oral
+       2000-3000 mg/d + vitD 50,000 IU PO weekly × 4 sem +
+       considerar calcitriol 0.25-0.5 µg/d si vitD insuficiente +
+       monitor Ca cada 12-24h
+     - **G4 (Ca <7.0, tetania franca, laringoespasmo, convulsiones,
+       arritmia)**: UCI + gluconato de calcio 10% IV 10-20 mL en
+       10 min (1-2 g elemental) + infusión continua 50-100 mL/h
+       (10-20 mEq Ca/h) + monitor Ca horario + ECG continuo +
+       considerar MgSO4 IV si hipomagnesemia coexistente +
+       calcitriol 0.5-1 µg/d
+  4. ⚠️ DISCONTINUACIÓN PERMANENTE bone-targeted en:
+     - G3 recurrente tras reintroducción (con o sin profilaxis)
+     - G4 cualquier evento (riesgo tetania/arritmia letal recurrente)
+     - Hipoparatiroidismo permanente documentado
+     - Necesidad >12 sem de calcitriol para mantener Ca normal
+  5. Override (`hypocalcemia_resolved_for_bone_targeted=Sí`)
+     SOLO si:
+     - Ca corregido ≥8.5 mg/dL documentado en 2 mediciones ≥7d
+     - 25-OH-vitD ≥30 ng/mL documentado
+     - Suplementación oral Ca 1000-1200 mg/d + vitD 2000-5000 IU/d
+       activa
+     - Sin tetania clínica (Chvostek/Trousseau negativos)
+     - Endocrinology endorsement explícito en HC
+     - Plan monitoring Ca + PTH + 25-OH-vitD QUINCENAL × 8 sem
+       post-reintroducción
+  6. Considerar terapia alternativa NO-bone-targeted:
+     - **Si pte requiere bone-protective**: cambiar denosumab→bisfos
+       (perfil hipocalcemia menor) o viceversa según comorbilidades
+     - **Si pte recibe radiopharmaceutical**: revaluar indicación
+       (Ra-223/Lu-177 esenciales para osseo-symptomatic mCRPC) —
+       prioritizar corrección Ca + reintroducción cuidadosa
+     - **NO suspender denosumab abruptamente** sin transición a
+       bisfos: riesgo "rebound resorción" → fracturas vertebrales
+       múltiples + hipercalcemia paradoxal
+  7. Comunicar al paciente: signos tetania (parestesias periorales,
+     calambres, espasmos manos), instruir consultar urgencia si
+     aparecen.
+
+  CAMPOS REQUERIDOS:
+    - `corrected_calcium`: Ca corregido albúmina mg/dL (Path A/B)
+    - `ionized_calcium_mmol_l`: Ca ionizado mmol/L (Path C, gold std)
+    - `chvostek_sign_positive` + `trousseau_sign_positive` +
+      `perioral_paresthesias_documented`: tetania compound (Path D)
+    - `hypocalcemia_documented_for_bone_targeted`: dx flag (Path E)
+
+evidence_tag: asco_bone_health_2024_henry_jco_2011_fizazi_lancet_2011_alsympca_vision
+trial_refs:
+  - "ALSYMPCA"
+  - "VISION"
+  - "Henry JCO 2011"
+  - "Fizazi Lancet 2011"
+  - "Saad JNCI 2002"
+  - "Major Cancer 2001"
+  - "Parker NEJM 2013"
+  - "Sartor NEJM 2021"
+  - "ASCO Bone Health 2024"
+  - "ESMO Bone Health 2024"
+  - "Xofigo label"
+  - "Pluvicto label"
+  - "Xgeva label"
+  - "Zometa label"
+  - "CTCAE v5"
+
+references:
+  - "ASCO Clinical Practice Guideline: Bone Health in Patients with Cancer 2024."
+  - "ESMO Clinical Practice Guideline: Bone-targeting agents for the management of bone metastases 2024."
+  - "Henry DH et al. Randomized Phase 3 Trial of Denosumab vs Zoledronic Acid in Solid Tumors. JCO 2011;29:1125."
+  - "Fizazi K et al. Denosumab vs zoledronic acid for bone metastases in mCRPC. Lancet 2011;377:813."
+  - "Saad F et al. Phase III Zoledronic Acid in mCRPC. JNCI 2002;94:1458."
+  - "Major P et al. Pamidronate for hypercalcemia + bone metastases. Cancer 2001;91:1191."
+  - "Parker C et al. ALSYMPCA. NEJM 2013;369:213 (Ra-223 mCRPC bone metastases)."
+  - "Sartor O et al. VISION. NEJM 2021;385:1091 (Lu-177-PSMA mCRPC)."
+  - "Xofigo (radium-223) FDA prescribing information. Bayer 2024."
+  - "Pluvicto (Lu-177-PSMA-617) FDA prescribing information. Novartis 2022."
+  - "Xgeva (denosumab) FDA prescribing information §5.4 — Hypocalcemia. Amgen 2024."
+  - "Zometa (zoledronic acid) FDA prescribing information §5.5 — Hypocalcemia. Novartis 2024."
+  - "CTCAE v5.0 — Hypocalcemia grading (G1 8.0-8.4 → G4 <7.0 life-threatening tetania)."
+  - "NCCN Guidelines Prostate Cancer v5.2026 — Bone health monitoring + hypocalcemia management."
+  - "PEACE-3 safety amendment (denosumab/zoledronato obligatorio para Ra-223)."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Bone health: bone-targeted agents + Ca/vitD profilaxis MANDATORIA + hypocalcemia monitoring"
+  eau_section: "EAU 2026 §6.7.3 — Bone-modifying agents in mCRPC + bone health"
+  asco_bone_health_section: "ASCO Bone Health Clinical Practice Guideline 2024"
+  esmo_bone_health_section: "ESMO Bone-targeting agents Clinical Practice Guideline 2024"

@@ -1,0 +1,46 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 10: creatinine_clearance_lt_30
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XIII) — Migrado a YAML declarativo.
+#
+# Razón clínica:
+#   Aclaramiento renal <30 mL/min → contraindica rucaparib (TRITON-3
+#   excluyó <30 por toxicidad acumulativa renal/medular).
+# ──────────────────────────────────────────────────────────────────────
+
+code: creatinine_clearance_lt_30
+title: "Aclaramiento renal <30 mL/min (contraindicación rucaparib)"
+faubot_added_in: "2026-04-23 I"
+faubot_migrated_to_yaml_in: "2026-04-25 XIII"
+severity: hard_block
+
+trigger:
+  type: numeric_below
+  field: creatinine_clearance
+  alias_fields:
+    - egfr_ml_min
+    - egfr
+  threshold: 30
+
+override: null
+
+regimen_codes:
+  - REGIMEN_CODES_RUCAPARIB
+
+keywords:
+  - KEYWORDS_RUCAPARIB
+
+message: |
+  Rucaparib NO recomendado con CrCl <30 mL/min (TRITON-3 excluyó <30 mL/min
+  por toxicidad acumulativa renal/medular). Considerar olaparib (PROfound),
+  talazoparib (TALAPRO-2) o niraparib (MAGNITUDE) según el alelo BRCA/HRR
+  documentado.
+
+evidence_tag: triton3
+trial_refs:
+  - TRITON-3
+
+references:
+  - "Fizazi K et al. TRITON-3. NEJM 2023;388:719-732."
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Rucaparib en mCRPC BRCA-mutado"

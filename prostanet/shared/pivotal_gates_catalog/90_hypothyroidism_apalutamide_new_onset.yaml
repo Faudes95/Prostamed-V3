@@ -1,0 +1,137 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 90: hypothyroidism_apalutamide_new_onset
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.A) — Tier 1 Adverse Event Coverage Closure.
+#
+# Razón clínica:
+#   Apalutamida (Erleada) tiene incidencia documentada y única dentro de
+#   los ARPI de hipotiroidismo new-onset (mecanismo no compartido por
+#   enzalutamida o darolutamida):
+#
+#   - **SPARTAN (Smith NEJM 2018;378:1408)**: hipothyroidism any grade
+#     8.1% vs placebo 2.0%. Mostly subclinical (TSH elevated + T4 normal).
+#   - **TITAN (Chi NEJM 2019;381:13)**: hypothyroidism 6.5% vs 1.1%
+#   - **PRESTO/AFT-19 (Aggarwal JCO 2024)**: similar pattern en BCR setting
+#
+#   Mecanismo hipotético: apalutamida induce CYP3A4 → ↑ thyroxine
+#   metabolism + altera deiodinase activity. Algunos pacientes
+#   desarrollan tiroiditis autoinmune secondary.
+#
+#   Implicación clínica:
+#   - Screening: TSH baseline + cada 4 meses durante tratamiento
+#   - Si TSH >upper limit normal + T4 normal → hipotiroidismo subclínico
+#     → start levothyroxine si TSH >10 mIU/L OR síntomas
+#   - Si T4 low + TSH high → hipotiroidismo clínico → levothyroxine
+#     según peso (1.6 mcg/kg/día initial)
+#   - NO discontinuar apalutamida (well-managed con replacement)
+#
+#   Soft_warning para alertar inicio levothyroxine + monitoreo, NO bloquea.
+# ──────────────────────────────────────────────────────────────────────
+
+code: hypothyroidism_apalutamide_new_onset
+title: "Apalutamida × hipotiroidismo new-onset → screening TSH + levothyroxine PRN"
+faubot_added_in: "2026-04-30 LXCVI.A"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: TSH elevated new (subclinical o clínico)
+    - type: truthy_flag
+      field: tsh_elevated_new_onset
+      alias_fields:
+        - tsh_elevated_during_treatment
+        - tsh_high_new
+        - tsh_elevada_nueva
+    # Path B: T4 low new
+    - type: truthy_flag
+      field: t4_low_new_onset
+      alias_fields:
+        - t4_low_during_treatment
+        - free_t4_low_new
+        - t4_baja_nueva
+    # Path C: hipotiroidismo clínicamente documentado
+    - type: truthy_flag
+      field: hypothyroidism_documented_during_treatment
+      alias_fields:
+        - hypothyroidism_new_onset
+        - hipotiroidismo_documentado
+        - hypothyroidism_documented_post_apalutamide
+
+regimen_codes:
+  - REGIMEN_CODES_APALUTAMIDE
+
+keywords:
+  - apalutamida
+  - apalutamide
+  - Erleada
+  - hypothyroidism
+  - hipotiroidismo
+  - TSH
+  - T4
+  - SPARTAN
+  - TITAN
+
+message: |
+  ⚠️ SOFT WARNING: Hipotiroidismo new-onset bajo apalutamida → start
+  levothyroxine + continuar apalutamida.
+
+  🎯 EVIDENCIA INCIDENCIA POR TRIAL:
+
+  | Trial | Régimen | Hypothyroidism % vs placebo |
+  |-------|---------|------------------------------|
+  | SPARTAN | Apalutamida + ADT (nmCRPC) | 8.1% vs 2.0% |
+  | TITAN | Apalutamida + ADT (mCSPC) | 6.5% vs 1.1% |
+  | PRESTO/AFT-19 | Apalutamida + ADT (BCR) | ~7-9% |
+
+  🎯 SCREENING SISTEMÁTICO:
+
+  1. **Baseline (antes iniciar apalutamida)**:
+     - TSH + free T4
+     - TPO antibodies si autoimmune family hx
+
+  2. **Durante tratamiento**:
+     - TSH cada 4 meses primer año
+     - Cada 6 meses subsecuente
+     - Más frecuente si síntomas
+
+  🎯 MANEJO POR PATTERN:
+
+  **Hipotiroidismo subclínico (TSH↑ + T4 normal)**:
+  - TSH 4.5-10 mIU/L asymptomatic → monitor, repeat 6 sem
+  - TSH 4.5-10 + síntomas → start levothyroxine 25-50 mcg/d
+  - TSH >10 mIU/L → start levothyroxine 50-75 mcg/d
+
+  **Hipotiroidismo clínico (TSH↑ + T4↓)**:
+  - Levothyroxine inicio 1.6 mcg/kg/día (~75-125 mcg/d adult)
+  - Empezar 25-50 mcg/d en >65a o cardiopatía
+  - Re-check TSH 6 sem post-titulación
+
+  **Tiroiditis autoinmune secondary**:
+  - TPO antibodies positivos → consider endocrine consult
+  - Algunos requieren management más agresivo
+
+  🎯 NO DISCONTINUAR APALUTAMIDA:
+  - Hipotiroidismo es well-managed con replacement
+  - Beneficio oncológico (rPFS+OS) >> burden hipotiroidismo
+  - Excepción: hipotiroidismo severo refractory + síntomas debilitantes
+
+  🎯 IMPORTANTE — DRUG INTERACTIONS:
+  - Levothyroxine + apalutamida: separar 4h ingesta
+  - Apalutamida puede ↑ thyroxine metabolism → may need dose increase
+  - Calcium + iron supplements: separar 4h de levothyroxine
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `tsh_elevated_new_onset`: bool (TSH > upper normal limit, NEW)
+  - `t4_low_new_onset`: bool (free T4 < lower normal, NEW)
+  - `hypothyroidism_documented_during_treatment`: bool
+
+evidence_tag: apalutamide_hypothyroidism_spartan_titan_presto_2018_2024
+trial_refs:
+  - "SPARTAN (Smith NEJM 2018;378:1408)"
+  - "TITAN (Chi NEJM 2019;381:13)"
+  - "PRESTO/AFT-19 (Aggarwal JCO 2024)"
+  - "Erleada label (FDA 2024)"
+  - "ATA Guidelines 2014 (hypothyroidism)"
+  - "ESMO Endocrine AE Guidelines 2022"

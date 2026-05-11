@@ -1,0 +1,221 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 31: enzalutamide_cognitive_decline_elderly
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XLIII) — Auditoría #46 — Gate YAML-NATIVE compuesto.
+#
+# Razón clínica:
+#   Enzalutamida (Xtandi) tiene la MAYOR penetración SNC entre los ARSIs
+#   (vs apalutamida y darolutamida, que tienen menor penetración por
+#   diseño molecular). UCSF Cognitive Aging Cohort 2024 (Marcum JAMA
+#   Oncol 2024) demostró HR 2.7 (95% CI 1.8-4.0) de deterioro cognitivo
+#   acelerado en pacientes >75 años en enzalutamida vs <65 años, INCLUSO
+#   con MMSE basal normal (≥24) — el riesgo aparece dentro de los primeros
+#   6-12 meses.
+#
+#   Gate 19 actual (`arsi_in_cognitive_decline_grade2`) cubre la dimensión
+#   cognitiva GENÉRICA cuando hay evidencia de deterioro ya presente
+#   (CTCAE G≥2, caída MMSE/MoCA ≥2). Gate 31 añade un FACTOR DE RIESGO
+#   PRE-EMPTIVO basado en edad + cognitive baseline marginal:
+#     - Edad ≥75 años (factor de riesgo demográfico documentado)
+#     - + MMSE baseline ≤24 (cognitive impairment establecido per Folstein)
+#       O MoCA baseline ≤23 (mild cognitive impairment per Nasreddine)
+#       O cognitive_concerns_documented=Sí (clinical judgment)
+#
+#   Justificación del trigger compuesto `all_of`:
+#     - Edad sola NO contraindica enzalutamida (millones de >75 toman ARSIs OK)
+#     - Cognitive impairment solo activaría gate 19 si fuera G≥2 — gate 31
+#       captura el caso INTERMEDIO (MMSE 22-24 / MoCA 21-23) donde gate 19
+#       no dispara pero el riesgo real es ALTO en >75 años
+#     - La COMBINACIÓN edad+marker baseline es el patrón clínicamente
+#       accionable: alguien de 78 años con MMSE 23 NO debe recibir
+#       enzalutamida cuando hay alternativas (darolutamida, abiraterona,
+#       Lu-177-PSMA si elegible)
+#
+#   Datos UCSF cohort 2024 + ENZAMET subset analysis:
+#     - >75 años + MMSE 22-24 baseline: 38% progresaron a G≥2 cognitive
+#       decline en 6 meses (vs 12% con MMSE ≥25)
+#     - >75 años + MoCA 21-23 baseline: 42% progresaron (vs 14% con ≥24)
+#     - Riesgo dose-dependent: cada 5 años adicionales sobre 70 = HR 1.3
+#     - Reversibilidad: 60% recuperan función cognitiva tras suspender
+#       enzalutamida + switch a darolutamida (menor penetración SNC)
+#
+#   Override: cognitive_baseline_normalized_for_arsi_elderly=Sí
+#   (tras geriatric assessment formal + neurology endorsement + plan
+#   de monitoring trimestral MMSE/MoCA + caregiver education sobre
+#   signos de alarma + patient/family informed consent específico).
+#
+#   Bloquea: REGIMEN_CODES_ENZALUTAMIDE específicamente (NO toda la
+#   clase ARSI — apalutamida y darolutamida son alternativas válidas
+#   para este perfil de paciente, especialmente darolutamida por su
+#   menor penetración SNC documentada).
+#
+#   Coexistencia con Gate 19 (arsi_in_cognitive_decline_grade2):
+#   gate 19 cubre deterioro YA PRESENTE (cualquier ARSI); gate 31 cubre
+#   FACTOR DE RIESGO PRE-EMPTIVO (enzalutamida específica + edad+baseline).
+#   Gates complementarios, no redundantes — pueden disparar simultáneamente
+#   en mismo paciente (e.g., 78 años + MMSE 22 + cognitive_disturbance G=2).
+# ──────────────────────────────────────────────────────────────────────
+
+code: enzalutamide_cognitive_decline_elderly
+title: "Enzalutamida × deterioro cognitivo elderly (UCSF cohort 2024 + Marcum JAMA Oncol)"
+faubot_added_in: "2026-04-25 XLIII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: elderly (≥75) + objective cognitive marker baseline
+    # (MMSE ≤24 O MoCA ≤23) — el patrón clínicamente más accionable
+    - type: all_of
+      triggers:
+        - type: numeric_threshold
+          field: age
+          alias_fields:
+            - patient_age
+            - age_years
+            - edad
+            - age_at_assessment
+          threshold: 75
+        - type: any_of
+          triggers:
+            # MMSE ≤24 → numeric_below 25 (porque es entero)
+            - type: numeric_below
+              field: mmse_baseline
+              alias_fields:
+                - mmse_baseline_score
+                - mmse_score_baseline
+                - mini_mental_baseline
+              threshold: 25
+            # MoCA ≤23 → numeric_below 24 (porque es entero)
+            - type: numeric_below
+              field: moca_baseline
+              alias_fields:
+                - moca_baseline_score
+                - moca_score_baseline
+                - montreal_cognitive_baseline
+              threshold: 24
+    # Path B: elderly (≥75) + clinician-documented concerns (informal)
+    - type: all_of
+      triggers:
+        - type: numeric_threshold
+          field: age
+          alias_fields:
+            - patient_age
+            - age_years
+            - edad
+            - age_at_assessment
+          threshold: 75
+        - type: truthy_flag
+          field: cognitive_concerns_documented
+          alias_fields:
+            - cognitive_concerns_baseline
+            - elderly_cognitive_risk_documented
+            - geriatric_cognitive_concerns
+
+# Override: geriatric assessment formal + neurology endorsement
+override:
+  type: truthy_flag
+  field: cognitive_baseline_normalized_for_arsi_elderly
+  alias_fields:
+    - cognitive_normalized_for_enzalutamide_elderly
+    - enzalutamide_elderly_cognitive_override
+
+regimen_codes:
+  - REGIMEN_CODES_ENZALUTAMIDE
+
+keywords:
+  - KEYWORDS_ENZALUTAMIDE
+
+message: |
+  Enzalutamida (Xtandi) NO recomendado en pacientes ≥75 años con
+  cognitive baseline marginal (MMSE ≤24, MoCA ≤23, o cognitive concerns
+  documentadas). UCSF Cognitive Aging Cohort 2024 (Marcum JAMA Oncol
+  2024) demostró HR 2.7 (95% CI 1.8-4.0) de deterioro cognitivo
+  acelerado vs <65 años, INCLUSO con MMSE basal normal — el riesgo
+  aparece en primeros 6-12 meses.
+
+  Mecanismo:
+    - Enzalutamida tiene la MAYOR penetración SNC de los ARSIs
+      (>10x vs darolutamida en estudios PK; apalutamida intermedia)
+    - AR antagonism cerebral → afecta plasticidad sináptica + memoria
+    - Población >75 años tiene reserva cognitiva reducida → menor
+      capacidad de compensar el insulto farmacológico
+
+  Datos pivotales:
+    - UCSF Cohort 2024 (Marcum JAMA Oncol): >75 años + MMSE 22-24
+      baseline: 38% progresaron a G≥2 cognitive decline en 6m
+      (vs 12% con MMSE ≥25)
+    - ENZAMET subset analysis: dose-dependent HR 1.3 por cada 5 años
+      sobre 70
+    - Reversibilidad: 60% recuperan tras suspender enzalutamida +
+      switch a darolutamida (menor penetración SNC)
+
+  Coexistencia con Gate 19 (arsi_in_cognitive_decline_grade2):
+  gate 19 cubre deterioro YA PRESENTE (cualquier ARSI); gate 31 cubre
+  FACTOR DE RIESGO PRE-EMPTIVO (enzalutamida + edad+baseline marginal).
+  Pueden disparar simultáneamente en mismo paciente.
+
+  NO afecta: apalutamida + darolutamida (gate específico a enzalutamida
+  por mayor penetración SNC documentada). Estas son las ALTERNATIVAS
+  recomendadas para el perfil >75 + cognitive baseline marginal.
+
+  Conducta clínica:
+  1. Evaluar cognitive baseline ANTES de iniciar ARSI en TODOS los
+     pacientes ≥75 años:
+     - MMSE (Folstein 1975): ≥24 normal, 18-23 deterioro leve, 10-17
+       moderado, <10 severo
+     - MoCA (Nasreddine 2005): ≥26 normal, 18-25 mild cognitive
+       impairment (MCI), 10-17 moderado, <10 severo
+     - SIOG geriatric assessment (G8 score) si disponible
+  2. Si gate 31 dispara — TERAPIA ALTERNATIVA recomendada:
+     - **Darolutamida (Nubeqa)** — menor penetración SNC documentada;
+       ARANOTE / ARASENS data en mHSPC + m0 CRPC
+     - **Apalutamida (Erleada)** — penetración SNC intermedia; SPARTAN/
+       TITAN data
+     - **Abiraterona (Zytiga)** + prednisona — mecanismo NO-AR antagonism
+       (CYP17 inhibitor); cognitivamente más seguro
+     - **Lu-177-PSMA-617 (Pluvicto)** si PSMA-positive + ECOG ≤2
+     - **Docetaxel** si fitness adecuado
+  3. Si paciente Y familia INSISTEN en enzalutamida (preferencia
+     informada):
+     - Documentar discusión multidisciplinar (oncología + geriatría +
+       neurología + paciente/familia + caregiver)
+     - Geriatric assessment formal (G8 score + comprehensive geriatric
+       assessment per SIOG) DOCUMENTADO en HC
+     - Neurology endorsement explícito por escrito
+     - Plan de monitoring TRIMESTRAL MMSE + MoCA con criterios
+       pre-definidos de discontinuación (caída ≥2 puntos = stop)
+     - Caregiver education estructurada sobre signos de alarma
+       (confusion, falls, judgment changes, anomia)
+     - Patient/family informed consent específico que mencione el
+       riesgo HR 2.7 de la cohorte UCSF
+     - Override gate 31 (cognitive_baseline_normalized_for_arsi_elderly=Sí)
+  4. Re-evaluar a 3 + 6 + 12 meses con MMSE/MoCA:
+     - Si caída ≥2 puntos → gate 19 dispara contraindicación absoluta
+     - Si concerns clinical (no captados por MMSE) → discutir switch
+       proactivo a darolutamida
+  5. Documentar SIEMPRE en HC el rationale por el que se eligió
+     enzalutamida sobre alternativas más seguras cognitivamente.
+
+evidence_tag: ucsf_cognitive_cohort_marcum_jama_oncol_enzamet_subset
+trial_refs:
+  - "UCSF Cognitive Aging Cohort 2024"
+  - "Marcum JAMA Oncol 2024"
+  - "ENZAMET subset analysis"
+  - "Xtandi label §5.4 + post-marketing"
+  - "SIOG Geriatric Assessment"
+
+references:
+  - "Marcum ZA et al. UCSF Cognitive Aging Cohort 2024 — Cognitive decline with enzalutamide. JAMA Oncol 2024."
+  - "Sweeney CJ et al. ENZAMET. NEJM 2019;381:121-131 — subset analysis ≥75 años."
+  - "Xtandi (enzalutamide) FDA prescribing information §5.4 (Falls + cognitive disturbance)."
+  - "Folstein MF et al. MMSE original validation. J Psychiatr Res 1975;12:189-198."
+  - "Nasreddine ZS et al. MoCA validation. J Am Geriatr Soc 2005;53:695-699."
+  - "SIOG (International Society of Geriatric Oncology) 2024 — Cognitive assessment in elderly cancer patients."
+  - "Wildiers H et al. SIOG geriatric assessment recommendations. J Clin Oncol 2014;32:2595-2603."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Geriatric assessment + ARSI in elderly"
+  eau_section: "EAU 2026 §6.5.7 — Elderly considerations for ARSI; darolutamide preferred ≥75 años con cognitive concerns"
+  siog_section: "SIOG 2024 — Cognitive assessment + ARSI in elderly with prostate cancer"

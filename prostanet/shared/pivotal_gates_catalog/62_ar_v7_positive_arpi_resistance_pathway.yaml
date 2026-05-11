@@ -1,0 +1,159 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 62: ar_v7_positive_arpi_resistance_pathway
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXVI) — Auditoría #67B — Genomic Critical Gates.
+#
+# Razón clínica:
+#   AR-V7 (Androgen Receptor Splice Variant 7) detectado en CTCs (Circu-
+#   lating Tumor Cells) o tejido tumoral indica resistencia primaria a
+#   ARPI (abiraterona, enzalutamida, apalutamida, darolutamida):
+#     - AR-V7 carece de ligand binding domain → ARPI no bloquean
+#     - 30-40% mCRPC AR-V7+ post-ARPI (resistance acquired)
+#     - 15-20% mCRPC AR-V7+ pre-ARPI (resistance primary)
+#     - Response rate ARPI en AR-V7+: <10% (vs 50-70% en AR-V7-)
+#     - PFS ARPI en AR-V7+: 1-3 meses (vs 8-12 meses AR-V7-)
+#
+#   Decisión clínica:
+#     - AR-V7+ mCRPC → preferir taxanos (docetaxel, cabazitaxel) sobre
+#       ARPI (PROPHECY trial, Antonarakis JCO 2017)
+#     - AR-V7+ + previously ARPI → switch a taxano OR Lu-177-PSMA si
+#       PSMA+ (VISION criteria)
+#     - AR-V7+ + niclosamide combination (ARMOR3-SV trial) → exploratory
+#
+#   Severity: soft_warning — alerta clínico para considerar alternativa
+#   a ARPI. NO hard_block (ARPI puede aún tener efecto en minoria
+#   pacientes AR-V7+ con baseline AR full-length retained).
+#
+#   Override: ar_v7_positive_arpi_attempted_with_close_monitoring
+#   (decisión informada paciente/médico de intentar ARPI con plan de
+#   re-evaluation a 8-12 semanas).
+# ──────────────────────────────────────────────────────────────────────
+
+code: ar_v7_positive_arpi_resistance_pathway
+title: "AR-V7 positivo → resistencia primaria ARPI, preferir taxanos (PROPHECY)"
+faubot_added_in: "2026-04-25 LXXVI"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: AR-V7 status positivo
+    - type: string_match
+      field: ar_v7_status
+      alias_fields:
+        - estado_ar_v7
+        - ar_splice_variant_7
+        - ar_v7_test_result
+      patterns:
+        - Positivo
+        - positivo
+        - positive
+        - detected
+        - detectado
+    # Path B: AR-V7 detected in CTC test
+    - type: truthy_flag
+      field: ar_v7_detected_in_ctc
+      alias_fields:
+        - ctc_ar_v7_positive
+        - circulating_tumor_cells_ar_v7
+    # Path C: clinical flag explicit (post-PROPHECY interpretation)
+    - type: truthy_flag
+      field: ar_v7_resistance_documented
+      alias_fields:
+        - resistencia_ar_v7_documentada
+        - ar_v7_arpi_resistance_clinical
+
+# Override: paciente acepta intentar ARPI con monitoring estricto
+override:
+  type: truthy_flag
+  field: ar_v7_positive_arpi_attempted_with_close_monitoring
+  alias_fields:
+    - arpi_attempted_despite_ar_v7
+    - decisión_informada_arpi_ar_v7
+
+regimen_codes:
+  - REGIMEN_CODES_ARPI
+
+keywords:
+  - abiraterona
+  - abiraterone
+  - enzalutamida
+  - enzalutamide
+  - apalutamida
+  - apalutamide
+  - darolutamida
+  - darolutamide
+  - ARPI
+  - androgen receptor pathway inhibitor
+
+message: |
+  ⚠️ ALERTA CLÍNICA: AR-V7 (+) detectado → resistencia primaria a ARPI
+  (abiraterona/enzalutamida/apalutamida/darolutamida). Considerar
+  taxanos como primera línea (PROPHECY).
+
+  📊 EVIDENCIA AR-V7 + ARPI RESISTANCE:
+  - AR-V7+ mCRPC: 30-40% post-ARPI, 15-20% pre-ARPI
+  - Response rate ARPI en AR-V7+: <10% (vs 50-70% AR-V7-)
+  - PFS ARPI en AR-V7+: 1-3 meses (vs 8-12 meses AR-V7-)
+  - OS shorter en AR-V7+ tratados con ARPI vs taxanos
+
+  🎯 RECOMENDACIÓN CLÍNICA:
+  1. **Primera línea preferida AR-V7+ mCRPC**: TAXANOS
+     - **Docetaxel** 75 mg/m² IV cada 3 semanas + prednisona 10mg/d
+       - PSA response rate 50-60% en AR-V7+ (similar AR-V7-)
+       - First-choice si fit (gates 22-24 docetaxel safety)
+     - **Cabazitaxel** 25 mg/m² IV cada 3 semanas + prednisona 10mg/d
+       - 2nd line post-docetaxel (TROPIC, CARD trial)
+       - Considerar G-CSF profilaxis primaria
+  2. **Alternativa Lu-177-PSMA** si PSMA+ on PSMA-PET (VISION criteria):
+     - Independiente de AR-V7 status (mecanismo radioligand-mediated)
+     - Gate 13/14/30/40 monitoring
+  3. **Si paciente prefiere ARPI sabiendo low response rate**:
+     - Documentar consentimiento informado
+     - Activar override `ar_v7_positive_arpi_attempted_with_close_monitoring`
+     - Re-evaluation a 8-12 semanas con PSA + imaging
+     - Switch rápido si no response
+
+  🔬 EVIDENCIA CIENTÍFICA:
+  - **PROPHECY** (Armstrong NEJM 2019;381:1314)
+    → Validation: AR-V7+ predice resistencia primaria ARPI
+    → Multi-center prospective study CTC AR-V7 testing
+    → AR-V7+ pacientes: PFS 4.2m con ARPI vs 8.0m con taxanos
+  - **Antonarakis JCO 2017;35:2149**
+    → Inicial validation AR-V7 CTC testing
+    → 100% PSA response failure si AR-V7+ tratados con abi/enza
+  - **Scher JAMA Oncol 2016;2:1441**
+    → AR-V7 nuclear-localized > cytoplasmic for prediction
+    → Quantitative scoring (positive/negative)
+  - **NCCN Prostate v5.2026 PROS-2 (category 2B)**:
+    "Consider AR-V7 testing to guide treatment selection between
+     ARPI and taxane chemotherapy in mCRPC"
+  - **ARMOR3-SV** (NCT02807805) — niclosamide + abiraterona
+    → AR-V7+ patients exploratory combination
+    → Niclosamide degrada AR-V7 protein
+
+  🧬 TESTING DISPONIBLE AR-V7:
+  - **Epic Sciences AR-V7 CTC test** (FDA-cleared)
+    → Single CTC nuclear AR-V7 protein detection
+    → IHC-based quantitative
+  - **JHU AdnaTest AR-V7 mRNA**:
+    → CTC enrichment + RT-PCR for AR-V7 mRNA
+    → Research use, less clinical availability
+  - **Tissue AR-V7** (biopsy):
+    → Less validated but may complement CTC
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `ar_v7_status`: Positivo / Negativo / No testado
+  - `ar_v7_detected_in_ctc`: flag CTC test result
+  - `ar_v7_test_method`: epic_ctc / adna_mrna / tissue_ihq
+  - `ar_v7_positive_arpi_attempted_with_close_monitoring`: override flag
+
+evidence_tag: prophecy_armstrong_nejm_2019_antonarakis_2017_scher_2016_armor3sv
+trial_refs:
+  - "PROPHECY (Armstrong NEJM 2019;381:1314)"
+  - "Antonarakis JCO 2017;35:2149 (CTC AR-V7 validation)"
+  - "Scher JAMA Oncol 2016;2:1441 (AR-V7 nuclear localization)"
+  - "ARMOR3-SV NCT02807805 (niclosamide + abi)"
+  - "NCCN Prostate v5.2026 PROS-2 (category 2B)"
+  - "Epic Sciences AR-V7 FDA companion diagnostic"

@@ -1,0 +1,55 @@
+# Faubot 2026-04-25 (XVIII) — Gate 13 migrado de Python a YAML.
+# Originalmente en `pivotal_contraindication_gates.detect_lutetium177_in_cord_compression`.
+# Activo en Faubot 2026-04-24 V (gates 13-14 Lu-177-PSMA × emergencias).
+
+code: lutetium177_in_cord_compression
+title: "Lu-177-PSMA-617 con compresión medular activa o sospechada"
+faubot_added_in: "2026-04-24 V"
+faubot_migrated_to_yaml_in: "2026-04-25 XVIII"
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: spinal_cord_compression
+      alias_fields:
+        - epidural_compression
+    - type: string_contains_any
+      field: lower_limb_weakness
+      keywords:
+        - moderada
+        - severa
+        - paresia
+    - type: string_contains_any
+      field: cord_compression_symptoms
+      keywords:
+        - debilidad mmii
+        - anestesia
+        - retención urinaria nueva
+        - retencion urinaria nueva
+        - incontinencia fecal
+
+override:
+  type: truthy_flag
+  field: cord_compression_stabilized
+
+regimen_codes:
+  - REGIMEN_CODES_LUTETIUM177
+keywords:
+  - KEYWORDS_LUTETIUM177
+
+message: |
+  Lu-177-PSMA-617 (Pluvicto) NO debe iniciarse con compresión medular activa o sospechada (Pluvicto FDA prescribing information 2022-2024; criterio de exclusión E.4.6 del protocolo VISION, Sartor NEJM 2021;385:2197; replicado en PSMAfore Sartor ESMO 2024 y TheraP Hofman Lancet 2021). Estabilizar primero con dexametasona 16 mg IV + RT 30 Gy/10 fx (Loblaw ASCO 2012) o cirugía descompresiva (criterios Patchell) ANTES de considerar Lu-177-PSMA. La mielosupresión post-Lu-177 (anemia 32%, trombocitopenia 17%, neutropenia 9% en VISION) puede demorar la cirugía descompresiva. Reevaluar Lu-177 tras estabilización estructural documentada (`cord_compression_stabilized=Sí`).
+
+evidence_tag: pluvicto_label_vision_loblaw_2012
+trial_refs:
+  - VISION
+  - PSMAfore
+  - TheraP
+  - Pluvicto label
+references:
+  - Pluvicto (Lu-177-PSMA-617) FDA prescribing information. Novartis 2022-2024.
+  - Sartor O et al. VISION trial. NEJM 2021;385:2197.
+  - Hofman MS et al. TheraP. Lancet 2021.
+  - Loblaw DA et al. ASCO 2012.

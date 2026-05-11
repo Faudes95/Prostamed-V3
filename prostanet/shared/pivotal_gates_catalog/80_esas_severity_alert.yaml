@@ -1,0 +1,42 @@
+code: esas_severity_alert
+title: "ESAS severity alert x carga sintomatica paliativa"
+faubot_added_in: "2026-04-26 LXXIX"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    - type: numeric_above
+      field: esas_items_above_4_count
+      threshold: 1
+    - type: numeric_above
+      field: esas_total_score
+      threshold: 30
+    - type: numeric_above
+      field: esas_pain_score
+      threshold: 6
+    - type: numeric_above
+      field: esas_dyspnea_score
+      threshold: 6
+    - type: truthy_flag
+      field: esas_severe_distress_documented
+
+regimen_codes: []
+keywords:
+  - ESAS
+  - Edmonton Symptom Assessment System
+  - distress
+  - palliative care
+
+message: |
+  ESAS muestra carga sintomatica significativa. Revisar dolor, fatiga,
+  nauseas, depresion, ansiedad, somnolencia, apetito, bienestar y disnea;
+  activar manejo paliativo/proactivo si hay >=2 items moderados, total
+  elevado o distress severo documentado.
+
+evidence_tag: esas_bruera_hui_nccn_distress_management
+trial_refs:
+  - "Bruera J Palliat Care 1991"
+  - "Hui Cancer 2014"
+  - "NCCN Distress Management v3.2026"

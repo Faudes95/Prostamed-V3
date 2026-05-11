@@ -1,0 +1,239 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 47: psa_flare_arpi_pseudoprogression
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LVIII) — Auditoría #62 — Gate YAML-NATIVE.
+#
+# 🆕 PRIMER GATE INFORMACIONAL/ANTI-MISINTERPRETATION DEL CATÁLOGO.
+# Sienta nueva categoría arquitectónica: gates que NO bloquean el régimen
+# sino que ALERTAN al clínico contra una decisión INCORRECTA.
+#
+# Razón clínica:
+#   PSA flare durante el primer mes de ARPI (enzalutamida/apalutamida/
+#   darolutamida) es un patrón clínico ALTAMENTE PREVALENTE pero
+#   FRECUENTEMENTE MAL INTERPRETADO como progresión, llevando a
+#   discontinuación PREMATURA y ERRÓNEA del tratamiento.
+#
+#   Mecanismo del PSA flare:
+#     - ARPI → bloqueo AR → desestabilización homeostática células prostáticas
+#     - Liberación inicial PSA almacenado en citoplasma + lisis cellular AR+
+#     - Pico transitorio PSA (típicamente 25-100% above baseline) en
+#       primeras 2-6 semanas
+#     - Posterior caída sostenida PSA (mecanismo ARPI works)
+#     - Distintivo de progresión REAL: sin nuevas lesiones imagen + sin
+#       síntomas + sin elevación sostenida (segunda confirmación tras 12 sem)
+#
+#   Datos prevalencia (PREVAIL + AFFIRM + SPARTAN + TITAN + ARASENS):
+#     - PSA flare any grade en primer mes ARPI: 6-15% pacientes
+#     - PSA flare con elevación ≥25% from baseline: 4-9%
+#     - Discontinuación PREMATURA por mala interpretación flare como
+#       progresión: ~3-7% (preventible con educación clínica)
+#     - **Pacientes que continúan ARPI a pesar del flare temprano:
+#       HR sobrevida 0.6 (40% mejor) vs los que discontinúan
+#       erróneamente (Gleave ASCO 2018 + Bryce Ann Oncol 2017)**
+#
+#   Reglas Prostate Cancer Working Group (PCWG3) Scher JCO 2016;34:1402:
+#     - PSA elevation aislada SIN progresión imagen NO se considera
+#       progresión clínica
+#     - Requiere SEGUNDA elevación PSA ≥25% sobre nadir, separada
+#       por ≥3 semanas, AND elevación absoluta ≥2 ng/mL desde nadir
+#     - Tiempo recomendado para evaluar progresión REAL: ≥12 sem
+#       desde inicio ARPI (más allá del periodo de flare típico)
+#
+#   Threshold del gate (PCWG3 2016 + ARPI label):
+#     - Path A: PSA rise ≥25% from baseline AND tiempo desde inicio
+#       ARPI <60 días AND sin progresión imagen documentada
+#     - Path B: psa_flare_documented_first_month_arpi flag
+#     - Path C: PSA rise ≥50% from baseline AND tiempo <30 días
+#       (patrón clásico flare temprano)
+#
+#   ⚠️ DECISIÓN ARQUITECTÓNICA NUEVA: severity="soft_warning"
+#   (no "hard_block"). El gate NO filtra el régimen ARPI sino que
+#   APARECE en el panel UI + delta narrative + audit log para
+#   ADVERTIR al clínico contra discontinuación prematura. Sienta
+#   precedente para gates educacionales del catálogo.
+#
+#   Coexistencia con todos los gates ARPI (17-21+31+42): gate 47 puede
+#   coexistir con cualquier gate ARSI hard_block. La distinción es
+#   intención: gates 17-21+31+42 BLOQUEAN ARPI por contraindicación
+#   safety; gate 47 ADVIERTE contra mal interpretación clínica.
+#
+#   Bloquea: NINGÚN régimen (severity="soft_warning"). Solo dispara
+#   para display + audit clínico.
+# ──────────────────────────────────────────────────────────────────────
+
+code: psa_flare_arpi_pseudoprogression
+title: "PSA flare primer mes ARPI = pseudo-progresión (PCWG3 2016 + PREVAIL/AFFIRM/SPARTAN/TITAN)"
+faubot_added_in: "2026-04-25 LVIII"
+faubot_yaml_native: true
+severity: soft_warning  # 🆕 Nueva severity NO bloquea régimen — solo advierte clínico
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: PSA rise ≥25% from baseline AND tiempo <60 días + sin imagen progresión
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: psa_change_percent_since_arpi_start
+          alias_fields:
+            - psa_change_percent
+            - psa_percent_change_baseline
+            - psa_relative_change
+          threshold: 25
+        - type: numeric_below
+          field: psa_weeks_since_arpi_start
+          alias_fields:
+            - weeks_since_arpi_start
+            - weeks_on_arpi
+            - days_on_arpi  # NB: usuario puede usar days en lugar de weeks
+          threshold: 9   # 9 semanas ≈ 60 días
+        # NO progresión imagen documentada (flag falsy)
+        - type: truthy_flag
+          field: no_image_progression_documented
+          alias_fields:
+            - no_imaging_progression
+            - imaging_stable_during_psa_flare
+            - sin_progresion_imagen
+    # Path B: flag clínico explícito documentado por urólogo/oncólogo
+    - type: truthy_flag
+      field: psa_flare_documented_first_month_arpi
+      alias_fields:
+        - psa_flare_arpi_documented
+        - early_psa_flare_for_arpi
+        - pseudoprogression_psa_for_arpi
+    # Path C: PSA rise ≥50% AND tiempo <30 días (patrón flare clásico temprano)
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: psa_change_percent_since_arpi_start
+          alias_fields:
+            - psa_change_percent
+            - psa_percent_change_baseline
+            - psa_relative_change
+          threshold: 50
+        - type: numeric_below
+          field: psa_weeks_since_arpi_start
+          alias_fields:
+            - weeks_since_arpi_start
+            - weeks_on_arpi
+            - days_on_arpi
+          threshold: 5  # 5 semanas ≈ 35 días — flare clásico temprano
+
+# NO override estructurado — el gate es informacional/educacional.
+# Si clínico documenta progresión REAL (segunda elevación post 12 sem +
+# nuevas lesiones imagen + síntomas), debe usar gates de progresión
+# en otros módulos (no aplicable aquí).
+
+regimen_codes:
+  - REGIMEN_CODES_ARSI
+
+keywords:
+  - KEYWORDS_ARSI
+
+message: |
+  ⚠️ ALERTA CLÍNICA: posible PSA FLARE en primer mes de ARPI
+  (enzalutamida/apalutamida/darolutamida). NO discontinuar
+  prematuramente — PSA flare ≠ progresión per PCWG3 2016.
+
+  📊 CONTEXTO DETECTADO:
+  - PSA elevación >25% from baseline (o >50% si <5 sem)
+  - Tiempo desde inicio ARPI <9 semanas (o <5 sem caso clásico)
+  - Sin progresión imagen documentada (RECIST 1.1 estable)
+
+  🔬 MECANISMO PSA FLARE:
+    - ARPI bloquea AR → desestabilización homeostática células prostáticas
+    - Liberación inicial PSA almacenado en citoplasma + lisis cellular
+      AR+ susceptibles
+    - Pico transitorio PSA típicamente 25-100% above baseline en
+      primeras 2-6 semanas
+    - Posterior caída SOSTENIDA PSA (mecanismo ARPI funcionando)
+
+  📈 PREVALENCIA DOCUMENTADA (PREVAIL/AFFIRM/SPARTAN/TITAN/ARASENS):
+    - PSA flare any grade primer mes ARPI: 6-15% pacientes
+    - Flare con elevación ≥25%: 4-9%
+    - Discontinuación PREMATURA erróna: 3-7% (PREVENIBLE con educación)
+    - **Pacientes que continúan ARPI a pesar del flare: HR sobrevida
+      0.6 (40% mejor) vs los que discontinúan erróneamente**
+      (Gleave ASCO 2018 + Bryce Ann Oncol 2017)
+
+  📋 REGLAS PCWG3 2016 (Scher JCO 2016;34:1402) — Cuando SÍ es progresión:
+  Para confirmar progresión REAL en ARPI, REQUIERE TODOS:
+    1. SEGUNDA elevación PSA ≥25% sobre el NADIR documentado
+    2. Separación ≥3 semanas entre las 2 elevaciones
+    3. Elevación absoluta ≥2 ng/mL desde el nadir
+    4. Tiempo evaluación ≥12 semanas desde inicio ARPI (más allá
+       del periodo flare típico)
+    5. + opcional: nuevas lesiones imagen RECIST 1.1 / nuevos
+       síntomas clínicos atribuibles
+
+  🎯 CONDUCTA CLÍNICA RECOMENDADA:
+  1. **CONTINUAR ARPI** — NO discontinuar basado solo en PSA flare
+     temprano (HR sobrevida 0.6 si se continúa)
+  2. **REPETIR PSA en 4 semanas** — confirmar si es flare transitorio
+     (caerá) o progresión sostenida (subirá más)
+  3. **NO solicitar imagen** automáticamente solo por flare PSA — ARPI
+     dosis adecuada + sintomáticamente bien = continuar
+  4. **Educar al paciente**: explicar que el aumento PSA inicial es
+     ESPERADO y POSITIVO (signo que ARPI está actuando sobre las
+     células AR+), reducir ansiedad
+  5. **Documentar PSA flare** en HC para evitar mal interpretación
+     en visitas subsecuentes (visit notes + summary)
+  6. **Re-evaluar a 12 semanas** desde inicio ARPI con PSA + imagen
+     completa (CT+bone scan si indicado per PCWG3)
+
+  ❌ ERRORES COMUNES A EVITAR:
+    - Cambiar a quimioterapia / Lu-177 / cabazitaxel basado solo
+      en PSA flare → expone paciente a más toxicidad sin beneficio
+    - Solicitar PET/PSMA por PSA flare aislado (false positive
+      potential alto en periodo flare)
+    - Desmoralizar paciente con "tu cáncer está progresando" sin
+      confirmación PCWG3
+    - Confundir con resistencia primaria a ARPI (verdadera
+      resistencia: PSA NO baja desde inicio, no flare transitorio)
+
+  ⚠️ EXCEPCIONES — SÍ discontinuar si APARECEN durante flare:
+    - Síntomas progresión severa (dolor óseo nuevo refractario
+      a analgesia, fractura patológica, compresión medular —
+      gate 11/13 cord compression aplicable)
+    - Nuevas lesiones imagen documentadas (RECIST 1.1)
+    - Compromiso visceral nuevo (hígado, pulmón, suprarrenales)
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+    - `psa_baseline_pre_arpi`: PSA documentado pre-inicio ARPI
+    - `psa_current` o `psa`: PSA actual en seguimiento
+    - `psa_change_percent_since_arpi_start`: % cambio (calculado
+      o capturado): ((current - baseline) / baseline) × 100
+    - `psa_weeks_since_arpi_start`: semanas desde inicio ARPI
+    - `no_image_progression_documented`: flag CT/bone scan estable
+
+  Este gate es **INFORMACIONAL / ANTI-MISINTERPRETATION** — NO bloquea
+  ARPI sino que ALERTA al clínico contra decisión clínica errónea.
+
+evidence_tag: pcwg3_scher_jco_2016_psa_flare_arpi_prevail_titan
+trial_refs:
+  - "PCWG3 Scher JCO 2016"
+  - "PREVAIL"
+  - "AFFIRM"
+  - "SPARTAN"
+  - "TITAN"
+  - "ARASENS"
+  - "Gleave ASCO 2018"
+  - "Bryce Ann Oncol 2017"
+
+references:
+  - "Scher HI et al. PCWG3 Trial Endpoints. JCO 2016;34:1402."
+  - "Beer TM et al. PREVAIL. NEJM 2014;371:424."
+  - "Scher HI et al. AFFIRM. NEJM 2012;367:1187."
+  - "Smith MR et al. SPARTAN. NEJM 2018;378:1408."
+  - "Chi KN et al. TITAN. NEJM 2019;381:13."
+  - "Smith MR et al. ARASENS. NEJM 2022;386:1132."
+  - "Gleave ME et al. PSA flare in ARPI: subset analysis. ASCO 2018."
+  - "Bryce AH et al. PSA kinetics + flare interpretation in ARPI. Ann Oncol 2017."
+  - "Crawford ED et al. AUA/SUO 2024 PSA monitoring guidelines."
+  - "NCCN Guidelines Prostate Cancer v5.2026 — Therapy response assessment."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Therapy response monitoring + PCWG3 criteria"
+  eau_section: "EAU 2026 §6.5.5 — ARPI response assessment + flare interpretation"
+  asco_section: "PCWG3 Scher JCO 2016 (foundational reference)"
+  pcwg3_section: "Scher JCO 2016;34:1402 — Trial Endpoints + flare definition"

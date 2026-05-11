@@ -1,0 +1,89 @@
+code: oncologic_emergency_diagnostic_integration
+title: "Emergencia oncologica activa x diagnostico/triage prioritario"
+faubot_added_in: "2026-04-25 LXXVII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: spinal_cord_compression_suspected
+      alias_fields:
+        - scc_suspected
+        - compresion_medular_sospechada
+    - type: truthy_flag
+      field: spinal_cord_compression_confirmed
+      alias_fields:
+        - scc_confirmed
+    - type: truthy_flag
+      field: visceral_crisis_documented
+      alias_fields:
+        - crisis_visceral_documentada
+    - type: truthy_flag
+      field: lymphangitic_carcinomatosis_documented
+      alias_fields:
+        - linfangitis_carcinomatosa_documentada
+    - type: numeric_above
+      field: calcium_corrected_mg_dl
+      alias_fields:
+        - corrected_calcium
+        - calcium_corrected_albumin
+      threshold: 11
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: inr_value
+          alias_fields:
+            - inr
+          threshold: 1.5
+        - type: truthy_flag
+          field: bleeding_active_documented
+          alias_fields:
+            - sangrado_activo_documentado
+    - type: numeric_below
+      field: sodium_value
+      alias_fields:
+        - sodium_serum_mmol_l
+        - sodium
+      threshold: 125
+    - type: truthy_flag
+      field: oncologic_emergency_active
+      alias_fields:
+        - emergencia_oncologica_activa
+
+override:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: emergency_resolved_or_stabilized_documented
+      alias_fields:
+        - emergencia_resuelta_estabilizada
+    - type: truthy_flag
+      field: emergency_managed_by_team_documented
+      alias_fields:
+        - emergency_team_managed_documented
+
+regimen_codes: []
+keywords:
+  - oncologic emergency
+  - spinal cord compression
+  - visceral crisis
+  - hypercalcemia
+  - DIC
+  - SIADH
+
+message: |
+  Emergencia oncologica activa requiere ruta emergency-first: sospecha o
+  confirmacion de compresion medular, crisis visceral, hipercalcemia,
+  DIC con sangrado, hiponatremia severa/SIADH o emergencia documentada.
+  Priorizar estabilizacion, imagen/biopsia urgente y equipo multidisciplinario
+  antes de decisiones electivas de tratamiento.
+
+evidence_tag: patchell_loblaw_major_nccn_eau_oncologic_emergencies
+trial_refs:
+  - "Patchell Lancet 2005"
+  - "Loblaw JCO 2012"
+  - "Major NEJM 2016"
+  - "NCCN Prostate v5.2026 PROS-X"
+  - "EAU 2026 section 11"

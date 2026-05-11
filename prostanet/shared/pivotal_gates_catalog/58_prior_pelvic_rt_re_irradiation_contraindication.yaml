@@ -1,0 +1,58 @@
+code: prior_pelvic_rt_re_irradiation_contraindication
+title: "Radioterapia pelvica previa x re-irradiacion curativa"
+faubot_added_in: "2026-04-25 LXXV"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: prior_pelvic_radiation
+          alias_fields:
+            - previous_pelvic_rt
+            - radioterapia_pelvica_previa
+        - type: truthy_flag
+          field: decision_rp_vs_rt_active
+          alias_fields:
+            - curative_pelvic_rt_considered
+            - rt_curativa_pelvica_considerada
+    - type: truthy_flag
+      field: re_irradiation_pelvic_contraindicated_documented
+      alias_fields:
+        - pelvic_re_rt_contraindicated
+        - reirradiacion_pelvica_contraindicada
+
+override:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: salvage_re_rt_protocol_documented
+      alias_fields:
+        - protocolo_re_rt_salvataje_aprobado
+    - type: truthy_flag
+      field: palliative_intent_documented
+      alias_fields:
+        - intencion_paliativa_rt_documentada
+
+regimen_codes:
+  - REGIMEN_CODES_RADIOTHERAPY_PELVIC
+keywords:
+  - pelvic radiation
+  - radioterapia pelvica
+  - salvage re-irradiation
+
+message: |
+  Radioterapia pelvica previa bloquea re-irradiacion curativa no
+  protocolizada por riesgo acumulado de toxicidad GI/GU, fistula y
+  necrosis tisular. El override solo aplica con protocolo formal de
+  salvage re-RT o intencion paliativa documentada.
+
+evidence_tag: eau_2026_nccn_prior_pelvic_rt_reirradiation
+trial_refs:
+  - "EAU 2026 8.2.1"
+  - "NCCN Prostate v5.2026 PROS-3"
+  - "ASTRO/AUA 2022 Salvage Brachytherapy Consensus"
+  - "Tetar IJROBP 2018"

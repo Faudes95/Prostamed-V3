@@ -1,0 +1,50 @@
+code: composite_progression_rpfs_reroute
+title: "Composite progression/rPFS x reroute terapeutico PCWG3"
+faubot_added_in: "2026-04-26 LXXVIII"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: pcwg3_composite_progression_documented
+      alias_fields:
+        - composite_progression_documented
+        - progression_rpfs_documented
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: psa_progression_documented
+        - type: truthy_flag
+          field: psma_pet_progression_documented
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: psa_progression_documented
+        - type: truthy_flag
+          field: clinical_progression_documented
+    - type: truthy_flag
+      field: next_line_therapy_planned
+
+regimen_codes: []
+keywords:
+  - PCWG3
+  - rPFS
+  - composite progression
+  - next-line therapy
+
+message: |
+  Progresion compuesta PCWG3/rPFS documentada: integrar PSA,
+  radiografia/PSMA-PET y progresion clinica para reroute de linea.
+  Requiere fecha de evento, categorias fired, revision MDT y plan de
+  siguiente linea si el paciente ya cumple criterios de progresion.
+
+evidence_tag: pcwg3_composite_progression_rpfs_reroute
+trial_refs:
+  - "PCWG3 Scher JCO 2016"
+  - "CHAARTED"
+  - "STAMPEDE"
+  - "CARD"
+  - "VISION"
+  - "PROfound"

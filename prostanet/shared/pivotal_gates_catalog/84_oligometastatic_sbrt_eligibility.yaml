@@ -1,0 +1,244 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 84: oligometastatic_sbrt_eligibility
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXIX) — Auditoría #67E — Oligometastatic SBRT.
+#
+# Razón clínica:
+#   **Oligometastatic disease** (≤5 mets metacrónicas) es estado
+#   biológicamente intermedio entre localized + widespread metastatic
+#   con potencial curación con SBRT (Stereotactic Body Radiotherapy):
+#
+#   1. **Trials clave** (last 5 years):
+#      - **STOMP (Ost JCO 2018)**: 62 pts oligometastatic recurrence
+#        prostate, SBRT vs surveillance, ADT-FS 21 vs 13m
+#      - **ORIOLE (Phillips JAMA Oncol 2020)**: 54 pts SBRT vs observation
+#        oligo recurrence, 6m PFS 81% vs 39% (HR 0.30, p=0.002)
+#      - **SABR-COMET (Palma Lancet 2019)**: multi-cancer 99 pts SBRT
+#        vs SOC, OS 41 vs 28m (HR 0.57, p=0.090)
+#      - **STAMPEDE arm M1 RT (Parker Lancet 2018)**: low-volume mCSPC
+#        primary RT survival benefit
+#
+#   2. **Oligometastatic categorías** (ESTRO/EORTC consensus 2020):
+#      - **De novo synchronous oligometastatic**: ≤5 mets al diagnóstico
+#      - **Metachronous oligorecurrence**: ≤5 mets nuevas tras tratamiento
+#      - **Oligoprogression**: ≤3 sitios progressing bajo systemic therapy
+#      - **Oligopersistence**: residual mets stable post-systemic
+#
+#   3. **Criterios SBRT eligibility**:
+#      - ≤5 metástasis (típicamente ≤3 priorizadas)
+#      - Esperanza vida >12 meses
+#      - Sitios accesibles SBRT (no SCC adyacente, no organ at risk masivo)
+#      - ECOG 0-2
+#      - Adecuada función organ target (hígado, pulmón, riñón)
+#      - Considerar correlación PSMA-PET para detección oculta
+#
+#   Severity: informational — gate alerta opción curative-intent SBRT
+#   en pacientes oligometastatic con potential survival benefit.
+# ──────────────────────────────────────────────────────────────────────
+
+code: oligometastatic_sbrt_eligibility
+title: "Oligometastatic SBRT eligibility (≤5 mets + life exp >12m) → SBRT 30-40 Gy/3-5 fx"
+faubot_added_in: "2026-04-26 LXXIX"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: oligometastatic + esperanza vida >12m
+    - type: all_of
+      triggers:
+        - type: numeric_below
+          field: total_metastases_count
+          alias_fields:
+            - count_metastasis_total
+            - mets_count_total
+          threshold: 6  # ≤5 mets
+        - type: numeric_above
+          field: life_expectancy_months
+          alias_fields:
+            - esperanza_vida_meses
+          threshold: 11  # ≥12 meses
+    # Path B: oligorecurrence post-systemic
+    - type: truthy_flag
+      field: oligometastatic_recurrence_metachronous
+      alias_fields:
+        - oligo_recurrencia_metacronica
+        - metachronous_oligo_recurrence
+    # Path C: oligoprogression bajo systemic therapy
+    - type: truthy_flag
+      field: oligoprogression_under_systemic_therapy
+      alias_fields:
+        - oligo_progresion_bajo_systemic
+        - oligoprogression_documented
+    # Path D: clinical flag explicit SBRT candidate
+    - type: truthy_flag
+      field: oligometastatic_sbrt_candidate
+      alias_fields:
+        - candidato_sbrt_oligo
+        - sbrt_oligo_consideration
+
+regimen_codes: []  # Gate informativo — abre opción SBRT curative-intent
+
+keywords:
+  - oligometástasis
+  - oligometastatic
+  - SBRT
+  - stereotactic body radiotherapy
+  - SABR
+  - metastasis-directed therapy
+  - MDT
+
+message: |
+  📊 INFORMATIVO: Paciente con **oligometastatic disease** (≤5 mets) +
+  esperanza vida >12m → considerar **SBRT curative-intent** con potential
+  survival benefit (STOMP/ORIOLE/SABR-COMET).
+
+  🔬 OLIGOMETASTATIC CATEGORÍAS (ESTRO/EORTC 2020):
+
+  | Categoría | Definición | SBRT Evidence |
+  |-----------|-----------|---------------|
+  | **Synchronous oligo** | ≤5 mets al diagnóstico | STAMPEDE arm M1 RT |
+  | **Metachronous oligorecurrence** | ≤5 nuevas post-treatment | STOMP, ORIOLE |
+  | **Oligoprogression** | ≤3 sitios progressing bajo systemic | Emerging trials |
+  | **Oligopersistence** | Residual stable post-systemic | Limited data |
+
+  🎯 TRIALS PIVOTALES SBRT OLIGOMETASTATIC PROSTATE:
+
+  **STOMP (Ost JCO 2018;36:446)**:
+  - 62 pts oligo recurrence (≤3 mets) post-curative treatment
+  - SBRT vs surveillance randomized
+  - **ADT-FS mediana**: 21 meses (SBRT) vs 13 meses (surveillance)
+  - HR 0.60 (p=0.11)
+  - Objetivo: delay ADT iniciación
+
+  **ORIOLE (Phillips JAMA Oncol 2020;6:650)**:
+  - 54 pts oligo recurrence (≤3 mets), PSMA-PET-guided
+  - SBRT vs observation randomized
+  - **6m PFS**: 81% (SBRT) vs 39% (observation) — HR 0.30, p=0.002
+  - Beneficio sustained si PSMA-PET-detected sites tratados
+
+  **SABR-COMET (Palma Lancet 2019;393:2051)**:
+  - Multi-cancer (PCa subset) 99 pts oligometastatic ≤5 mets
+  - SBRT vs SOC randomized
+  - **Mediana OS**: 41 (SBRT) vs 28 (SOC) meses, HR 0.57, p=0.090
+  - **Mediana PFS**: 12 vs 6 meses, HR 0.47, p=0.0012
+
+  **STAMPEDE arm M1 RT (Parker Lancet 2018;392:2353)**:
+  - 2061 pts low-volume mCSPC (synchronous)
+  - RT primary prostate vs SOC
+  - **OS benefit en low-volume**: HR 0.68, p=0.007
+  - Survival 81% vs 73% (3-yr)
+
+  🎯 CRITERIOS ELEGIBILIDAD SBRT OLIGOMETASTATIC:
+
+  **Criterios INCLUSIÓN**:
+  - ≤5 metástasis (idealmente ≤3 priorizadas)
+  - Sitios extracraniales (bone, lymph node, lung, liver, etc.)
+  - Esperanza vida >12 meses
+  - ECOG 0-2
+  - Adecuada función organ target
+  - PSMA-PET reciente para staging completo (descartar oculto)
+  - Sitios accesibles SBRT (no SCC adyacente)
+  - Histology confirmed PCa (no NEPC — gate 67)
+
+  **Criterios EXCLUSIÓN**:
+  - >5 metástasis (widespread)
+  - SCC suspecto/confirmed (gate 68 — RT urgente convencional)
+  - NEPC histology (gate 67 — chemo platinum-based)
+  - Disease rapid progression sin systemic control
+  - ECOG ≥3 (palliative-only, gate 79)
+  - Esperanza vida <12m (palliative RT short-course preferida)
+
+  🎯 ESQUEMAS SBRT POR SITIO:
+
+  **Bone**:
+  - 24 Gy SF (single fraction)
+  - 30 Gy/3 fx (vertebral con organ-at-risk)
+  - 27 Gy/3 fx (extra-vertebral)
+
+  **Lymph node**:
+  - 30-35 Gy/5 fx
+  - Pelvic nodal: 30 Gy/5 fx con 2 mm margin
+
+  **Lung**:
+  - 50 Gy/4 fx (peripheral)
+  - 60 Gy/8 fx (central, BED10 105)
+  - Mantener V20 <10% lung
+
+  **Liver**:
+  - 30 Gy/3 fx (peripheral)
+  - 50 Gy/5 fx (small lesions)
+  - Mean liver dose <15 Gy
+
+  **Adrenal**:
+  - 30-40 Gy/5 fx
+  - Cuidado kidney/duodenum dose
+
+  🎯 INTEGRACIÓN PATHWAY OLIGO:
+
+  **1. Sincrónico (al diagnóstico)**:
+  - mCSPC low-volume (CHAARTED criteria):
+    * Primary RT (STAMPEDE M1 arm) + ADT
+    * SBRT mets considerar (extending STAMPEDE)
+  - Triplete (gate 36 etc) si HR-prone
+
+  **2. Metacrónico (recurrence)**:
+  - PSMA-PET ALL sites (ORIOLE benefit)
+  - SBRT all detected sites
+  - Considerar systemic ADT delay (STOMP outcome)
+  - Re-staging cada 3-6 meses
+
+  **3. Oligoprogression bajo systemic**:
+  - SBRT progressing sites + continuar systemic
+  - Considerar systemic switch si multiple sites
+
+  **4. Combinación con systemic**:
+  - SBRT alone si oligo recurrence post-curative
+  - SBRT + ADT si high-risk biology
+  - SBRT + ARPI si mCRPC oligoprogression
+  - Future trials: SBRT + immunotherapy combos
+
+  🎯 SEGUIMIENTO POST-SBRT:
+
+  - PSMA-PET cada 3-6 meses
+  - PSA cada 3 meses
+  - Imaging convencional (CT/MRI) según sitio
+  - ECOG + symptoms baseline tracking
+  - Re-evaluation oligo vs widespread cada visit
+
+  ⚠️ INTEGRACIÓN COMPOSITE:
+  - Gate 84 + gate 71 (PSMA progression) → re-stage + SBRT plan
+  - Gate 84 + gate 75 (composite progression) → reroute systemic + SBRT add
+  - Gate 84 NO compatible con gate 67 (NEPC) — chemo prioridad
+
+  🔬 EVIDENCIA:
+  - **STOMP (Ost JCO 2018;36:446)**
+  - **ORIOLE (Phillips JAMA Oncol 2020;6:650)**
+  - **SABR-COMET (Palma Lancet 2019;393:2051)**
+  - **STAMPEDE arm M1 RT (Parker Lancet 2018;392:2353)**
+  - **CHAARTED low-volume criteria (Sweeney NEJM 2015)**
+  - **Lievens Radiother Oncol 2020**: ESTRO/EORTC oligometastatic consensus
+  - **NCCN Prostate v5.2026 PROS-O**: oligometastatic SBRT
+  - **EAU 2026 §6.4**: oligometastatic management
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `total_metastases_count`: count actual mets
+  - `life_expectancy_months`: esperanza vida (calc OCCAM o clinical)
+  - `oligometastatic_recurrence_metachronous`: flag oligo metacrónica
+  - `oligoprogression_under_systemic_therapy`: flag oligoprogression
+  - `oligometastatic_sbrt_candidate`: flag candidate
+  - `oligometastatic_category`: text (synchronous/metachronous/oligoprog/persist)
+  - `psma_pet_staging_recent`: flag staging PSMA reciente
+  - `sbrt_target_sites_planned`: list sitios SBRT planeados
+  - `sbrt_dose_fractionation_per_site`: text esquema por sitio
+
+evidence_tag: stomp_2018_oriole_2020_sabr_comet_2019_stampede_m1_2018_oligo_sbrt
+trial_refs:
+  - "STOMP (Ost JCO 2018;36:446)"
+  - "ORIOLE (Phillips JAMA Oncol 2020;6:650)"
+  - "SABR-COMET (Palma Lancet 2019;393:2051)"
+  - "STAMPEDE arm M1 RT (Parker Lancet 2018;392:2353)"
+  - "Lievens Radiother Oncol 2020 (ESTRO/EORTC consensus)"
+  - "NCCN Prostate v5.2026 PROS-O"
+  - "EAU 2026 §6.4"

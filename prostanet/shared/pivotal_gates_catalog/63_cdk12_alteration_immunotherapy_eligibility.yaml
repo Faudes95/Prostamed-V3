@@ -1,0 +1,158 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 63: cdk12_alteration_immunotherapy_eligibility
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXVI) — Auditoría #67B — Genomic Critical Gates.
+#
+# Razón clínica:
+#   CDK12 (Cyclin-Dependent Kinase 12) biallelic loss define un fenotipo
+#   distintivo en mCRPC con:
+#     - Tandem duplication phenotype (TDP) — high mutation burden
+#     - Increased neoantigen load → potential checkpoint inhibitor benefit
+#     - HRR-deficient fenotipo (similar BRCA2)
+#     - 5-7% prevalence en mCRPC
+#     - Worse prognosis general but immunotherapy-responsive
+#
+#   Decisiones clínicas activadas:
+#     1. **PARP inhibitor**: CDK12+ es HRR pathway → PROfound Cohort B
+#        (rPFS benefit similar a BRCA1/2)
+#     2. **Pembrolizumab/nivolumab + ipilimumab**: CDK12+ enriquecido
+#        en respondedores (Antonarakis JCO 2020 — pembro mCRPC CDK12+)
+#     3. **Olaparib + abiraterona** (PROpel HRR+ subgroup)
+#     4. **Niraparib** (MAGNITUDE HRR+ subgroup)
+#
+#   Severity: informational — alerta clínico de elegibilidad terapéutica
+#   adicional. NO bloquea ni cambia tratamiento default, abre opciones.
+#
+#   Co-interaction: gate 61 (HRR confirmation) — CDK12+ confirma HRR+,
+#   permite PARP. Gate 63 ADICIONA opción immunotherapy.
+#
+#   Override: ninguno necesario (gate informacional).
+# ──────────────────────────────────────────────────────────────────────
+
+code: cdk12_alteration_immunotherapy_eligibility
+title: "CDK12 biallelic alteration → considerar checkpoint inhibitor + PARP eligible (HRR pathway)"
+faubot_added_in: "2026-04-25 LXXVI"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: CDK12 biallelic loss / pathogenic alteration
+    - type: string_match
+      field: cdk12_status
+      alias_fields:
+        - estado_cdk12
+        - cdk12_alteration
+        - cdk12_test_result
+      patterns:
+        - "Biallelic loss"
+        - biallelic_loss
+        - pathogenic
+        - Mutado
+        - mutated
+        - loss
+    # Path B: CDK12 detected con tandem duplication phenotype
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: cdk12_pathogenic_detected
+          alias_fields:
+            - cdk12_alteration_documented
+        - type: truthy_flag
+          field: tandem_duplication_phenotype_documented
+          alias_fields:
+            - tdp_documented
+            - tandem_dup_phenotype
+    # Path C: clinical flag immunotherapy eligibility
+    - type: truthy_flag
+      field: cdk12_checkpoint_inhibitor_candidate
+      alias_fields:
+        - cdk12_immunotherapy_eligible
+
+regimen_codes: []  # Gate informacional — abre opciones, no bloquea regímenes
+
+keywords:
+  - CDK12
+  - tandem duplication phenotype
+  - TDP
+
+message: |
+  📊 INFORMATIVO: CDK12 biallelic alteration detectada → paciente
+  candidato a múltiples opciones terapéuticas avanzadas.
+
+  🧬 SIGNIFICADO CLÍNICO CDK12+:
+  - **HRR pathway**: CDK12 alteration = HRR deficiency funcional →
+    PARP inhibitor ELIGIBLE (PROfound Cohort B)
+  - **Tandem Duplication Phenotype (TDP)**: high mutation burden →
+    aumenta neoantigen load → checkpoint inhibitor potential responder
+  - **Worse prognosis**: shorter OS general (median 24m vs 36m no-CDK12)
+    pero PARP/immunotherapy mejora outcomes
+  - **Prevalence**: 5-7% en mCRPC (≈3-5% en localized)
+
+  🎯 OPCIONES TERAPÉUTICAS ABIERTAS:
+
+  **1. PARP Inhibitors** (HRR+ pathway — gate 61 satisfecho):
+     - **Olaparib** 300 mg BID (PROfound Cohort B: rPFS 5.4m vs 3.6m)
+     - **Talazoparib + enzalutamide** (TALAPRO-2 HRR+)
+     - **Niraparib + abiraterone** (MAGNITUDE HRR+)
+     - Monitor: gates 15 (citopenias), 16 (MDS hx), 52 (MDS/AML longitudinal)
+
+  **2. Checkpoint Inhibitors** (TDP-driven neoantigen response):
+     - **Pembrolizumab** 200 mg IV cada 3 sem (Antonarakis JCO 2020 mCRPC CDK12+)
+       → ORR 23% en CDK12+ (vs <10% mCRPC general)
+       → KEYNOTE-365/199 retrospective subgroup analyses
+     - **Nivolumab + ipilimumab** combination (CheckMate 650)
+       → CDK12+ subgroup analysis pending pero rationale fuerte
+     - Considerar after PARP failure or as combination strategy
+
+  **3. ADT + ARPI 1L** (estándar mCRPC base):
+     - Gate 61 verifica HRR test antes de PARP intensification
+     - Si CDK12+ → upgrade a PARP combination (PROpel/MAGNITUDE/TALAPRO-2)
+
+  **4. Lu-177-PSMA** (independiente HRR/CDK12):
+     - VISION criteria (PSMA+ on PET, gates 13/14)
+     - Considerar 2nd/3rd line
+
+  🔬 EVIDENCIA CIENTÍFICA:
+  - **Antonarakis JCO 2020** — pembrolizumab mCRPC CDK12+
+    → Initial proof-of-concept immunotherapy benefit en CDK12+
+  - **Wu Cell 2018;173:1770** — TDP fenotipo CDK12 caracterización
+    → High neoantigen load + immune infiltrate
+  - **PROfound** (de Bono NEJM 2020;382:2091) Cohort B
+    → CDK12+ rPFS benefit con olaparib confirmed
+  - **NCCN Prostate v5.2026 PROS-2 (category 2B)**:
+    "CDK12 alterations may indicate eligibility for both PARP inhibitor
+     and immune checkpoint inhibitor therapy"
+  - **EAU 2026 §6.5.7** — emerging biomarker para immunotherapy
+
+  🎯 CONDUCTA CLÍNICA RECOMENDADA:
+  1. **Confirmar CDK12 biallelic loss**:
+     - NGS comprehensive panel (FoundationOne CDx, Caris MI, Tempus xT)
+     - Verificar zygosity (monoallelic vs biallelic) — solo biallelic
+       relevante clínicamente
+  2. **Multidisciplinaria**: oncology + uro-onco + GU pathologist
+  3. **Decision tree**:
+     - Si PARP-naive → considerar olaparib o combinación PARP+ARPI
+     - Si PARP failure → checkpoint inhibitor (pembrolizumab)
+     - Si checkpoint failure → cabazitaxel o Lu-177-PSMA
+  4. **Trial enrollment**: priorizar trials específicos CDK12 si
+     disponibles (mejor evidence)
+  5. **Family counseling**: si CDK12 germline → cascade testing
+     (rare, mayoría somatic)
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `cdk12_status`: Wild-type / Biallelic loss / Monoallelic / VUS / No testado
+  - `cdk12_pathogenic_detected`: flag pathogenic alteration
+  - `tandem_duplication_phenotype_documented`: TDP flag (post-WGS)
+  - `cdk12_checkpoint_inhibitor_candidate`: clinical flag
+
+evidence_tag: antonarakis_jco_2020_wu_cell_2018_profound_cohort_b_cdk12
+trial_refs:
+  - "Antonarakis JCO 2020 (pembrolizumab mCRPC CDK12+)"
+  - "Wu Cell 2018;173:1770 (TDP CDK12 phenotype)"
+  - "PROfound Cohort B (de Bono NEJM 2020;382:2091)"
+  - "NCCN Prostate v5.2026 PROS-2 (category 2B)"
+  - "EAU 2026 §6.5.7"
+  - "KEYNOTE-365/199 mCRPC pembrolizumab subgroup"
+  - "CheckMate 650 nivolumab + ipilimumab mCRPC"

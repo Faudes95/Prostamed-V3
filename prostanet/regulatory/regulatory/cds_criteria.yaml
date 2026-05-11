@@ -1,0 +1,48 @@
+# CDS Final Guidance FDA Sept 2022 — Criteria evaluation
+# 4 criteria for non-device CDS classification (21st Century Cures Act §3060)
+# See cds_guidance_memo.md for narrative analysis.
+
+document: "CDS Final Guidance FDA Sept 28 2022"
+applicable_law: "21st Century Cures Act §3060 / FD&C Act §520(o)(1)(E)"
+evaluated_for: "ProstaMed/ProstaNet"
+evaluated_at: "2026-04-27"
+faubot_release: "2026-04-27 LXXXVIII"
+
+criteria:
+  c1_no_image_signal_pattern_from_ivd:
+    description: "NOT intended to acquire/process/analyze medical image, signal, or pattern from in vitro diagnostic device"
+    met: true
+    evidence: "ProstaMed ingests structured PSA values + categorical staging + text Gleason. NO raw DICOM, NO ECG, NO IVD output direct. ML predictions (Decipher, Halabi) operate on structured fields, not on patterns from IVD."
+    caveat: "Caveat: si futuras versiones procesan ctDNA raw VCF directly, este criterio podría no cumplirse."
+
+  c2_only_display_analyze_print:
+    description: "Intended only to display, analyze, or print medical information about a patient"
+    met: false
+    evidence: "ProstaMed actively GENERATES specific treatment recommendations (ARPI doublet, taxano, PARP inhibitor, observation). Not just display/analyze/print — drives clinical decision."
+    rationale_for_failure: "El sistema produce recomendaciones específicas (e.g., 'Iniciar olaparib 300mg BID') basadas en algoritmos clínicos. Excede 'analyze/display'."
+
+  c3_recommendations_to_hcp:
+    description: "Intended to support or provide recommendations to a healthcare professional (HCP)"
+    met: true
+    evidence: "Audiencia: urologists + medical oncologists + radiation oncologists. NOT consumer-facing. Acceso vía clinical_session auth con scope phi:read/write."
+
+  c4_hcp_independent_review:
+    description: "Intended to enable HCP to independently review the basis for recommendations so that the HCP does not rely primarily on the software"
+    met: false
+    evidence: "Aunque ProstaMed expone Reasoning Chain (19 keys) + per-gate evidence drill-down + 5 dim CDE Auditable, las recomendaciones específicas requieren capacidad cognitiva sobrehumana para reproducir mentalmente: PARP eligibility (8 genes HRR + germline/somatic + ARPI exposure + ECOG), cohort comparison overlay (population-median curves), what-if simulator (14 compass keys diff), PSA forecast log-linear per-line."
+    rationale_for_failure: "El clínico depende del cómputo del software, no solo lo valida. Requiere re-cálculo del algoritmo para verificar."
+
+summary:
+  criteria_met_count: 2
+  criteria_total: 4
+  cds_exception_applies: false
+  classification: "device_software_function"
+  fda_route: "510(k) Class II with predicate"
+  next_step: "Pre-submission Q-sub FDA to confirm classification + predicate selection"
+
+approval:
+  pending_signatures:
+    - regulatory_lead
+    - clinical_lead
+  approved_at: null
+  approved_by: null

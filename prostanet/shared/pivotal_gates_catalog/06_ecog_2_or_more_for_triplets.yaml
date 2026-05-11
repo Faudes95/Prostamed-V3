@@ -1,0 +1,49 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 6: ecog_2_or_more_for_triplets
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XIII) — Migrado a YAML declarativo.
+#
+# Razón clínica:
+#   ARASENS (Smith NEJM 2022) y PEACE-1 (Fizazi Lancet 2022) incluyeron
+#   sólo ECOG 0-1 para tripletes (docetaxel + ARPI + ADT). Pacientes con
+#   ECOG ≥2 NO toleran intensificación con triplete.
+# ──────────────────────────────────────────────────────────────────────
+
+code: ecog_2_or_more_for_triplets
+title: "ECOG ≥2 para tripletes ARASENS/PEACE-1"
+faubot_added_in: "2026-04-23 I"
+faubot_migrated_to_yaml_in: "2026-04-25 XIII"
+severity: hard_block
+
+trigger:
+  type: numeric_threshold
+  field: ecog_score
+  alias_fields:
+    - ecog
+  threshold: 2
+
+override: null
+
+regimen_codes:
+  - REGIMEN_CODES_TRIPLETS
+
+# Sin keywords (los regímenes triplete tienen códigos canónicos únicos)
+keywords: []
+
+message: |
+  Triplete (docetaxel + ARPI + ADT) NO recomendado con ECOG ≥2
+  (ARASENS y PEACE-1 incluyeron sólo ECOG 0-1). Considerar doblete
+  ADT + ARPI (enzalutamida/abiraterona/darolutamida monoterapia) según
+  comorbilidad y volumen tumoral (Smith NEJM 2022;386:1132; Fizazi Lancet
+  2022;399:1695).
+
+evidence_tag: smith_arasens_2022_fizazi_peace1_2022
+trial_refs:
+  - ARASENS
+  - PEACE-1
+
+references:
+  - "Smith MR et al. ARASENS. NEJM 2022;386:1132-1142."
+  - "Fizazi K et al. PEACE-1. Lancet 2022;399:1695-1707."
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Triplete ARASENS/PEACE-1 elegibilidad"

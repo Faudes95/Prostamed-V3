@@ -1,0 +1,213 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 66: metastatic_biopsy_pathway_when_primary_impractical
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXVII) — Auditoría #67C — Pre-diagnostic gaps.
+#
+# Razón clínica:
+#   Pacientes con presentaciones avanzadas (PSA muy elevado, cT4 fixed,
+#   metástasis evidentes) donde la biopsia transrectal/transperineal
+#   estándar es impractical o de alto riesgo:
+#     - PSA >100 + DRE pétreo cT4 fixed = casi 100% probability cancer
+#     - Metástasis óseas widespread sin biopsia primaria
+#     - Compresión medular como presentación inicial (no tiempo para bx)
+#     - Visceral crisis (liver, lung) con sospecha PCa
+#     - Anatomía pélvica alterada (cirugía previa, radioterapia)
+#
+#   Acción clínica recomendada:
+#     - Biopsia de **sitio metastásico accesible** (no del primario):
+#       * Bone biopsy (osseous lesion accessible)
+#       * Lymph node biopsy (palpable o image-guided)
+#       * Liver biopsy (visceral metastasis)
+#       * Soft tissue biopsy (subcutaneous deposit)
+#     - Inmunohistoquímica: PSA, NKX3.1, AMACR confirmation prostate origin
+#     - PSMA-PET PRE-biopsia para guiar selection del sitio más accesible
+#     - Iniciar ADT empírico SI tier provisional_diagnosis virtually_certain
+#       MIENTRAS espera resultado biopsia metastásica
+#
+#   Severity: soft_warning — alerta clínico para activar pathway
+#   metastatic biopsy alternativa cuando primary impractical. NO bloquea
+#   tratamiento (ADT empírico permitido si tier virtually_certain).
+#
+#   Override: primary_biopsy_completed_or_planned (paciente con plan
+#   de biopsia primaria estándar viable).
+#
+#   Coexistencia: gate puede coexistir con gate 68 (oncologic emergency)
+#   y otros del catálogo.
+# ──────────────────────────────────────────────────────────────────────
+
+code: metastatic_biopsy_pathway_when_primary_impractical
+title: "PSA muy elevado + cT4/metástasis sin biopsia primaria → activar pathway biopsia metastásica"
+faubot_added_in: "2026-04-25 LXXVII"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: PSA muy elevado + cT4 fixed + sin biopsia primaria
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: psa_value
+          alias_fields:
+            - psa
+            - psa_baseline
+            - baseline_psa
+          threshold: 99  # ≥100 = numeric_above 99
+        - type: string_contains_any
+          field: clinical_t_stage
+          alias_fields:
+            - clinical_stage_t
+            - cT_stage
+            - estadio_clinico_t
+          patterns:
+            - cT4
+            - cT3b
+        - type: truthy_flag
+          field: primary_biopsy_not_performed
+          alias_fields:
+            - sin_biopsia_primaria
+            - biopsy_not_done_yet
+            - histology_not_confirmed
+    # Path B: metástasis widespread sin biopsia primaria
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: widespread_bone_metastases_documented
+          alias_fields:
+            - bone_mets_widespread
+            - metastasis_oseas_extensas
+        - type: truthy_flag
+          field: primary_biopsy_not_performed
+          alias_fields:
+            - sin_biopsia_primaria
+            - biopsy_not_done_yet
+    # Path C: spinal cord compression como presentación inicial sin bx
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: spinal_cord_compression_initial_presentation
+          alias_fields:
+            - scc_initial
+            - compresion_medular_inicial
+        - type: truthy_flag
+          field: primary_biopsy_not_performed
+    # Path D: visceral crisis con sospecha PCa
+    - type: all_of
+      triggers:
+        - type: any_of
+          triggers:
+            - type: truthy_flag
+              field: visceral_metastasis_present
+              alias_fields:
+                - visceral_metastases_documented
+                - metastasis_viscerales_presentes
+            - type: truthy_flag
+              field: liver_metastasis_documented
+            - type: truthy_flag
+              field: lung_metastasis_documented
+        - type: truthy_flag
+          field: primary_biopsy_not_performed
+    # Path E: clinical flag explicit
+    - type: truthy_flag
+      field: metastatic_biopsy_pathway_indicated
+      alias_fields:
+        - biopsia_metastasica_indicada
+        - mets_biopsy_required
+
+# Override: paciente con biopsia primaria viable o ya planeada
+override:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: primary_biopsy_completed_or_planned
+      alias_fields:
+        - biopsia_primaria_realizada
+        - primary_biopsy_planned
+        - biopsy_scheduled
+    - type: truthy_flag
+      field: histology_already_confirmed
+      alias_fields:
+        - histologia_confirmada
+
+regimen_codes: []  # Gate informacional — abre pathway alternativa biopsia
+
+keywords:
+  - biopsia metastásica
+  - metastatic biopsy
+  - bone biopsy
+  - lymph node biopsy
+  - liver biopsy
+
+message: |
+  ⚠️ ALERTA CLÍNICA: paciente con presentación avanzada (PSA muy elevado
+  + cT4 / metástasis widespread) sin biopsia primaria viable → activar
+  PATHWAY BIOPSIA METASTÁSICA para confirmación histológica antes de
+  iniciar tratamiento curativo o intensificación terapéutica.
+
+  📊 INDICACIONES PARA BIOPSIA METASTÁSICA:
+  - PSA >100 ng/mL + cT4 fixed/pétreo → biopsia primaria difícil
+  - Metástasis óseas widespread + paciente sintomático
+  - Compresión medular como presentación inicial
+  - Visceral crisis (liver, lung) con sospecha PCa
+  - Anatomía pélvica alterada por cirugía/RT previa
+  - Performance status pobre (ECOG 3-4) — biopsia primaria invasiva
+    puede ser de alto riesgo
+
+  🎯 PATHWAY BIOPSIA METASTÁSICA RECOMENDADA:
+
+  **1. PRE-biopsia: PSMA-PET imaging** (24-72h):
+  - Guía selección del sitio más accesible + más PSMA-avid
+  - Confirma origen prostático (PSMA expression específica)
+  - Documenta extensión enfermedad para staging completo
+
+  **2. Sitios de biopsia (orden preferencia)**:
+  - **Lymph node biopsy** (palpable/image-guided): menor morbilidad,
+    bone fragments evitados, fácil análisis histopatológico
+  - **Soft tissue/subcutaneous deposit**: si presente, mínima morbilidad
+  - **Liver biopsy** (visceral metastasis): image-guided percutánea
+  - **Bone biopsy**: como último recurso (decalcification process
+    delay, pero útil si única opción)
+  - **Lung biopsy**: si pulmonary mass dominant
+
+  **3. Inmunohistoquímica panel** (CONFIRMACIÓN ORIGEN PROSTÁTICO):
+  - **PSA** (Prostate-Specific Antigen): específico próstata
+  - **NKX3.1** (homeobox transcription factor): muy específico próstata
+  - **AMACR** (Alpha-Methylacyl-CoA Racemase / P504S): cancer marker
+  - **PSMA** (Prostate-Specific Membrane Antigen)
+  - **AR** (Androgen Receptor): si NEPC sospecha → puede ser negativo
+  - **Synaptophysin/Chromogranin**: si NEPC sospecha
+  - **TTF-1**: para descartar lung primary
+
+  **4. ADT empírico** (si tier provisional_diagnosis virtually_certain):
+  - **No esperar biopsia** si presentación crítica (compression, crisis)
+  - LHRH agonist + first-generation antiandrogen
+  - Evitar abiraterona/enzalutamide hasta histología confirmada
+  - Documentar decisión clínica + plan biopsia paralelo
+
+  🔬 EVIDENCIA CLÍNICA:
+  - **NCCN Prostate v5.2026 PROS-1**: "Biopsy of metastatic site is
+    acceptable when primary biopsy is not feasible or contraindicated"
+  - **EAU 2026 §5.1.4**: metastatic biopsy pathway documentado
+  - **Aparicio Eur Urol 2024**: NEPC suspicion → biopsia metastasis
+    obligatoria (no solo PSA-based diagnosis)
+
+  ⚠️ EXCEPCIÓN OVERRIDE:
+  Si `primary_biopsy_completed_or_planned` o `histology_already_confirmed`
+  → este gate NO aplica, proceder con biopsia primaria estándar.
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `psa_value`: PSA en ng/mL
+  - `clinical_t_stage`: cT1-cT4
+  - `primary_biopsy_not_performed`: flag biopsia primaria pendiente
+  - `widespread_bone_metastases_documented`: flag mets óseas extensas
+  - `spinal_cord_compression_initial_presentation`: flag SCC inicial
+  - `visceral_metastasis_present`: flag mets viscerales
+  - `metastatic_biopsy_pathway_indicated`: clinical flag
+  - `primary_biopsy_completed_or_planned`: override flag
+
+evidence_tag: nccn_v5_2026_pros1_eau_2026_metastatic_biopsy_pathway_pca
+trial_refs:
+  - "NCCN Prostate v5.2026 PROS-1"
+  - "EAU 2026 §5.1.4 (metastatic biopsy)"
+  - "Aparicio Eur Urol 2024 (NEPC biopsy mandatory)"

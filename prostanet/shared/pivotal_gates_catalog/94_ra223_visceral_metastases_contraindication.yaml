@@ -1,0 +1,138 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 94: ra223_visceral_metastases_contraindication
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.B) — Tier 2 Contraindication Hard-Blocks.
+#
+# Razón clínica:
+#   Radium-223 (Xofigo) es α-emitter calcium mimetic que se acumula en
+#   bone osteoblastic activity zones. NO trata visceral mets:
+#
+#   - **ALSYMPCA (Parker NEJM 2013;369:213)**: Ra-223 vs placebo en mCRPC
+#     - **Inclusión: bone-only mets symptomatic (≥2 lesiones óseas)**
+#     - **Exclusión: visceral mets (liver, lung, peritoneal)**
+#     - **Exclusión: bulky lymphadenopathy >3cm**
+#     - Resultado en bone-only: OS +3.6 meses (HR 0.70)
+#
+#   - **PEACE-3 (Tombal Lancet 2024)**: Ra-223 + enzalutamida vs enz
+#     - Same exclusion criteria
+#     - rPFS HR 0.45 con bone-only
+#
+#   Mecanismo: Ra-223 emite α-particles (50-100 μm range) en bone matrix.
+#   No alcanza tumor tissue en visceral organs (liver, lung). Si paciente
+#   tiene visceral mets, esos no son tratados → progresión visceral
+#   continúa mientras bone responds → false sense of efficacy.
+#
+#   FDA Xofigo label sección 5.3: "Ra-223 has not been studied in
+#   patients with visceral metastases. The clinical benefit in such
+#   patients has not been established."
+#
+#   Implicación clínica visceral mCRPC:
+#   - Switch a Lu-177-PSMA si PSMA+ (visceral targetable)
+#   - Cabazitaxel (TROPIC visceral subset OK)
+#   - PARP inhibitor si HRR+ (PROfound visceral subset OK)
+#   - Olaparib + abi (PROpel includes visceral)
+#
+#   NO override — mecanismo de acción no llega.
+# ──────────────────────────────────────────────────────────────────────
+
+code: ra223_visceral_metastases_contraindication
+title: "Ra-223 × visceral mets → futility hard_block (no targeting visceral)"
+faubot_added_in: "2026-04-30 LXCVI.B"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: visceral mets documentadas (liver/lung/peritoneal)
+    - type: truthy_flag
+      field: visceral_metastases_documented
+      alias_fields:
+        - visceral_mets
+        - visceral_metastasis_present
+        - liver_mets_present
+        - lung_mets_present
+        - peritoneal_mets_present
+    # Path B: M-stage clínico M1c (visceral)
+    - type: string_match
+      field: clinical_m_stage
+      alias_fields:
+        - metastasis_site
+        - clinical_mstage
+        - m_stage
+      patterns:
+        - M1c
+        - m1c
+        - M1c (visceral)
+
+regimen_codes:
+  - REGIMEN_CODES_RADIUM223
+
+keywords:
+  - Ra-223
+  - radium-223
+  - Xofigo
+  - visceral
+  - liver mets
+  - lung mets
+  - ALSYMPCA
+  - PEACE-3
+
+message: |
+  🚨 HARD BLOCK: Ra-223 contraindicado en pacientes con visceral mets
+  (mecanismo no alcanza targets viscerales).
+
+  🎯 EVIDENCIA EXCLUSIÓN POR TRIAL:
+
+  | Trial | Inclusión | Exclusión |
+  |-------|-----------|-----------|
+  | ALSYMPCA | Bone-only mets ≥2 lesiones, symptomatic | Visceral, lymphadenopathy >3cm |
+  | PEACE-3 | Same bone-only criteria | Same |
+  | Xofigo FDA label | mCRPC bone mets | "Not studied in visceral; benefit not established" |
+
+  🎯 MECANISMO RA-223:
+  - α-emitter calcium mimetic
+  - Range α-particles 50-100 μm en bone matrix
+  - NO penetration en visceral organs (liver/lung/peritoneum)
+  - Visceral mets NO tratadas → progresión continúa
+
+  🎯 ALTERNATIVAS POR PERFIL CLÍNICO:
+
+  **mCRPC visceral + PSMA+**:
+  - Lu-177-PSMA (VISION, PSMAfore)
+  - PSMA-PET screening primero
+
+  **mCRPC visceral + HRR+**:
+  - Olaparib (PROfound) — visceral subset incluido
+  - Niraparib + abi (MAGNITUDE) — visceral incluido
+  - Talazoparib + enz (TALAPRO-2)
+
+  **mCRPC visceral chemo-fit**:
+  - Cabazitaxel (TROPIC visceral subset)
+  - Docetaxel re-challenge si previously responded
+
+  **mCRPC visceral chemo-naive**:
+  - Enzalutamida (PREVAIL incluyó visceral)
+  - Abiraterona + prednisona (COU-AA-302 visceral subset)
+
+  🎯 EVALUACIÓN ANTES DE EXCLUDE:
+  - Confirm visceral mets vs bone reading artifact
+  - CT/MRI con contraste para confirmar
+  - PSMA-PET si planning Lu-177 alternative
+
+  🎯 NO OVERRIDE CLÍNICO:
+  Sin penetration α-particles a viscerales no hay benefit, solo
+  toxicity (mielosuppression + fracture risk). Switch a alternative
+  mejor evidenciada para visceral disease.
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `visceral_metastases_documented`: bool (liver/lung/peritoneal)
+  - `clinical_m_stage`: string (M1c indicates visceral)
+
+evidence_tag: ra223_visceral_alsympca_peace3_xofigo_fda_label_2013_2024
+trial_refs:
+  - "ALSYMPCA (Parker NEJM 2013;369:213)"
+  - "PEACE-3 (Tombal Lancet 2024)"
+  - "Xofigo FDA label §5.3 (2024)"
+  - "EAU 2026 §6.5 Theranostics"
+  - "NCCN Prostate v5.2026 PROS-N"

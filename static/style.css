@@ -1,0 +1,1022 @@
+/* ═══════════════════════════════════════════════════════════════════════ */
+/*  ProstaMed — Premium Dark Theme + Clinical Scores                     */
+/* ═══════════════════════════════════════════════════════════════════════ */
+:root {
+    --bg-primary: #0a0e1a;
+    --bg-card: rgba(14, 20, 40, 0.85);
+    --bg-card-hover: rgba(18, 26, 52, 0.95);
+    --border-card: rgba(100, 140, 255, 0.12);
+    --text-primary: #e8ecf4;
+    --text-secondary: #8e99b0;
+    --text-muted: #5a6580;
+    --accent-1: #1a9fd4;
+    --accent-2: #1a6fc4;
+    --accent-3: #a777e3;
+    --gradient-1: linear-gradient(135deg, #0d4a8e, #1a6fc4, #06b6d4);
+    --gradient-2: linear-gradient(135deg, #1a6fc4, #a777e3);
+    --gradient-3: linear-gradient(135deg, #fbc87a, #f08a5d);
+    --risk-bajo: #2ecc71;
+    --risk-intermedio: #f39c12;
+    --risk-alto: #e74c3c;
+    --risk-muy-bajo: #00d9a6;
+    --risk-muy-alto: #c0392b;
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --radius: 16px;
+    --radius-sm: 10px;
+    --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    line-height: 1.6;
+}
+
+/* ── Hero ─────────────────────────────────────────────────── */
+.hero {
+    position: relative;
+    padding: 3rem 2rem 2.5rem;
+    overflow: hidden;
+}
+
+.hero-bg {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 20% 0%, rgba(13, 74, 142, .18) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 100%, rgba(6, 182, 212, .10) 0%, transparent 50%);
+    pointer-events: none;
+}
+
+.hero-content {
+    position: relative;
+    max-width: 960px;
+    margin: 0 auto;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.logo.logo-wide {
+    align-items: flex-start;
+}
+
+.logo-icon {
+    width: 56px;
+    height: 56px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border-radius: 14px;
+    color: #0a0e1a;
+    overflow: hidden;
+}
+
+.logo-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.logo-icon.logo-icon-wide {
+    width: min(540px, 76vw);
+    height: auto;
+    border-radius: 0;
+    overflow: visible;
+}
+
+.logo-icon.logo-icon-wide img {
+    width: 100%;
+    height: auto;
+    max-height: 150px;
+    object-fit: contain;
+}
+
+.logo h1 {
+    font-size: 1.8rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+}
+
+.accent {
+    background: var(--gradient-1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.subtitle {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-weight: 500;
+}
+
+.hero-desc {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    max-width: 660px;
+    line-height: 1.7;
+}
+
+.hero-desc strong {
+    color: var(--text-primary);
+}
+
+/* ── Container / Layout ──────────────────────────────────── */
+.container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 1.5rem 3rem;
+}
+
+.section-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    color: var(--text-primary);
+    text-align: center;
+}
+
+/* ── Card ─────────────────────────────────────────────────── */
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+    padding: 1.8rem;
+    margin-bottom: 1.5rem;
+    backdrop-filter: blur(20px);
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.card:hover {
+    border-color: rgba(100, 140, 255, 0.25);
+    box-shadow: var(--shadow);
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1.2rem;
+}
+
+.card-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.card-icon {
+    font-size: 1.3rem;
+}
+
+/* ── Field Grid ──────────────────────────────────────────── */
+.field-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.2rem;
+}
+
+.field-grid.thirds {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 720px) {
+    .field-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .field-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.field label {
+    display: block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+}
+
+.field input,
+.field select {
+    width: 100%;
+    padding: 0.7rem 0.9rem;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font);
+    font-size: 0.95rem;
+    transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.field input:focus,
+.field select:focus {
+    outline: none;
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 3px rgba(110, 142, 251, 0.15);
+}
+
+.field select {
+    cursor: pointer;
+    appearance: auto;
+}
+
+.hint {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 0.3rem;
+}
+
+/* Computed field (Gleason display) */
+.computed-field {
+    padding: 0.7rem 0.9rem;
+    background: rgba(110, 142, 251, 0.08);
+    border: 1px solid rgba(110, 142, 251, 0.2);
+    border-radius: var(--radius-sm);
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--accent-2);
+}
+
+.computed-field.isup-1 {
+    color: var(--risk-bajo);
+    border-color: rgba(46, 204, 113, .2);
+}
+
+.computed-field.isup-2 {
+    color: #f1c40f;
+    border-color: rgba(241, 196, 15, .2);
+}
+
+.computed-field.isup-3 {
+    color: var(--risk-intermedio);
+    border-color: rgba(243, 156, 18, .2);
+}
+
+.computed-field.isup-4 {
+    color: #e67e22;
+    border-color: rgba(230, 126, 34, .2);
+}
+
+.computed-field.isup-5 {
+    color: var(--risk-alto);
+    border-color: rgba(231, 76, 60, .2);
+}
+
+/* ── Submit Button ───────────────────────────────────────── */
+.submit-area {
+    text-align: center;
+    margin: 2rem 0;
+}
+
+.btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.9rem 2.5rem;
+    background: var(--gradient-1);
+    color: #0a0e1a;
+    font-weight: 700;
+    font-size: 1rem;
+    font-family: var(--font);
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(92, 224, 216, 0.25);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 28px rgba(92, 224, 216, 0.35);
+}
+
+.btn-primary:disabled {
+    opacity: .5;
+    cursor: wait;
+}
+
+.spinner {
+    width: 20px;
+    height: 20px;
+    animation: spin 0.8s linear infinite;
+}
+
+.spinner circle {
+    fill: none;
+    stroke: #0a0e1a;
+    stroke-width: 3;
+    stroke-dasharray: 45 20;
+    stroke-linecap: round;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ── Results Container ───────────────────────────────────── */
+.results {
+    margin-top: 1rem;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* ── CLINICAL SCORES SECTION ──────────────────────────────────────────  */
+/* ═══════════════════════════════════════════════════════════════════════ */
+
+.scores-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+
+@media (max-width: 720px) {
+    .scores-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.score-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.score-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.capra-card::before {
+    background: var(--gradient-3);
+}
+
+.nccn-card::before {
+    background: var(--gradient-2);
+}
+
+.kattan-card::before {
+    background: var(--gradient-1);
+}
+
+.briganti-card::before {
+    background: linear-gradient(135deg, #e74c3c, #f39c12);
+}
+
+.score-source {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-left: auto;
+}
+
+/* CAPRA */
+.score-main {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    margin: 1rem 0;
+}
+
+.score-circle {
+    width: 72px;
+    height: 72px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.04);
+    border: 2px solid var(--border-card);
+    border-radius: 50%;
+}
+
+.score-num {
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.score-denom {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+}
+
+.score-badge {
+    display: inline-block;
+    padding: 0.4rem 1.2rem;
+    border-radius: 50px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.score-badge.risk-bajo,
+.risk-badge.risk-bajo {
+    background: rgba(46, 204, 113, .15);
+    color: var(--risk-bajo);
+}
+
+.score-badge.risk-intermedio,
+.risk-badge.risk-intermedio {
+    background: rgba(243, 156, 18, .15);
+    color: var(--risk-intermedio);
+}
+
+.score-badge.risk-alto,
+.risk-badge.risk-alto {
+    background: rgba(231, 76, 60, .15);
+    color: var(--risk-alto);
+}
+
+.breakdown-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+.breakdown-pts {
+    font-weight: 600;
+    color: var(--accent-1);
+    font-size: 0.78rem;
+}
+
+.score-prognosis {
+    margin-top: 0.8rem;
+}
+
+.prognosis-row {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    padding: 0.2rem 0;
+}
+
+.prognosis-row strong {
+    color: var(--text-primary);
+}
+
+/* NCCN */
+.nccn-badge {
+    display: inline-block;
+    padding: 0.5rem 1.5rem;
+    border-radius: 50px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.nccn-muy-bajo {
+    background: rgba(0, 217, 166, .15);
+    color: var(--risk-muy-bajo);
+}
+
+.nccn-bajo {
+    background: rgba(46, 204, 113, .15);
+    color: var(--risk-bajo);
+}
+
+.nccn-intermedio-favorable {
+    background: rgba(241, 196, 15, .12);
+    color: #f1c40f;
+}
+
+.nccn-intermedio-desfavorable {
+    background: rgba(243, 156, 18, .15);
+    color: var(--risk-intermedio);
+}
+
+.nccn-alto {
+    background: rgba(231, 76, 60, .12);
+    color: var(--risk-alto);
+}
+
+.nccn-muy-alto {
+    background: rgba(192, 57, 43, .15);
+    color: var(--risk-muy-alto);
+}
+
+.nccn-factors {
+    margin: 0.8rem 0;
+}
+
+.nccn-factor {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    padding: 0.2rem 0;
+}
+
+.nccn-rec {
+    font-size: 0.8rem;
+    color: var(--accent-1);
+    padding: 0.6rem;
+    background: rgba(92, 224, 216, .06);
+    border-radius: var(--radius-sm);
+    margin-top: 0.4rem;
+}
+
+/* Kattan Gauge */
+.kattan-gauge {
+    position: relative;
+    width: 100px;
+    height: 100px;
+}
+
+.kattan-gauge svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.kattan-fill {
+    stroke: url(#kattanGrad);
+}
+
+.gauge-value {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.kattan-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-align: center;
+    margin-top: 0.5rem;
+}
+
+.kattan-interp-text {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
+    line-height: 1.5;
+}
+
+/* Briganti */
+.briganti-prob {
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.briganti-high {
+    color: var(--risk-alto);
+}
+
+.briganti-low {
+    color: var(--risk-bajo);
+}
+
+.briganti-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.3rem;
+}
+
+.eplnd-badge {
+    font-size: 0.78rem;
+    padding: 0.5rem 0.8rem;
+    border-radius: var(--radius-sm);
+    margin-top: 1rem;
+    line-height: 1.4;
+}
+
+.eplnd-yes {
+    background: rgba(231, 76, 60, .1);
+    color: #e67e22;
+    border: 1px solid rgba(231, 76, 60, .2);
+}
+
+.eplnd-no {
+    background: rgba(46, 204, 113, .08);
+    color: var(--risk-bajo);
+    border: 1px solid rgba(46, 204, 113, .15);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* ── ML PREDICTION RESULTS ────────────────────────────────────────────  */
+/* ═══════════════════════════════════════════════════════════════════════ */
+
+.result-card {
+    margin-bottom: 1.5rem;
+}
+
+.result-section {
+    margin-bottom: 2rem;
+}
+
+.result-section h3 {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    margin-bottom: 0.8rem;
+}
+
+/* Risk badge */
+.risk-badge {
+    display: inline-block;
+    padding: 0.4rem 1.2rem;
+    border-radius: 50px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 1rem;
+}
+
+/* Treatment */
+.treatment-main {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--accent-1);
+    margin-bottom: 1rem;
+}
+
+/* Probability bars */
+.prob-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-bottom: 0.6rem;
+}
+
+.prob-label {
+    width: 130px;
+    text-align: right;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.prob-track {
+    flex: 1;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.prob-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 1s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.risk-fill {
+    background: var(--gradient-1);
+}
+
+.treat-fill {
+    background: var(--gradient-1);
+}
+
+.prob-value {
+    width: 50px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Survival gauges */
+.gauges {
+    display: flex;
+    justify-content: center;
+    gap: 2.5rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+}
+
+.gauge {
+    position: relative;
+    width: 120px;
+    text-align: center;
+}
+
+.gauge svg {
+    width: 100%;
+    height: 120px;
+    transform: rotate(-90deg);
+}
+
+.gauge-bg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.06);
+    stroke-width: 6;
+}
+
+.gauge-fill {
+    fill: none;
+    stroke: var(--accent-1);
+    stroke-width: 6;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.gauge-fill.surv5 {
+    stroke: var(--accent-2);
+}
+
+.gauge-fill.surv10 {
+    stroke: var(--accent-3);
+}
+
+.gauge-fill.kattan-fill {
+    stroke: var(--accent-1);
+}
+
+.gauge .gauge-value {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.gauge-label {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: -0.4rem;
+}
+
+/* Disclaimer */
+.disclaimer {
+    margin-top: 1.5rem;
+    padding: 1rem 1.2rem;
+    background: rgba(243, 156, 18, 0.06);
+    border: 1px solid rgba(243, 156, 18, 0.15);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.disclaimer strong {
+    color: var(--risk-intermedio);
+}
+
+/* Error message */
+.error-msg {
+    background: rgba(231, 76, 60, 0.1);
+    border: 1px solid rgba(231, 76, 60, 0.25);
+    color: var(--risk-alto);
+    padding: 1rem;
+    border-radius: var(--radius-sm);
+    margin-top: 1rem;
+    font-size: 0.9rem;
+}
+
+/* Footer */
+footer {
+    text-align: center;
+    padding: 2rem 1rem;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* ── CLINICAL SUMMARY SECTION (NEW) ────────────────────────────────────  */
+/* ═══════════════════════════════════════════════════════════════════════ */
+
+.summary-card {
+    border: 1px solid rgba(167, 119, 227, 0.3);
+    background: linear-gradient(180deg, rgba(14, 20, 40, 0.95) 0%, rgba(18, 26, 52, 0.9) 100%);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.discordance-alert {
+    background: rgba(231, 76, 60, 0.15);
+    border: 1px solid rgba(231, 76, 60, 0.4);
+    border-left: 4px solid var(--risk-alto);
+    color: #ffcccc;
+    padding: 1.2rem;
+    margin-bottom: 1.5rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    animation: pulseAlert 2s infinite;
+}
+
+@keyframes pulseAlert {
+    0% {
+        box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.2);
+    }
+
+    70% {
+        box-shadow: 0 0 0 10px rgba(231, 76, 60, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
+    }
+}
+
+.summary-section {
+    margin-bottom: 1.8rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.summary-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.summary-section h3 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    margin-bottom: 0.8rem;
+}
+
+.summary-text.prominent {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--accent-1);
+    background: linear-gradient(90deg, var(--accent-1), var(--accent-3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 1.8rem;
+}
+
+@media (max-width: 720px) {
+    .summary-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.summary-list {
+    list-style: none;
+    padding: 0;
+}
+
+.summary-list li {
+    position: relative;
+    padding-left: 1.5rem;
+    margin-bottom: 0.8rem;
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.summary-list li::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: var(--accent-2);
+    font-weight: bold;
+    font-size: 1.2rem;
+    line-height: 1;
+}
+
+.highlight-box {
+    background: rgba(110, 142, 251, 0.06);
+    border: 1px solid rgba(110, 142, 251, 0.15);
+    border-radius: var(--radius-sm);
+    padding: 1.2rem;
+}
+
+.highlight-box h3 {
+    color: var(--accent-2);
+}
+
+/* --- TABS --- */
+.tabs {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 1rem;
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+    border-radius: var(--radius-sm);
+}
+
+.tab-btn:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+
+.tab-btn.active {
+    color: var(--accent);
+    background: rgba(52, 152, 219, 0.1);
+    border-bottom: 2px solid var(--accent);
+}
+
+/* --- DASHBOARD --- */
+.sync-section {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+    background: var(--surface);
+    padding: 1.5rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.metric-card {
+    background: var(--surface);
+    padding: 1.5rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    text-align: center;
+}
+
+.metric-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--accent);
+    margin: 0.5rem 0;
+}
+
+.metric-sub {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.charts-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+}
+
+.chart-box {
+    background: var(--surface);
+    padding: 1.5rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+}

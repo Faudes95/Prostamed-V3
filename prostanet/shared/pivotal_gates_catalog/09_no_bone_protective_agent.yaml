@@ -1,0 +1,82 @@
+# Faubot 2026-04-25 (XIX) — Gate 9 migrado de Python a YAML.
+# Originalmente en `pivotal_contraindication_gates.detect_no_bone_protective_agent_for_radium223`.
+# Activo en Faubot 2026-04-23 I (gates 1-10 baseline).
+#
+# Este gate es el ÚLTIMO en migrar a YAML. Requirió 2 nuevos trigger types
+# en Faubot XIX:
+#   - `all_of`: composite AND (mirror de `any_of`)
+#   - `all_of_falsy`: dispara cuando todos los campos son "falsy" con
+#     soporte opcional para `negative_tokens` (e.g., "ninguno"/"none"/"no"
+#     en `bone_modifying_agent`).
+#
+# Lógica clínica replicada del Python:
+#   - explicit = truthy(no_bone_protective_agent) → gate fires
+#   - O bien: (Ra-223 considerado) AND (ningún agente óseo declarado)
+#     - Ra-223 considerado = truthy(radium223_candidate) OR
+#       truthy(considering_radium223) OR
+#       planned_systemic_regimen ∈ {RADIUM_223, RA_223, RADIUM223}
+#     - Ningún agente óseo declarado:
+#       - bone_modifying_agent vacío o ∈ {"ninguno", "none", "no"}
+#       - AND denosumab_prophylaxis no truthy
+#       - AND zoledronate_prophylaxis no truthy
+#       - AND bone_protection_started no truthy
+
+code: no_bone_protective_agent
+title: "Ra-223 sin agente protector óseo"
+faubot_added_in: "2026-04-23 I"
+faubot_migrated_to_yaml_in: "2026-04-25 XIX"
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Camino 1: flag explícito de "no bone protective agent"
+    - type: truthy_flag
+      field: no_bone_protective_agent
+
+    # Camino 2: Ra-223 considerado AND ningún agente óseo declarado
+    - type: all_of
+      triggers:
+        # Sub-condición A: cualquier señal de Ra-223 considerado
+        - type: any_of
+          triggers:
+            - type: truthy_flag
+              field: radium223_candidate
+            - type: truthy_flag
+              field: considering_radium223
+            - type: string_match
+              field: planned_systemic_regimen
+              match_values:
+                - RADIUM_223
+                - RA_223
+                - RADIUM223
+              case_insensitive: true
+              strip: true
+        # Sub-condición B: ningún agente óseo declarado en 4 campos
+        - type: all_of_falsy
+          fields:
+            - field: bone_modifying_agent
+              negative_tokens:
+                - ninguno
+                - none
+                - "no"
+            - field: denosumab_prophylaxis
+            - field: zoledronate_prophylaxis
+            - field: bone_protection_started
+
+regimen_codes:
+  - REGIMEN_CODES_RADIUM223
+keywords:
+  - KEYWORDS_RADIUM223
+
+message: |
+  Radio-223 NO debe iniciarse sin agente protector óseo concomitante (denosumab 120 mg SC c/4 sem o ácido zoledrónico 4 mg IV c/4 sem). ERA-223 (Smith Lancet Oncol 2019;20:408) demostró exceso de fracturas con Ra-223 + abiraterona sin agente óseo (28% vs 12%). PEACE-3 (Tombal ESMO 2024) requirió bisfosfonato/denosumab obligatorio. Iniciar agente óseo ≥6 sem antes o concomitante.
+
+evidence_tag: smith_era223_2019_peace3_2024
+trial_refs:
+  - ERA-223
+  - PEACE-3
+references:
+  - Smith MR et al. ERA-223 trial. Lancet Oncol 2019;20:408.
+  - Tombal B et al. PEACE-3 trial. ESMO 2024.
+  - Xofigo (Ra-223) FDA prescribing information. Bayer 2024.

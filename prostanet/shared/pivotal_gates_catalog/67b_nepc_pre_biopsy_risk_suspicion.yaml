@@ -1,0 +1,173 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 67B: nepc_pre_biopsy_risk_suspicion
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXXIV) — Iteración #1 — Pre-dx NEPC suspicion.
+#
+# Razón clínica:
+#   Pacientes con presentación clínica que sugiere NEPC ANTES de tener
+#   biopsia confirmatoria deben ser evaluados con biopsia metastásica
+#   urgente + considerar EP regimen pre-resultado:
+#
+#   1. **Patrón clínico NEPC pre-biopsia**:
+#      - PSA paradójicamente bajo o desproporcionado al burden
+#      - LDH muy elevada (>400 U/L) — high turnover típico NEPC
+#      - Mets viscerales prominentes (hepáticas, pulmonares, SNC)
+#      - Curso clínico agresivo + síntomas sistémicos
+#
+#   2. **Biopsia preferida sitio metastásico** (gate 66 link):
+#      - Más rendimiento que primario en NEPC
+#      - Permite IHC: chromogranin A, synaptophysin, NSE, AR loss
+#
+#   3. **Manejo paralelo** mientras espera biopsia:
+#      - Considerar inicio EP empírico SI estado clínico se deteriora
+#        rápidamente (carbo+etoposido)
+#      - NO ARPI empírico (puede ser futile en NEPC)
+#      - Multidisciplinaria: oncología + uro + palliative early
+#
+#   Severity: soft_warning — alerta pre-dx, NO bloquea biopsia
+#   convencional. Sirve para escalar urgencia + considerar workup
+#   acelerado + opciones empíricas.
+#
+#   Coexistencia: gate 67B + gate 66 (metastatic biopsy) + gate 67
+#   (NEPC histología confirmada post-biopsia).
+# ──────────────────────────────────────────────────────────────────────
+
+code: nepc_pre_biopsy_risk_suspicion
+title: "Sospecha NEPC pre-biopsia (LDH↑ + PSA↑↑ + visceral mets) → biopsia metastásica urgente + considerar EP empírico"
+faubot_added_in: "2026-04-26 LXXXIV"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: LDH muy elevada + PSA muy alto + mets viscerales (NEPC clásico)
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: ldh_value
+          alias_fields:
+            - LDH
+            - ldh_serum
+            - lactato_deshidrogenasa
+          threshold: 399  # ≥400 = numeric_above 399
+        - type: numeric_above
+          field: psa_value
+          alias_fields:
+            - psa
+            - psa_baseline
+            - baseline_psa
+          threshold: 999  # ≥1000
+        - type: any_of
+          triggers:
+            - type: truthy_flag
+              field: visceral_metastasis_present
+              alias_fields:
+                - visceral_metastases_documented
+                - metastasis_viscerales_presentes
+            - type: truthy_flag
+              field: liver_metastasis_documented
+            - type: truthy_flag
+              field: lung_metastasis_documented
+            - type: truthy_flag
+              field: new_cns_metastasis_appeared
+              alias_fields:
+                - brain_mets_new
+    # Path B: LDH muy elevada + bulk widespread (variant aggressive)
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: ldh_value
+          alias_fields:
+            - LDH
+          threshold: 599  # ≥600 LDH muy alta
+        - type: truthy_flag
+          field: widespread_bone_metastases_documented
+          alias_fields:
+            - bone_mets_widespread
+    # Path C: PSA paradójicamente desproporcionado + clinical NEPC suspicion
+    - type: truthy_flag
+      field: clinical_nepc_suspicion_pre_biopsy
+      alias_fields:
+        - sospecha_nepc_pre_biopsia
+        - small_cell_variant_suspected_pre_bx
+
+regimen_codes: []  # Soft warning — no bloquea, recomienda escalar urgencia
+
+keywords:
+  - NEPC pre-biopsia
+  - small cell variant suspected
+  - LDH elevada
+  - mets viscerales
+  - biopsia metastásica urgente
+
+message: |
+  📊 SOSPECHA NEPC PRE-BIOPSIA: paciente con LDH >400 U/L + PSA >1000 +
+  metástasis viscerales prominentes → escalar urgencia diagnóstica.
+
+  🔬 PATRÓN CLÍNICO NEPC PRE-CONFIRMACIÓN:
+
+  - **LDH elevada**: marker high turnover típico NEPC/small cell
+  - **PSA muy alto**: bulk disease compatible
+  - **Mets viscerales prominentes**: hígado, pulmón, SNC (raro en
+    adenocarcinoma puro)
+  - **Curso clínico agresivo**: deterioro rápido en semanas
+
+  🎯 ACCIÓN OBLIGATORIA:
+
+  **1. Biopsia metastásica urgente** (gate 66 link):
+  - Sitio accesible: hepática (alto rendimiento), pulmonar, ósea
+  - IHC obligatorio: chromogranin A, synaptophysin, NSE, AR
+  - Marker proliferación Ki-67 (NEPC: >70%)
+  - Reportar dentro de 5-7 días si urgencia
+
+  **2. Workup paralelo durante espera resultados**:
+  - LDH seriadas (cada 48-72h si trending up)
+  - CT thorax/abdomen/pelvis con contraste
+  - PSMA PET (puede ser negativa en NEPC pure)
+  - FDG-PET si NEPC suspicion alta (alternativa)
+
+  **3. Decisión empírica si deterioro clínico**:
+  - **NO ARPI empírico** (futile en NEPC)
+  - **Considerar EP regimen** (carboplatin AUC 5 + etoposide 100 mg/m² D1-3
+    cada 3 sem) si estado funcional se deteriora rápidamente
+  - **Multidisciplinaria urgente**: oncología + uro + palliative early
+
+  **4. Si biopsia confirma NEPC** (gate 67 fires):
+  - EP regimen continúa
+  - PSA monitoring menos relevante (NEPC menos PSA-dependiente)
+  - Imaging response es key endpoint
+  - Trial enrollment priorizar (rare disease)
+
+  **5. Si biopsia confirma adenocarcinoma puro** (NO NEPC):
+  - Manejo standard mCRPC pathway
+  - LDH elevation puede deberse a bulk disease
+  - Considerar inicio docetaxel + ADT/ARPI
+
+  ⚠️ CRITERIO TEMPORAL:
+  Si paciente está deteriorando clínicamente (ECOG worsens en <2 semanas)
+  con sospecha NEPC, NO esperar biopsia para iniciar EP empírico.
+  Biopsia confirmatoria post-inicio puede modificar plan.
+
+  🔬 EVIDENCIA:
+  - **Aparicio Eur Urol 2024** — NEPC characterization + treatment
+  - **Beltran JCO 2018** — molecular landscape NEPC
+  - **NCCN Prostate v5.2026 PROS-A** — NEPC pathway separate
+  - **EAU 2026 §6.6** — NEPC management
+  - **Mostaghel JCO 2014** — pre-biopsy NEPC suspicion criteria
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `ldh_value`: LDH sérica U/L
+  - `psa_value`: PSA total ng/mL
+  - `visceral_metastasis_present`: flag visceral mets
+  - `liver_metastasis_documented`, `lung_metastasis_documented`: flags
+  - `widespread_bone_metastases_documented`: flag bulk óseo
+  - `clinical_nepc_suspicion_pre_biopsy`: flag clínico explícito
+
+evidence_tag: nepc_pre_biopsy_aparicio_2024_beltran_2018_mostaghel_2014_pcwg3
+trial_refs:
+  - "Aparicio Eur Urol 2024 (NEPC management)"
+  - "Beltran JCO 2018 (NEPC molecular)"
+  - "Mostaghel JCO 2014 (small cell suspicion criteria)"
+  - "NCCN Prostate v5.2026 PROS-A"
+  - "EAU 2026 §6.6"

@@ -1,0 +1,207 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 78: actinium_225_psma_investigational
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXIX) — Auditoría #67E — Ac-225 PSMA roadmap.
+#
+# Razón clínica:
+#   **Actinium-225-PSMA** es radiofármaco alpha-emisor PSMA-targeted en
+#   investigación intensiva para mCRPC PSMA-positive heavily pre-treated:
+#
+#   1. **Mecanismo**: alpha-emisor (T½ 9.9 días) → 4 alpha decays cascade
+#      → daño DNA double-strand breaks (LET alta 80-100 keV/µm)
+#   2. **Ventajas vs Lu-177-PSMA** (beta):
+#      - Penetración 50-100 µm (vs 600-2000 µm Lu-177)
+#      - Mayor citotoxicidad por decay (LET alpha vs beta)
+#      - Útil en disease bulky resistente
+#      - Mejor para micrometástasis
+#   3. **Desventajas**:
+#      - Disponibilidad limitada (Ac-225 producción rare)
+#      - Costo muy alto
+#      - Toxicidad xerostomía severa (>Lu-177)
+#      - Sin FDA-approval aún (investigational)
+#
+#   Evidencia (Kratochwil JNM 2016 + Sathekge JNM 2024):
+#   - Response rate 60-80% en heavily pre-treated post-Lu-177
+#   - PSA50 response 60-70%
+#   - Survival benefit pendiente trials randomizados
+#
+#   Severity: informational — gate alerta opción investigational en
+#   pacientes heavily pre-treated PSMA-positive sin opciones standard.
+#
+#   Coexistencia: gate 78 sigue gate 71 (PSMA progression) + post-Lu-177.
+# ──────────────────────────────────────────────────────────────────────
+
+code: actinium_225_psma_investigational
+title: "Actinium-225-PSMA investigational → mCRPC heavily pre-treated PSMA+ post-Lu-177"
+faubot_added_in: "2026-04-26 LXXIX"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: progression post-Lu-177 + PSMA-positive
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: lutetium_177_psma_progression_documented
+          alias_fields:
+            - progresion_post_lu177
+            - lu177_psma_failure
+        - type: truthy_flag
+          field: psma_pet_positive_current
+          alias_fields:
+            - psma_positivo_actual
+            - psma_uptake_documented
+    # Path B: clinical flag explicit Ac-225 candidate
+    - type: truthy_flag
+      field: actinium_225_psma_candidate
+      alias_fields:
+        - ac225_psma_candidate
+        - candidato_actinio_225
+    # Path C: trial enrollment Ac-225 active
+    - type: truthy_flag
+      field: actinium_225_trial_enrollment_active
+      alias_fields:
+        - trial_ac225_activo
+
+regimen_codes: []  # Gate informativo — investigational
+
+keywords:
+  - Actinium-225
+  - Ac-225
+  - Ac-225-PSMA
+  - Actinium PSMA
+  - alpha radioligand
+  - PSMA-targeted alpha therapy
+  - TAT
+
+message: |
+  📊 INFORMATIVO: Paciente candidato investigational a **Actinium-225-PSMA**
+  (TAT — Targeted Alpha Therapy) — mCRPC heavily pre-treated PSMA-positive.
+
+  🔬 Ac-225-PSMA CARACTERÍSTICAS:
+
+  **Mecanismo alpha cascade**:
+  - Ac-225 (T½ 9.9 días) → Fr-221 → At-217 → Bi-213 → Po-213 → Pb-209
+  - 4 alpha decays por átomo → daño DNA double-strand breaks
+  - LET (Linear Energy Transfer): 80-100 keV/µm (vs 0.2-2 beta)
+  - Penetración: 50-100 µm (perfect para micrometástasis + bulky disease)
+
+  **Comparación radioligands PSMA**:
+  | Agent | Type | T½ | Penetración | LET | Status FDA |
+  |-------|------|-----|-------------|-----|-----------|
+  | Lu-177-PSMA-617 | β | 6.7d | 600-2000µm | 0.2 | Approved 2022 |
+  | **Ac-225-PSMA-617** | α | 9.9d | 50-100µm | 80-100 | Investigational |
+  | Bi-213-PSMA | α | 46m | 50-100µm | 80-100 | Phase I |
+  | Tb-149-PSMA | α | 4.1h | 50-100µm | 80-100 | Pre-clinical |
+
+  🎯 EFICACIA Ac-225-PSMA (datos disponibles):
+
+  **Kratochwil JNM 2016** (case series 14 pts):
+  - Heavily pre-treated post-Lu-177
+  - PSA50 response 67%
+  - Imaging response (PSMA-PET): 71%
+  - Toxicidad: xerostomía severa 86% (limitante dosis)
+
+  **Sathekge JNM 2024** (multi-center 73 pts):
+  - mCRPC heavily pre-treated
+  - PSA50 response 60%
+  - Mediana PFS 7-9 meses
+  - Mediana OS 13-18 meses
+
+  **VIOLET trial** (ANZUP, fase II en curso):
+  - Randomized Ac-225-PSMA vs continuación SOC
+  - Endpoint primary: rPFS
+  - Resultados esperados 2025-2026
+
+  🎯 INDICACIÓN ACTUAL Ac-225-PSMA:
+
+  **Pacientes elegibles** (investigational/trial only):
+  - mCRPC heavily pre-treated:
+    - Post-ARPI (≥1 línea)
+    - Post-docetaxel/cabazitaxel
+    - **Post-Lu-177-PSMA con progression** (subset crítico)
+  - PSMA-PET positive (uptake significativo)
+  - Función renal preservada (CrCl >50 mL/min)
+  - ANC ≥1500, plaquetas ≥100K, Hb ≥9 g/dL
+  - ECOG 0-2
+  - Esperanza vida ≥3 meses
+
+  **NO candidatos**:
+  - Severe xerostomía pre-existente (Ac-225 empeora)
+  - Função renal severely impaired
+  - Pacientes sin trial enrollment opción
+
+  🎯 DOSIS + ADMINISTRACIÓN:
+  - **100 kBq/kg IV** (range 50-200 kBq/kg en estudios)
+  - Cada 8 semanas (vs 6 sem Lu-177)
+  - Hospitalización inpatient required (high LET alpha)
+  - Aislamiento radiation precautions 3-7 días
+  - Premeds: amifostine (xerostomía mitigation), ondansetron, dexametasona
+  - Cumulative dose: 4-6 ciclos típicamente
+
+  ⚠️ TOXICIDAD CRÍTICA:
+
+  **Xerostomía severa** (limitante dosis):
+  - 60-90% pacientes (G2-G3)
+  - Mecanismo: alpha penetration salivary glands (PSMA expression)
+  - Mitigación: amifostine pre-Rx, salivary substitutes, pilocarpine
+  - Considerar parotid sparing techniques (cooling, ice chips)
+
+  **Otros**:
+  - Myelosuppression (similar Lu-177)
+  - Náusea/vómito severo
+  - Fatigue, anemia
+  - Renal impairment (raro)
+  - MDS/AML risk long-term (no datos suficientes)
+
+  🎯 CONDUCTA CLÍNICA:
+
+  **1. Confirmar elegibilidad investigational**:
+  - Trial enrollment priority (no FDA-approved aún)
+  - Centros expertise Ac-225 (limited worldwide)
+  - Insurance pre-authorization (costo $30-50K USD/dosis)
+
+  **2. PSMA-PET reciente** (gate 71 trigger):
+  - Confirmar PSMA uptake significativo
+  - SUVmax ≥10 lesiones key
+  - Quantify total tumor PSMA volume
+
+  **3. Multidisciplinaria**:
+  - Medical oncology + nuclear medicine specialist
+  - Radiation safety officer (LET alpha precautions)
+  - Salivary gland specialist (pre-emptive xerostomía mgmt)
+  - Hematology (myelosuppression mgmt)
+
+  **4. Alternativas si no candidato**:
+  - Lu-177-PSMA si no usado (gate 13/14 si bone-only Ra-223)
+  - Cabazitaxel si chemo-naive (gates 19/20)
+  - Trial enrollment otros agents
+  - Best supportive care + palliative
+
+  🔬 EVIDENCIA:
+  - **Kratochwil JNM 2016;57:1941**: Ac-225-PSMA case series first
+  - **Sathekge JNM 2024**: multi-center cohort eficacia + safety
+  - **Sathekge Lancet Oncol 2024**: review TAT prostate cancer
+  - **VIOLET trial NCT05477576**: randomized fase II
+  - **NCCN Prostate v5.2026 PROS-O**: Ac-225 mention investigational
+  - **EAU 2026 §10.3**: alpha radioligand future therapeutics
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `lutetium_177_psma_progression_documented`: flag post-Lu-177 progression
+  - `psma_pet_positive_current`: flag PSMA uptake actual
+  - `actinium_225_psma_candidate`: flag candidate evaluation
+  - `actinium_225_trial_enrollment_active`: flag trial activo
+  - `actinium_225_dose_planned_kbq_kg`: 100 default
+  - `actinium_225_administration_date`: fecha planeada
+  - `actinium_225_prior_administrations_count`: ciclos previos
+
+evidence_tag: ac225_psma_kratochwil_2016_sathekge_2024_violet_trial_investigational
+trial_refs:
+  - "Kratochwil JNM 2016;57:1941 (Ac-225-PSMA case series)"
+  - "Sathekge JNM 2024 (multi-center cohort)"
+  - "Sathekge Lancet Oncol 2024 (TAT review)"
+  - "VIOLET trial NCT05477576 (randomized fase II)"
+  - "NCCN Prostate v5.2026 PROS-O"
+  - "EAU 2026 §10.3"

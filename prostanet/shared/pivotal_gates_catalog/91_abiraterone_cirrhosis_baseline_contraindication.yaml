@@ -1,0 +1,133 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 91: abiraterone_cirrhosis_baseline_contraindication
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.B) — Tier 2 Contraindication Hard-Blocks.
+#
+# Razón clínica:
+#   Abiraterona es contraindicada en pacientes con disfunción hepática
+#   moderada-severa (Child-Pugh B/C) por:
+#
+#   1. Riesgo hepatotoxicidad cumulativa (gate 21 cubre in-trial)
+#   2. Acumulación drug levels (CYP3A4 metabolism dependent)
+#   3. Riesgo descompensación liver failure
+#
+#   Trials excluyeron pacientes Child-Pugh B/C explícitamente:
+#   - **LATITUDE (Fizazi NEJM 2017;377:352)**: bilirrubin ≤1.5×ULN,
+#     ALT/AST ≤2.5×ULN. Excluyó cirrhosis decompensada.
+#   - **COU-AA-301 (de Bono NEJM 2011;364:1995)**: same exclusion.
+#   - **COU-AA-302 (Ryan NEJM 2013;368:138)**: same.
+#
+#   FDA Zytiga label sección 8.7: "Use with caution in moderate hepatic
+#   impairment (Child-Pugh B). Avoid in severe hepatic impairment
+#   (Child-Pugh C)."
+#
+#   Estudios farmacocinéticos: AUC abiraterona ↑ 4-fold en Child-Pugh B
+#   vs healthy → 50% dose reduction insuficiente, no recomendado.
+#
+#   Override: si Child-Pugh A documentado + hepatology consult activo +
+#   monitoreo bilirrubina/ALT cada 2 sem aceptable.
+# ──────────────────────────────────────────────────────────────────────
+
+code: abiraterone_cirrhosis_baseline_contraindication
+title: "Abiraterona × cirrhosis Child-Pugh B/C → contraindicación absoluta baseline"
+faubot_added_in: "2026-04-30 LXCVI.B"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: Child-Pugh score ≥7 (B o C)
+    - type: numeric_threshold
+      field: child_pugh_score
+      alias_fields:
+        - childpugh_score
+        - child_pugh_class_score
+      threshold: 7
+    # Path B: cirrhosis documentada
+    - type: truthy_flag
+      field: cirrhosis_documented
+      alias_fields:
+        - liver_cirrhosis
+        - cirrosis_documentada
+        - hepatic_cirrhosis_present
+    # Path C: descompensación documentada
+    - type: truthy_flag
+      field: liver_decompensation_documented
+      alias_fields:
+        - hepatic_decompensation
+        - ascites_present
+        - hepatic_encephalopathy
+        - variceal_bleeding_history
+
+regimen_codes:
+  - REGIMEN_CODES_ABIRATERONE
+
+override:
+  type: truthy_flag
+  field: child_pugh_a_with_hepatology_monitoring_documented
+  alias_fields:
+    - child_pugh_a_confirmed_with_close_monitoring
+    - hepatology_consult_active
+
+keywords:
+  - cirrhosis
+  - cirrosis
+  - Child-Pugh
+  - hepatic impairment
+  - abiraterona
+  - LATITUDE
+  - COU-AA-301
+  - COU-AA-302
+
+message: |
+  🚨 HARD BLOCK: Cirrhosis Child-Pugh B/C contraindica abiraterona.
+
+  🎯 EVIDENCIA EXCLUSIÓN TRIALS:
+
+  | Trial | Criterio exclusión |
+  |-------|--------------------|
+  | LATITUDE | Bilirrubin >1.5×ULN, ALT/AST >2.5×ULN, Child-Pugh B/C |
+  | COU-AA-301 | Same |
+  | COU-AA-302 | Same |
+  | Zytiga FDA label | "Avoid in Child-Pugh C; caution in B" |
+
+  🎯 FARMACOCINÉTICA:
+  - Child-Pugh A: AUC abiraterona normal → dose standard 1000mg/d OK
+  - **Child-Pugh B**: AUC ↑ 4-fold → no dose reduction safe documented
+  - **Child-Pugh C**: contraindicado absolute, riesgo liver failure
+
+  🎯 ALTERNATIVAS POR ESTADO:
+
+  **mCSPC (LATITUDE setting alternativo)**:
+  - Enzalutamida (label permite Child-Pugh A-B)
+  - Apalutamida (similar profile)
+  - ADT + docetaxel si fitness aceptable
+  - Darolutamida (lower hepatic burden, ARASENS data)
+
+  **mCRPC pre-chemo (COU-AA-302 alternativo)**:
+  - Enzalutamida
+  - Sipuleucel-T (immunotherapy)
+  - Radium-223 si bone-only mets
+
+  **mCRPC post-chemo (COU-AA-301 alternativo)**:
+  - Enzalutamida (AFFIRM data)
+  - Cabazitaxel (TROPIC, if chemo-fit)
+  - PARP inhibitor si HRR+ (PROfound)
+  - Lu-177-PSMA si PSMA+ + post-doce
+
+  ⚠️ OVERRIDE: documentar `child_pugh_a_with_hepatology_monitoring_documented`
+  + bilirrubina/ALT cada 2 sem aceptable, requiere hepatology consult activo.
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `child_pugh_score`: int 5-15
+  - `cirrhosis_documented`: bool
+  - `liver_decompensation_documented`: bool
+
+evidence_tag: abiraterone_cirrhosis_latitude_cou301_cou302_zytiga_fda_label
+trial_refs:
+  - "LATITUDE (Fizazi NEJM 2017;377:352)"
+  - "COU-AA-301 (de Bono NEJM 2011;364:1995)"
+  - "COU-AA-302 (Ryan NEJM 2013;368:138)"
+  - "Zytiga FDA label §8.7 (2024)"
+  - "Child-Pugh classification (Pugh Br J Surg 1973)"

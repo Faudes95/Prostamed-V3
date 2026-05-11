@@ -1,0 +1,185 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  <defs>
+    <!-- Gradientes principales del lóbulo izquierdo -->
+    <radialGradient id="lobe_l_main" cx="38%" cy="38%" r="55%" fx="32%" fy="30%">
+      <stop offset="0%" stop-color="#5ad4f8"/>
+      <stop offset="18%" stop-color="#38b8e8"/>
+      <stop offset="40%" stop-color="#1a8fd4"/>
+      <stop offset="65%" stop-color="#0d64ad"/>
+      <stop offset="85%" stop-color="#073d78"/>
+      <stop offset="100%" stop-color="#041e45"/>
+    </radialGradient>
+    <!-- Gradientes principales del lóbulo derecho -->
+    <radialGradient id="lobe_r_main" cx="62%" cy="38%" r="55%" fx="68%" fy="30%">
+      <stop offset="0%" stop-color="#5ad4f8"/>
+      <stop offset="18%" stop-color="#38b8e8"/>
+      <stop offset="40%" stop-color="#1a8fd4"/>
+      <stop offset="65%" stop-color="#0d64ad"/>
+      <stop offset="85%" stop-color="#073d78"/>
+      <stop offset="100%" stop-color="#041e45"/>
+    </radialGradient>
+    <!-- Borde luminoso cian -->
+    <radialGradient id="rim_glow" cx="50%" cy="50%" r="50%">
+      <stop offset="70%" stop-color="rgba(6,182,212,0)"/>
+      <stop offset="90%" stop-color="rgba(6,182,212,0.3)"/>
+      <stop offset="100%" stop-color="rgba(6,182,212,0.5)"/>
+    </radialGradient>
+    <!-- Brillo especular intenso lóbulo izquierdo -->
+    <radialGradient id="spec_l" cx="35%" cy="28%" r="30%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.55)"/>
+      <stop offset="40%" stop-color="rgba(180,230,255,0.2)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+    <!-- Brillo especular intenso lóbulo derecho -->
+    <radialGradient id="spec_r" cx="65%" cy="28%" r="30%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.5)"/>
+      <stop offset="40%" stop-color="rgba(180,230,255,0.18)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+    <!-- Sombra base -->
+    <radialGradient id="base_shadow" cx="50%" cy="90%" r="50%">
+      <stop offset="0%" stop-color="rgba(4,30,69,0.6)"/>
+      <stop offset="100%" stop-color="rgba(4,30,69,0)"/>
+    </radialGradient>
+    <!-- Cruz roja gradiente 3D -->
+    <linearGradient id="cross_face" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f04040"/>
+      <stop offset="30%" stop-color="#dd2828"/>
+      <stop offset="70%" stop-color="#c41c1c"/>
+      <stop offset="100%" stop-color="#991515"/>
+    </linearGradient>
+    <linearGradient id="cross_side" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a81818"/>
+      <stop offset="100%" stop-color="#7a1010"/>
+    </linearGradient>
+    <linearGradient id="cross_shine" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.45)"/>
+      <stop offset="50%" stop-color="rgba(255,255,255,0.1)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </linearGradient>
+    <!-- Venas cian -->
+    <linearGradient id="vein_c" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="rgba(56,184,232,0.6)"/>
+      <stop offset="100%" stop-color="rgba(56,184,232,0.05)"/>
+    </linearGradient>
+    <!-- Filtros -->
+    <filter id="glow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <filter id="shadow_d" x="-15%" y="-10%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+    <filter id="cross_shd" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="1" dy="3" stdDeviation="4" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+    <filter id="inner_glow" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3" result="blur"/>
+      <feFlood flood-color="#06b6d4" flood-opacity="0.15"/>
+      <feComposite in2="blur" operator="in"/>
+      <feComposite in="SourceGraphic"/>
+    </filter>
+  </defs>
+
+  <!-- Sombra de base -->
+  <ellipse cx="120" cy="210" rx="65" ry="12" fill="url(#base_shadow)"/>
+
+  <!-- ===== LÓBULO IZQUIERDO ===== -->
+  <path d="M 108 90
+           C 95 78, 62 72, 42 88
+           C 22 104, 18 138, 28 162
+           C 38 186, 62 200, 82 198
+           C 98 196, 108 186, 112 172
+           C 116 158, 114 130, 112 112
+           C 110 98, 108 92, 108 90 Z"
+        fill="url(#lobe_l_main)" filter="url(#shadow_d)"/>
+
+  <!-- Contorno cian lóbulo izquierdo -->
+  <path d="M 108 90
+           C 95 78, 62 72, 42 88
+           C 22 104, 18 138, 28 162
+           C 38 186, 62 200, 82 198
+           C 98 196, 108 186, 112 172"
+        stroke="#06d6e8" stroke-width="1" fill="none" opacity="0.35"/>
+
+  <!-- ===== LÓBULO DERECHO ===== -->
+  <path d="M 132 90
+           C 145 78, 178 72, 198 88
+           C 218 104, 222 138, 212 162
+           C 202 186, 178 200, 158 198
+           C 142 196, 132 186, 128 172
+           C 124 158, 126 130, 128 112
+           C 130 98, 132 92, 132 90 Z"
+        fill="url(#lobe_r_main)" filter="url(#shadow_d)"/>
+
+  <!-- Contorno cian lóbulo derecho -->
+  <path d="M 132 90
+           C 145 78, 178 72, 198 88
+           C 218 104, 222 138, 212 162
+           C 202 186, 178 200, 158 198
+           C 142 196, 132 186, 128 172"
+        stroke="#06d6e8" stroke-width="1" fill="none" opacity="0.35"/>
+
+  <!-- Zona de unión central (uretra) -->
+  <ellipse cx="120" cy="168" rx="16" ry="30" fill="#0a4a8e" opacity="0.7"/>
+  <ellipse cx="120" cy="168" rx="12" ry="24" fill="#0d5fa0" opacity="0.5"/>
+
+  <!-- Surco central -->
+  <path d="M 120 82 C 118 110, 117 140, 120 198"
+        stroke="#031d3f" stroke-width="3" fill="none" opacity="0.5"/>
+  <path d="M 120 82 C 119 110, 118 140, 120 198"
+        stroke="#06b6d4" stroke-width="0.8" fill="none" opacity="0.15"/>
+
+  <!-- Venas lóbulo izquierdo -->
+  <path d="M 65 100 C 60 115, 55 135, 58 158" stroke="url(#vein_c)" stroke-width="1.4" fill="none" opacity="0.5"/>
+  <path d="M 78 92 C 72 108, 65 128, 70 152" stroke="url(#vein_c)" stroke-width="1.0" fill="none" opacity="0.4"/>
+  <path d="M 48 115 C 45 130, 44 148, 52 168" stroke="url(#vein_c)" stroke-width="0.8" fill="none" opacity="0.35"/>
+  <path d="M 90 88 C 84 105, 78 125, 82 148" stroke="url(#vein_c)" stroke-width="0.7" fill="none" opacity="0.3"/>
+  <path d="M 55 95 Q 50 120, 55 140" stroke="url(#vein_c)" stroke-width="0.6" fill="none" opacity="0.25"/>
+
+  <!-- Venas lóbulo derecho -->
+  <path d="M 175 100 C 180 115, 185 135, 182 158" stroke="url(#vein_c)" stroke-width="1.4" fill="none" opacity="0.5"/>
+  <path d="M 162 92 C 168 108, 175 128, 170 152" stroke="url(#vein_c)" stroke-width="1.0" fill="none" opacity="0.4"/>
+  <path d="M 192 115 C 195 130, 196 148, 188 168" stroke="url(#vein_c)" stroke-width="0.8" fill="none" opacity="0.35"/>
+  <path d="M 150 88 C 156 105, 162 125, 158 148" stroke="url(#vein_c)" stroke-width="0.7" fill="none" opacity="0.3"/>
+  <path d="M 185 95 Q 190 120, 185 140" stroke="url(#vein_c)" stroke-width="0.6" fill="none" opacity="0.25"/>
+
+  <!-- Brillo especular lóbulo izquierdo (reflejo 3D) -->
+  <path d="M 68 88 C 48 95, 35 112, 38 135 C 42 118, 52 100, 70 90 Z"
+        fill="url(#spec_l)" opacity="0.7"/>
+  <ellipse cx="58" cy="105" rx="14" ry="10" fill="white" opacity="0.12" transform="rotate(-15,58,105)"/>
+
+  <!-- Brillo especular lóbulo derecho (reflejo 3D) -->
+  <path d="M 172 88 C 192 95, 205 112, 202 135 C 198 118, 188 100, 170 90 Z"
+        fill="url(#spec_r)" opacity="0.65"/>
+  <ellipse cx="182" cy="105" rx="14" ry="10" fill="white" opacity="0.1" transform="rotate(15,182,105)"/>
+
+  <!-- Segundo reflejo más suave en cada lóbulo -->
+  <ellipse cx="72" cy="150" rx="8" ry="12" fill="white" opacity="0.04" transform="rotate(-10,72,150)"/>
+  <ellipse cx="168" cy="150" rx="8" ry="12" fill="white" opacity="0.04" transform="rotate(10,168,150)"/>
+
+  <!-- Borde luminoso exterior -->
+  <path d="M 108 90 C 95 78, 62 72, 42 88 C 22 104, 18 138, 28 162 C 38 186, 62 200, 82 198 C 98 196, 108 186, 112 172 C 116 158, 114 130, 112 112"
+        stroke="url(#rim_glow)" stroke-width="2" fill="none" opacity="0.3" filter="url(#glow)"/>
+  <path d="M 132 90 C 145 78, 178 72, 198 88 C 218 104, 222 138, 212 162 C 202 186, 178 200, 158 198 C 142 196, 132 186, 128 172 C 124 158, 126 130, 128 112"
+        stroke="url(#rim_glow)" stroke-width="2" fill="none" opacity="0.3" filter="url(#glow)"/>
+
+  <!-- ===== CRUZ ROJA MÉDICA 3D ===== -->
+  <g filter="url(#cross_shd)" transform="translate(120, 60)">
+    <!-- Cara lateral (efecto 3D) -->
+    <rect x="-10" y="-32" width="20" height="46" rx="3" fill="url(#cross_side)" transform="translate(2,2)"/>
+    <rect x="-23" y="-19" width="46" height="20" rx="3" fill="url(#cross_side)" transform="translate(2,2)"/>
+
+    <!-- Cara frontal -->
+    <rect x="-10" y="-32" width="20" height="46" rx="3.5" fill="url(#cross_face)"/>
+    <rect x="-23" y="-19" width="46" height="20" rx="3.5" fill="url(#cross_face)"/>
+
+    <!-- Brillo de la cruz -->
+    <rect x="-8" y="-30" width="8" height="18" rx="2" fill="url(#cross_shine)" opacity="0.6"/>
+    <rect x="-21" y="-17" width="18" height="8" rx="2" fill="url(#cross_shine)" opacity="0.4"/>
+
+    <!-- Borde luminoso de la cruz -->
+    <rect x="-10" y="-32" width="20" height="46" rx="3.5" fill="none" stroke="rgba(255,120,120,0.3)" stroke-width="0.5"/>
+    <rect x="-23" y="-19" width="46" height="20" rx="3.5" fill="none" stroke="rgba(255,120,120,0.3)" stroke-width="0.5"/>
+  </g>
+</svg>

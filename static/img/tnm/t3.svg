@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <radialGradient id="t3_ll" cx="38%" cy="40%" r="52%">
+      <stop offset="0%" stop-color="#4cc8f0"/><stop offset="45%" stop-color="#1a8fd4"/>
+      <stop offset="80%" stop-color="#0d5fa0"/><stop offset="100%" stop-color="#062d55"/>
+    </radialGradient>
+    <radialGradient id="t3_lr" cx="62%" cy="40%" r="52%">
+      <stop offset="0%" stop-color="#4cc8f0"/><stop offset="45%" stop-color="#1a8fd4"/>
+      <stop offset="80%" stop-color="#0d5fa0"/><stop offset="100%" stop-color="#062d55"/>
+    </radialGradient>
+    <radialGradient id="t3_tumor" cx="40%" cy="38%" r="55%">
+      <stop offset="0%" stop-color="#ff6b6b"/><stop offset="50%" stop-color="#e53535"/><stop offset="100%" stop-color="#b01c1c"/>
+    </radialGradient>
+    <filter id="t3_sh"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.3"/></filter>
+  </defs>
+  <line x1="20" y1="170" x2="180" y2="170" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+  <!-- Cápsula prostática (contorno punteado) -->
+  <path d="M 92 66 C 78 58, 44 54, 26 68 C 8 82, 6 114, 16 136 C 26 158, 48 168, 68 166 C 84 164, 94 156, 98 144 C 102 132, 100 108, 98 88 Z"
+        fill="none" stroke="#cc2222" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.6"/>
+  <!-- Lóbulo izquierdo -->
+  <path d="M 92 70 C 78 62, 48 58, 32 72 C 16 86, 14 116, 22 136 C 30 156, 50 166, 66 164 C 80 162, 90 154, 94 142 C 98 130, 96 106, 94 90 Z"
+        fill="url(#t3_ll)" filter="url(#t3_sh)"/>
+  <!-- Lóbulo derecho -->
+  <path d="M 108 70 C 122 62, 152 58, 168 72 C 184 86, 186 116, 178 136 C 170 156, 150 166, 134 164 C 120 162, 110 154, 106 142 C 102 130, 104 106, 106 90 Z"
+        fill="url(#t3_lr)" filter="url(#t3_sh)"/>
+  <!-- Surco central -->
+  <path d="M 100 65 C 99 90, 98 120, 100 168" stroke="#041e45" stroke-width="2" fill="none" opacity="0.4"/>
+  <!-- TUMOR que se extiende fuera de la cápsula -->
+  <path d="M 45 85 C 30 90, 18 105, 12 120 C 8 135, 15 150, 30 155 C 42 152, 55 142, 60 128 C 68 110, 62 92, 55 85 Z"
+        fill="url(#t3_tumor)" opacity="0.82"/>
+  <!-- Extensión extracapsular (protuberancias fuera) -->
+  <ellipse cx="14" cy="118" rx="12" ry="15" fill="url(#t3_tumor)" opacity="0.65"/>
+  <ellipse cx="22" cy="148" rx="8" ry="10" fill="url(#t3_tumor)" opacity="0.5"/>
+  <!-- Brillos -->
+  <ellipse cx="145" cy="90" rx="12" ry="8" fill="white" opacity="0.10" transform="rotate(10,145,90)"/>
+  <!-- Flecha indicando extensión -->
+  <line x1="20" y1="100" x2="8" y2="108" stroke="#cc2222" stroke-width="1.5" opacity="0.7"/>
+  <polygon points="5,110 12,108 8,102" fill="#cc2222" opacity="0.7"/>
+  <!-- Etiqueta cápsula -->
+  <text x="160" y="55" text-anchor="middle" fill="#cc2222" font-family="Arial,sans-serif" font-size="9" font-style="italic">Cápsula</text>
+  <text x="160" y="65" text-anchor="middle" fill="#cc2222" font-family="Arial,sans-serif" font-size="9" font-style="italic">Prostática</text>
+  <text x="100" y="192" text-anchor="middle" fill="#e53535" font-family="Arial,sans-serif" font-size="11" font-weight="bold">Extensión fuera de la cápsula</text>
+</svg>

@@ -1,0 +1,143 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 95: sipuleucel_t_immunosuppression_baseline
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.B) — Tier 2 Contraindication Hard-Blocks.
+#
+# Razón clínica:
+#   Sipuleucel-T (Provenge) es immunoterapia autóloga que requiere
+#   sistema inmune intacto para procesamiento + presentación antigénica:
+#
+#   - **IMPACT (Kantoff NEJM 2010;363:411)**: Sipuleucel-T en mCRPC
+#     - Inclusión: pacientes asintomáticos/mínimo síntoma, ECOG 0-1
+#     - **Exclusión: immunocompromised (HIV, organ transplant,
+#       chronic corticosteroids ≥10 mg/d prednisona equivalent)**
+#     - Resultado en eligibles: OS +4.1 meses (HR 0.78)
+#
+#   Mecanismo: APC autólogos (CD54+) cargados ex vivo con PAP-GM-CSF.
+#   Reinfusión activa T cells specific PAP. **Sin sistema inmune
+#   funcional (CD4 count, neutrophils, B cells), proceso no funciona.**
+#
+#   FDA Provenge label sección 5.2: "Patients with active autoimmune
+#   disease, chronic immunosuppressive therapy, or active infection
+#   should not receive Provenge."
+#
+#   Contraindicaciones absolutas:
+#   - HIV+ (independiente de viral load)
+#   - CD4 count <200 cells/μL
+#   - Active infection (bacterial, fungal, viral)
+#   - Solid organ transplant + immunosuppressive therapy
+#   - Chronic corticosteroids ≥10 mg/d prednisona equivalent
+#   - Active autoimmune disease (rheumatoid, lupus, MS active)
+#   - Hematologic malignancy concurrent
+#
+#   Override: si immunosuppression transient documentada (e.g.,
+#   corticosteroid taper completed, infection resolved >30 días) y
+#   ID consult clears.
+# ──────────────────────────────────────────────────────────────────────
+
+code: sipuleucel_t_immunosuppression_baseline
+title: "Sipuleucel-T × immunosuppression baseline → contraindicación absoluta"
+faubot_added_in: "2026-04-30 LXCVI.B"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: immunosuppression activa documentada
+    - type: truthy_flag
+      field: immunosuppression_active
+      alias_fields:
+        - active_immunosuppression
+        - chronic_immunosuppression
+        - inmunosupresion_activa
+    # Path B: HIV positivo
+    - type: truthy_flag
+      field: hiv_positive
+      alias_fields:
+        - vih_positivo
+        - hiv_seropositive
+    # Path C: CD4 count low
+    - type: truthy_flag
+      field: cd4_count_lt_200
+      alias_fields:
+        - cd4_below_200
+        - cd4_count_low_severe
+
+regimen_codes:
+  - REGIMEN_CODES_SIPULEUCEL_T
+
+override:
+  type: truthy_flag
+  field: immunosuppression_resolved_with_id_clearance
+  alias_fields:
+    - immune_function_recovered_documented
+    - infectious_disease_consult_cleared
+
+keywords:
+  - sipuleucel-T
+  - Provenge
+  - immunotherapy
+  - immunosuppression
+  - HIV
+  - CD4
+  - IMPACT
+
+message: |
+  🚨 HARD BLOCK: Sipuleucel-T contraindicado en immunosuppression
+  baseline (autólogo immunotherapy requires intact immunity).
+
+  🎯 EVIDENCIA EXCLUSIÓN IMPACT:
+
+  | Criterio exclusión | Razón |
+  |---------------------|-------|
+  | HIV+ | Compromiso función T cells |
+  | CD4 <200 cells/μL | Insuficiente para response |
+  | Active infection | Compromiso processing |
+  | Organ transplant + immunosuppressive | Anti-rejection therapy bloquea |
+  | Chronic corticosteroids ≥10 mg/d prednisona | Suprime APC function |
+  | Active autoimmune disease | Cross-reactivity riesgo |
+
+  🎯 MECANISMO REQUIERE SISTEMA INMUNE INTACTO:
+
+  1. **Leukapheresis** → recoger APC del paciente
+  2. **Ex vivo activación** con PAP-GM-CSF antigen
+  3. **Reinfusión IV** → APC presentan antigeno a T cells
+  4. **T cell response** específica anti-PAP → ataca PCa cells
+
+  Si sistema inmune comprometido → procesos 1, 3, 4 fallan.
+
+  🎯 ALTERNATIVAS PARA mCRPC IMMUNOCOMPROMISED:
+
+  **Asintomático/mínimo síntomas (IMPACT setting alternativo)**:
+  - Enzalutamida monoterapia (PREVAIL incluyó algunos immunosuppressed)
+  - Abiraterona + prednisona (note: prednisona puede ↑ riesgo infección)
+  - Considerar Watch & Wait con close monitoring
+
+  **Si HIV+ controlado**:
+  - Standard ARPI (enzalutamida, apalutamida) seguro
+  - ART continuation crítica
+  - Close monitoring CD4 + viral load
+
+  **Si transplant + immunosuppression**:
+  - Coordination con transplant team
+  - Switch a tacrolimus/mTOR inhibitor (less PCa risk)
+  - ARPI de elección (no impacto inmune mayor)
+
+  ⚠️ OVERRIDE: documentar `immunosuppression_resolved_with_id_clearance`:
+  - Corticosteroid taper >30 días completed
+  - Active infection resolved + cultures negative
+  - CD4 recovered >300 cells/μL si HIV
+  - Infectious disease consult clearance escrita
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `immunosuppression_active`: bool
+  - `hiv_positive`: bool
+  - `cd4_count_lt_200`: bool
+
+evidence_tag: sipuleucel_immunosuppression_impact_provenge_fda_label_2010_2024
+trial_refs:
+  - "IMPACT (Kantoff NEJM 2010;363:411)"
+  - "Provenge FDA label §5.2 (2024)"
+  - "ASCO Cancer Immunotherapy Guidelines 2023"
+  - "NCCN Prostate v5.2026 PROS-K"

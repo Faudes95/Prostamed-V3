@@ -1,0 +1,388 @@
+{% extends "layouts/base_clinical.html" %}
+{% from "components/clinical_ui.html" import section_header %}
+
+{# templates/audit_log_dashboard.html
+   FAUBOT 2026-04-25 (XLVI) — Tier 7 G10.
+
+   HTML dashboard que consume el endpoint backend /api/auth/audit-log
+   (introducido en Tier 7 G9, Faubot XLV).
+
+   Funcionalidad:
+   1. Filtros vía form: user_id, endpoint, status, from, to, limit
+   2. Tabla con timestamp, user, endpoint, method, path, status, reason, ip, backend
+   3. Paginación: Previous / Next + indicator "X-Y de TOTAL"
+   4. Loading state + empty state + error state visibles
+   5. CSP nonce honored (consistente con G2/G6/G7 nonces)
+   6. Accessibility: aria-busy, aria-live para anuncios de cambio de página
+
+   Cumple HIPAA §164.312(b) — audit trail review consultable via UI clínica.
+#}
+
+{% block head_extra %}
+<style>
+.audit-log-table tbody tr {
+    transition: background-color 0.15s ease;
+}
+.audit-log-table tbody tr:hover {
+    background-color: rgba(56, 189, 248, 0.05);
+}
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.status-authorized { background-color: rgba(16, 185, 129, 0.15); color: rgb(110, 231, 183); }
+.status-denied    { background-color: rgba(244, 63, 94, 0.15);   color: rgb(253, 164, 175); }
+.status-error     { background-color: rgba(245, 158, 11, 0.15);  color: rgb(252, 211, 77); }
+.status-other     { background-color: rgba(148, 163, 184, 0.15); color: rgb(203, 213, 225); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6"
+     id="pm-audit-log-dashboard"
+     data-api-url="/api/auth/audit-log"
+     data-csrf-token="{{ g.csrf_token or '' }}"
+     data-default-limit="50">
+
+    {# ── Header ────────────────────────────────────────────────────── #}
+    <section class="pn-surface">
+        {{ section_header(
+            "Audit Log — Compliance Dashboard",
+            "HIPAA §164.312(b)",
+            "Trail consultable de eventos de autenticación. Filtre por usuario, endpoint, status o rango de fechas. Cada fila representa un evento auditable persistido en clinical_audit_log."
+        ) }}
+    </section>
+
+    {# ── Filtros ───────────────────────────────────────────────────── #}
+    <section class="pn-surface">
+        <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-300 mb-4">Filtros</h3>
+        <form id="pm-audit-filters"
+              class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"
+              autocomplete="off">
+
+            <div>
+                <label for="filter-user-id" class="block text-xs font-medium text-slate-400 mb-1">
+                    User ID
+                </label>
+                <input type="number" id="filter-user-id" name="user_id"
+                       class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
+                       placeholder="ej. 42" min="1">
+            </div>
+
+            <div>
+                <label for="filter-endpoint" class="block text-xs font-medium text-slate-400 mb-1">
+                    Endpoint
+                </label>
+                <input type="text" id="filter-endpoint" name="endpoint" maxlength="100"
+                       class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
+                       placeholder="ej. login / refresh / touch">
+            </div>
+
+            <div>
+                <label for="filter-status" class="block text-xs font-medium text-slate-400 mb-1">
+                    Status
+                </label>
+                <select id="filter-status" name="status"
+                        class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none">
+                    <option value="">— Todos —</option>
+                    <option value="authorized">authorized</option>
+                    <option value="denied_invalid_credentials">denied_invalid_credentials</option>
+                    <option value="denied_no_session">denied_no_session</option>
+                    <option value="denied_session_idle_timeout">denied_session_idle_timeout</option>
+                    <option value="denied_session_absolute_timeout">denied_session_absolute_timeout</option>
+                    <option value="denied_invalid_scope">denied_invalid_scope</option>
+                    <option value="denied_no_refresh_token">denied_no_refresh_token</option>
+                    <option value="denied_refresh_failed">denied_refresh_failed</option>
+                </select>
+            </div>
+
+            <div>
+                <label for="filter-limit" class="block text-xs font-medium text-slate-400 mb-1">
+                    Limit (1-500)
+                </label>
+                <input type="number" id="filter-limit" name="limit" min="1" max="500" value="50"
+                       class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none">
+            </div>
+
+            <div>
+                <label for="filter-from" class="block text-xs font-medium text-slate-400 mb-1">
+                    Desde (ISO8601)
+                </label>
+                <input type="datetime-local" id="filter-from" name="from"
+                       class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none">
+            </div>
+
+            <div>
+                <label for="filter-to" class="block text-xs font-medium text-slate-400 mb-1">
+                    Hasta (ISO8601)
+                </label>
+                <input type="datetime-local" id="filter-to" name="to"
+                       class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none">
+            </div>
+
+            <div class="sm:col-span-2 lg:col-span-2 flex items-end gap-2">
+                <button type="submit"
+                        class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 shadow hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50">
+                    Aplicar filtros
+                </button>
+                <button type="button" id="pm-audit-clear"
+                        class="rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500/50">
+                    Limpiar
+                </button>
+            </div>
+        </form>
+    </section>
+
+    {# ── Status banner + pagination metadata ───────────────────────── #}
+    <section class="pn-surface" aria-live="polite" aria-atomic="true">
+        <div id="pm-audit-status" class="flex items-center justify-between gap-4 text-sm">
+            <div>
+                <span class="pm-audit-status-text text-slate-300">Cargando…</span>
+                <span class="pm-audit-status-meta text-xs text-slate-500 ml-2"></span>
+            </div>
+            <div class="pm-audit-pagination flex items-center gap-2">
+                <button type="button" id="pm-audit-prev" disabled
+                        class="rounded-md border border-slate-700 bg-slate-800 px-3 py-1 text-xs text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700">
+                    ← Anterior
+                </button>
+                <span class="pm-audit-page-indicator text-xs text-slate-400 font-mono">--</span>
+                <button type="button" id="pm-audit-next" disabled
+                        class="rounded-md border border-slate-700 bg-slate-800 px-3 py-1 text-xs text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700">
+                    Siguiente →
+                </button>
+            </div>
+        </div>
+    </section>
+
+    {# ── Tabla de results ──────────────────────────────────────────── #}
+    <section class="pn-surface overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="audit-log-table w-full text-left text-xs">
+                <thead class="border-b border-slate-700 bg-slate-900/40 text-[10px] uppercase tracking-wider text-slate-400">
+                    <tr>
+                        <th class="px-3 py-2">Timestamp</th>
+                        <th class="px-3 py-2">User</th>
+                        <th class="px-3 py-2">Endpoint</th>
+                        <th class="px-3 py-2">Method</th>
+                        <th class="px-3 py-2">Status</th>
+                        <th class="px-3 py-2">Path</th>
+                        <th class="px-3 py-2">Reason</th>
+                        <th class="px-3 py-2">IP</th>
+                        <th class="px-3 py-2">Backend</th>
+                    </tr>
+                </thead>
+                <tbody id="pm-audit-tbody" class="divide-y divide-slate-800">
+                    {# JS-populated. Initial state: empty placeholder. #}
+                    <tr class="pm-audit-empty-state">
+                        <td colspan="9" class="px-3 py-6 text-center text-slate-500">
+                            Cargando audit log…
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+{% endblock %}
+
+{% block page_scripts %}
+<script nonce="{{ g.csp_nonce or '' }}">
+(function () {
+    'use strict';
+    var dashboard = document.getElementById('pm-audit-log-dashboard');
+    if (!dashboard) { return; }
+
+    var apiUrl = dashboard.dataset.apiUrl;
+    var defaultLimit = parseInt(dashboard.dataset.defaultLimit, 10) || 50;
+
+    var form = document.getElementById('pm-audit-filters');
+    var clearBtn = document.getElementById('pm-audit-clear');
+    var prevBtn = document.getElementById('pm-audit-prev');
+    var nextBtn = document.getElementById('pm-audit-next');
+    var tbody = document.getElementById('pm-audit-tbody');
+    var statusText = document.querySelector('.pm-audit-status-text');
+    var statusMeta = document.querySelector('.pm-audit-status-meta');
+    var pageIndicator = document.querySelector('.pm-audit-page-indicator');
+
+    var currentOffset = 0;
+    var currentLimit = defaultLimit;
+    var currentTotal = 0;
+
+    function statusPillClass(status) {
+        var s = String(status || '').toLowerCase();
+        if (s === 'authorized') { return 'status-pill status-authorized'; }
+        if (s.indexOf('denied') === 0) { return 'status-pill status-denied'; }
+        if (s === 'error') { return 'status-pill status-error'; }
+        return 'status-pill status-other';
+    }
+
+    function escapeHtml(value) {
+        if (value === null || value === undefined) { return ''; }
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function formatTimestamp(iso) {
+        if (!iso) { return ''; }
+        try {
+            var dt = new Date(iso);
+            if (isNaN(dt.getTime())) { return iso; }
+            return dt.toISOString().replace('T', ' ').replace(/\.\d+Z$/, 'Z');
+        } catch (e) {
+            return iso;
+        }
+    }
+
+    function renderRows(entries) {
+        if (!entries || entries.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="px-3 py-6 text-center text-slate-500">Sin resultados para los filtros aplicados.</td></tr>';
+            return;
+        }
+        var html = entries.map(function (e) {
+            var userCell = e.user_id
+                ? (escapeHtml(e.username || '') + ' (#' + escapeHtml(e.user_id) + ')')
+                : '<span class="text-slate-500">anonymous</span>';
+            return (
+                '<tr>' +
+                '<td class="px-3 py-2 font-mono text-slate-300">' + escapeHtml(formatTimestamp(e.timestamp)) + '</td>' +
+                '<td class="px-3 py-2 text-slate-200">' + userCell + '</td>' +
+                '<td class="px-3 py-2 text-cyan-300">' + escapeHtml(e.endpoint) + '</td>' +
+                '<td class="px-3 py-2 text-slate-400">' + escapeHtml(e.method || '') + '</td>' +
+                '<td class="px-3 py-2"><span class="' + statusPillClass(e.status) + '">' + escapeHtml(e.status) + '</span></td>' +
+                '<td class="px-3 py-2 text-slate-400 font-mono text-[10px]">' + escapeHtml(e.path || '') + '</td>' +
+                '<td class="px-3 py-2 text-slate-500 text-[10px]">' + escapeHtml(e.reason || '') + '</td>' +
+                '<td class="px-3 py-2 text-slate-500 font-mono">' + escapeHtml(e.ip_address || '') + '</td>' +
+                '<td class="px-3 py-2 text-slate-500 text-[10px]">' + escapeHtml(e.backend || '') + '</td>' +
+                '</tr>'
+            );
+        }).join('');
+        tbody.innerHTML = html;
+    }
+
+    function updatePagination(total, offset, limit, hasMore) {
+        currentTotal = total;
+        currentOffset = offset;
+        currentLimit = limit;
+        var lo = total > 0 ? offset + 1 : 0;
+        var hi = Math.min(offset + limit, total);
+        pageIndicator.textContent = lo + '-' + hi + ' de ' + total;
+        prevBtn.disabled = offset <= 0;
+        nextBtn.disabled = !hasMore;
+    }
+
+    function buildQueryString() {
+        var fd = new FormData(form);
+        var parts = [];
+        ['user_id', 'endpoint', 'status', 'from', 'to', 'limit'].forEach(function (key) {
+            var val = (fd.get(key) || '').trim();
+            if (val) {
+                parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(val));
+            }
+        });
+        parts.push('offset=' + currentOffset);
+        return parts.join('&');
+    }
+
+    function setStatus(text, meta) {
+        statusText.textContent = text;
+        statusMeta.textContent = meta || '';
+    }
+
+    function fetchAuditLog(resetOffset) {
+        if (resetOffset) { currentOffset = 0; }
+        setStatus('Cargando…', '');
+        tbody.setAttribute('aria-busy', 'true');
+
+        var url = apiUrl + '?' + buildQueryString();
+        fetch(url, {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' },
+        })
+            .then(function (resp) {
+                if (resp.status === 401) {
+                    window.location.assign('/login?error=session_expired');
+                    return null;
+                }
+                if (resp.status === 403) {
+                    setStatus('Acceso denegado', 'Su rol no tiene scope audit:read.');
+                    tbody.innerHTML = '<tr><td colspan="9" class="px-3 py-6 text-center text-rose-400">403 — Acceso denegado por scope ABAC.</td></tr>';
+                    return null;
+                }
+                if (!resp.ok) { throw new Error('http_' + resp.status); }
+                return resp.json();
+            })
+            .then(function (data) {
+                tbody.removeAttribute('aria-busy');
+                if (!data) { return; }
+                if (!data.success) {
+                    setStatus('Error', data.error || 'respuesta no exitosa');
+                    return;
+                }
+                renderRows(data.entries || []);
+                updatePagination(
+                    parseInt(data.total, 10) || 0,
+                    parseInt(data.offset, 10) || 0,
+                    parseInt(data.limit, 10) || defaultLimit,
+                    Boolean(data.has_more)
+                );
+                var filterCount = Object.keys(data.filters_applied || {})
+                    .filter(function (k) {
+                        var v = data.filters_applied[k];
+                        return v !== null && v !== undefined && v !== '';
+                    }).length;
+                setStatus(
+                    data.entries.length + ' resultado(s) en página actual',
+                    filterCount + ' filtro(s) aplicado(s)'
+                );
+            })
+            .catch(function (err) {
+                tbody.removeAttribute('aria-busy');
+                setStatus('Error', String(err && err.message || err));
+                tbody.innerHTML = '<tr><td colspan="9" class="px-3 py-6 text-center text-rose-400">Error al consultar el audit log.</td></tr>';
+            });
+    }
+
+    // Event handlers
+    form.addEventListener('submit', function (evt) {
+        evt.preventDefault();
+        fetchAuditLog(true);  // reset offset
+    });
+
+    clearBtn.addEventListener('click', function () {
+        form.reset();
+        document.getElementById('filter-limit').value = defaultLimit;
+        fetchAuditLog(true);
+    });
+
+    prevBtn.addEventListener('click', function () {
+        if (currentOffset <= 0) { return; }
+        currentOffset = Math.max(0, currentOffset - currentLimit);
+        fetchAuditLog(false);
+    });
+
+    nextBtn.addEventListener('click', function () {
+        currentOffset = currentOffset + currentLimit;
+        fetchAuditLog(false);
+    });
+
+    // Initial load
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { fetchAuditLog(true); });
+    } else {
+        fetchAuditLog(true);
+    }
+})();
+</script>
+{% endblock %}

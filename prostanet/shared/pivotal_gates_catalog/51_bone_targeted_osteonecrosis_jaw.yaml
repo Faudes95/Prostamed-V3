@@ -1,0 +1,83 @@
+code: bone_targeted_osteonecrosis_jaw
+title: "Bone-targeted agents x osteonecrosis de mandibula (AAOMS/ASCO)"
+faubot_added_in: "2026-04-25 LXII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: osteonecrosis_jaw_documented
+      alias_fields:
+        - onj_documented
+        - mronj_documented
+        - osteonecrosis_mandibula_documentada
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: oral_exposed_bone_documented
+          alias_fields:
+            - hueso_expuesto_oral
+            - exposed_oral_bone_documented
+        - type: numeric_above
+          field: oral_exposed_bone_duration_weeks
+          alias_fields:
+            - duracion_exposicion_osea_semanas
+            - exposed_bone_duration_weeks
+          threshold: 8
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: oral_exposed_bone_or_fistula_documented
+          alias_fields:
+            - fistula_intraoral_extraoral_documented
+            - exposed_bone_or_oral_fistula
+        - type: truthy_flag
+          field: jaw_pain_or_infection_symptoms_documented
+          alias_fields:
+            - dolor_mandibular_documentado
+            - mandibular_infection_documented
+        - type: truthy_flag
+          field: no_prior_head_neck_radiation
+          alias_fields:
+            - sin_radiacion_cabeza_cuello_previa
+            - no_head_neck_rt_history
+    - type: truthy_flag
+      field: onj_stage_3_severe_documented
+      alias_fields:
+        - osteomielitis_mandibular_documentada
+        - mandibular_pathological_fracture_documented
+        - mandibular_fistula_extraoral_documented
+
+override:
+  type: truthy_flag
+  field: onj_resolved_for_bone_targeted
+  alias_fields:
+    - osteonecrosis_jaw_resolved
+    - mronj_resolved
+    - onj_aaoms_stage_0_documented
+
+regimen_codes:
+  - REGIMEN_CODES_BONE_TARGETED
+keywords:
+  - KEYWORDS_BONE_TARGETED
+
+message: |
+  AAOMS/ASCO: suspender o evitar agentes bone-targeted ante ONJ/MRONJ
+  documentada, hueso oral expuesto >8 semanas, fistula con dolor o
+  infeccion mandibular sin radiacion cabeza/cuello previa, o stage 3
+  severo. Requiere dental clearance, cirugia oral/maxilofacial y plan de
+  reintroduccion solo tras resolucion completa.
+
+evidence_tag: aaoms_2022_asco_bone_health_onj
+trial_refs:
+  - "AAOMS 2022 Position Paper"
+  - "ASCO Bone Health 2024"
+  - "Henry JCO 2011"
+  - "Fizazi Lancet 2011"
+  - "Xgeva label 5.5"
+  - "Zometa label 5.4"
+references:
+  - "AAOMS 2022 Medication-Related Osteonecrosis of the Jaw Position Paper."
+  - "ASCO Bone Health 2024."

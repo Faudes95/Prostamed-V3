@@ -1,0 +1,67 @@
+{# Faubot 2026-04-25 (LII) — Tier 7 G11: top_nav usa `with context` para
+   tener acceso a context_processor globals (`has_scope`, `g`, `request`),
+   necesarios para el link condicional `/audit-log` con scope ABAC. #}
+{% from "components/clinical_ui.html" import top_nav, page_header, tnm_panel with context %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_chrome.title }} | ProstaMed</title>
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    {% if page_chrome.requires_charts %}
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    {% endif %}
+    <script src="{{ url_for('static', filename='clinical_text.js') }}"></script>
+    <script src="{{ url_for('static', filename='clinical_selects.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    {# LXCI Fase 6 — Transition framework (fade-in + skeleton + tab + modal anims) #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2_transitions.css') }}">
+    {# LXCI Fase 6 — Hover prefetch para navegación instantánea perceived #}
+    <script src="{{ url_for('static', filename='js/pm2_prefetch.js') }}" defer></script>
+    {% block head_extra %}{% endblock %}
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 antialiased">
+    {# Faubot LXXIV #66C — Skip-to-content link (WCAG 2.4.1 Bypass Blocks).
+       Invisible visualmente hasta recibir focus por keyboard nav.
+       Permite saltar header + nav directamente al contenido principal. #}
+    <a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+    {# Faubot LXXX #67E — `page_chrome.uses_v2_shell` omite top_nav legacy +
+       footer; el bloque content provee su propio pm2-app-shell con sidebar v2.
+       Backward-compat: default es False → comportamiento legacy intacto. #}
+    {% if page_chrome.uses_v2_shell %}
+    {# v2 shell — content provee su propio pm2-app-shell embebido #}
+    {% block content %}{% endblock %}
+    {% else %}
+    <div class="flex min-h-screen flex-col">
+        {{ top_nav(page_chrome, ui_assets) }}
+        <main id="main-content" class="flex-1" tabindex="-1">
+            <div class="mx-auto w-full {{ page_chrome.content_width_class }} px-4 py-6 sm:px-6 lg:px-8">
+                {% if page_chrome.show_page_header %}
+                    {{ page_header(page_chrome) }}
+                {% endif %}
+                {{ self.content() }}
+            </div>
+        </main>
+        {% block footer %}
+        <footer class="pm-footer border-t border-slate-800 py-4 text-center text-xs text-slate-600">
+            <div class="pm-footer-inner mx-auto {{ page_chrome.content_width_class }} px-4 sm:px-6 lg:px-8">
+                <div class="pm-footer-rule"></div>
+                <p class="pm-footer-text">{{ page_chrome.footer_text }}</p>
+            </div>
+        </footer>
+        {% endblock %}
+    </div>
+    {% endif %}
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            window.clinicalPresentation?.normalizeDocument();
+            window.clinicalSelects?.enhance(document);
+        });
+    </script>
+    {# Tier 7 G6 (XXXVIII) — Session countdown badge + auto-refresh JS #}
+    {% include "_auth_session_indicator.html" %}
+    {% block page_scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,27 @@
+code: abiraterone_hepatotoxicity_grade3
+title: "Grade 3 hepatotoxicity before abiraterone"
+faubot_added_in: "2026-05-11 Clinical Memory recovery"
+severity: hard_block
+trigger:
+  type: any_of
+  triggers:
+    - type: numeric_threshold
+      field: hepatotoxicity_ctcae_grade
+      threshold: 3
+    - type: truthy_flag
+      field: hepatotoxicity_grade3_for_abiraterone
+override:
+  type: truthy_flag
+  field: hepatic_function_recovered_for_abiraterone
+regimen_codes:
+  - REGIMEN_CODES_ABIRATERONE
+keywords:
+  - abiraterone
+message: |
+  Grade 3 hepatotoxicity blocks abiraterone release until liver recovery,
+  competing etiology review and re-challenge rationale are documented.
+evidence_tag: abiraterone_label_hepatotoxicity
+trial_refs:
+  - LATITUDE
+  - COU-AA-301
+  - COU-AA-302

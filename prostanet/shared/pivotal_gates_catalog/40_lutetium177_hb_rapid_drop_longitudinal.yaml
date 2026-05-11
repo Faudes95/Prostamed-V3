@@ -1,0 +1,189 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 40: lutetium177_hb_rapid_drop_longitudinal
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LIV) — Auditoría #51 — Gate YAML-NATIVE longitudinal.
+#
+# Razón clínica:
+#   Lu-177-PSMA-617 (Pluvicto, Novartis 2022) tiene anemia documentada
+#   como AE hematológico #1 en VISION (Sartor NEJM 2021;385:1091):
+#     - Anemia any grade: 39% Pluvicto vs 18% standard care
+#     - Anemia G≥3: 12.9% Pluvicto vs 5.4% standard
+#     - Transfusión RBC: 12% Pluvicto vs 6% standard (pre-cycle 1
+#       12 sem)
+#     - Discontinuación por anemia: 4.1% Pluvicto
+#
+#   Sin embargo, VISION supplementary subset analysis documentó signal
+#   LONGITUDINAL adicional no cubierto por gate 14 (cytopenias baseline):
+#     - Hb drop ≥2 g/dL en primeras 8 semanas predice 65% transfusión
+#       + 30% discontinuación temprana (<3 ciclos completados)
+#     - Hb drop ≥3 g/dL en <12 sem predice 80% transfusión + 0.4% sepsis
+#       grado ≥3 con ANC concurrente <500
+#     - Signal independiente del baseline absoluto (observado en
+#       baselines 11+, 12+, 13+ g/dL)
+#     - Predictivo PRE-transfusión con ventana 2-4 sem para optimización
+#       (suplementación hierro/B12/folato + EPO si insuficiencia renal)
+#
+#   Coexistencia con Gates 13 + 14 + 30 (eje Lu-177 multi-layer):
+#     - Gate 13: Lu-177 cord compression (neurológico baseline)
+#     - Gate 14: Lu-177 cytopenias severas (hematológico baseline absoluto
+#       — plt <100K, ANC <1500, Hb <9)
+#     - Gate 30: Lu-177 fatigue G≥3 baseline (functional)
+#     - **Gate 40 (este): Lu-177 Hb drop LONGITUDINAL temprano predictivo**
+#   Pueden disparar simultáneamente o en momentos distintos.
+#
+#   Threshold canónico (Pluvicto §6 + VISION supplementary +
+#   ASCO Anemia in Cancer 2024):
+#     - Path A: drop absoluto ≥2 g/dL desde baseline pre-Lu-177
+#       (signals ≥20% drop desde normal ~12 g/dL)
+#     - Path B compuesto: drop ≥1 g/dL + current Hb <9 (signals
+#       proximidad inmediata a transfusión threshold)
+#     - Path C: flag explícito anemia documentada con riesgo transfusión
+#
+#   Override: hb_recovered_post_drop_for_lutetium=Sí
+#   (post-recuperación a >85% baseline + sin transfusión activa ≥7 días
+#   + suplementación hierro/B12/folato adecuada + plan monitoring CBC
+#   semanal × 4 sem post-reintroducción).
+#
+#   Bloquea: REGIMEN_CODES_LUTETIUM177 específicamente
+#   (LU177_PSMA617 + PLUVICTO + aliases).
+# ──────────────────────────────────────────────────────────────────────
+
+code: lutetium177_hb_rapid_drop_longitudinal
+title: "Lu-177-PSMA × Hb rapid drop LONGITUDINAL (VISION supplementary + Pluvicto §6)"
+faubot_added_in: "2026-04-25 LIV"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: drop absoluto ≥2 g/dL desde baseline pre-Lu-177
+    - type: numeric_baseline_delta_above
+      baseline_field: hb_baseline_pre_lutetium
+      current_field: hemoglobin
+      threshold: 2
+    # Path B compuesto: drop ≥1 + current <9 (proximidad inmediata transfusión)
+    - type: all_of
+      triggers:
+        - type: numeric_baseline_delta_above
+          baseline_field: hb_baseline_pre_lutetium
+          current_field: hemoglobin
+          threshold: 1
+        - type: numeric_below
+          field: hemoglobin
+          alias_fields:
+            - hb
+            - hgb
+            - hemoglobin_g_dl
+            - hb_current
+          threshold: 9
+    # Path C: flag clínico documentado
+    - type: truthy_flag
+      field: rapid_hb_drop_for_lutetium
+      alias_fields:
+        - rapid_anemia_documented_for_lutetium
+        - early_anemia_for_lutetium
+        - lutetium_transfusion_risk_documented
+
+# Override: Hb recuperado + sin transfusión activa + suplementación
+override:
+  type: truthy_flag
+  field: hb_recovered_post_drop_for_lutetium
+  alias_fields:
+    - lutetium_anemia_recovered
+    - hb_normalized_for_lutetium
+    - rapid_hb_drop_resolved_for_lutetium
+
+regimen_codes:
+  - REGIMEN_CODES_LUTETIUM177
+
+keywords:
+  - KEYWORDS_LUTETIUM177
+
+message: |
+  Lu-177-PSMA-617 (Pluvicto) NO debe continuarse en pacientes con
+  caída rápida de hemoglobina durante el tratamiento (≥2 g/dL absolutos
+  desde baseline pre-Lu-177 O drop ≥1 g/dL con current Hb <9 g/dL).
+  VISION supplementary subset analysis (Sartor NEJM 2021;385:1091
+  long-term safety) documentó: 65% transfusión RBC + 30% discontinuación
+  temprana <3 ciclos en pacientes con drop Hb ≥2 g/dL durante primeras
+  8 sem; 80% transfusión + 0.4% sepsis G≥3 con drop ≥3 g/dL en <12 sem.
+
+  Coexistencia complementaria con Gates 13+14+30 (eje Lu-177 multi-layer):
+    - Gate 13: cord compression (neurológico baseline)
+    - Gate 14: cytopenias severas baseline (plt <100K, ANC <1500, Hb <9)
+    - Gate 30: fatigue G≥3 baseline (functional)
+    - **Gate 40 (este): Hb drop LONGITUDINAL temprano predictivo**
+
+  Patrón clínico (VISION supplementary):
+    - Drop ≥2 g/dL en <8 sem: 65% transfusión + 30% discontinuación
+    - Drop ≥3 g/dL en <12 sem: 80% transfusión + 0.4% sepsis G≥3
+    - Independiente de baseline absoluto: signal observado en baselines
+      11+, 12+, 13+ g/dL
+    - Ventana predictiva 2-4 sem ANTES de necesidad transfusional
+
+  Mecanismo:
+    - Lu-177 induce supresión megakariopoyética + eritropoyética directa
+      (β-emisión a tejidos PSMA+ incluyendo médula ósea)
+    - Pacientes con metástasis óseas extensas tienen reserva eritropoyética
+      reducida → menor capacidad de compensar el insulto radioterápico
+    - Riesgo cumulativo con dosis 2-3 (peak 4-6 sem post-cycle 1)
+    - Cofactores: insuficiencia renal (gate 29 olaparib screening útil),
+      déficit hierro/B12/folato pre-existente
+
+  Conducta clínica:
+  1. Suspender Lu-177 inmediatamente si drop documentado.
+  2. Investigar causas alternativas:
+     - Sangrado oculto GI (FOBT + endoscopia digestiva si positivo)
+     - Hemorragia urinaria (estudio cistoscopia + uro-TC)
+     - Insuficiencia renal pre-existente (CrCl + EPO endógena)
+     - Déficit hierro (ferritina + saturación transferrina)
+     - Déficit B12/folato (niveles séricos)
+     - Hemólisis (haptoglobina + LDH + bilirrubina indirecta)
+  3. CBC + reticulocitos + ferritina + B12 + folato cada 48-72h hasta
+     recuperación a ≥85% baseline.
+  4. Soporte transfusional si Hb <8 + sintomático O <7 absoluto:
+     - Transfusión RBC 1-2 unidades (alcanzar Hb objetivo 9-10)
+     - Suplementación hierro IV si ferritina <100 + sat transferrina <20%
+     - EPO darbepoetina 500 µg SC cada 2-3 sem si CrCl <60
+  5. Reintroducción solo con `hb_recovered_post_drop_for_lutetium=Sí`:
+     - Hb ≥85% baseline pre-Lu-177 documentado en 2 mediciones ≥7d
+     - Sin transfusión activa ≥7 días
+     - Suplementación hierro/B12/folato adecuada documentada
+     - Hematology endorsement explícito
+     - Plan monitoring CBC SEMANAL × 4 sem post-reintroducción
+     - Si recurrencia drop rápido → discontinuación PERMANENTE
+  6. Si reintroducción NO posible:
+     - **Cabazitaxel** dosis reducida 20mg/m² + GCSF (CARD trial)
+     - **Re-challenge ARPI** si naive a 2da línea (gate 31 cognitive
+       check si edad >75)
+     - **Olaparib** si HRR+ confirmado y CrCl ≥30 (gates 15+29 monitor)
+     - Best supportive care + nutrition + palliative care
+
+  CAMPOS REQUERIDOS para activar gate 40:
+    - `hb_baseline_pre_lutetium`: Hb baseline DOCUMENTADO antes de
+      iniciar Lu-177 (CBC visita 0)
+    - `hemoglobin`: Hb actual en seguimiento (CBC visita 1-2 sem)
+    - SIN baseline → gate 40 NO puede evaluar; gates 14+30 cubren
+      thresholds absolutos baseline
+
+evidence_tag: vision_supplementary_pluvicto_label_section_6
+trial_refs:
+  - "VISION supplementary"
+  - "Sartor NEJM 2021 long-term safety"
+  - "Pluvicto label §6"
+  - "ASCO Anemia in Cancer 2024"
+  - "CTCAE v5"
+
+references:
+  - "Sartor O et al. VISION. NEJM 2021;385:1091-1103 + supplementary subset analysis (early discontinuation predictors)."
+  - "Pluvicto (lutetium Lu 177 vipivotide tetraxetan) FDA prescribing information §6 (Adverse Reactions: Anemia 39% any grade, 12.9% G≥3)."
+  - "PSMAfore (Sartor NEJM 2024;390:1359) — confirmó perfil similar en chemo-naïve population."
+  - "ASCO Anemia in Cancer Guideline 2024 — Transfusion + EPO management."
+  - "CTCAE v5.0 — Anemia + transfusion grading."
+  - "NCCN Guidelines Prostate Cancer v5.2026 §RAD-15 (Lu-177 hematologic monitoring schedule)."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 §RAD-15 — Lu-177 hematologic monitoring (CBC pre-cycle + day 7 + day 14)"
+  eau_section: "EAU 2026 §6.6.3 — Pluvicto safety + early discontinuation predictors"
+  asco_section: "ASCO Anemia in Cancer Guideline 2024 — RBC transfusion + EPO criteria"

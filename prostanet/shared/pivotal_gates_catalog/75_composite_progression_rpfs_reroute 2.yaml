@@ -1,0 +1,246 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 75: composite_progression_rpfs_reroute
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXVIII) — Auditoría #67D — Composite progression.
+#
+# Razón clínica:
+#   **PCWG3 composite progression** (Scher JCO 2016) define progression
+#   formal cuando ≥2 de 3 categorías cumplen criterios:
+#
+#   1. **Biochemical (PSA)**: Phoenix BCR (gate 53/54) o PSADT (gate 55)
+#   2. **Radiographic**: PSMA-PET (gate 71) o visceral mets (gate 72)
+#   3. **Clinical**: pain (gate 73) o ECOG decline (gate 74)
+#
+#   Composite progression = **rPFS event PCWG3 formal** + cambio línea
+#   obligatorio per evidence-based pathway:
+#
+#   - **mCSPC → mCRPC**: progresión castration → CRPC pathway
+#   - **mCRPC pre-chemo → post-chemo**: ARPI + LHRHa → docetaxel
+#   - **mCRPC post-chemo line 1 → line 2**: cabazitaxel (CARD trial)
+#   - **mCRPC late line**: Lu-177-PSMA (VISION) o Ra-223 (ALSYMPCA)
+#   - **HRR+**: PARP (PROfound/MAGNITUDE/TALAPRO-2)
+#   - **MSI-H/dMMR**: pembrolizumab (KEYNOTE-158/199)
+#
+#   Severity: soft_warning — alerta cambio composite + recomienda reroute
+#   pathway según evidence + MDT review obligatoria.
+#
+#   Coexistencia: gate 75 es **meta-gate** — depende de combinación de
+#   gates 53/54/55 + 71/72 + 73/74 simultáneos.
+# ──────────────────────────────────────────────────────────────────────
+
+code: composite_progression_rpfs_reroute
+title: "PCWG3 composite progression (≥2 categorías) → rPFS event + reroute next-line"
+faubot_added_in: "2026-04-26 LXXVIII"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: PSA + Radiographic progression simultánea
+    - type: all_of
+      triggers:
+        - type: any_of
+          triggers:
+            - type: truthy_flag
+              field: psa_progression_documented
+              alias_fields:
+                - progresion_psa_documentada
+                - phoenix_bcr_documented
+            - type: numeric_above
+              field: psa_doubling_time_months
+              alias_fields:
+                - psadt
+                - psa_doubling_time
+              threshold: 0  # Cualquier PSADT calculable
+        - type: any_of
+          triggers:
+            - type: truthy_flag
+              field: psma_pet_progression_documented
+              alias_fields:
+                - progresion_psma_documentada
+            - type: truthy_flag
+              field: new_visceral_metastasis_documented
+              alias_fields:
+                - nueva_metastasis_visceral_documentada
+    # Path B: Radiographic + Clinical progression simultánea
+    - type: all_of
+      triggers:
+        - type: any_of
+          triggers:
+            - type: truthy_flag
+              field: psma_pet_progression_documented
+            - type: truthy_flag
+              field: new_visceral_metastasis_documented
+        - type: any_of
+          triggers:
+            - type: numeric_above
+              field: bpi_worst_pain_score
+              alias_fields:
+                - bpi_peor_dolor
+              threshold: 6  # ≥7 severo
+            - type: numeric_above
+              field: ecog_change_from_baseline
+              alias_fields:
+                - cambio_ecog_baseline
+              threshold: 0  # ≥1 grado peor
+    # Path C: PSA + Clinical progression simultánea
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: psa_progression_documented
+          alias_fields:
+            - progresion_psa_documentada
+        - type: any_of
+          triggers:
+            - type: numeric_above
+              field: bpi_worst_pain_score
+              threshold: 6
+            - type: numeric_above
+              field: ecog_change_from_baseline
+              threshold: 0
+    # Path D: composite progression flag explicit
+    - type: truthy_flag
+      field: pcwg3_composite_progression_documented
+      alias_fields:
+        - progresion_compuesta_pcwg3
+        - composite_rpfs_event_documented
+
+regimen_codes: []  # Gate alerta meta — no bloquea, recomienda reroute
+
+keywords:
+  - PCWG3 composite progression
+  - rPFS
+  - radiographic progression-free survival
+  - composite progression
+  - next line therapy
+
+message: |
+  📊 ALERTA META: **PCWG3 composite progression** detectada (≥2 de 3
+  categorías) → **rPFS event PCWG3 formal** + reroute next-line therapy
+  obligatorio per evidence-based pathway.
+
+  🔬 PCWG3 COMPOSITE PROGRESSION DEFINICIÓN:
+
+  **3 categorías progression** (≥2 simultáneas = composite event):
+
+  1. **Biochemical (PSA)**:
+     - Phoenix BCR post-RT (nadir+2 ng/mL)
+     - PSADT <3m post-RP (gate 53)
+     - PSADT ≤10m m0CRPC (gate 55)
+     - PSA rise ≥25% + ≥2 ng/mL absoluto
+
+  2. **Radiographic**:
+     - PSMA-PET nuevas lesiones o SUVmax ↑30% (gate 71)
+     - Nuevas mets viscerales (gate 72)
+     - Bone scan: ≥2 nuevas lesiones + confirmación 6+ semanas
+
+  3. **Clinical**:
+     - BPI worst pain ≥4 sostenido + opioides (gate 73)
+     - ECOG decline ≥1 grado vs baseline (gate 74)
+
+  🎯 RECOMENDACIÓN REROUTE NEXT-LINE PATHWAY:
+
+  **Estado clínico → Línea siguiente** (evidence-based):
+
+  ```
+  mCSPC progression → mCRPC pathway:
+    - Si bajo doblete ADT+ARPI: switch a triplete (ARASENS/PEACE-1)
+      o iniciar docetaxel
+    - Si bajo monoterapia ADT: agregar ARPI (ARCHES/ENZAMET/TITAN)
+
+  mCRPC primera línea → segunda línea:
+    - Si bajo abi/enza: switch a docetaxel (CHAARTED/STAMPEDE)
+    - Si bajo docetaxel: switch a cabazitaxel (CARD/TROPIC)
+    - Si HRR+: PARP inhibitor (PROfound/MAGNITUDE/TALAPRO-2)
+    - Si AR-V7+: switch taxane (gate 62 ARMOR3-SV)
+
+  mCRPC late line:
+    - Si PSMA-positive + adecuada función renal:
+      Lu-177-PSMA (VISION) o Lu-177-PSMA-617
+    - Si bone-only + sintomático: Ra-223 (ALSYMPCA, ERA-223)
+    - Si MSI-H/dMMR: pembrolizumab (KEYNOTE-158/199)
+    - Si CDK12+: trial inmunotherapy/PARP combo (gate 63)
+    - Si NEPC sospecha: platinum-based EP regimen (gate 67)
+
+  mCRPC end-of-line:
+    - Trial enrollment priority
+    - Best supportive care + palliative early
+    - Hospice referral si ECOG ≥3
+  ```
+
+  🎯 ACCIÓN OBLIGATORIA:
+
+  **1. Documentar rPFS event PCWG3 formal**:
+  - Fecha primera detección composite (≥2 categorías)
+  - Type categories fired (PSA + radiographic + clinical)
+  - Trial endpoint registration si aplica
+
+  **2. MDT review obligatoria**:
+  - Multidisciplinaria: oncology + uro + radiology + palliative
+  - Confirmar reroute pathway evidence-based
+  - Considerar trial enrollment
+
+  **3. Goals of care discussion**:
+  - Composite progression = peor pronóstico
+  - Mediana survival depende línea (12-30m mCRPC pre-chemo, 8-15m post)
+  - Discutir DNR/DNI + AD (advance directives)
+  - Family meeting + ESAS evaluation (futuro gate 80)
+
+  **4. Workup confirmación**:
+  - PSA seriadas (4-week interval)
+  - Imaging confirmation (PSMA-PET + CT confirmatorio)
+  - Symptoms scales (BPI, ESAS, ECOG)
+  - Labs: LDH, ALP, CBC, CMP, función renal/hepática
+
+  **5. Genomic re-testing si no hecho**:
+  - HRR panel (gate 61): BRCA1/2/ATM/PALB2/CHEK2/CDK12
+  - MSI/MMR (gate 65): immunotherapy eligibility
+  - AR-V7 (gate 62): ARPI resistance prediction
+  - Considerar liquid biopsy + tissue rebiopsy
+
+  **6. Palliative care integration**:
+  - Pain optimization (gate 73)
+  - Bone-targeted therapy review
+  - Palliative RT consideration (futuro gate 83)
+  - Psychosocial support (PHQ-9/GAD-7 futuros gates 81/82)
+
+  ⚠️ COMPOSITE = META-GATE:
+  Gate 75 NO requiere fields adicionales — depende de combinación de:
+  - gates 53/54/55 (PSA kinetics)
+  - gate 71 (PSMA progression)
+  - gate 72 (visceral mets new)
+  - gate 73 (BPI pain)
+  - gate 74 (ECOG decline)
+
+  Cuando ≥2 categories fire simultáneamente → gate 75 activa rPFS event.
+
+  🔬 EVIDENCIA:
+  - **PCWG3 (Scher JCO 2016;34:1402)**: composite progression definición
+  - **CHAARTED/STAMPEDE/PEACE-1/ARASENS**: mCSPC reroute ARPI/triplete
+  - **CARD (de Wit NEJM 2019)**: cabazitaxel post-ARPI second line
+  - **VISION (Sartor NEJM 2021)**: Lu-177-PSMA late line
+  - **PROfound/MAGNITUDE/TALAPRO-2**: PARP HRR+ progression
+  - **ALSYMPCA (Parker NEJM 2013)**: Ra-223 bone progression
+  - **NCCN Prostate v5.2026 PROS-O**: composite progression management
+  - **EAU 2026 §6.5**: rPFS endpoint + reroute pathways
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `pcwg3_composite_progression_documented`: flag composite explicit
+  - `composite_progression_categories_fired`: list (PSA/radiographic/clinical)
+  - `composite_progression_date`: fecha primera composite
+  - `next_line_therapy_planned`: text pathway recomendado
+  - `mdt_composite_review_completed`: flag MDT review
+
+evidence_tag: pcwg3_composite_progression_card_vision_profound_alsympca_reroute
+trial_refs:
+  - "PCWG3 (Scher JCO 2016;34:1402)"
+  - "CHAARTED (Sweeney NEJM 2015)"
+  - "STAMPEDE (James Lancet 2016)"
+  - "PEACE-1 (Fizazi Lancet 2022)"
+  - "ARASENS (Smith NEJM 2022)"
+  - "CARD (de Wit NEJM 2019)"
+  - "VISION (Sartor NEJM 2021)"
+  - "PROfound (de Bono NEJM 2020)"
+  - "ALSYMPCA (Parker NEJM 2013)"
+  - "NCCN Prostate v5.2026 PROS-O"

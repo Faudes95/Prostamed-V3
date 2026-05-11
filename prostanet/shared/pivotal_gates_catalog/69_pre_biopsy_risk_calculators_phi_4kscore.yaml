@@ -1,0 +1,235 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 69: pre_biopsy_risk_calculators_phi_4kscore
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXVII) — Auditoría #67C — Pre-bx calculators.
+#
+# Razón clínica:
+#   PSA isolado no es suficientemente específico para decidir biopsia
+#   prostática (false positive rate alto, biopsias innecesarias). Los
+#   calculadores pre-biopsia REDUCEN biopsias innecesarias en 25-40%
+#   sin perder cancer detection significativa:
+#
+#   1. **PHI (Prostate Health Index)** — Beckman Coulter:
+#      - Formula: ([-2]proPSA / freePSA) × √PSA total
+#      - Rango: 0-100+
+#      - Cutoffs (HighRisk PCa Gleason ≥7):
+#        * PHI <27: low risk → no biopsy probable
+#        * PHI 27-36: intermediate → shared decision
+#        * PHI >36: high risk → biopsy indicated
+#      - **Reduce biopsias innecesarias 25-30%** vs PSA alone
+#
+#   2. **4Kscore** — OPKO Health:
+#      - Combina PSA total + free + intact + hK2 + age + DRE + prior bx
+#      - Score 0-100% probability HighRisk PCa
+#      - Cutoffs:
+#        * 4K <7.5%: very low risk → no biopsy
+#        * 4K 7.5-15%: intermediate → shared decision
+#        * 4K >15%: high risk → biopsy indicated
+#      - **Reduce biopsias 30-40%** vs PSA alone
+#
+#   3. **PSA Velocity** (PSAv) pre-biopsia:
+#      - Formula: ΔPSA/Δtime (ng/mL/year)
+#      - Cutoffs:
+#        * PSAv <0.35 ng/mL/yr: low risk
+#        * PSAv 0.35-0.75: intermediate
+#        * PSAv >0.75 ng/mL/yr: aggressive cancer suspected
+#      - Requires ≥3 PSA measurements en ≥18 meses para reliable
+#
+#   4. **PSA Density (PSAD)**:
+#      - Formula: PSA / prostate_volume_ml
+#      - Cutoffs:
+#        * PSAD <0.10: low risk → favor surveillance
+#        * PSAD 0.10-0.15: intermediate
+#        * PSAD >0.15: high risk → biopsy indicated (EAU 2026)
+#
+#   Severity: informational — alerta clínico sobre disponibilidad
+#   calculadores adicionales que pueden refinar decisión biopsia.
+#
+#   Override: ninguno — gate informacional siempre relevante.
+#
+#   Coexistencia: gate puede coexistir con gates diagnostic existentes.
+# ──────────────────────────────────────────────────────────────────────
+
+code: pre_biopsy_risk_calculators_phi_4kscore
+title: "Calculadores pre-biopsia (PHI/4Kscore/PSAv/PSAD) → reducen biopsias innecesarias 25-40%"
+faubot_added_in: "2026-04-25 LXXVII"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: PSA elevada (4-10 ng/mL "gray zone") + sin biopsia previa
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: psa_value
+          alias_fields: [psa, psa_baseline, baseline_psa]
+          threshold: 3.9  # >4 = numeric_above 3.9
+        - type: numeric_below
+          field: psa_value
+          alias_fields: [psa, psa_baseline, baseline_psa]
+          threshold: 10.1  # ≤10 = numeric_below 10.1
+        - type: truthy_flag
+          field: primary_biopsy_not_performed
+          alias_fields:
+            - sin_biopsia_primaria
+            - biopsy_not_done_yet
+    # Path B: prior negative biopsy + PSA persistently elevated
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: prior_negative_biopsy_documented
+          alias_fields:
+            - biopsia_previa_negativa
+            - prior_neg_bx
+        - type: numeric_above
+          field: psa_value
+          alias_fields: [psa, psa_baseline, baseline_psa]
+          threshold: 3.9  # PSA still elevated post-neg bx
+    # Path C: pre-bx calculators score available
+    - type: any_of
+      triggers:
+        - type: truthy_flag
+          field: phi_score_available
+          alias_fields:
+            - phi_calculated
+            - phi_test_result
+        - type: truthy_flag
+          field: fourkscore_available
+          alias_fields:
+            - 4kscore_calculated
+            - 4k_test_result
+        - type: numeric_above
+          field: psa_velocity_ng_ml_year
+          alias_fields:
+            - psa_velocity
+            - psaV
+          threshold: 0.34  # PSAv ≥0.35 = numeric_above 0.34
+        - type: numeric_above
+          field: psa_density
+          alias_fields:
+            - psad
+            - psa_density_ng_ml_cc
+          threshold: 0.149  # PSAD ≥0.15 = numeric_above 0.149
+
+regimen_codes: []  # Gate informacional — abre opciones decisión biopsia
+
+keywords:
+  - PHI
+  - prostate health index
+  - 4Kscore
+  - PSA velocity
+  - PSA density
+  - PSAD
+
+message: |
+  📊 INFORMATIVO: Paciente en "gray zone" PSA (4-10) o post-bx negativa
+  → considerar calculadores pre-biopsia adicionales (PHI/4Kscore/PSAv/
+  PSAD) para REDUCIR biopsias innecesarias 25-40%.
+
+  🧪 CALCULADORES PRE-BIOPSIA DISPONIBLES:
+
+  **1. PHI (Prostate Health Index)** — Beckman Coulter FDA-approved:
+  - Formula: ([-2]proPSA / freePSA) × √PSA total
+  - **Cutoffs HighRisk PCa Gleason ≥7**:
+    * PHI <27: **low risk** → no biopsy probable
+    * PHI 27-36: **intermediate** → shared decision
+    * PHI >36: **high risk** → biopsy indicated
+  - **Reduce biopsias 25-30%** vs PSA alone
+  - **Cobertura insurance**: usually approved si PSA 4-10
+  - **Disponibilidad**: Quest, LabCorp, hospital labs
+  - **Costo**: $50-150 USD
+
+  **2. 4Kscore** — OPKO Health:
+  - Combina: PSA total + free + intact + hK2 + age + DRE + prior bx
+  - Score: 0-100% probability HighRisk PCa
+  - **Cutoffs**:
+    * 4K <7.5%: **very low risk** → no biopsy
+    * 4K 7.5-15%: **intermediate** → shared decision
+    * 4K >15%: **high risk** → biopsy indicated
+  - **Reduce biopsias 30-40%** vs PSA alone
+  - **Cobertura insurance**: variable, requires pre-auth
+  - **Disponibilidad**: OPKO referenced labs
+  - **Costo**: $200-400 USD
+
+  **3. PSA Velocity (PSAv)** — calculable on routine PSA:
+  - Formula: ΔPSA / Δtime (ng/mL/year)
+  - Requires **≥3 PSA measurements en ≥18 meses** para reliable
+  - **Cutoffs**:
+    * PSAv <0.35 ng/mL/yr: low risk
+    * PSAv 0.35-0.75: intermediate
+    * PSAv >0.75 ng/mL/yr: aggressive cancer suspected
+  - **NO costo adicional** (PSA seriadas standard)
+
+  **4. PSA Density (PSAD)** — calculable con MRI/TRUS volume:
+  - Formula: PSA / prostate_volume_ml
+  - **Cutoffs (EAU 2026)**:
+    * PSAD <0.10: low risk → favor surveillance
+    * PSAD 0.10-0.15: intermediate
+    * PSAD >0.15: high risk → biopsy indicated
+  - **Requires prostate volume** (mpMRI o TRUS)
+
+  🎯 ALGORITMO RECOMENDADO PRE-BIOPSIA:
+
+  ```
+  PSA elevated (4-10) + DRE normal:
+    ↓
+    Calcular PSAD si volume disponible:
+      - PSAD <0.10 → considerar surveillance + repeat PSA 6m
+      - PSAD ≥0.15 → biopsy indicated
+      - PSAD 0.10-0.15 → next step
+    ↓
+    Solicitar PHI o 4Kscore (lo que insurance cubra):
+      - PHI <27 / 4K <7.5% → surveillance
+      - PHI 27-36 / 4K 7.5-15% → mpMRI + decisión guided
+      - PHI >36 / 4K >15% → biopsy indicated
+    ↓
+    Si insurance no cubre PHI/4K:
+      - Solicitar mpMRI multiparamétrica
+      - PI-RADS 1-2: surveillance
+      - PI-RADS 3: shared decision
+      - PI-RADS 4-5: targeted biopsy obligatoria
+  ```
+
+  📈 EVIDENCIA:
+  - **Loeb J Urol 2015** (PHI validation) — reduce 25-30% biopsias
+  - **Parekh JCO 2015** (4Kscore validation) — reduce 30-40% biopsias
+  - **Vickers J Urol 2009** (PSA velocity criteria)
+  - **Roobol Eur Urol 2015** (PSA density EAU cutoffs)
+  - **NCCN Prostate v5.2026 PROS-G**: PHI/4Kscore como adjuncts
+    en gray zone PSA decision-making
+  - **EAU 2026 §5.1.2**: pre-bx risk calculators recomendados
+
+  🎯 CONDUCTA CLÍNICA:
+  1. **Evaluar disponibilidad calculators** en su contexto:
+     - PHI: más disponible US/EU, FDA-approved
+     - 4Kscore: requires específico lab, pre-auth insurance
+     - PSAv: requires ≥3 PSA seriadas en 18m
+     - PSAD: requires mpMRI/TRUS volume
+  2. **Combinar 2+ calculators** para mayor accuracy
+  3. **Discutir con paciente**: shared decision-making basada en risk
+     stratification numérica
+  4. **mpMRI antes de biopsy** (NCCN cat 1) si calculator suggests
+     intermediate risk
+  5. **Documentar reasoning** para auditabilidad CDE Auditable
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `psa_value`: PSA total ng/mL
+  - `phi_score_available`: flag PHI calculado
+  - `phi_score_value`: 0-100+ value
+  - `fourkscore_available`: flag 4Kscore calculado
+  - `fourkscore_value`: 0-100% probability
+  - `psa_velocity_ng_ml_year`: PSAv calculada
+  - `psa_density`: PSA/volume ratio
+  - `prostate_volume_ml`: volume cc/mL
+  - `prior_negative_biopsy_documented`: flag bx previa negativa
+
+evidence_tag: phi_loeb_2015_4kscore_parekh_2015_psa_velocity_density_pre_biopsy
+trial_refs:
+  - "Loeb J Urol 2015 (PHI validation)"
+  - "Parekh JCO 2015 (4Kscore validation)"
+  - "Vickers J Urol 2009 (PSA velocity)"
+  - "Roobol Eur Urol 2015 (PSA density EAU cutoffs)"
+  - "NCCN Prostate v5.2026 PROS-G"
+  - "EAU 2026 §5.1.2"

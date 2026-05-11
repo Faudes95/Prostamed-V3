@@ -1,0 +1,2658 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ProstaMed · Expediente clínico v2 (mockup UI Mayo/Epic-style · Faubot LXXI)</title>
+
+<!-- =====================================================================
+     MOCKUP UI v2 — Faubot 2026-04-25 LXXI · CDE Auditable 5/5
+     Conserva el logo institucional ProstaMed (cyan + green ellipse).
+     Renderiza TODO lo que el backend produce hoy (sin omisiones):
+        · profile_compass bundle (identity, baseline, classification,
+          psa_observability, psa_forecast_per_line, psa_cohort_reference,
+          psa_combined_timeline, gates_panel)
+        · build_decision_audit (5 dimensiones CDE)
+        · per-gate evidence drill-down (37 trials reconocidos)
+        · versioning_dashboard (FAUBOT_RELEASE + per-gate YAML SHA)
+        · widgets multi-row (#63C: psa, testosterone, prior_lines)
+     ================================================================== -->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.2.1"></script>
+
+<style>
+/* ========================== DESIGN TOKENS =========================== */
+:root {
+  /* Brand — institucional Mayo blue + cyan logo ProstaMed */
+  --brand-navy:        #0E2A47;
+  --brand-navy-deep:   #081A2E;
+  --brand-cyan:        #1FB8FF;
+  --brand-cyan-soft:   #8CF3FF;
+  --brand-teal:        #23D9C8;
+  --brand-green:       #22FF57;   /* del logo (elipse verde MED) */
+
+  /* Surfaces (light theme) */
+  --bg:                #F4F7FA;
+  --bg-subtle:         #EAF0F6;
+  --surface:           #FFFFFF;
+  --surface-2:         #F9FBFD;
+  --surface-elev:      #FFFFFF;
+  --border:            #DBE3EC;
+  --border-strong:     #B6C3D2;
+
+  /* Text */
+  --fg:                #0E1A2B;
+  --fg-soft:           #36495F;
+  --fg-muted:          #6B7B8E;
+  --fg-disabled:       #9CA9B8;
+
+  /* Severity 3-tier (Faubot #62) */
+  --sev-hard:          #E04E4E;
+  --sev-hard-bg:       #FDECEC;
+  --sev-soft:          #F3A11A;
+  --sev-soft-bg:       #FEF5E5;
+  --sev-info:          #4D8FE8;
+  --sev-info-bg:       #EAF1FC;
+  --sev-success:       #22B872;
+  --sev-success-bg:    #E6F7EF;
+
+  /* Treatment line palette (per-line drill-down) */
+  --line-1:            #1FB8FF;   /* línea 1 — cyan */
+  --line-2:            #7C5CFF;   /* línea 2 — violeta */
+  --line-3:            #F3A11A;   /* línea 3 — ámbar */
+  --line-4:            #E04E4E;   /* línea 4 — rojo */
+  --cohort:            #A857E8;   /* overlay cohort */
+
+  /* Elevation (blue-tinted shadow) */
+  --shadow-1: 0 1px 2px rgba(14,42,71,.06), 0 1px 3px rgba(14,42,71,.04);
+  --shadow-2: 0 4px 10px rgba(14,42,71,.08), 0 2px 4px rgba(14,42,71,.05);
+  --shadow-3: 0 10px 30px rgba(14,42,71,.12), 0 4px 10px rgba(14,42,71,.06);
+  --shadow-glow: 0 0 0 4px rgba(31,184,255,.15);
+
+  --radius-sm: 6px;
+  --radius:    10px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+
+  --t-fast: 140ms cubic-bezier(.2,.8,.2,1);
+  --t-base: 220ms cubic-bezier(.2,.8,.2,1);
+  --t-slow: 360ms cubic-bezier(.2,.8,.2,1);
+}
+[data-theme="dark"] {
+  --bg:                #07101C;
+  --bg-subtle:         #0B1B2D;
+  --surface:           #102338;
+  --surface-2:         #0E1F32;
+  --surface-elev:      #14283F;
+  --border:            #1E3550;
+  --border-strong:     #2A4A6B;
+  --fg:                #E7EFF8;
+  --fg-soft:           #B6C5D6;
+  --fg-muted:          #7C90A8;
+  --fg-disabled:       #4F627B;
+  --sev-hard-bg:       #3A1818;
+  --sev-soft-bg:       #3A2A12;
+  --sev-info-bg:       #15243B;
+  --sev-success-bg:    #102C22;
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 4px 12px rgba(0,0,0,.5);
+  --shadow-3: 0 12px 32px rgba(0,0,0,.6);
+}
+
+/* ============================ RESET ================================ */
+*,*::before,*::after { box-sizing: border-box; }
+html,body { margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+button { font-family: inherit; cursor: pointer; }
+a { color: var(--brand-cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .82em; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* ============================ APP SHELL =========================== */
+.app {
+  display: grid;
+  grid-template-columns: 248px 1fr;
+  grid-template-rows: 64px 1fr;
+  grid-template-areas:
+    "sidebar header"
+    "sidebar main";
+  min-height: 100vh;
+}
+@media (max-width: 1024px) {
+  .app { grid-template-columns: 64px 1fr; }
+  .app-sidebar .nav-label, .app-sidebar .sidebar-section-title { display: none; }
+}
+
+/* ============================ HEADER ============================== */
+.app-header {
+  grid-area: header;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 24px;
+  position: sticky; top: 0; z-index: 50;
+  box-shadow: var(--shadow-1);
+}
+.header-search {
+  flex: 1; max-width: 540px;
+  position: relative;
+  display: flex; align-items: center;
+}
+.header-search input {
+  width: 100%;
+  height: 38px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  padding: 0 14px 0 40px;
+  font-size: 14px; color: var(--fg);
+  transition: var(--t-fast);
+}
+.header-search input:focus {
+  outline: none;
+  border-color: var(--brand-cyan);
+  box-shadow: var(--shadow-glow);
+  background: var(--surface);
+}
+.header-search .ic { position: absolute; left: 12px; color: var(--fg-muted); }
+.header-tools { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.faubot-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, var(--brand-navy), var(--brand-navy-deep));
+  color: var(--brand-cyan-soft);
+  border-radius: 999px;
+  font-size: 12px; font-weight: 600;
+  letter-spacing: .3px;
+  border: 1px solid rgba(31,184,255,.3);
+}
+.faubot-chip .pulse {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--brand-green);
+  box-shadow: 0 0 0 0 rgba(34,255,87,.6);
+  animation: pulse 2.4s infinite;
+}
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0   rgba(34,255,87,.55); }
+  70%  { box-shadow: 0 0 0 10px rgba(34,255,87,0); }
+  100% { box-shadow: 0 0 0 0   rgba(34,255,87,0); }
+}
+.icon-btn {
+  width: 38px; height: 38px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--fg-soft);
+  transition: var(--t-fast);
+}
+.icon-btn:hover { background: var(--bg-subtle); color: var(--fg); }
+.user-chip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface);
+}
+.user-avatar {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand-cyan), var(--brand-teal));
+  color: white; font-weight: 700; font-size: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* ============================ SIDEBAR ============================= */
+.app-sidebar {
+  grid-area: sidebar;
+  background: linear-gradient(180deg, var(--brand-navy-deep), var(--brand-navy));
+  color: #C9D9EC;
+  padding: 20px 12px;
+  display: flex; flex-direction: column; gap: 4px;
+  position: sticky; top: 0; height: 100vh;
+  overflow-y: auto;
+}
+.sidebar-logo {
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 8px 18px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  margin-bottom: 12px;
+}
+.sidebar-logo svg { display: block; }
+.sidebar-logo .brand-text {
+  display: flex; flex-direction: column; line-height: 1.05;
+}
+.sidebar-logo .brand-text .brand-name {
+  font-weight: 700; font-size: 16px;
+  background: linear-gradient(135deg, var(--brand-cyan-soft), var(--brand-cyan));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  letter-spacing: -.5px;
+}
+.sidebar-logo .brand-text .brand-sub {
+  font-size: 9.5px; letter-spacing: 2.4px;
+  color: var(--brand-cyan-soft); opacity: .75; font-weight: 600;
+}
+.sidebar-section-title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px;
+  color: rgba(201,217,236,.5);
+  padding: 14px 12px 6px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: var(--radius);
+  color: #C9D9EC;
+  text-decoration: none;
+  transition: var(--t-fast);
+  font-size: 14px; font-weight: 500;
+  position: relative;
+}
+.nav-item:hover { background: rgba(255,255,255,.06); color: white; }
+.nav-item.active {
+  background: linear-gradient(90deg, rgba(31,184,255,.18), rgba(31,184,255,.04));
+  color: white;
+}
+.nav-item.active::before {
+  content: ''; position: absolute; left: 0; top: 8px; bottom: 8px;
+  width: 3px; border-radius: 2px;
+  background: linear-gradient(180deg, var(--brand-cyan), var(--brand-teal));
+}
+.nav-item .badge-mini {
+  margin-left: auto; font-size: 10.5px; font-weight: 700;
+  background: var(--sev-hard); color: white;
+  padding: 2px 7px; border-radius: 999px;
+}
+.nav-item .badge-mini.muted { background: rgba(255,255,255,.12); color: #C9D9EC; }
+
+.sidebar-foot {
+  margin-top: auto;
+  padding: 12px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  font-size: 11px; color: rgba(201,217,236,.6);
+  display: flex; flex-direction: column; gap: 4px;
+}
+
+/* ============================ MAIN ================================ */
+.app-main {
+  grid-area: main;
+  padding: 20px 28px 60px;
+  max-width: 1640px;
+}
+
+/* ====================== PATIENT HEADER STRIP ====================== */
+.patient-header {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--sev-hard);
+  border-radius: var(--radius-lg);
+  padding: 18px 22px;
+  box-shadow: var(--shadow-2);
+  display: grid;
+  grid-template-columns: minmax(280px,1.1fr) 2fr auto;
+  gap: 22px; align-items: center;
+  margin-bottom: 18px;
+  position: relative; overflow: hidden;
+}
+.patient-header::after {
+  /* dynamic accent */
+  content: ''; position: absolute; right: -120px; top: -120px;
+  width: 320px; height: 320px;
+  background: radial-gradient(circle, rgba(31,184,255,.10), transparent 65%);
+  pointer-events: none;
+}
+.patient-id-block .patient-name {
+  font-size: 22px; font-weight: 700; color: var(--fg);
+  display: flex; align-items: center; gap: 10px;
+}
+.patient-id-block .patient-meta {
+  margin-top: 4px;
+  font-size: 12.5px; color: var(--fg-muted);
+  display: flex; gap: 14px; flex-wrap: wrap;
+}
+.patient-meta .dot { color: var(--border-strong); }
+
+.patient-state-block { display: flex; flex-direction: column; gap: 8px; }
+.state-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.state-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 600;
+  background: var(--bg-subtle); color: var(--fg-soft);
+  border: 1px solid var(--border);
+}
+.state-chip.primary {
+  background: linear-gradient(135deg, var(--brand-navy), var(--brand-navy-deep));
+  color: var(--brand-cyan-soft); border: none;
+}
+.state-chip.warn { background: var(--sev-soft-bg); color: #8C5C0E; border-color: rgba(243,161,26,.3); }
+.state-chip.danger { background: var(--sev-hard-bg); color: #911D1D; border-color: rgba(224,78,78,.3); }
+.state-chip.success { background: var(--sev-success-bg); color: #126B3F; border-color: rgba(34,184,114,.3); }
+.state-chip .ico { width: 14px; height: 14px; }
+
+.management-track {
+  font-size: 11.5px; color: var(--fg-muted); display: flex; gap: 6px;
+}
+.management-track strong { color: var(--fg-soft); font-weight: 600; }
+
+.vitals-block {
+  display: grid; grid-template-columns: repeat(5, minmax(82px,1fr));
+  gap: 12px;
+}
+.vital {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0;
+}
+.vital .vital-label { font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--fg-muted); font-weight: 600; }
+.vital .vital-value {
+  font-size: 18px; font-weight: 700; color: var(--fg);
+  display: flex; align-items: baseline; gap: 4px;
+}
+.vital .vital-unit { font-size: 11px; font-weight: 500; color: var(--fg-muted); }
+.vital .vital-delta {
+  font-size: 11px; margin-top: 2px;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.vital .vital-delta.up { color: var(--sev-hard); }
+.vital .vital-delta.dn { color: var(--sev-success); }
+
+/* ===================== ALERT BANNER (gates) ====================== */
+.alert-banner {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--sev-hard-bg);
+  border: 1px solid rgba(224,78,78,.3);
+  border-left: 4px solid var(--sev-hard);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  color: #5B1414;
+  position: relative;
+}
+.alert-banner.soft {
+  background: var(--sev-soft-bg);
+  border-color: rgba(243,161,26,.3);
+  border-left-color: var(--sev-soft);
+  color: #6E4406;
+}
+.alert-banner .alert-icon {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--sev-hard); color: white; flex-shrink: 0;
+}
+.alert-banner.soft .alert-icon { background: var(--sev-soft); }
+.alert-banner .alert-text { flex: 1; }
+.alert-banner .alert-text strong { display: block; font-size: 13.5px; }
+.alert-banner .alert-text small { font-size: 12px; opacity: .85; }
+.alert-banner button {
+  background: rgba(255,255,255,.7); color: inherit;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: var(--radius);
+  padding: 7px 12px; font-size: 12px; font-weight: 600;
+}
+
+/* =========================== TABS ================================ */
+.tabs {
+  display: flex; gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 5px;
+  margin-bottom: 18px;
+  overflow-x: auto;
+  box-shadow: var(--shadow-1);
+}
+.tab {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 14px;
+  border: none; background: transparent;
+  border-radius: var(--radius);
+  color: var(--fg-soft);
+  font-weight: 600; font-size: 13px;
+  white-space: nowrap;
+  transition: var(--t-fast);
+}
+.tab:hover { background: var(--bg-subtle); }
+.tab.active {
+  background: linear-gradient(135deg, var(--brand-navy), var(--brand-navy-deep));
+  color: white;
+  box-shadow: var(--shadow-2);
+}
+.tab .badge {
+  background: var(--sev-hard); color: white;
+  font-size: 10.5px; font-weight: 700;
+  padding: 1px 6px; border-radius: 999px;
+}
+.tab.active .badge { background: rgba(255,255,255,.2); }
+
+/* ========================= GRID LAYOUTS ========================== */
+.grid { display: grid; gap: 18px; }
+.grid.cols-3-2 { grid-template-columns: 2fr 1fr; }
+.grid.cols-2 { grid-template-columns: 1fr 1fr; }
+.grid.cols-3 { grid-template-columns: repeat(3,1fr); }
+.grid.cols-4 { grid-template-columns: repeat(4,1fr); }
+@media (max-width: 1280px) {
+  .grid.cols-3-2, .grid.cols-2, .grid.cols-3, .grid.cols-4 { grid-template-columns: 1fr; }
+}
+
+/* ========================== CARDS ================================ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  transition: var(--t-base);
+}
+.card:hover { box-shadow: var(--shadow-2); }
+.card-head {
+  padding: 14px 18px;
+  display: flex; align-items: center; gap: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.card-head h3 {
+  margin: 0; font-size: 14px; font-weight: 700;
+  color: var(--fg); letter-spacing: -.1px;
+  display: flex; align-items: center; gap: 8px;
+}
+.card-head .head-actions { margin-left: auto; display: flex; gap: 6px; }
+.card-head .head-meta {
+  margin-left: auto; font-size: 11px; color: var(--fg-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+.card-body { padding: 16px 18px; flex: 1; }
+.card-body.tight { padding: 12px 14px; }
+
+/* tag/chip variants */
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+  background: var(--bg-subtle); color: var(--fg-soft);
+  border: 1px solid var(--border);
+}
+.chip.hard { background: var(--sev-hard-bg); color: #8B1414; border-color: rgba(224,78,78,.3); }
+.chip.soft { background: var(--sev-soft-bg); color: #7C4C0A; border-color: rgba(243,161,26,.3); }
+.chip.info { background: var(--sev-info-bg); color: #1E4F94; border-color: rgba(77,143,232,.3); }
+.chip.success { background: var(--sev-success-bg); color: #0F6741; border-color: rgba(34,184,114,.3); }
+.chip.line-1 { background: rgba(31,184,255,.12); color: #0B6E9F; border-color: rgba(31,184,255,.3); }
+.chip.line-2 { background: rgba(124,92,255,.12); color: #4A36AC; border-color: rgba(124,92,255,.3); }
+.chip.line-3 { background: rgba(243,161,26,.14); color: #7C4C0A; border-color: rgba(243,161,26,.3); }
+.chip.line-4 { background: rgba(224,78,78,.12); color: #8B1414; border-color: rgba(224,78,78,.3); }
+
+/* ========================= TIMELINE ============================== */
+.timeline-h {
+  position: relative; overflow-x: auto; padding: 8px 4px 18px;
+}
+.timeline-h-track {
+  position: relative;
+  height: 130px; min-width: 1100px;
+  background:
+    linear-gradient(to right, var(--bg-subtle) 1px, transparent 1px) 0 0/100px 100%,
+    var(--surface-2);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.timeline-event {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: center;
+  cursor: pointer;
+}
+.timeline-event .te-dot {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 3px solid var(--surface);
+  box-shadow: var(--shadow-1);
+}
+.timeline-event .te-label {
+  margin-top: 4px; font-size: 10.5px; color: var(--fg-soft);
+  white-space: nowrap; max-width: 120px; overflow: hidden;
+  text-overflow: ellipsis; font-weight: 500;
+}
+.timeline-event .te-date { font-size: 9.5px; color: var(--fg-muted); }
+.timeline-event.psa .te-dot { background: var(--brand-cyan); }
+.timeline-event.tx .te-dot { background: var(--line-2); }
+.timeline-event.img .te-dot { background: var(--brand-teal); }
+.timeline-event.gate .te-dot { background: var(--sev-soft); }
+.timeline-event.event .te-dot { background: var(--sev-hard); }
+.timeline-event:hover .te-dot { transform: scale(1.25); transition: var(--t-fast); }
+
+/* Vertical Epic-style timeline */
+.timeline-v { position: relative; padding-left: 28px; }
+.timeline-v::before {
+  content: ''; position: absolute; left: 12px; top: 6px; bottom: 6px;
+  width: 2px; background: linear-gradient(180deg, var(--brand-cyan), var(--brand-teal), var(--cohort));
+  border-radius: 2px;
+}
+.tv-item {
+  position: relative; padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: var(--t-fast);
+}
+.tv-item:hover { box-shadow: var(--shadow-2); transform: translateX(2px); }
+.tv-item::before {
+  content: ''; position: absolute; left: -22px; top: 18px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--brand-cyan);
+  border: 3px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.tv-item.tx::before { background: var(--line-2); }
+.tv-item.img::before { background: var(--brand-teal); }
+.tv-item.gate::before { background: var(--sev-soft); }
+.tv-item.event::before { background: var(--sev-hard); }
+.tv-item .tv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.tv-item .tv-date { font-size: 11px; color: var(--fg-muted); font-family: 'JetBrains Mono', monospace; }
+.tv-item .tv-title { font-weight: 700; font-size: 13.5px; color: var(--fg); }
+.tv-item .tv-body { font-size: 12.5px; color: var(--fg-soft); line-height: 1.5; }
+
+/* ====================== PSA CHART CONTAINER ====================== */
+.chart-container { position: relative; height: 360px; padding: 8px 4px; }
+.chart-legend {
+  display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px;
+  font-size: 11.5px; color: var(--fg-soft);
+}
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-swatch {
+  width: 12px; height: 12px; border-radius: 3px;
+}
+
+/* ========================= TABLES ================================ */
+.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tbl th, .tbl td { text-align: left; padding: 9px 10px; }
+.tbl thead th {
+  background: var(--surface-2);
+  color: var(--fg-soft); font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px;
+  position: sticky; top: 0;
+}
+.tbl tbody tr { border-bottom: 1px solid var(--border); transition: var(--t-fast); }
+.tbl tbody tr:hover { background: var(--bg-subtle); }
+.tbl td.num { font-family: 'JetBrains Mono', monospace; text-align: right; }
+
+/* ========================== GATES ================================ */
+.gate-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.gate-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: var(--surface);
+  position: relative; overflow: hidden;
+  transition: var(--t-base);
+}
+.gate-card:hover { box-shadow: var(--shadow-2); }
+.gate-card.hard { border-left: 4px solid var(--sev-hard); }
+.gate-card.soft { border-left: 4px solid var(--sev-soft); }
+.gate-card.info { border-left: 4px solid var(--sev-info); }
+.gate-card .gate-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.gate-card .gate-code {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  background: var(--bg-subtle); color: var(--fg-soft);
+  padding: 2px 8px; border-radius: 6px; font-weight: 600;
+}
+.gate-card h4 { margin: 6px 0 4px; font-size: 13.5px; color: var(--fg); }
+.gate-card .gate-msg { font-size: 12.5px; color: var(--fg-soft); line-height: 1.55; }
+.gate-card .gate-foot {
+  margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border);
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.trial-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 999px;
+  background: var(--sev-info-bg); color: #1E4F94;
+  border: 1px solid rgba(77,143,232,.25);
+  font-size: 11px; font-weight: 600; text-decoration: none;
+  transition: var(--t-fast);
+}
+.trial-link:hover { background: var(--brand-cyan); color: white; text-decoration: none; }
+.trial-link::before { content: '🔗'; font-size: 10px; }
+
+/* ====================== CDE 5 DIMENSIONS ========================= */
+.dim-grid { display: grid; gap: 14px; grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1280px) { .dim-grid { grid-template-columns: repeat(2, 1fr); } }
+.dim-card {
+  background: linear-gradient(160deg, var(--surface), var(--surface-2));
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--brand-cyan);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  transition: var(--t-base);
+}
+.dim-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); }
+.dim-card .dim-name {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: 1.2px;
+  color: var(--fg-muted); font-weight: 700;
+}
+.dim-card .dim-stars {
+  font-size: 18px; color: var(--brand-green); margin: 4px 0;
+  letter-spacing: 1px;
+}
+.dim-card .dim-title {
+  font-size: 14px; font-weight: 700; color: var(--fg); margin-bottom: 6px;
+}
+.dim-card .dim-body { font-size: 12px; color: var(--fg-soft); line-height: 1.5; }
+.dim-card .dim-stat {
+  display: flex; justify-content: space-between; padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 12px;
+}
+.dim-card .dim-stat:last-child { border-bottom: none; }
+.dim-card .dim-stat strong { color: var(--fg); font-family: 'JetBrains Mono', monospace; }
+
+/* ====================== COHORT COMPARISON ======================== */
+.cohort-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+.cohort-table th, .cohort-table td { padding: 10px 12px; }
+.cohort-table thead th { background: var(--surface-2); text-align: left; font-weight: 600; }
+.cohort-table tbody td { border-top: 1px solid var(--border); }
+.cohort-table .delta-pos { color: var(--sev-success); font-weight: 700; }
+.cohort-table .delta-neg { color: var(--sev-hard); font-weight: 700; }
+.cohort-table .delta-eq  { color: var(--fg-muted); font-weight: 600; }
+
+/* ===================== DRILL-DOWN PANEL =========================== */
+.drill {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(440px, 95vw);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-3);
+  transform: translateX(110%);
+  transition: var(--t-slow);
+  z-index: 100; overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.drill.open { transform: translateX(0); }
+.drill-head {
+  padding: 18px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  background: linear-gradient(135deg, var(--brand-navy), var(--brand-navy-deep));
+  color: white;
+}
+.drill-head h3 { margin: 0; font-size: 15px; flex: 1; }
+.drill-body { padding: 18px 20px; }
+.drill-body h4 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--fg-muted); margin: 18px 0 8px;
+}
+.drill-body .kv {
+  display: grid; grid-template-columns: 1fr auto;
+  gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--border);
+  font-size: 12.5px;
+}
+.drill-body .kv strong { font-family: 'JetBrains Mono', monospace; color: var(--fg); }
+.drill-overlay {
+  position: fixed; inset: 0; background: rgba(7,16,28,.5);
+  opacity: 0; pointer-events: none; transition: var(--t-base);
+  z-index: 90; backdrop-filter: blur(2px);
+}
+.drill-overlay.open { opacity: 1; pointer-events: auto; }
+
+/* ========================== UTILITY ============================== */
+.tab-panel { display: none; animation: fadeIn .35s ease; }
+.tab-panel.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+
+.section-h {
+  display: flex; align-items: baseline; gap: 12px;
+  margin: 6px 0 12px;
+}
+.section-h h2 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -.2px; }
+.section-h .sub { font-size: 12px; color: var(--fg-muted); }
+
+.kicker {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.4px;
+  color: var(--fg-muted); font-weight: 700;
+}
+
+/* badge for kinetics */
+.kin-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 6px;
+  font-size: 11px; font-weight: 700;
+}
+.kin-response   { background: var(--sev-success-bg); color: #0F6741; }
+.kin-partial    { background: rgba(124,92,255,.12); color: #4A36AC; }
+.kin-stable     { background: var(--sev-info-bg); color: #1E4F94; }
+.kin-progression{ background: var(--sev-soft-bg); color: #7C4C0A; }
+.kin-refractory { background: var(--sev-hard-bg); color: #8B1414; }
+.kin-insufficient { background: var(--bg-subtle); color: var(--fg-muted); }
+
+/* CDE scorecard top right floating */
+.scorecard {
+  position: fixed; right: 20px; bottom: 20px;
+  background: linear-gradient(135deg, var(--brand-navy), var(--brand-navy-deep));
+  color: white; padding: 12px 16px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  display: flex; align-items: center; gap: 12px;
+  z-index: 60;
+  border: 1px solid rgba(31,184,255,.3);
+}
+.scorecard .stars { color: var(--brand-green); font-size: 16px; letter-spacing: 1px; }
+.scorecard .lbl { font-size: 11px; opacity: .85; text-transform: uppercase; letter-spacing: 1.2px; }
+.scorecard .val { font-size: 14px; font-weight: 700; }
+
+/* skeletons */
+.shimmer {
+  background: linear-gradient(90deg,var(--bg-subtle) 25%,#e5edf5 50%,var(--bg-subtle) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+</style>
+</head>
+<body>
+
+<!-- =============================== APP =============================== -->
+<div class="app">
+
+  <!-- ============================ SIDEBAR ============================ -->
+  <aside class="app-sidebar" aria-label="Navegación principal">
+
+    <!-- Logo institucional ProstaMed (preservado) -->
+    <div class="sidebar-logo">
+      <!-- Logo marca: prostata icon + wordmark cyan + green ellipse MED -->
+      <svg width="42" height="42" viewBox="0 0 60 60" aria-hidden="true">
+        <defs>
+          <linearGradient id="lg1" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#8cf3ff"/>
+            <stop offset="100%" stop-color="#1FB8FF"/>
+          </linearGradient>
+        </defs>
+        <!-- silhouette glóbulo prostático -->
+        <path d="M30 6 C42 6 50 18 50 30 C50 44 40 54 30 54 C20 54 10 44 10 30 C10 18 18 6 30 6 Z"
+              fill="none" stroke="url(#lg1)" stroke-width="2.5"/>
+        <circle cx="30" cy="30" r="11" fill="none" stroke="#22FF57" stroke-width="2"/>
+        <circle cx="30" cy="30" r="4" fill="url(#lg1)"/>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-name">PROSTAMED</span>
+        <span class="brand-sub">SALUD · DX · PRECISIÓN</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section-title">Clínica</div>
+    <a class="nav-item active" href="#">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11h-4M20 9v4"/></svg>
+      <span class="nav-label">Pacientes</span>
+      <span class="badge-mini muted">128</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-4"/><path d="M9 11V7a3 3 0 0 1 6 0v4"/></svg>
+      <span class="nav-label">Wizard de intake</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <span class="nav-label">Audit log</span>
+      <span class="badge-mini">7</span>
+    </a>
+
+    <div class="sidebar-section-title">Catálogo</div>
+    <a class="nav-item" href="#">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      <span class="nav-label">Gates pivotales</span>
+      <span class="badge-mini muted">55</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
+      <span class="nav-label">Cohort references</span>
+      <span class="badge-mini muted">11</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 7H3M21 12H3M21 17H3"/></svg>
+      <span class="nav-label">Therapy catalog</span>
+      <span class="badge-mini muted">37</span>
+    </a>
+
+    <div class="sidebar-section-title">Plataforma</div>
+    <a class="nav-item" href="#">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+      <span class="nav-label">Versionado</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span class="nav-label">Skills (10)</span>
+    </a>
+
+    <div class="sidebar-foot">
+      <div>FAUBOT_RELEASE</div>
+      <strong style="color:#8CF3FF;font-family:'JetBrains Mono',monospace">2026-04-25 LXXI</strong>
+      <div>Iter #65B · CDE 5/5 ⭐</div>
+    </div>
+  </aside>
+
+  <!-- ============================ HEADER ============================= -->
+  <header class="app-header">
+    <div class="header-search">
+      <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="search" placeholder="Buscar paciente por NSS, nombre, gate (G47), trial (CHAARTED)…" />
+    </div>
+    <div class="header-tools">
+      <span class="faubot-chip"><span class="pulse"></span> Faubot · LXXI · live</span>
+      <button class="icon-btn" title="Cambiar tema" onclick="toggleTheme()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+      </button>
+      <button class="icon-btn" title="Atajos de teclado">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+      </button>
+      <button class="icon-btn" title="Notificaciones">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      </button>
+      <span class="user-chip">
+        <span class="user-avatar">FB</span>
+        <span style="font-size:13px;font-weight:600">Dr. Faudes B.</span>
+      </span>
+    </div>
+  </header>
+
+  <!-- ============================== MAIN ============================= -->
+  <main class="app-main">
+
+    <!-- ====================== PATIENT HEADER STRIP ==================== -->
+    <section class="patient-header" aria-label="Resumen del paciente">
+      <div class="patient-id-block">
+        <div class="patient-name">
+          PX-7Q42 · Anónimo
+          <span class="chip danger">⚠ Alerta activa</span>
+          <span class="chip success" title="Consentimiento informado firmado · v3.2">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg>
+            Consent v3.2 ✓
+          </span>
+        </div>
+        <div class="patient-meta">
+          <span class="mono">NSS 70-12-…-7Q42</span>
+          <span class="dot">·</span>
+          <span>67 años · M</span>
+          <span class="dot">·</span>
+          <span>Dx 2024-06-01</span>
+          <span class="dot">·</span>
+          <span class="mono">PSA basal 45.0 ng/mL</span>
+        </div>
+        <div class="management-track" style="margin-top:8px">
+          <strong>Track:</strong>
+          <span class="state-chip primary">on_arpi</span>
+          <span class="state-chip">on_docetaxel</span>
+        </div>
+      </div>
+
+      <div class="patient-state-block">
+        <div class="state-row">
+          <span class="kicker">Estado clínico reconciliado</span>
+        </div>
+        <div class="state-row">
+          <span class="state-chip primary">mHSPC · alto volumen sincrónico</span>
+          <span class="state-chip">Línea 1 · ADT + Darolutamida + Docetaxel</span>
+          <span class="state-chip success">Imaging M1 confirmado</span>
+        </div>
+        <div class="state-row" style="font-size:11.5px;color:var(--fg-muted)">
+          <span>Capture state: <strong>mcspc_high_volume_sync</strong></span>
+          <span class="dot">·</span>
+          <span>Reconciled: <strong>mcspc_high_volume</strong></span>
+          <span class="dot">·</span>
+          <span class="chip success">Sin conflicto de estado</span>
+        </div>
+      </div>
+
+      <div class="vitals-block">
+        <div class="vital">
+          <span class="vital-label">PSA basal</span>
+          <span class="vital-value">45.0 <span class="vital-unit">ng/mL</span></span>
+          <span class="vital-delta">2024-06-01</span>
+        </div>
+        <div class="vital">
+          <span class="vital-label">PSA actual</span>
+          <span class="vital-value">3.8 <span class="vital-unit">ng/mL</span></span>
+          <span class="vital-delta dn">▼ 91.6% vs basal</span>
+        </div>
+        <div class="vital">
+          <span class="vital-label">PSA nadir</span>
+          <span class="vital-value">2.1 <span class="vital-unit">ng/mL</span></span>
+          <span class="vital-delta">2025-04 · L1</span>
+        </div>
+        <div class="vital">
+          <span class="vital-label">PSADT actual</span>
+          <span class="vital-value">11.2 <span class="vital-unit">m</span></span>
+          <span class="vital-delta up">▲ progresión lenta</span>
+        </div>
+        <div class="vital">
+          <span class="vital-label">Testosterona</span>
+          <span class="vital-value">18 <span class="vital-unit">ng/dL</span></span>
+          <span class="vital-delta dn">Castrate confirmado</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================== ACTIVE GATES BANNER ===================== -->
+    <div class="alert-banner">
+      <div class="alert-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+      </div>
+      <div class="alert-text">
+        <strong>2 hard_block · 3 soft_warning activos</strong>
+        <small>G07 contraindicación absoluta abiraterona (ALT &gt; 5×LSN) · G55 PSADT ≤ 10m sugiere iniciar ARPI en m0CRPC · ver pestaña <a href="#" onclick="showTab('gates')">Decisión &amp; Gates</a></small>
+      </div>
+      <button onclick="showTab('gates')">Revisar gates →</button>
+    </div>
+
+    <!-- ============================= TABS ============================= -->
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="overview" role="tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+        Vista 360°
+      </button>
+      <button class="tab" data-tab="psa" role="tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 6-6"/></svg>
+        PSA Compass
+      </button>
+      <button class="tab" data-tab="gates" role="tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Decisión &amp; Gates
+        <span class="badge">5</span>
+      </button>
+      <button class="tab" data-tab="evidence" role="tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        Evidencia
+      </button>
+      <button class="tab" data-tab="timeline" role="tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        Combined Timeline
+      </button>
+      <button class="tab" data-tab="audit" role="tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        CDE Audit (5⭐)
+      </button>
+      <button class="tab" data-tab="version" role="tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33"/></svg>
+        Versionado
+      </button>
+      <button class="tab" data-tab="intake" role="tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        Intake longitudinal
+      </button>
+      <button class="tab" data-tab="consent" role="tab">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15l2 2 4-4"/></svg>
+        Consentimiento &amp; firma
+      </button>
+    </nav>
+
+    <!-- ====================================================================
+         TAB 1 — VISTA 360°  (overview: estado, PSA mini, gates top, timeline)
+         ================================================================ -->
+    <section class="tab-panel active" id="tab-overview">
+
+      <div class="grid cols-3-2">
+
+        <!-- LEFT: PSA observability + per-line + forecast -->
+        <div class="card">
+          <div class="card-head">
+            <h3>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 6-6"/></svg>
+              PSA Observability — torre de vigilancia
+            </h3>
+            <span class="head-meta">3 líneas · 11 puntos · forecast 3/6/12m</span>
+            <button class="icon-btn" title="Expandir" onclick="showTab('psa')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+            </button>
+          </div>
+          <div class="card-body">
+            <div class="chart-container"><canvas id="psaMini"></canvas></div>
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-swatch" style="background:var(--line-1)"></span>Línea 1 · ADT+Daro+Doce</span>
+              <span class="legend-item"><span class="legend-swatch" style="background:var(--line-2)"></span>Línea 2 · Cabazitaxel</span>
+              <span class="legend-item"><span class="legend-swatch" style="background:var(--cohort);opacity:.7"></span>Cohort overlay (ARASENS mediana)</span>
+              <span class="legend-item"><span class="legend-swatch" style="background:var(--brand-cyan);opacity:.3"></span>Forecast 3/6/12m (CI 95%)</span>
+              <span class="legend-item"><span class="legend-swatch" style="background:#E04E4E"></span>BCR · Detectable · CRPC ref</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT: Gates triggered top + per-line kinetics summary -->
+        <div class="card">
+          <div class="card-head">
+            <h3>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Gates pivotal activos
+            </h3>
+            <span class="head-meta">5 / 55 evaluados</span>
+          </div>
+          <div class="card-body" style="padding:0">
+
+            <div class="gate-card hard" style="border-radius:0;border-left-width:4px;border-bottom:1px solid var(--border)">
+              <div class="gate-head">
+                <span class="gate-code">G07</span>
+                <span class="chip hard">hard_block</span>
+              </div>
+              <h4>Hepatotoxicidad — abiraterona contraindicada</h4>
+              <div class="gate-msg">ALT 6.2× LSN supera umbral seguro. Bloquea ADT_ABIRATERONE y NIRAPARIB_ABIRATERONE.</div>
+              <div class="gate-foot">
+                <a href="#" class="trial-link">PMID 28296438</a>
+                <a href="#" class="trial-link">NCCN PROS-N</a>
+                <span class="chip">truthy_flag</span>
+              </div>
+            </div>
+
+            <div class="gate-card soft" style="border-radius:0;border-left-width:4px;border-bottom:1px solid var(--border)">
+              <div class="gate-head">
+                <span class="gate-code">G55</span>
+                <span class="chip soft">soft_warning</span>
+              </div>
+              <h4>PSADT ≤ 10 m — iniciar ARPI en m0CRPC</h4>
+              <div class="gate-msg">Cinética agresiva sugiere apalutamida/enzalutamida/darolutamida (SPARTAN/PROSPER/ARAMIS).</div>
+              <div class="gate-foot">
+                <a href="#" class="trial-link">SPARTAN</a>
+                <a href="#" class="trial-link">PROSPER</a>
+                <a href="#" class="trial-link">ARAMIS</a>
+                <span class="chip">numeric_threshold</span>
+              </div>
+            </div>
+
+            <div class="gate-card soft" style="border-radius:0;border-left-width:4px;border-bottom:1px solid var(--border)">
+              <div class="gate-head">
+                <span class="gate-code">G47</span>
+                <span class="chip soft">soft_warning</span>
+              </div>
+              <h4>PSA flare ARPI — pseudoprogresión</h4>
+              <div class="gate-msg">Subida transitoria de PSA en primeras 12 sem post-ARPI puede no indicar progresión.</div>
+              <div class="gate-foot">
+                <a href="#" class="trial-link">PMID 31816320</a>
+                <span class="chip">numeric_baseline_delta_rise_above</span>
+              </div>
+            </div>
+
+            <div class="gate-card info" style="border-radius:0;border-left-width:4px;border-bottom:1px solid var(--border)">
+              <div class="gate-head">
+                <span class="gate-code">G53</span>
+                <span class="chip info">informational</span>
+              </div>
+              <h4>BCR agresivo post-RP — considerar salvage temprano</h4>
+              <div class="gate-msg">PSA velocity sugiere ventana de RT salvage con mejor outcome (Stephenson JCO 2009).</div>
+              <div class="gate-foot">
+                <a href="#" class="trial-link">Stephenson JCO 2009</a>
+                <a href="#" class="trial-link">RTOG-9601</a>
+              </div>
+            </div>
+
+            <div class="gate-card info" style="border-radius:0;border-left-width:4px">
+              <div class="gate-head">
+                <span class="gate-code">G14</span>
+                <span class="chip info">informational</span>
+              </div>
+              <h4>HRR status pendiente — considerar test germline</h4>
+              <div class="gate-msg">BRCA1/2 desconocido en mCRPC habilitaría OLAPARIB y TALAZOPARIB+ENZA.</div>
+              <div class="gate-foot">
+                <a href="#" class="trial-link">PROfound</a>
+                <a href="#" class="trial-link">TALAPRO-2</a>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Combined timeline horizontal compact -->
+      <div class="card" style="margin-top:18px">
+        <div class="card-head">
+          <h3>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            Combined Timeline · últimos 12 eventos
+          </h3>
+          <span class="head-meta">PSA + tratamientos + imaging + gates</span>
+        </div>
+        <div class="card-body" style="padding:8px 14px">
+          <div class="timeline-h">
+            <div class="timeline-h-track" id="timelineHTrack">
+              <!-- events injected via JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Per-line analytics quick row -->
+      <div class="grid cols-3" style="margin-top:18px">
+        <div class="card">
+          <div class="card-head"><h3>Línea 1 · ADT+Darolutamida+Docetaxel</h3><span class="kin-badge kin-response">response</span></div>
+          <div class="card-body">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12.5px">
+              <div><div class="kicker">Baseline</div><strong class="mono">45.0</strong></div>
+              <div><div class="kicker">Nadir</div><strong class="mono">2.1</strong></div>
+              <div><div class="kicker">Best Δ%</div><strong class="mono" style="color:var(--sev-success)">−95.3%</strong></div>
+              <div><div class="kicker">Time to nadir</div><strong class="mono">9.2 m</strong></div>
+              <div><div class="kicker">Duration response</div><strong class="mono">14.6 m</strong></div>
+              <div><div class="kicker">PSADT progresión</div><strong class="mono">11.2 m</strong></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Forecast log-linear · 3/6/12 m</h3><span class="chip success">model_fit_quality: high</span></div>
+          <div class="card-body">
+            <table class="tbl">
+              <thead><tr><th>Horizonte</th><th>Esperado</th><th>CI 95% inf</th><th>CI 95% sup</th><th>Width</th></tr></thead>
+              <tbody>
+                <tr><td>3 m</td><td class="num">4.1</td><td class="num">3.6</td><td class="num">4.7</td><td class="num">1.1</td></tr>
+                <tr><td>6 m</td><td class="num">5.0</td><td class="num">4.0</td><td class="num">6.4</td><td class="num">2.4</td></tr>
+                <tr><td>12 m</td><td class="num">7.4</td><td class="num">5.2</td><td class="num">10.5</td><td class="num">5.3</td></tr>
+              </tbody>
+            </table>
+            <div style="margin-top:8px;font-size:11.5px;color:var(--fg-muted)">
+              R² = 0.91 · outliers = 0 · reliability = high · 11 puntos · 2 líneas estables
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Cohort reference · ARASENS</h3><span class="chip" style="background:rgba(168,87,232,.12);color:#5C2D87">trial overlay</span></div>
+          <div class="card-body">
+            <table class="cohort-table">
+              <thead><tr><th>Métrica</th><th>Paciente</th><th>Cohort mediana</th><th>Δ</th></tr></thead>
+              <tbody>
+                <tr><td>PSA mes 6</td><td class="num">5.0</td><td class="num">3.8</td><td class="delta-neg num">+1.2</td></tr>
+                <tr><td>PSA mes 12</td><td class="num">7.4</td><td class="num">2.1</td><td class="delta-neg num">+5.3</td></tr>
+                <tr><td>Time to nadir</td><td class="num">9.2 m</td><td class="num">7.4 m</td><td class="delta-neg num">+1.8</td></tr>
+                <tr><td>Duration response</td><td class="num">14.6 m</td><td class="num">22.1 m</td><td class="delta-neg num">−7.5</td></tr>
+              </tbody>
+            </table>
+            <div style="margin-top:8px;font-size:11.5px;color:var(--fg-muted)">
+              ARASENS NEJM 2022 · n=1306 mHSPC · ADT+Daro+Doce · referencia poblacional pivotal
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Consentimiento informado · resumen rápido en Vista 360° -->
+      <div class="card" style="margin-top:18px;border-left:4px solid var(--sev-success)">
+        <div class="card-head">
+          <h3>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15l2 2 4-4"/></svg>
+            Consentimiento informado &amp; firma electrónica
+          </h3>
+          <span class="head-meta">consent_version_code · v3.2 · 2026-03-12</span>
+          <button class="icon-btn" title="Ver y firmar" onclick="showTab('consent')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+          </button>
+        </div>
+        <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px">
+          <div>
+            <div class="kicker">Estado</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+              <span class="chip success">✓ signed</span>
+              <span style="font-size:11.5px;color:var(--fg-muted)">vence en 287 d</span>
+            </div>
+          </div>
+          <div>
+            <div class="kicker">Firmado por</div>
+            <div style="font-size:13px;font-weight:600;margin-top:4px">Paciente PX-7Q42 + Dr. Faudes B.</div>
+            <div style="font-size:11.5px;color:var(--fg-muted)">2026-03-12 · 14:32 CST</div>
+          </div>
+          <div>
+            <div class="kicker">content_hash (SHA-256)</div>
+            <div class="mono" style="font-size:11px;margin-top:4px;color:var(--fg)">
+              4f3c91…a7e2b8
+            </div>
+            <div style="font-size:11.5px;color:var(--fg-muted)">FAUBOT_RELEASE LXVIII</div>
+          </div>
+          <div>
+            <div class="kicker">Tipos de uso autorizados</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+              <span class="chip success" style="padding:2px 6px;font-size:10px">clínico</span>
+              <span class="chip success" style="padding:2px 6px;font-size:10px">CDE/IA</span>
+              <span class="chip success" style="padding:2px 6px;font-size:10px">cohorte</span>
+              <span class="chip" style="padding:2px 6px;font-size:10px;opacity:.6">investigación</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ====================================================================
+         TAB 2 — PSA COMPASS  (chart full + per-line + cohort + forecast CI)
+         ================================================================ -->
+    <section class="tab-panel" id="tab-psa">
+      <div class="grid cols-3-2">
+        <div class="card">
+          <div class="card-head">
+            <h3>PSA Compass · drill-down per-treatment-line</h3>
+            <div class="head-actions">
+              <button class="icon-btn" title="Toggle cohort overlay" onclick="alert('Toggle cohort overlay (mockup)')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5Z"/></svg>
+              </button>
+              <button class="icon-btn" title="Toggle CI">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12c0-4 4-8 9-8s9 4 9 8-4 8-9 8-9-4-9-8z"/></svg>
+              </button>
+              <button class="icon-btn" title="Exportar CSV">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="chart-container" style="height:440px"><canvas id="psaFull"></canvas></div>
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-swatch" style="background:var(--line-1)"></span>L1 ADT+Daro+Doce</span>
+              <span class="legend-item"><span class="legend-swatch" style="background:var(--line-2)"></span>L2 Cabazitaxel</span>
+              <span class="legend-item"><span class="legend-swatch" style="background:var(--cohort)"></span>ARASENS mediana</span>
+              <span class="legend-item"><span class="legend-swatch" style="background:rgba(31,184,255,.2)"></span>Forecast CI 95%</span>
+              <span class="legend-item"><span class="legend-swatch" style="background:#E04E4E"></span>Phoenix BCR (≥nadir+2)</span>
+              <span class="legend-item"><span class="legend-swatch" style="background:#F3A11A"></span>PSA detectable (0.1)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h3>Analítica per-line · 6 estados de cinética</h3>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th>L#</th><th>Régimen</th><th>Baseline</th><th>Nadir</th>
+                  <th>TtN</th><th>DOR</th><th>PSADT</th><th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="chip line-1">L1</span></td>
+                  <td>ADT+Daro+Doce</td>
+                  <td class="num">45.0</td><td class="num">2.1</td>
+                  <td class="num">9.2 m</td><td class="num">14.6 m</td><td class="num">11.2 m</td>
+                  <td><span class="kin-badge kin-response">response</span></td>
+                </tr>
+                <tr>
+                  <td><span class="chip line-2">L2</span></td>
+                  <td>Cabazitaxel</td>
+                  <td class="num">8.5</td><td class="num">3.8</td>
+                  <td class="num">3.4 m</td><td class="num">5.1 m</td><td class="num">6.8 m</td>
+                  <td><span class="kin-badge kin-partial">partial_response</span></td>
+                </tr>
+                <tr style="opacity:.6">
+                  <td><span class="chip line-3">L3</span></td>
+                  <td>(planificada) Lu-177 PSMA</td>
+                  <td class="num">—</td><td class="num">—</td>
+                  <td class="num">—</td><td class="num">—</td><td class="num">—</td>
+                  <td><span class="kin-badge kin-insufficient">insufficient_data</span></td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div style="padding:14px;border-top:1px solid var(--border);background:var(--surface-2)">
+              <div class="kicker" style="margin-bottom:6px">Confidence reasons (forecast_reliability)</div>
+              <ul style="margin:0;padding-left:18px;font-size:12px;color:var(--fg-soft);line-height:1.6">
+                <li><strong>minimum_data_passed</strong>: 11 puntos ≥ umbral (5)</li>
+                <li><strong>line_stability_passed</strong>: paciente en L2 estable últimos 90 d</li>
+                <li><strong>model_fit_quality</strong>: high (R²=0.91)</li>
+                <li><strong>outlier_burden</strong>: 0 outliers detectados</li>
+                <li><strong>confidence final</strong>: <span class="chip success">high</span></li>
+              </ul>
+            </div>
+
+            <div style="padding:14px;border-top:1px solid var(--border)">
+              <div class="kicker" style="margin-bottom:6px">Drill-down per-band (click sobre la banda en chart)</div>
+              <button class="icon-btn" style="width:auto;padding:0 12px;gap:6px" onclick="openDrill('L1')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+                Ver detalle L1
+              </button>
+              <button class="icon-btn" style="width:auto;padding:0 12px;gap:6px;margin-left:6px" onclick="openDrill('L2')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+                Ver detalle L2
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         TAB 3 — DECISIÓN & GATES  (preferred_regimen + gates 3-tier filter)
+         ================================================================ -->
+    <section class="tab-panel" id="tab-gates">
+      <div class="grid cols-3-2" style="margin-bottom:18px">
+        <div class="card">
+          <div class="card-head"><h3>Decisión recomendada (CÓMO)</h3>
+            <span class="head-meta">ranking_policy_version v3.4</span></div>
+          <div class="card-body">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <span class="state-chip primary" style="font-size:13px;padding:8px 14px">ADT_DAROLUTAMIDE_DOCETAXEL</span>
+              <span class="chip success">decision_quality: high</span>
+              <span class="chip info">applicability_badge: directly_applicable</span>
+            </div>
+            <div style="margin-top:14px;font-size:13px;color:var(--fg-soft);line-height:1.6">
+              <strong>Razonamiento clínico</strong> · paciente mHSPC alto-volumen sincrónico, performance status preservado, sin contraindicaciones a docetaxel ni darolutamida. Triplete preferido por ARASENS (HR mortalidad 0.68).
+            </div>
+            <div style="margin-top:12px"><span class="kicker">Alternativas (3)</span></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+              <span class="chip">ADT_DOCETAXEL_ABIRATERONE (PEACE-1)</span>
+              <span class="chip">ADT_APALUTAMIDE (TITAN)</span>
+              <span class="chip">ADT_ENZALUTAMIDE (ENZAMET / ARCHES)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Filtros · 55 gates evaluados</h3></div>
+          <div class="card-body" style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="state-chip danger">2 hard_block</button>
+            <button class="state-chip warn">3 soft_warning</button>
+            <button class="state-chip">8 informational</button>
+            <button class="state-chip success">42 no triggered</button>
+            <div style="width:100%;margin-top:8px;font-size:12px;color:var(--fg-muted)">
+              <strong>not_recommended (4):</strong> ADT_ABIRATERONE, NIRAPARIB_ABIRATERONE, RUCAPARIB, RADIUM223 (M0)
+            </div>
+            <div style="width:100%;font-size:12px;color:var(--fg-muted)">
+              <strong>missing_critical_inputs (2):</strong> HRR_status, ECOG_PS · <strong>stale (1):</strong> imaging > 90 d
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-h"><h2>Gates triggered · vista detallada</h2><span class="sub">Cada gate muestra severity 3-tier · trial_refs live · trigger_type · override</span></div>
+      <div class="gate-grid">
+
+        <div class="gate-card hard">
+          <div class="gate-head">
+            <span class="gate-code">G07</span>
+            <span class="chip hard">hard_block</span>
+            <span class="chip" style="margin-left:auto">since LXIV</span>
+          </div>
+          <h4>Hepatotoxicidad — abiraterona contraindicada</h4>
+          <div class="gate-msg">ALT 6.2 × LSN supera umbral seguro (≤5 × LSN). Bloquea ADT_ABIRATERONE y NIRAPARIB_ABIRATERONE en mHSPC y mCRPC.</div>
+          <div class="gate-foot">
+            <span class="chip">trigger: numeric_threshold</span>
+            <a href="https://pubmed.ncbi.nlm.nih.gov/28296438/" class="trial-link" target="_blank">PMID 28296438</a>
+            <a href="#" class="trial-link">NCCN PROS-N v2.2026</a>
+            <a href="#" class="trial-link">EAU 2026 §6.3</a>
+          </div>
+        </div>
+
+        <div class="gate-card hard">
+          <div class="gate-head">
+            <span class="gate-code">G29</span>
+            <span class="chip hard">hard_block</span>
+          </div>
+          <h4>Insuficiencia cardiaca NYHA III–IV — enzalutamida no recomendada</h4>
+          <div class="gate-msg">Riesgo de HTA y eventos cardiovasculares mayores. Considerar darolutamida (perfil CV mejorado).</div>
+          <div class="gate-foot">
+            <span class="chip">trigger: any_of</span>
+            <a href="#" class="trial-link">ARAMIS NEJM 2018</a>
+            <a href="#" class="trial-link">PMID 31039765</a>
+          </div>
+        </div>
+
+        <div class="gate-card soft">
+          <div class="gate-head">
+            <span class="gate-code">G55</span>
+            <span class="chip soft">soft_warning</span>
+            <span class="chip" style="margin-left:auto">since LXIV #63A</span>
+          </div>
+          <h4>PSADT ≤ 10 m en m0CRPC — iniciar ARPI</h4>
+          <div class="gate-msg">Cinética agresiva. SPARTAN/PROSPER/ARAMIS demuestran beneficio MFS con apalutamida/enzalutamida/darolutamida.</div>
+          <div class="gate-foot">
+            <span class="chip">trigger: numeric_below</span>
+            <a href="#" class="trial-link">SPARTAN</a>
+            <a href="#" class="trial-link">PROSPER</a>
+            <a href="#" class="trial-link">ARAMIS</a>
+          </div>
+        </div>
+
+        <div class="gate-card soft">
+          <div class="gate-head">
+            <span class="gate-code">G47</span>
+            <span class="chip soft">soft_warning</span>
+            <span class="chip" style="margin-left:auto">since LVIII #62</span>
+          </div>
+          <h4>PSA flare ARPI · pseudoprogresión</h4>
+          <div class="gate-msg">Subida transitoria de PSA en primeras 12 semanas post-ARPI no debe interpretarse como progresión real. Re-evaluar a sem 12.</div>
+          <div class="gate-foot">
+            <span class="chip">trigger: numeric_baseline_delta_rise_above</span>
+            <a href="#" class="trial-link">PMID 31816320</a>
+          </div>
+        </div>
+
+        <div class="gate-card soft">
+          <div class="gate-head">
+            <span class="gate-code">G54</span>
+            <span class="chip soft">soft_warning</span>
+            <span class="chip" style="margin-left:auto">since LXIV</span>
+          </div>
+          <h4>PSA bounce post-RT · pseudoprogresión</h4>
+          <div class="gate-msg">Bounce típico 12–24 m post-RT puede confundirse con BCR. Esperar 3 mediciones consecutivas (Phoenix 2006).</div>
+          <div class="gate-foot">
+            <span class="chip">trigger: numeric_baseline_delta_above</span>
+            <a href="#" class="trial-link">Crook IJROBP 2010</a>
+            <a href="#" class="trial-link">Phoenix 2006</a>
+          </div>
+        </div>
+
+        <div class="gate-card info">
+          <div class="gate-head">
+            <span class="gate-code">G14</span>
+            <span class="chip info">informational</span>
+          </div>
+          <h4>HRR status pendiente</h4>
+          <div class="gate-msg">BRCA1/2 desconocido. En mCRPC habilitaría OLAPARIB / TALAZOPARIB+ENZA / NIRAPARIB+ABI. Recomendar test germline + somatic.</div>
+          <div class="gate-foot">
+            <span class="chip">trigger: all_of_falsy</span>
+            <a href="#" class="trial-link">PROfound</a>
+            <a href="#" class="trial-link">TALAPRO-2</a>
+            <a href="#" class="trial-link">MAGNITUDE</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         TAB 4 — EVIDENCIA  (per-gate evidence drill-down + guideline versions)
+         ================================================================ -->
+    <section class="tab-panel" id="tab-evidence">
+
+      <div class="grid cols-3" style="margin-bottom:18px">
+        <div class="card"><div class="card-body">
+          <div class="kicker">unique_trial_refs</div>
+          <div style="font-size:32px;font-weight:800;color:var(--brand-cyan)">37</div>
+          <div style="font-size:12px;color:var(--fg-muted)">trials pivotales reconocidos · auto-resolución a PubMed/CT.gov/DOI</div>
+        </div></div>
+        <div class="card"><div class="card-body">
+          <div class="kicker">per_gate_evidence_count</div>
+          <div style="font-size:32px;font-weight:800;color:var(--brand-cyan)">5</div>
+          <div style="font-size:12px;color:var(--fg-muted)">gates triggered con drill-down completo</div>
+        </div></div>
+        <div class="card"><div class="card-body">
+          <div class="kicker">guideline_versions</div>
+          <div style="font-size:14px;font-weight:700;margin:6px 0">
+            <span class="chip success">NCCN v2.2026</span>
+            <span class="chip success">EAU 2026</span>
+          </div>
+          <div style="font-size:12px;color:var(--fg-muted)">primary + comparison · trazabilidad regulatoria</div>
+        </div></div>
+      </div>
+
+      <div class="section-h"><h2>Per-gate evidence drill-down · LXX #65A</h2><span class="sub">Cada gate expone trial_refs_with_links + evidence_tag_link + citation_count</span></div>
+
+      <div class="card">
+        <div class="card-body" style="padding:0">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Gate</th><th>Class label</th><th>Trial refs (live)</th>
+                <th>Evidence tag</th><th>Citations</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="gate-code">G07</span></td>
+                <td>Hepatic toxicity contraindication</td>
+                <td>
+                  <a class="trial-link" href="https://pubmed.ncbi.nlm.nih.gov/28296438/" target="_blank">PMID 28296438</a>
+                  <a class="trial-link" href="https://clinicaltrials.gov/study/NCT00638690" target="_blank">NCT00638690</a>
+                </td>
+                <td><a class="trial-link">cougar_aa_302_safety</a></td>
+                <td class="num">3</td>
+              </tr>
+              <tr>
+                <td><span class="gate-code">G55</span></td>
+                <td>m0CRPC PSADT-driven ARPI</td>
+                <td>
+                  <a class="trial-link">SPARTAN (NCT01946204)</a>
+                  <a class="trial-link">PROSPER (NCT02003924)</a>
+                  <a class="trial-link">ARAMIS (NCT02200614)</a>
+                </td>
+                <td><a class="trial-link">spartan_prosper_aramis_NEJM_2018</a></td>
+                <td class="num">5</td>
+              </tr>
+              <tr>
+                <td><span class="gate-code">G47</span></td>
+                <td>PSA flare ARPI</td>
+                <td><a class="trial-link">PMID 31816320</a></td>
+                <td><a class="trial-link">arpi_psa_flare_pseudoprogression</a></td>
+                <td class="num">2</td>
+              </tr>
+              <tr>
+                <td><span class="gate-code">G54</span></td>
+                <td>PSA bounce post-RT</td>
+                <td>
+                  <a class="trial-link">Crook IJROBP 2010</a>
+                  <a class="trial-link">Phoenix 2006 RTOG-ASTRO</a>
+                </td>
+                <td><a class="trial-link">phoenix_definition_bcr</a></td>
+                <td class="num">2</td>
+              </tr>
+              <tr>
+                <td><span class="gate-code">G14</span></td>
+                <td>HRR test pending</td>
+                <td>
+                  <a class="trial-link">PROfound (NCT02987543)</a>
+                  <a class="trial-link">TALAPRO-2</a>
+                  <a class="trial-link">MAGNITUDE</a>
+                </td>
+                <td><a class="trial-link">hrr_test_recommendation</a></td>
+                <td class="num">4</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section-h" style="margin-top:22px"><h2>Cohort references · 11 combos pivotales</h2><span class="sub">Mediana publicada por (state × regimen-class) — overlay disponible en PSA Compass</span></div>
+      <div class="card">
+        <div class="card-body" style="padding:0">
+          <table class="tbl">
+            <thead><tr><th>Trial</th><th>State</th><th>Regimen class</th><th>n</th><th>Mediana PSA</th><th>PSADT</th><th>Año</th></tr></thead>
+            <tbody>
+              <tr><td><strong>CHAARTED</strong></td><td>mHSPC alto-vol</td><td>ADT + Doce</td><td class="num">790</td><td class="num">3.2</td><td class="num">—</td><td class="num">2015</td></tr>
+              <tr><td><strong>LATITUDE</strong></td><td>mHSPC alto-riesgo</td><td>ADT + Abi</td><td class="num">1199</td><td class="num">2.8</td><td class="num">—</td><td class="num">2017</td></tr>
+              <tr><td><strong>ENZAMET</strong></td><td>mHSPC</td><td>ADT + Enza</td><td class="num">1125</td><td class="num">3.5</td><td class="num">—</td><td class="num">2019</td></tr>
+              <tr><td><strong>ARCHES</strong></td><td>mHSPC</td><td>ADT + Enza</td><td class="num">1150</td><td class="num">3.1</td><td class="num">—</td><td class="num">2019</td></tr>
+              <tr><td><strong>PEACE-1</strong></td><td>mHSPC</td><td>ADT + Doce + Abi</td><td class="num">1173</td><td class="num">2.0</td><td class="num">—</td><td class="num">2022</td></tr>
+              <tr><td><strong>ARASENS</strong></td><td>mHSPC</td><td>ADT + Doce + Daro</td><td class="num">1306</td><td class="num">2.1</td><td class="num">—</td><td class="num">2022</td></tr>
+              <tr><td><strong>SPARTAN</strong></td><td>m0CRPC</td><td>Apa</td><td class="num">1207</td><td class="num">—</td><td class="num">8.5</td><td class="num">2018</td></tr>
+              <tr><td><strong>PROSPER</strong></td><td>m0CRPC</td><td>Enza</td><td class="num">1401</td><td class="num">—</td><td class="num">8.0</td><td class="num">2018</td></tr>
+              <tr><td><strong>ARAMIS</strong></td><td>m0CRPC</td><td>Daro</td><td class="num">1509</td><td class="num">—</td><td class="num">9.0</td><td class="num">2019</td></tr>
+              <tr><td><strong>PROfound</strong></td><td>mCRPC HRR+</td><td>Olaparib</td><td class="num">387</td><td class="num">7.4</td><td class="num">—</td><td class="num">2020</td></tr>
+              <tr><td><strong>VISION</strong></td><td>mCRPC PSMA+</td><td>Lu-177 PSMA</td><td class="num">831</td><td class="num">5.9</td><td class="num">—</td><td class="num">2021</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         TAB 5 — COMBINED TIMELINE  (vertical Epic-style)
+         ================================================================ -->
+    <section class="tab-panel" id="tab-timeline">
+      <div class="section-h">
+        <h2>Combined Timeline · evento por evento</h2>
+        <span class="sub">PSA + tratamientos + imaging + biopsy + clinical events · auto-asignados a la línea de terapia activa por fecha</span>
+      </div>
+
+      <div class="grid cols-3-2">
+        <div class="card">
+          <div class="card-head">
+            <h3>Cronología clínica completa</h3>
+            <div class="head-actions">
+              <select class="state-chip" style="padding:6px 10px">
+                <option>Todos los eventos</option>
+                <option>Solo PSA</option>
+                <option>Solo tratamientos</option>
+                <option>Solo imaging</option>
+                <option>Solo gates</option>
+              </select>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="timeline-v">
+
+              <div class="tv-item tx">
+                <div class="tv-head">
+                  <span class="chip line-1">Línea 1 inicio</span>
+                  <span class="tv-date">2024-06-15</span>
+                </div>
+                <div class="tv-title">Inicio ADT + Darolutamida + Docetaxel (triplete ARASENS)</div>
+                <div class="tv-body">Régimen: <span class="mono">ADT_DAROLUTAMIDE_DOCETAXEL</span> · indicación: mHSPC alto-volumen sincrónico · 6 ciclos docetaxel programados.</div>
+              </div>
+
+              <div class="tv-item">
+                <div class="tv-head">
+                  <span class="chip">PSA</span>
+                  <span class="tv-date">2024-09-01 · L1 mes 3</span>
+                </div>
+                <div class="tv-title">PSA 12.0 ng/mL · ▼ 73% vs basal</div>
+                <div class="tv-body">Respuesta esperada al triplete. Nadir aún no alcanzado. Source: <span class="mono">biomarker_longitudinal</span>.</div>
+              </div>
+
+              <div class="tv-item img">
+                <div class="tv-head">
+                  <span class="chip info">Imaging</span>
+                  <span class="tv-date">2024-12-10</span>
+                </div>
+                <div class="tv-title">CT + bone scan · respuesta parcial</div>
+                <div class="tv-body">Reducción carga ósea · sin nuevas lesiones. Reconfirma estado M1 (high-volume).</div>
+              </div>
+
+              <div class="tv-item">
+                <div class="tv-head">
+                  <span class="chip success">PSA · NADIR</span>
+                  <span class="tv-date">2025-04-12 · L1 mes 9.2</span>
+                </div>
+                <div class="tv-title">PSA nadir = 2.1 ng/mL · ▼ 95.3% vs basal · PSA50/90 ✓</div>
+                <div class="tv-body">Time-to-nadir 9.2 m. Inicia ventana <strong>duration_response</strong>.</div>
+              </div>
+
+              <div class="tv-item gate">
+                <div class="tv-head">
+                  <span class="chip soft">G47 soft_warning</span>
+                  <span class="tv-date">2025-06-18</span>
+                </div>
+                <div class="tv-title">PSA flare detectado · pseudoprogresión probable</div>
+                <div class="tv-body">PSA 3.4 (subida +62% desde nadir, &lt;12 sem post-ARPI re-escalation). Sistema flagged para no interpretar como BCR.</div>
+              </div>
+
+              <div class="tv-item">
+                <div class="tv-head">
+                  <span class="chip soft">PSA progresión</span>
+                  <span class="tv-date">2025-10-20 · L1 mes 16</span>
+                </div>
+                <div class="tv-title">Progresión PSA confirmada · L1 → L2</div>
+                <div class="tv-body">3 mediciones ascendentes consecutivas. PSADT post-nadir = 11.2 m. Kinetics classification → <span class="kin-badge kin-progression">progression</span>.</div>
+              </div>
+
+              <div class="tv-item tx">
+                <div class="tv-head">
+                  <span class="chip line-2">Línea 2 inicio</span>
+                  <span class="tv-date">2025-11-02</span>
+                </div>
+                <div class="tv-title">Inicio Cabazitaxel · CARD trial logic</div>
+                <div class="tv-body">Régimen: <span class="mono">CABAZITAXEL</span> · prior ARPI + Doce → CARD evidence support.</div>
+              </div>
+
+              <div class="tv-item gate">
+                <div class="tv-head">
+                  <span class="chip hard">G07 hard_block</span>
+                  <span class="tv-date">2025-12-05</span>
+                </div>
+                <div class="tv-title">Hepatotoxicidad detectada · Abi/Niraparib bloqueadas</div>
+                <div class="tv-body">ALT 6.2 × LSN. Excluye ADT_ABIRATERONE y NIRAPARIB_ABIRATERONE de futuras líneas.</div>
+              </div>
+
+              <div class="tv-item">
+                <div class="tv-head">
+                  <span class="chip">PSA</span>
+                  <span class="tv-date">2026-04-02 · L2 mes 5</span>
+                </div>
+                <div class="tv-title">PSA 3.8 ng/mL · respuesta parcial L2</div>
+                <div class="tv-body">Best Δ% L2 = −55.3% (de 8.5 → 3.8). Kinetics → <span class="kin-badge kin-partial">partial_response</span>.</div>
+              </div>
+
+              <div class="tv-item event">
+                <div class="tv-head">
+                  <span class="chip info">PSMA-PET planificado</span>
+                  <span class="tv-date">2026-05-15</span>
+                </div>
+                <div class="tv-title">PSMA-PET para qualificar Lu-177 PSMA-617 (línea 3)</div>
+                <div class="tv-body">Si PSMA+ → trial VISION elegibility (mediana cohort PSA 5.9 ng/mL post-Lu).</div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Eventos clave (12)</h3></div>
+          <div class="card-body">
+            <div style="display:grid;gap:8px;font-size:12.5px">
+              <div style="display:flex;gap:8px;align-items:center"><span class="chip success">9</span>PSA measurements</div>
+              <div style="display:flex;gap:8px;align-items:center"><span class="chip line-2">3</span>Treatment starts/ends</div>
+              <div style="display:flex;gap:8px;align-items:center"><span class="chip info">2</span>Imaging events</div>
+              <div style="display:flex;gap:8px;align-items:center"><span class="chip soft">2</span>Gate triggers</div>
+              <div style="display:flex;gap:8px;align-items:center"><span class="chip hard">1</span>Clinical milestone (BCR)</div>
+            </div>
+            <div style="margin-top:14px;padding:12px;border:1px dashed var(--border);border-radius:var(--radius);font-size:12px;color:var(--fg-muted);line-height:1.5">
+              Cada evento se asigna automáticamente a la línea activa (auto-asignación por fecha · LXV #63B). Los gates con severity = soft_warning aparecen contextualizados pero NO bloquean tratamiento (anti-misinterpretation pattern · LVIII #62).
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         TAB 6 — CDE AUDIT 5 DIMENSIONES (CÓMO/POR QUÉ/DATOS/EVIDENCIA/VERSIÓN)
+         ================================================================ -->
+    <section class="tab-panel" id="tab-audit">
+      <div class="section-h">
+        <h2>Clinical Decision Engine Auditable · 5 dimensiones</h2>
+        <span class="sub">build_decision_audit() · scorecard 5/5 ⭐⭐⭐⭐⭐ · LXX #65A · FDA SaMD compliance ready</span>
+      </div>
+
+      <div class="dim-grid">
+
+        <div class="dim-card" style="border-top-color:var(--brand-cyan)">
+          <div class="dim-name">CÓMO</div>
+          <div class="dim-stars">★★★★★</div>
+          <div class="dim-title">Reasoning chain</div>
+          <div class="dim-body">UI muestra el razonamiento completo al médico: estado → régimen preferido → alternativas → policy version.</div>
+          <div style="margin-top:10px">
+            <div class="dim-stat"><span>preferred_regimen</span><strong>ADT_DARO_DOCE</strong></div>
+            <div class="dim-stat"><span>decision_quality</span><strong>high</strong></div>
+            <div class="dim-stat"><span>alternatives</span><strong>3</strong></div>
+            <div class="dim-stat"><span>ranking_policy</span><strong>v3.4</strong></div>
+          </div>
+        </div>
+
+        <div class="dim-card" style="border-top-color:var(--sev-soft)">
+          <div class="dim-name">POR QUÉ</div>
+          <div class="dim-stars">★★★★★</div>
+          <div class="dim-title">Gates pivotales con razón</div>
+          <div class="dim-body">Cada gate documentado con clinical_reason + severity 3-tier + override clínico + trial_refs.</div>
+          <div style="margin-top:10px">
+            <div class="dim-stat"><span>active_gates</span><strong>5</strong></div>
+            <div class="dim-stat"><span>contraindications</span><strong>2</strong></div>
+            <div class="dim-stat"><span>not_recommended</span><strong>4</strong></div>
+            <div class="dim-stat"><span>severity 3-tier</span><strong>✓</strong></div>
+          </div>
+        </div>
+
+        <div class="dim-card" style="border-top-color:var(--brand-teal)">
+          <div class="dim-name">DATOS</div>
+          <div class="dim-stars">★★★★★</div>
+          <div class="dim-title">Captura estructurada</div>
+          <div class="dim-body">input_snapshot completo, PHI-scrubbed, missing/stale flags explícitos para auditoría regulatoria.</div>
+          <div style="margin-top:10px">
+            <div class="dim-stat"><span>input_field_count</span><strong>147</strong></div>
+            <div class="dim-stat"><span>missing_critical</span><strong>2</strong></div>
+            <div class="dim-stat"><span>stale_inputs</span><strong>1</strong></div>
+            <div class="dim-stat"><span>phi_scrubbed</span><strong>true</strong></div>
+          </div>
+        </div>
+
+        <div class="dim-card" style="border-top-color:var(--cohort)">
+          <div class="dim-name">EVIDENCIA</div>
+          <div class="dim-stars">★★★★★</div>
+          <div class="dim-title">Referencias vivas</div>
+          <div class="dim-body">37 trials reconocidos · per-gate evidence drill-down a PubMed/CT.gov/DOI · NCCN/EAU vivos.</div>
+          <div style="margin-top:10px">
+            <div class="dim-stat"><span>unique_trial_refs</span><strong>37</strong></div>
+            <div class="dim-stat"><span>per_gate_evidence</span><strong>5</strong></div>
+            <div class="dim-stat"><span>NCCN</span><strong>v2.2026</strong></div>
+            <div class="dim-stat"><span>EAU</span><strong>2026</strong></div>
+          </div>
+        </div>
+
+        <div class="dim-card" style="border-top-color:var(--brand-green)">
+          <div class="dim-name">VERSIÓN</div>
+          <div class="dim-stars">★★★★★</div>
+          <div class="dim-title">Reproducibilidad algorítmica</div>
+          <div class="dim-body">FAUBOT_RELEASE + module_sha + per-gate YAML SHA garantizan reproducir cualquier decisión histórica.</div>
+          <div style="margin-top:10px">
+            <div class="dim-stat"><span>FAUBOT_RELEASE</span><strong>LXXI</strong></div>
+            <div class="dim-stat"><span>gates_active</span><strong>55</strong></div>
+            <div class="dim-stat"><span>module_sha</span><strong class="mono">a7f3c92e</strong></div>
+            <div class="dim-stat"><span>YAML SHAs</span><strong>52 / 55</strong></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid cols-2" style="margin-top:18px">
+        <div class="card">
+          <div class="card-head"><h3>input_snapshot · vista regulatoria (PHI-scrubbed)</h3>
+            <button class="icon-btn" title="Exportar JSON">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/></svg>
+            </button>
+          </div>
+          <div class="card-body" style="font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.6;color:var(--fg-soft);background:var(--surface-2);max-height:280px;overflow:auto">
+<pre style="margin:0;white-space:pre-wrap">{
+  "patient_hash": "PX-7Q42 [PHI-scrubbed]",
+  "diagnosis_date": "2024-06-01",
+  "baseline_psa": 45.0,
+  "current_state_capture": "mcspc_high_volume_sync",
+  "current_state_reconciled": "mcspc_high_volume",
+  "management_track": ["on_arpi", "on_docetaxel"],
+  "castrate_testosterone_status": "confirmed_castrate",
+  "conventional_imaging_status": "M1",
+  "current_regimen": "ADT_DAROLUTAMIDE_DOCETAXEL",
+  "line_of_therapy_number": 2,
+  "prior_treatment_lines_count": 1,
+  "prior_arpi_agent": "darolutamide",
+  "prior_docetaxel_cycles": 6,
+  "psa_history_count": 11,
+  "testosterone_history_count": 4,
+  "alt_value_x_uln": 6.2,
+  "_audit": {
+    "phi_scrubbed": true,
+    "missing_critical": ["HRR_status", "ECOG_PS"],
+    "stale": ["imaging_date >90d"]
+  }
+}</pre>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Acciones de auditoría</h3></div>
+          <div class="card-body" style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="state-chip primary" style="padding:10px 16px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+              Exportar audit dossier (PDF)
+            </button>
+            <button class="state-chip" style="padding:10px 16px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+              Descargar JSON completo
+            </button>
+            <button class="state-chip" style="padding:10px 16px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/></svg>
+              Reproducir decisión en sandbox
+            </button>
+            <button class="state-chip warn" style="padding:10px 16px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Solicitar override clínico
+            </button>
+            <div style="width:100%;margin-top:6px;padding-top:10px;border-top:1px dashed var(--border);font-size:12px;color:var(--fg-muted)">
+              Toda exportación queda registrada en <span class="mono">audit_log_dashboard</span> con timestamp + user + FAUBOT_RELEASE para trazabilidad regulatoria FDA SaMD / EMA MDR.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         TAB 7 — VERSIONADO  (FAUBOT_RELEASE + per-gate YAML SHA + changelog)
+         ================================================================ -->
+    <section class="tab-panel" id="tab-version">
+      <div class="grid cols-4" style="margin-bottom:18px">
+        <div class="card"><div class="card-body">
+          <div class="kicker">FAUBOT_RELEASE</div>
+          <div style="font-size:24px;font-weight:800;color:var(--fg);margin:6px 0" class="mono">2026-04-25 LXXI</div>
+          <div style="font-size:11.5px;color:var(--fg-muted)">Bumpeado 2026-04-26 · iter #65B</div>
+        </div></div>
+        <div class="card"><div class="card-body">
+          <div class="kicker">gates_active_count</div>
+          <div style="font-size:24px;font-weight:800;color:var(--brand-cyan);margin:6px 0">55</div>
+          <div style="font-size:11.5px;color:var(--fg-muted)">52 YAML + 3 Python · 4 soft_warning</div>
+        </div></div>
+        <div class="card"><div class="card-body">
+          <div class="kicker">module_sha (head)</div>
+          <div style="font-size:18px;font-weight:700;color:var(--fg);margin:6px 0" class="mono">a7f3c92e8b41</div>
+          <div style="font-size:11.5px;color:var(--fg-muted)">pivotal_contraindication_gates.py</div>
+        </div></div>
+        <div class="card"><div class="card-body">
+          <div class="kicker">tests dedicados</div>
+          <div style="font-size:24px;font-weight:800;color:var(--brand-green);margin:6px 0">3680</div>
+          <div style="font-size:11.5px;color:var(--fg-muted)">+20 entre #65A → #65B</div>
+        </div></div>
+      </div>
+
+      <div class="grid cols-3-2">
+        <div class="card">
+          <div class="card-head">
+            <h3>Active gate codes · per-gate YAML SHA</h3>
+            <span class="head-meta">52 / 55 yaml-loaded</span>
+          </div>
+          <div class="card-body" style="padding:0;max-height:480px;overflow-y:auto">
+            <table class="tbl">
+              <thead><tr><th>Code</th><th>Class label</th><th>Severity</th><th>YAML SHA</th><th>Since</th></tr></thead>
+              <tbody>
+                <tr><td><span class="gate-code">G07</span></td><td>Hepatic toxicity contraindication</td><td><span class="chip hard">hard_block</span></td><td class="mono">e8a9f12c</td><td>LXII</td></tr>
+                <tr><td><span class="gate-code">G14</span></td><td>HRR test recommendation</td><td><span class="chip info">informational</span></td><td class="mono">b3c7d401</td><td>LV</td></tr>
+                <tr><td><span class="gate-code">G29</span></td><td>NYHA III–IV enza warning</td><td><span class="chip hard">hard_block</span></td><td class="mono">f1d203ae</td><td>LIX</td></tr>
+                <tr><td><span class="gate-code">G47</span></td><td>PSA flare ARPI pseudoprogression</td><td><span class="chip soft">soft_warning</span></td><td class="mono">c7e91802</td><td>LVIII #62</td></tr>
+                <tr><td><span class="gate-code">G53</span></td><td>BCR aggressive post-RP</td><td><span class="chip soft">soft_warning</span></td><td class="mono">a912fb38</td><td>LXIV #63A</td></tr>
+                <tr><td><span class="gate-code">G54</span></td><td>PSA bounce post-RT</td><td><span class="chip soft">soft_warning</span></td><td class="mono">d4e02c19</td><td>LXIV #63A</td></tr>
+                <tr><td><span class="gate-code">G55</span></td><td>m0CRPC PSADT-driven ARPI</td><td><span class="chip soft">soft_warning</span></td><td class="mono">9b1afe70</td><td>LXIV #63A</td></tr>
+                <tr><td><span class="gate-code">G19</span></td><td>Cabazitaxel post-Doce/ARPI</td><td><span class="chip info">informational</span></td><td class="mono">82e3a514</td><td>LIV</td></tr>
+                <tr><td colspan="5" style="text-align:center;color:var(--fg-muted);font-style:italic">+ 47 gates más (catálogo completo ver versioning_dashboard)</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Changelog (últimas 10 releases)</h3></div>
+          <div class="card-body" style="padding:0;max-height:480px;overflow-y:auto">
+            <div style="padding:10px 16px;border-bottom:1px solid var(--border)">
+              <div class="mono" style="font-size:12px;color:var(--brand-cyan);font-weight:700">LXXI · 2026-04-26</div>
+              <div style="font-size:13px;font-weight:600;margin:2px 0">UI exposure de #65A: per-gate evidence widget + cohort comparison panel + versioning dashboard</div>
+              <div style="font-size:11.5px;color:var(--fg-muted)">+20 tests · Iter #65B</div>
+            </div>
+            <div style="padding:10px 16px;border-bottom:1px solid var(--border)">
+              <div class="mono" style="font-size:12px;color:var(--brand-cyan);font-weight:700">LXX · 2026-04-26</div>
+              <div style="font-size:13px;font-weight:600;margin:2px 0">🏆 Decision audit endpoint + per-gate evidence drill-down + versioning automation (CDE 5/5 ⭐)</div>
+              <div style="font-size:11.5px;color:var(--fg-muted)">+25 tests · Iter #65A</div>
+            </div>
+            <div style="padding:10px 16px;border-bottom:1px solid var(--border)">
+              <div class="mono" style="font-size:12px;color:var(--brand-cyan);font-weight:700">LXIX · 2026-04-26</div>
+              <div style="font-size:13px;font-weight:600;margin:2px 0">Frontend wiring de #64A: drill-down panel + cohort overlay + combined timeline chart</div>
+              <div style="font-size:11.5px;color:var(--fg-muted)">+20 tests · Iter #64B</div>
+            </div>
+            <div style="padding:10px 16px;border-bottom:1px solid var(--border)">
+              <div class="mono" style="font-size:12px;color:var(--brand-cyan);font-weight:700">LXVIII · 2026-04-26</div>
+              <div style="font-size:13px;font-weight:600;margin:2px 0">Forecast per-line + Cohort overlay + Combined timeline (backend)</div>
+              <div style="font-size:11.5px;color:var(--fg-muted)">+30 tests · Iter #64A</div>
+            </div>
+            <div style="padding:10px 16px;border-bottom:1px solid var(--border)">
+              <div class="mono" style="font-size:12px;color:var(--brand-cyan);font-weight:700">LXVII · 2026-04-26</div>
+              <div style="font-size:13px;font-weight:600;margin:2px 0">UI badges per-line + chart annotations + drill-down panel lateral</div>
+              <div style="font-size:11.5px;color:var(--fg-muted)">+25 tests · Iter #63D</div>
+            </div>
+            <div style="padding:10px 16px;border-bottom:1px solid var(--border)">
+              <div class="mono" style="font-size:12px;color:var(--brand-cyan);font-weight:700">LXVI · 2026-04-26</div>
+              <div style="font-size:13px;font-weight:600;margin:2px 0">Per-line granular kinetics + forecast CI viz + multi-row widget</div>
+              <div style="font-size:11.5px;color:var(--fg-muted)">+30 tests · Iter #63C</div>
+            </div>
+            <div style="padding:10px 16px;border-bottom:1px solid var(--border)">
+              <div class="mono" style="font-size:12px;color:var(--brand-cyan);font-weight:700">LXV · 2026-04-26</div>
+              <div style="font-size:13px;font-weight:600;margin:2px 0">Treatment history timeline al intake + drill-down chart + skills audit</div>
+              <div style="font-size:11.5px;color:var(--fg-muted)">+40 tests · Iter #63B</div>
+            </div>
+            <div style="padding:10px 16px">
+              <div class="mono" style="font-size:12px;color:var(--brand-cyan);font-weight:700">LXIV · 2026-04-26</div>
+              <div style="font-size:13px;font-weight:600;margin:2px 0">3 gates PSA kinetics (53/54/55) + auto-baseline + intake-to-tower</div>
+              <div style="font-size:11.5px;color:var(--fg-muted)">+124 tests · Iter #63A</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         TAB 8 — INTAKE LONGITUDINAL (multi-row widget #63C)
+         ================================================================ -->
+    <section class="tab-panel" id="tab-intake">
+      <div class="section-h">
+        <h2>Intake longitudinal · widgets multi-row (#63C)</h2>
+        <span class="sub">PSA history · Testosterone history · Prior treatment lines · auto-baseline PSA point a torre (#63A)</span>
+      </div>
+
+      <div class="grid cols-2">
+
+        <div class="card">
+          <div class="card-head">
+            <h3>PSA history · 11 rows</h3>
+            <button class="icon-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="tbl">
+              <thead><tr><th>Fecha</th><th>Valor</th><th>Assay</th><th>Context</th><th>Source</th></tr></thead>
+              <tbody>
+                <tr><td>2024-06-01</td><td class="num">45.0</td><td>Beckman</td><td>basal Dx</td><td><span class="chip success">auto-baseline LXIV</span></td></tr>
+                <tr><td>2024-09-01</td><td class="num">12.0</td><td>Beckman</td><td>L1 mes 3</td><td>biomarker_long</td></tr>
+                <tr><td>2024-12-15</td><td class="num">5.6</td><td>Beckman</td><td>L1 mes 6</td><td>biomarker_long</td></tr>
+                <tr><td>2025-04-12</td><td class="num">2.1</td><td>Beckman</td><td><strong style="color:var(--sev-success)">NADIR L1</strong></td><td>biomarker_long</td></tr>
+                <tr><td>2025-06-18</td><td class="num">3.4</td><td>Beckman</td><td>flare ARPI?</td><td>biomarker_long</td></tr>
+                <tr><td>2025-08-10</td><td class="num">5.2</td><td>Beckman</td><td>progresión?</td><td>biomarker_long</td></tr>
+                <tr><td>2025-10-20</td><td class="num">8.5</td><td>Beckman</td><td><strong style="color:var(--sev-soft)">progresión L1</strong></td><td>biomarker_long</td></tr>
+                <tr><td>2025-11-02</td><td class="num">8.5</td><td>Beckman</td><td>baseline L2</td><td>biomarker_long</td></tr>
+                <tr><td>2025-12-10</td><td class="num">5.4</td><td>Beckman</td><td>L2 mes 1</td><td>biomarker_long</td></tr>
+                <tr><td>2026-02-05</td><td class="num">4.0</td><td>Beckman</td><td>L2 mes 3</td><td>biomarker_long</td></tr>
+                <tr><td>2026-04-02</td><td class="num">3.8</td><td>Beckman</td><td>L2 mes 5</td><td>biomarker_long</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Testosterone history · 4 rows</h3></div>
+          <div class="card-body" style="padding:0">
+            <table class="tbl">
+              <thead><tr><th>Fecha</th><th>Valor</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td>2024-06-01</td><td class="num">512 ng/dL</td><td><span class="chip">pre-ADT</span></td></tr>
+                <tr><td>2024-09-15</td><td class="num">28 ng/dL</td><td><span class="chip success">castrate</span></td></tr>
+                <tr><td>2025-04-12</td><td class="num">15 ng/dL</td><td><span class="chip success">confirmed_castrate</span></td></tr>
+                <tr><td>2026-04-02</td><td class="num">18 ng/dL</td><td><span class="chip success">confirmed_castrate</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card" style="grid-column: 1/-1">
+          <div class="card-head">
+            <h3>Prior treatment lines · widget multi-row (#63C)</h3>
+            <span class="head-meta">prior_treatment_lines_count = 1 · most_recent_prior_line populado</span>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th>L#</th><th>drug_scheme (canonical)</th><th>Inicio</th><th>Fin</th>
+                  <th>Best Δ%</th><th>Reason for change</th><th>Kinetics</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="chip line-1">L1</span></td>
+                  <td><span class="mono">ADT_DAROLUTAMIDE_DOCETAXEL</span></td>
+                  <td>2024-06-15</td>
+                  <td>2025-10-20</td>
+                  <td class="num" style="color:var(--sev-success);font-weight:700">−95.3%</td>
+                  <td>PSA progression confirmed (3 ascending)</td>
+                  <td><span class="kin-badge kin-progression">progression</span></td>
+                </tr>
+                <tr>
+                  <td><span class="chip line-2">L2 actual</span></td>
+                  <td><span class="mono">CABAZITAXEL</span></td>
+                  <td>2025-11-02</td>
+                  <td>—</td>
+                  <td class="num" style="color:var(--sev-success);font-weight:700">−55.3%</td>
+                  <td>—</td>
+                  <td><span class="kin-badge kin-partial">partial_response</span></td>
+                </tr>
+              </tbody>
+            </table>
+            <div style="padding:14px;background:var(--surface-2);border-top:1px solid var(--border);font-size:12px;color:var(--fg-muted)">
+              ✓ Auto-asignación PSA point ↔ treatment line por fecha (LXV #63B). Cada PSA sample se etiqueta con <span class="mono">treatment_line_number</span> + <span class="mono">treatment_line_label</span> + <span class="mono">treatment_band_index</span> + <span class="mono">treatment_color</span>. Ver chart en <a href="#" onclick="showTab('psa')">PSA Compass →</a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         TAB 9 — CONSENTIMIENTO & FIRMA ELECTRÓNICA
+                  (consent_versions + patient_consents + consent_signature_evidence)
+         ================================================================ -->
+    <section class="tab-panel" id="tab-consent">
+      <div class="section-h">
+        <h2>Consentimiento informado &amp; firma electrónica</h2>
+        <span class="sub">Backend: <span class="mono">consent_versions</span> · <span class="mono">patient_consents</span> · <span class="mono">consent_signature_evidence</span> · alineado con HIPAA + GDPR + LFPDPPP MX</span>
+      </div>
+
+      <!-- KPI strip de estado -->
+      <div class="grid cols-4" style="margin-bottom:18px">
+        <div class="card" style="border-top:3px solid var(--sev-success)"><div class="card-body">
+          <div class="kicker">status</div>
+          <div style="font-size:22px;font-weight:800;color:var(--sev-success);margin:6px 0">signed ✓</div>
+          <div style="font-size:11.5px;color:var(--fg-muted)">vigente · vence 2027-02-12 (287 d)</div>
+        </div></div>
+        <div class="card"><div class="card-body">
+          <div class="kicker">consent_version_code</div>
+          <div class="mono" style="font-size:18px;font-weight:700;margin:6px 0">PROSTAMED_CONSENT_v3.2</div>
+          <div style="font-size:11.5px;color:var(--fg-muted)">effective_at 2026-03-01 · active=true</div>
+        </div></div>
+        <div class="card"><div class="card-body">
+          <div class="kicker">content_hash (SHA-256)</div>
+          <div class="mono" style="font-size:13px;font-weight:700;margin:6px 0;word-break:break-all">4f3c91d8b27af04c…a7e2b85f019c</div>
+          <div style="font-size:11.5px;color:var(--fg-muted)">verificable contra evidence_html</div>
+        </div></div>
+        <div class="card"><div class="card-body">
+          <div class="kicker">signed_at</div>
+          <div style="font-size:18px;font-weight:700;margin:6px 0">2026-03-12 14:32</div>
+          <div style="font-size:11.5px;color:var(--fg-muted)">CST · FAUBOT_RELEASE LXVIII</div>
+        </div></div>
+      </div>
+
+      <div class="grid cols-3-2">
+
+        <!-- LEFT: Texto del consentimiento + ámbitos -->
+        <div class="card">
+          <div class="card-head">
+            <h3>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              Texto firmado · v3.2 (snapshot inmutable)
+            </h3>
+            <div class="head-actions">
+              <button class="icon-btn" title="Descargar PDF firmado" onclick="alert('Descargar evidence_html como PDF (mockup)')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="card-body" style="max-height:360px;overflow-y:auto;font-size:13px;line-height:1.65;color:var(--fg-soft)">
+            <p><strong>1. Identidad y propósito.</strong> El paciente PX-7Q42 autoriza a ProstaMed (titular del Clinical Decision Engine Auditable, FAUBOT_RELEASE LXVIII al momento de la firma) a registrar, procesar y conservar sus datos clínicos derivados del seguimiento de cáncer de próstata.</p>
+
+            <p><strong>2. Ámbitos de uso autorizados.</strong> El paciente otorga consentimiento <em>granular</em> sobre los siguientes usos (cada uno requiere check independiente):</p>
+            <ul>
+              <li><strong>Atención clínica primaria</strong> — uso de los datos por su médico tratante para diagnóstico, tratamiento y seguimiento.</li>
+              <li><strong>Procesamiento por motor CDE / IA</strong> — evaluación por las 55 reglas pivotales (gates) y modelos de pronóstico (PSA forecast, kinetics per-line, cohort overlay).</li>
+              <li><strong>Comparación poblacional con cohortes pivotales</strong> — uso anonimizado contra medianas publicadas (CHAARTED, ARASENS, PROfound, VISION, …).</li>
+              <li><strong>Investigación secundaria</strong> — re-uso anonimizado para estudios retrospectivos y validación de algoritmos (revocable en cualquier momento).</li>
+            </ul>
+
+            <p><strong>3. Firma electrónica avanzada.</strong> El trazo capturado en el panel adjunto se almacena en <span class="mono">consent_signature_evidence.signature_data_url</span> como PNG codificado base64. Sobre el conjunto (texto + ámbitos + nombre del firmante + signature data URL + timestamp + FAUBOT_RELEASE) se calcula un hash SHA-256 (<span class="mono">content_hash</span>) que sella la integridad de la evidencia. Cualquier modificación posterior invalida la firma.</p>
+
+            <p><strong>4. Derechos ARCO (LFPDPPP MX) / GDPR.</strong> El paciente conserva el derecho de Acceso, Rectificación, Cancelación y Oposición sobre sus datos. Puede revocar este consentimiento en cualquier momento (botón "Revocar consentimiento"). La revocación queda registrada en el <em>audit trail</em> sin destruir el histórico clínico mínimo legalmente requerido.</p>
+
+            <p><strong>5. Vigencia y renovación.</strong> Este consentimiento es válido por 365 días a partir de <span class="mono">signed_at</span>. Pasado el período, el sistema solicitará renovación automática. Si la versión activa cambia (<span class="mono">consent_versions.active=true</span> apunta a otra v.), se notificará al paciente en su próxima visita para refirmar.</p>
+
+            <p style="font-size:11.5px;color:var(--fg-muted);font-style:italic">Texto íntegro almacenado en <span class="mono">consent_versions.consent_text</span> con snapshot HTML en <span class="mono">consent_versions.html_snapshot</span>.</p>
+          </div>
+        </div>
+
+        <!-- RIGHT: ámbitos granulares + signature pad + responsable -->
+        <div class="card">
+          <div class="card-head">
+            <h3>Ámbitos autorizados &amp; firma</h3>
+          </div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+
+            <!-- Ámbitos granulares con toggles -->
+            <div>
+              <div class="kicker" style="margin-bottom:8px">Tipos de uso (granular)</div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--sev-success-bg);border:1px solid rgba(34,184,114,.3);border-radius:var(--radius);cursor:pointer">
+                  <input type="checkbox" checked disabled>
+                  <div style="flex:1">
+                    <div style="font-weight:600;font-size:12.5px">Atención clínica primaria</div>
+                    <div style="font-size:11px;color:var(--fg-muted)">Obligatorio · firmado 2026-03-12</div>
+                  </div>
+                  <span class="chip success">✓</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--sev-success-bg);border:1px solid rgba(34,184,114,.3);border-radius:var(--radius);cursor:pointer">
+                  <input type="checkbox" checked>
+                  <div style="flex:1">
+                    <div style="font-weight:600;font-size:12.5px">Procesamiento por CDE / IA</div>
+                    <div style="font-size:11px;color:var(--fg-muted)">55 gates · forecast · kinetics</div>
+                  </div>
+                  <span class="chip success">✓</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--sev-success-bg);border:1px solid rgba(34,184,114,.3);border-radius:var(--radius);cursor:pointer">
+                  <input type="checkbox" checked>
+                  <div style="flex:1">
+                    <div style="font-weight:600;font-size:12.5px">Comparación con cohortes pivotales</div>
+                    <div style="font-size:11px;color:var(--fg-muted)">Anonimizado · 11 trials</div>
+                  </div>
+                  <span class="chip success">✓</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer">
+                  <input type="checkbox">
+                  <div style="flex:1">
+                    <div style="font-weight:600;font-size:12.5px">Investigación secundaria</div>
+                    <div style="font-size:11px;color:var(--fg-muted)">Opcional · revocable</div>
+                  </div>
+                  <span class="chip">○</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Signature pad funcional -->
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                <div class="kicker">Firma del paciente</div>
+                <button class="icon-btn" style="width:auto;padding:0 10px;font-size:11px;color:var(--fg-soft)" onclick="clearSignature()">Limpiar</button>
+              </div>
+              <div style="background:var(--surface-2);border:2px dashed var(--brand-cyan);border-radius:var(--radius);padding:8px">
+                <canvas id="sigCanvas" width="520" height="160"
+                        style="width:100%;height:160px;background:white;border-radius:var(--radius-sm);cursor:crosshair;touch-action:none;display:block"></canvas>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+                <input id="sigName" type="text" placeholder="Nombre completo del paciente"
+                       value="PX-7Q42 (anonimizado)"
+                       style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:12.5px;background:var(--surface);color:var(--fg)">
+                <button class="state-chip primary" style="padding:8px 14px;border:none;cursor:pointer" onclick="signConsent()">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                  Firmar &amp; sellar SHA-256
+                </button>
+              </div>
+              <div id="sigStatus" style="margin-top:8px;font-size:11.5px;color:var(--fg-muted)">
+                Estado: <span class="chip success">✓ firmado el 2026-03-12 14:32</span>
+              </div>
+            </div>
+
+            <!-- Médico responsable -->
+            <div>
+              <div class="kicker" style="margin-bottom:6px">Clínico responsable (testigo)</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-subtle);border-radius:var(--radius)">
+                <span class="user-avatar" style="background:linear-gradient(135deg,var(--brand-navy),var(--brand-cyan))">FB</span>
+                <div style="flex:1">
+                  <div style="font-weight:700;font-size:13px">Dr. Faudes Bautista</div>
+                  <div style="font-size:11.5px;color:var(--fg-muted)">Cédula 12345678 · Urología-Oncológica · firmado 2026-03-12 14:33</div>
+                </div>
+                <span class="chip success">✓</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Audit trail de eventos del consentimiento -->
+      <div class="card" style="margin-top:18px">
+        <div class="card-head">
+          <h3>Audit trail · eventos del consentimiento</h3>
+          <span class="head-meta">trazabilidad regulatoria FDA SaMD / EMA MDR / LFPDPPP</span>
+        </div>
+        <div class="card-body" style="padding:0">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Timestamp</th><th>Evento</th><th>Versión</th>
+                <th>signer_name</th><th>content_hash</th><th>FAUBOT_RELEASE</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono">2024-06-01 09:14</td>
+                <td><span class="chip success">signed</span></td>
+                <td class="mono">v2.8</td>
+                <td>PX-7Q42 + Dr. F.Bautista</td>
+                <td class="mono">a812…39fa</td>
+                <td class="mono">XLVI</td>
+              </tr>
+              <tr>
+                <td class="mono">2025-09-04 11:02</td>
+                <td><span class="chip info">superseded</span></td>
+                <td class="mono">v2.8 → v3.0</td>
+                <td>system (renovación NCCN v2.2025)</td>
+                <td class="mono">b71d…02e8</td>
+                <td class="mono">LX</td>
+              </tr>
+              <tr>
+                <td class="mono">2025-09-04 11:05</td>
+                <td><span class="chip success">signed</span></td>
+                <td class="mono">v3.0</td>
+                <td>PX-7Q42 + Dr. F.Bautista</td>
+                <td class="mono">7d0c…e1aa</td>
+                <td class="mono">LX</td>
+              </tr>
+              <tr>
+                <td class="mono">2026-03-01 08:00</td>
+                <td><span class="chip info">superseded</span></td>
+                <td class="mono">v3.0 → v3.2</td>
+                <td>system (FAUBOT_RELEASE LXVIII)</td>
+                <td class="mono">2c1b…48d3</td>
+                <td class="mono">LXVIII</td>
+              </tr>
+              <tr style="background:var(--sev-success-bg)">
+                <td class="mono">2026-03-12 14:32</td>
+                <td><span class="chip success">signed (vigente)</span></td>
+                <td class="mono">v3.2</td>
+                <td>PX-7Q42 + Dr. F.Bautista</td>
+                <td class="mono">4f3c91d8…a7e2b85f019c</td>
+                <td class="mono">LXVIII</td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="padding:12px 16px;background:var(--surface-2);border-top:1px solid var(--border);font-size:12px;color:var(--fg-muted);line-height:1.5">
+            Cada evento se registra inmutablemente en <span class="mono">consent_signature_evidence.audit_metadata_json</span> con IP, user-agent, geolocalización aproximada (si autorizada) y hash de la sesión. La supersession nunca borra el histórico — sólo marca la firma anterior como reemplazada para preservar la cadena de custodia.
+          </div>
+        </div>
+      </div>
+
+      <!-- Acciones críticas -->
+      <div class="grid cols-3" style="margin-top:18px">
+        <div class="card"><div class="card-body" style="text-align:center;padding:20px">
+          <button class="state-chip primary" style="padding:12px 18px;font-size:13px;border:none;cursor:pointer;width:100%">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Descargar PDF firmado
+          </button>
+          <div style="font-size:11.5px;color:var(--fg-muted);margin-top:6px">consent_signature_evidence.evidence_html → PDF/A</div>
+        </div></div>
+        <div class="card"><div class="card-body" style="text-align:center;padding:20px">
+          <button class="state-chip" style="padding:12px 18px;font-size:13px;cursor:pointer;width:100%" onclick="alert('Renovar consent (mockup)')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Renovar consentimiento
+          </button>
+          <div style="font-size:11.5px;color:var(--fg-muted);margin-top:6px">requerido a los 365 d o cambio de versión activa</div>
+        </div></div>
+        <div class="card" style="border-left:3px solid var(--sev-hard)"><div class="card-body" style="text-align:center;padding:20px">
+          <button class="state-chip danger" style="padding:12px 18px;font-size:13px;cursor:pointer;width:100%" onclick="confirm('¿Revocar consentimiento de PX-7Q42? Quedará registrado en audit trail.') && alert('Revocación registrada (mockup)')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            Revocar consentimiento (ARCO)
+          </button>
+          <div style="font-size:11.5px;color:var(--fg-muted);margin-top:6px">derecho ARCO · queda en audit trail</div>
+        </div></div>
+      </div>
+
+    </section>
+
+  </main>
+</div>
+
+<!-- ============================ DRILL PANEL ========================== -->
+<div class="drill-overlay" id="drillOverlay" onclick="closeDrill()"></div>
+<aside class="drill" id="drillPanel" aria-hidden="true">
+  <div class="drill-head">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 6-6"/></svg>
+    <h3 id="drillTitle">Drill-down · Línea 1</h3>
+    <button class="icon-btn" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:white" onclick="closeDrill()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="drill-body" id="drillBody">
+    <h4>Per-line analytics</h4>
+    <div class="kv"><span>regimen</span><strong>ADT_DAROLUTAMIDE_DOCETAXEL</strong></div>
+    <div class="kv"><span>baseline_psa</span><strong>45.0 ng/mL</strong></div>
+    <div class="kv"><span>nadir_psa</span><strong>2.1 ng/mL</strong></div>
+    <div class="kv"><span>best_pct_change</span><strong style="color:var(--sev-success)">−95.3%</strong></div>
+    <div class="kv"><span>psa50_achieved</span><strong>true</strong></div>
+    <div class="kv"><span>time_to_nadir_months</span><strong>9.2</strong></div>
+    <div class="kv"><span>duration_response_months</span><strong>14.6</strong></div>
+    <div class="kv"><span>psadt_during_progression</span><strong>11.2</strong></div>
+    <div class="kv"><span>kinetics_classification</span><strong><span class="kin-badge kin-progression">progression</span></strong></div>
+    <div class="kv"><span>point_count</span><strong>7</strong></div>
+
+    <h4>Forecast horizons (per-line log-linear)</h4>
+    <div class="kv"><span>3m esperado</span><strong>4.1 (3.6–4.7)</strong></div>
+    <div class="kv"><span>6m esperado</span><strong>5.0 (4.0–6.4)</strong></div>
+    <div class="kv"><span>12m esperado</span><strong>7.4 (5.2–10.5)</strong></div>
+
+    <h4>Cohort comparison · ARASENS</h4>
+    <div class="kv"><span>Δ PSA mes 6</span><strong style="color:var(--sev-hard)">+1.2 vs mediana</strong></div>
+    <div class="kv"><span>Δ duration_response</span><strong style="color:var(--sev-hard)">−7.5 m vs mediana</strong></div>
+    <div class="kv"><span>Δ time_to_nadir</span><strong style="color:var(--sev-hard)">+1.8 m vs mediana</strong></div>
+
+    <h4>Gates contextualizados</h4>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="gate-card soft" style="padding:10px">
+        <div class="gate-head"><span class="gate-code">G55</span><span class="chip soft">soft_warning</span></div>
+        <div class="gate-msg" style="font-size:12px">PSADT 11.2 m supera umbral m0CRPC, pero paciente está en mHSPC L2 → no aplica directamente.</div>
+      </div>
+      <div class="gate-card soft" style="padding:10px">
+        <div class="gate-head"><span class="gate-code">G47</span><span class="chip soft">soft_warning</span></div>
+        <div class="gate-msg" style="font-size:12px">PSA flare detectado en sem 4 post-rotación → no interpretado como progresión real.</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ===================== Floating CDE scorecard ====================== -->
+<div class="scorecard">
+  <div>
+    <div class="lbl">CDE Auditable</div>
+    <div class="val">Faubot LXXI · Iter #65B</div>
+  </div>
+  <div>
+    <div class="lbl">5 dimensiones</div>
+    <div class="stars">★★★★★</div>
+  </div>
+</div>
+
+<!-- ============================== SCRIPTS ============================ -->
+<script>
+
+/* ========================== TABS NAV ============================== */
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.tab-panel').forEach(p =>
+    p.classList.toggle('active', p.id === 'tab-' + name));
+  // lazy-render charts when tabs open
+  if (name === 'psa' && !window._fullRendered) { renderFullPSA(); window._fullRendered = true; }
+}
+document.querySelectorAll('.tab').forEach(btn =>
+  btn.addEventListener('click', () => showTab(btn.dataset.tab)));
+
+/* keyboard shortcuts (g→gates, p→psa, e→evidence, t→timeline, a→audit, v→version) */
+document.addEventListener('keydown', e => {
+  if (e.target.matches('input,textarea,select')) return;
+  const map = {g:'gates', p:'psa', e:'evidence', t:'timeline', a:'audit', v:'version', o:'overview', i:'intake', c:'consent'};
+  if (map[e.key]) showTab(map[e.key]);
+});
+
+/* ========================== THEME TOGGLE ========================== */
+function toggleTheme() {
+  const html = document.documentElement;
+  html.dataset.theme = html.dataset.theme === 'dark' ? 'light' : 'dark';
+}
+
+/* =========================== DRILL ================================ */
+function openDrill(line) {
+  document.getElementById('drillTitle').textContent = 'Drill-down · Línea ' + line;
+  document.getElementById('drillPanel').classList.add('open');
+  document.getElementById('drillOverlay').classList.add('open');
+}
+function closeDrill() {
+  document.getElementById('drillPanel').classList.remove('open');
+  document.getElementById('drillOverlay').classList.remove('open');
+}
+
+/* ============== HORIZONTAL TIMELINE EVENTS (overview) ============= */
+(function buildHTimeline(){
+  const events = [
+    { left: '4%',  cls:'tx',    label:'Inicio L1 ADT+Daro+Doce', date:'2024-06-15' },
+    { left: '12%', cls:'psa',   label:'PSA 12.0 ▼73%', date:'2024-09-01' },
+    { left: '20%', cls:'img',   label:'CT/Bone scan', date:'2024-12-10' },
+    { left: '34%', cls:'psa',   label:'NADIR 2.1', date:'2025-04-12' },
+    { left: '46%', cls:'gate',  label:'G47 PSA flare', date:'2025-06-18' },
+    { left: '60%', cls:'psa',   label:'Progresión 8.5', date:'2025-10-20' },
+    { left: '64%', cls:'tx',    label:'Inicio L2 Cabazitaxel', date:'2025-11-02' },
+    { left: '70%', cls:'gate',  label:'G07 hard_block', date:'2025-12-05' },
+    { left: '88%', cls:'psa',   label:'PSA 3.8 (L2)', date:'2026-04-02' },
+    { left: '95%', cls:'event', label:'PSMA-PET planned', date:'2026-05-15' },
+  ];
+  const track = document.getElementById('timelineHTrack');
+  events.forEach(e => {
+    const el = document.createElement('div');
+    el.className = 'timeline-event ' + e.cls;
+    el.style.left = e.left;
+    el.innerHTML = `<span class="te-dot"></span><span class="te-label">${e.label}</span><span class="te-date">${e.date}</span>`;
+    track.appendChild(el);
+  });
+})();
+
+/* ========================== PSA CHARTS ============================ */
+const psaDates = ['2024-06-01','2024-09-01','2024-12-15','2025-04-12','2025-06-18','2025-08-10','2025-10-20','2025-11-02','2025-12-10','2026-02-05','2026-04-02'];
+const psaValues= [   45.0,        12.0,         5.6,        2.1,        3.4,         5.2,         8.5,         8.5,         5.4,        4.0,         3.8       ];
+const lineAssign=[    1,           1,           1,          1,          1,           1,           1,           2,           2,          2,           2         ];
+const linesColors = { 1: getCss('--line-1'), 2: getCss('--line-2') };
+function getCss(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+function pointBg(ctx) {
+  const idx = ctx.dataIndex;
+  return linesColors[ lineAssign[idx] ] || '#888';
+}
+
+const cohortDates = psaDates.concat(['2026-07-01','2026-10-01']);
+const cohortVals  = [45,18,8,3.5,2.6,2.3,2.1,2.1,2.05,2.0,2.0,2.0,2.0]; // ARASENS-ish trajectory
+const forecastDates= ['2026-04-02','2026-07-02','2026-10-02','2027-04-02'];
+const forecastUpper= [3.8, 4.7, 6.4, 10.5];
+const forecastLower= [3.8, 3.6, 4.0,  5.2];
+const forecastMean = [3.8, 4.1, 5.0,  7.4];
+
+const annotPlugin = window['chartjs-plugin-annotation'];
+if (annotPlugin) Chart.register(annotPlugin);
+
+function commonOpts(showFull) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'nearest', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#0E2A47', titleColor:'#8CF3FF', bodyColor:'#fff',
+        borderColor:'#1FB8FF', borderWidth:1, padding:10,
+        callbacks: {
+          afterLabel: (ctx) => {
+            const i = ctx.dataIndex;
+            if (lineAssign[i] && ctx.dataset.label === 'PSA paciente') {
+              return 'Línea ' + lineAssign[i];
+            }
+            return null;
+          }
+        }
+      },
+      annotation: {
+        annotations: {
+          bcr: { type:'line', yMin:0.2, yMax:0.2, borderColor:'#E04E4E',
+                 borderDash:[4,4], borderWidth:1.5,
+                 label:{ display:true, content:'Phoenix BCR (≥nadir+2)', position:'end',
+                         backgroundColor:'rgba(224,78,78,.15)', color:'#911D1D', font:{size:10,weight:600}} },
+          detect:{ type:'line', yMin:0.1, yMax:0.1, borderColor:'#F3A11A',
+                 borderDash:[3,3], borderWidth:1,
+                 label:{ display:false } },
+          band1: { type:'box',
+                   xMin:'2024-06-15', xMax:'2025-10-20',
+                   backgroundColor:'rgba(31,184,255,.08)',
+                   borderColor:'rgba(31,184,255,.25)', borderWidth:1,
+                   label:{ display:true, content:'L1 · ADT+Daro+Doce', position:{x:'start',y:'start'},
+                           backgroundColor:'rgba(31,184,255,.85)', color:'#fff',
+                           font:{size:10,weight:700}, padding:4 }},
+          band2: { type:'box',
+                   xMin:'2025-11-02', xMax:'2026-04-02',
+                   backgroundColor:'rgba(124,92,255,.10)',
+                   borderColor:'rgba(124,92,255,.3)', borderWidth:1,
+                   label:{ display:true, content:'L2 · Cabazitaxel', position:{x:'start',y:'start'},
+                           backgroundColor:'rgba(124,92,255,.85)', color:'#fff',
+                           font:{size:10,weight:700}, padding:4 }},
+          forecast:{ type:'box',
+                   xMin:'2026-04-02', xMax:'2027-04-02',
+                   backgroundColor:'rgba(31,184,255,.05)',
+                   borderColor:'rgba(31,184,255,.2)', borderDash:[2,3], borderWidth:1,
+                   label:{ display:true, content:'Forecast 3/6/12 m (CI 95%)', position:'end',
+                           backgroundColor:'rgba(31,184,255,.85)', color:'#fff',
+                           font:{size:10,weight:700}, padding:4 }}
+        }
+      }
+    },
+    scales: {
+      x: { type:'time', time:{ unit:'month', displayFormats:{ month:'MMM yy' } },
+           grid:{ color:'rgba(0,0,0,.04)' }, ticks:{ color:'#6B7B8E', font:{size:11}} },
+      y: { type:'logarithmic',
+           min: 0.05,
+           grid:{ color:'rgba(0,0,0,.05)' },
+           ticks:{ color:'#6B7B8E', font:{size:11},
+                   callback: v => (v >= 1 ? v : v.toFixed(1)) + ' ng/mL' } }
+    },
+    onClick: (e, els) => {
+      if (els.length) {
+        const pt = els[0]; const i = pt.index;
+        openDrill(lineAssign[i] || '?');
+      }
+    }
+  };
+}
+
+function buildDataSets() {
+  return [
+    {
+      label: 'PSA paciente',
+      data: psaDates.map((d,i)=>({x:d, y:psaValues[i]})),
+      pointBackgroundColor: ctx => pointBg(ctx),
+      pointBorderColor: '#fff', pointBorderWidth: 1.5,
+      pointRadius: 6, pointHoverRadius: 9,
+      borderColor: 'rgba(11,110,159,.45)', borderWidth: 1.6,
+      tension: 0.25,
+      segment: {
+        borderColor: ctx => {
+          const i = ctx.p1DataIndex;
+          return lineAssign[i] === 2 ? 'rgba(124,92,255,.55)' : 'rgba(31,184,255,.55)';
+        }
+      }
+    },
+    {
+      label: 'ARASENS cohort mediana',
+      data: cohortDates.map((d,i)=>({x:d, y:cohortVals[i]})),
+      borderColor: 'rgba(168,87,232,.85)', borderWidth: 2, borderDash: [6,4],
+      pointRadius: 0, tension: 0.4, fill: false
+    },
+    {
+      label: 'Forecast central',
+      data: forecastDates.map((d,i)=>({x:d, y:forecastMean[i]})),
+      borderColor: 'rgba(31,184,255,.9)', borderWidth: 2, borderDash:[2,3],
+      pointRadius: 4, pointBackgroundColor: '#1FB8FF',
+      tension: 0.35, fill: false
+    },
+    {
+      label: 'CI 95 upper',
+      data: forecastDates.map((d,i)=>({x:d, y:forecastUpper[i]})),
+      borderColor: 'rgba(31,184,255,.4)', borderWidth: 1, borderDash:[2,2],
+      pointRadius: 0, fill: '+1', backgroundColor: 'rgba(31,184,255,.10)', tension: 0.35
+    },
+    {
+      label: 'CI 95 lower',
+      data: forecastDates.map((d,i)=>({x:d, y:forecastLower[i]})),
+      borderColor: 'rgba(31,184,255,.4)', borderWidth: 1, borderDash:[2,2],
+      pointRadius: 0, fill: false, tension: 0.35
+    }
+  ];
+}
+
+new Chart(document.getElementById('psaMini'), {
+  type: 'line',
+  data: { datasets: buildDataSets() },
+  options: commonOpts(false)
+});
+
+function renderFullPSA() {
+  new Chart(document.getElementById('psaFull'), {
+    type: 'line',
+    data: { datasets: buildDataSets() },
+    options: commonOpts(true)
+  });
+}
+
+/* ===================== SIGNATURE PAD (consent) =================== */
+(function initSignaturePad(){
+  const canvas = document.getElementById('sigCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let drawing = false;
+  let hasInk = false;
+
+  // Pre-poblar firma "ya existente" estilizada
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#0E2A47';
+
+  function drawDemoSignature() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.beginPath();
+    ctx.moveTo(80, 100);
+    ctx.bezierCurveTo(120, 40, 160, 140, 200, 80);
+    ctx.bezierCurveTo(220, 60, 240, 130, 270, 70);
+    ctx.bezierCurveTo(290, 30, 320, 120, 360, 90);
+    ctx.bezierCurveTo(390, 70, 410, 110, 440, 80);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(180, 130); ctx.lineTo(420, 130);
+    ctx.strokeStyle = 'rgba(14,42,71,.4)';
+    ctx.lineWidth = 1; ctx.stroke();
+    ctx.font = '11px JetBrains Mono';
+    ctx.fillStyle = 'rgba(14,42,71,.6)';
+    ctx.fillText('PX-7Q42 · firmado 2026-03-12 14:32 · hash 4f3c91…', 90, 150);
+    ctx.strokeStyle = '#0E2A47';
+    ctx.lineWidth = 2.4;
+    hasInk = true;
+  }
+  drawDemoSignature();
+
+  function pos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return {
+      x: (t.clientX - rect.left) * canvas.width / rect.width,
+      y: (t.clientY - rect.top) * canvas.height / rect.height
+    };
+  }
+  function start(e) { drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+  function move(e) { if(!drawing) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); hasInk = true; }
+  function end() { drawing = false; }
+
+  canvas.addEventListener('mousedown', e => { if (!window._sigCleared) { drawDemoSignature(); window._sigCleared = false; } start(e); });
+  canvas.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, {passive:false});
+  canvas.addEventListener('touchmove', move, {passive:false});
+  window.addEventListener('touchend', end);
+
+  window.clearSignature = function() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    hasInk = false; window._sigCleared = true;
+    document.getElementById('sigStatus').innerHTML =
+      'Estado: <span class="chip soft">○ pendiente de firma</span>';
+  };
+
+  window.signConsent = function() {
+    if (!hasInk) {
+      document.getElementById('sigStatus').innerHTML =
+        'Estado: <span class="chip hard">⚠ debe trazar la firma antes de continuar</span>';
+      return;
+    }
+    const signerName = document.getElementById('sigName').value || 'Anónimo';
+    // Simulación: signature_data_url + content_hash
+    const dataUrl = canvas.toDataURL('image/png');
+    // Hash demo SHA-256 fake (los primeros bytes del data URL como string hex pseudo)
+    let hash = 0;
+    for (let i = 0; i < dataUrl.length; i++) hash = ((hash<<5)-hash + dataUrl.charCodeAt(i)) | 0;
+    const fakeSha = ('0000000000000000' + (hash >>> 0).toString(16)).slice(-12) + '…' + Math.random().toString(16).slice(2,8);
+    const ts = new Date().toISOString().replace('T',' ').slice(0,19);
+    document.getElementById('sigStatus').innerHTML =
+      `Estado: <span class="chip success">✓ firmado ${ts}</span> ` +
+      `· content_hash <span class="mono">${fakeSha}</span> ` +
+      `· signer: <strong>${signerName}</strong>`;
+  };
+})();
+
+</script>
+</body>
+</html>

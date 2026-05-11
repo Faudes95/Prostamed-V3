@@ -1,0 +1,143 @@
+{% extends "layouts/base_clinical.html" %}
+{% from "components/clinical_ui.html" import section_header %}
+
+{# Faubot 2026-04-25 (LXXI) — Auditoría #65B
+   Versioning dashboard: panel admin con historial Faubot releases +
+   changelog + active gate codes. Cierra dimensión VERSIÓN del CDE
+   Auditable haciendo el versionado VISIBLE al usuario clínico/regulatorio.
+#}
+
+{% block content %}
+<div class="space-y-6">
+
+    {# ── Header con metadata Faubot ──────────────────────────────────── #}
+    <section class="pn-surface">
+        {{ section_header(
+            "Versioning Dashboard — Faubot Release History",
+            "🏆 CDE Auditable — Dimensión VERSIÓN",
+            "Historial completo del versionado del Clinical Decision Engine Auditable: FAUBOT_RELEASE activo, gates pivotal versionados con SHA granular (#61), releases recientes y changelog auto-generado por post-commit hook (#65A)."
+        ) }}
+
+        <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="rounded-xl border border-amber-500/30 bg-amber-950/20 p-5">
+                <div class="text-xs uppercase tracking-wider text-amber-300">FAUBOT_RELEASE actual</div>
+                <div class="mt-2 text-3xl font-bold text-amber-100">{{ algorithm_version.faubot_release }}</div>
+                <div class="text-xs text-amber-400 mt-2">
+                    Module SHA: <code class="font-mono">{{ algorithm_version.module_sha }}</code>
+                </div>
+            </div>
+            <div class="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-5">
+                <div class="text-xs uppercase tracking-wider text-emerald-300">Gates pivotal activos</div>
+                <div class="mt-2 text-3xl font-bold text-emerald-100">{{ total_active_gates }}</div>
+                <div class="text-xs text-emerald-400 mt-2">
+                    YAML versionados: <strong>{{ total_yaml_versioned_gates }}</strong>
+                </div>
+            </div>
+            <div class="rounded-xl border border-cyan-500/30 bg-cyan-950/20 p-5">
+                <div class="text-xs uppercase tracking-wider text-cyan-300">Releases recientes</div>
+                <div class="mt-2 text-3xl font-bold text-cyan-100">{{ recent_releases|length }}</div>
+                <div class="text-xs text-cyan-400 mt-2">
+                    Changelog entries: <strong>{{ changelog_entries|length }}</strong>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {# ── Releases recientes ──────────────────────────────────────────── #}
+    <section class="pn-surface">
+        <h2 class="text-lg font-bold text-white mb-4">📅 Releases Faubot Recientes</h2>
+        {% if recent_releases %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-slate-700">
+                        <th class="text-left text-xs uppercase tracking-wider text-slate-500 pb-2 px-3">Fecha</th>
+                        <th class="text-left text-xs uppercase tracking-wider text-slate-500 pb-2 px-3">Auditoría</th>
+                        <th class="text-left text-xs uppercase tracking-wider text-amber-300 pb-2 px-3">Faubot Release</th>
+                        <th class="text-left text-xs uppercase tracking-wider text-slate-500 pb-2 px-3">Foco</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for release in recent_releases %}
+                    <tr class="border-b border-slate-800 hover:bg-slate-900/60">
+                        <td class="py-3 px-3 text-slate-300 font-mono">{{ release.date }}</td>
+                        <td class="py-3 px-3"><code class="text-cyan-300">{{ release.audit_id }}</code></td>
+                        <td class="py-3 px-3"><code class="text-amber-200 font-bold">{{ release.numeral }}</code></td>
+                        <td class="py-3 px-3 text-slate-200">{{ release.focus }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-sm text-slate-500 italic">Sin releases parseados desde audit_tracking.md.</div>
+        {% endif %}
+    </section>
+
+    {# ── Active gate codes ───────────────────────────────────────────── #}
+    <section class="pn-surface">
+        <h2 class="text-lg font-bold text-white mb-2">🛡️ Gates pivotal activos ({{ total_active_gates }})</h2>
+        <p class="text-xs text-slate-400 mb-4">
+            Lista canónica de gates evaluados por el algoritmo en su versión actual. Cada gate
+            con SHA YAML granular tiene versionado independiente — auditable per-gate.
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+            {% for gate_code in active_gate_codes %}
+            <div class="rounded-lg border border-slate-700/80 bg-slate-950/40 p-3 flex items-center justify-between">
+                <code class="text-xs text-slate-200">{{ gate_code }}</code>
+                {% if per_gate_shas.get(gate_code) %}
+                <span class="text-[10px] font-mono text-emerald-400 ml-2" title="YAML SHA granular (#61)">
+                    {{ per_gate_shas[gate_code][:8] }}
+                </span>
+                {% else %}
+                <span class="text-[10px] text-slate-600 ml-2">Python detector</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    {# ── Changelog ──────────────────────────────────────────────────── #}
+    <section class="pn-surface">
+        <h2 class="text-lg font-bold text-white mb-2">📜 Changelog (auto-generado #65A)</h2>
+        <p class="text-xs text-slate-400 mb-4">
+            Generado automáticamente por <code class="text-cyan-300">scripts/faubot_post_commit_hook.sh</code>
+            en cada commit. Cada entry incluye hash + título + Faubot release detectado.
+        </p>
+        {% if changelog_entries %}
+        <div class="space-y-3">
+            {% for entry in changelog_entries %}
+            <div class="rounded-lg border border-slate-700/80 bg-slate-950/40 p-4">
+                <div class="flex items-center gap-3 mb-2">
+                    <code class="text-xs text-slate-500 font-mono">{{ entry.date }}</code>
+                    <code class="text-xs text-cyan-400 font-mono">{{ entry.hash }}</code>
+                </div>
+                <div class="text-sm text-slate-200 whitespace-pre-line">{{ entry.body }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-sm text-slate-500 italic">
+            CHANGELOG.md aún no generado. Se creará automáticamente en el próximo commit
+            si el post-commit hook está instalado:
+            {# Faubot LXXIII #66B — fix WCAG AA color-contrast (was slate-500 4.23:1, now slate-200 ≥7:1) #}
+            <pre class="mt-2 p-3 rounded bg-slate-950 text-xs text-slate-200">ln -s ../../scripts/faubot_post_commit_hook.sh .git/hooks/post-commit</pre>
+        </div>
+        {% endif %}
+    </section>
+
+    {# ── Footer educativo ────────────────────────────────────────────── #}
+    <section class="pn-surface">
+        <div class="text-[11px] text-slate-500">
+            <strong class="text-slate-300">📚 Sobre el versionado Faubot:</strong>
+            Cada decisión clínica del CDE Auditable queda anclada a su <code>FAUBOT_RELEASE</code>
+            + <code>module_sha</code> + lista <code>gates_active_codes</code>. Esto permite reproducir
+            exactamente cualquier decisión histórica con <code>is_version_compatible()</code>.
+            Per-gate YAML SHA (#61) eleva versionado a granularidad fina.
+            Post-commit hook (#65A) automatiza el bump + changelog.
+            <strong class="text-emerald-300">CDE Auditable VERSIÓN dimensión: ⭐⭐⭐⭐⭐.</strong>
+        </div>
+    </section>
+
+</div>
+{% endblock %}

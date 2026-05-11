@@ -1,0 +1,134 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 97: enzalutamide_ra223_dual_myelosuppression
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.C) — Tier 3 Interaction/Synergistic Gates.
+#
+# Razón clínica:
+#   Combinación enzalutamida + Ra-223 (PEACE-3) muestra mielosuppression
+#   sinérgica que no es predecible por gates per-drug:
+#
+#   - **PEACE-3 (Tombal Lancet 2024)**: enzalutamida + Ra-223 vs enz solo
+#     - Fractures G3+ 22.3% (combo) vs 7.5% (enz solo)
+#     - Cytopenias G3+ 12% (combo) vs 5% (enz solo)
+#     - Initial cohort tuvo signal preocupante hasta amendments protocol
+#     - Bone-protective agent (denosumab/zoledronic acid) MANDATORY
+#       implementado para reducir fractures (gate 9 ya cubre)
+#
+#   - **ERA-223 (Smith Lancet Oncol 2019;20:408)**: abiraterona + Ra-223
+#     - Trial paró early por safety: fractures + deaths
+#     - Demuestra que combos ARPI+Ra-223 son riesgo
+#
+#   Mecanismo synergistic:
+#   - Ra-223 → bone marrow toxicity (mielosuppression directa)
+#   - Enzalutamida → cumulative cytopenia (less directa, more chronic)
+#   - Combo: BOTH suppressing bone marrow + osteoblast activity
+#   - Resultado: dual suppression > suma de partes
+#
+#   Implicación clínica:
+#   - WBC <3 + Platelet <100 combinado → soft_warning (no hard_block
+#     porque puede ser transient + manejable con G-CSF/dose hold)
+#   - Bone marrow toxicity dual documented → mismo trigger
+#
+#   Manejo:
+#   - Bone-protective agent OBLIGATORIO (gate 9)
+#   - CBC cada 2 sem durante combo (vs 4 sem mono)
+#   - G-CSF prophylactic if neutropenia recurrent
+#   - Hold Ra-223 si platelet <100 OR neutrophil <1.0
+#   - Hold enzalutamide si grade 4 cytopenia
+# ──────────────────────────────────────────────────────────────────────
+
+code: enzalutamide_ra223_dual_myelosuppression
+title: "Enzalutamida + Ra-223 × dual mielosuppression → escalate monitoring + bone protection"
+faubot_added_in: "2026-04-30 LXCVI.C"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: dual cytopenias (WBC<3 AND platelet<100)
+    - type: truthy_flag
+      field: wbc_lt_3_and_platelet_lt_100_combined
+      alias_fields:
+        - dual_cytopenia_wbc_platelet
+        - bicitopenia_wbc_platelet
+    # Path B: dual bone marrow toxicity documented
+    - type: truthy_flag
+      field: dual_bone_marrow_toxicity_documented
+      alias_fields:
+        - dual_marrow_toxicity
+        - synergistic_myelosuppression
+
+regimen_codes:
+  - REGIMEN_CODES_RADIUM223
+
+keywords:
+  - enzalutamide
+  - radium-223
+  - PEACE-3
+  - ERA-223
+  - dual myelosuppression
+  - synergistic toxicity
+
+message: |
+  ⚠️ SOFT WARNING: Combinación enzalutamida + Ra-223 con mielosuppression
+  dual → escalate monitoring + bone protection mandatory.
+
+  🎯 EVIDENCIA INTERACCIÓN:
+
+  | Trial | Combo | Toxicity G3+ |
+  |-------|-------|---------------|
+  | PEACE-3 | Enz + Ra-223 | Fractures 22.3% vs 7.5% (mono) |
+  | PEACE-3 | Enz + Ra-223 | Cytopenias 12% vs 5% (mono) |
+  | ERA-223 | Abi + Ra-223 | TERMINATED early por fracture/deaths |
+
+  🎯 BONE PROTECTION OBLIGATORIA:
+  - Denosumab 60 mg SC cada 4 sem
+  - O zoledronic acid 4 mg IV cada 4 sem
+  - Calcium 1000-1200 mg/d + Vitamin D 800-2000 UI/d
+  - Gate 9 already covers absence of bone-protective agent
+
+  🎯 ESCALATED MONITORING SCHEDULE:
+
+  | Frecuencia | Lab/Imaging |
+  |------------|-------------|
+  | Cada 2 sem | CBC con diferencial + platelet count |
+  | Cada 4 sem | CMP + bone profile (alkaline phosphatase) |
+  | Cada 12 sem | DEXA scan baseline + serial |
+  | Si fractures | X-ray immediate + bone biopsy si atypical |
+
+  🎯 HOLD CRITERIA:
+
+  **Hold Ra-223 si**:
+  - Platelet <100 K/μL
+  - Neutrophil <1.0 K/μL
+  - Hb <8 g/dL
+  - Re-start when recovered to baseline
+
+  **Hold enzalutamida si**:
+  - Grade 4 cytopenia (any)
+  - Hb <8 g/dL persistent
+  - Considerar dose reduction 80mg/d (vs 160mg/d standard)
+
+  **Discontinue combo permanente si**:
+  - Grade 4 cytopenia recurrent x2
+  - Pathological fracture femoral OR vertebral
+  - Suspicion of MDS/AML (bone marrow biopsy indicated)
+
+  🎯 ALTERNATIVE STRATEGIES:
+
+  Si combo demasiado tóxico:
+  - Sequential approach: Ra-223 first 6 ciclos → enzalutamida después
+  - Switch a Lu-177-PSMA si PSMA+ (bone + visceral targeting)
+  - Considerar cabazitaxel si chemo-fit
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `wbc_lt_3_and_platelet_lt_100_combined`: bool (computed CBC)
+  - `dual_bone_marrow_toxicity_documented`: bool
+
+evidence_tag: enzalutamide_ra223_dual_peace3_era223_2019_2024
+trial_refs:
+  - "PEACE-3 (Tombal Lancet 2024)"
+  - "ERA-223 (Smith Lancet Oncol 2019;20:408 - terminated early)"
+  - "Xofigo + ARPI safety FDA communication 2024"
+  - "EAU 2026 §6.5 Theranostics combinations"

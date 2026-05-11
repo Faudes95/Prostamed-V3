@@ -1,0 +1,53 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 3: uncontrolled_hypertension
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XI) — Migrado a YAML declarativo.
+#
+# Razón clínica:
+#   HTA no controlada (>160/100 mmHg sostenida) → riesgo abiraterona
+#   (mineralocorticoide) y cabozantinib (VEGF). Bloquea ambos hasta
+#   estabilizar PA <140/90 mmHg.
+#   LATITUDE / PEACE-1 / COU-AA-301/302 / CONTACT-02 excluyeron HTA NC.
+# ──────────────────────────────────────────────────────────────────────
+
+code: uncontrolled_hypertension
+title: "Hipertensión arterial no controlada"
+faubot_added_in: "2026-04-23 I"
+faubot_migrated_to_yaml_in: "2026-04-25 XI"
+severity: hard_block
+
+trigger:
+  type: truthy_flag
+  field: uncontrolled_hypertension
+  alias_fields: []
+
+override: null
+
+regimen_codes:
+  - REGIMEN_CODES_ABIRATERONE
+  - REGIMEN_CODES_CABOZANTINIB
+
+keywords:
+  - KEYWORDS_ABIRATERONE
+  - KEYWORDS_CABOZANTINIB
+
+message: |
+  Abiraterona y cabozantinib NO recomendados con HTA no controlada
+  (>160/100 mmHg sostenida). Abiraterona produce exceso mineralocorticoide;
+  cabozantinib inhibe VEGFR (HTA tratamiento-emergente común).
+  Estabilizar PA <140/90 antes de iniciar y considerar enzalutamida/darolutamida
+  (LATITUDE / PEACE-1 / COU-AA-301/302 / CONTACT-02 excluyeron HTA no controlada).
+
+evidence_tag: latitude_peace1_couaa_contact02
+trial_refs:
+  - LATITUDE
+  - PEACE-1
+  - COU-AA-301
+  - COU-AA-302
+  - CONTACT-02
+
+references:
+  - "Fizazi K, et al. LATITUDE. Lancet Oncol 2019;20:686-700."
+  - "Fizazi K, et al. PEACE-1. Lancet 2022;399:1695-1707."
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Cardiovascular monitoring with ARPI"

@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProstaMed — Calculadora Avanzada</title>
+    <!-- Tailwind CSS (via CDN for simplicity, or local if preferred) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Glassmorphism & Custom Scrollbar */
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            background-color: #0f172a;
+            /* Slate 900 */
+            color: #cbd5e1;
+            /* Slate 300 */
+            font-family: 'Inter', sans-serif;
+        }
+
+        input,
+        select {
+            background-color: #1e293b;
+            /* Slate 800 */
+            border: 1px solid #334155;
+            /* Slate 700 */
+            color: white;
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            /* Blue 500 */
+            ring: 2px solid #3b82f6;
+        }
+
+        .section-title {
+            color: #38bdf8;
+            /* Sky 400 */
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-size: 0.85rem;
+            margin-bottom: 0.75rem;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 0.25rem;
+        }
+    </style>
+</head>
+
+<body class="h-screen overflow-hidden flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-slate-900 border-b border-slate-700 p-4 flex justify-between items-center shadow-lg z-10">
+        {% set wide_logo = not ui_assets.prostamed_logo.is_fallback %}
+        <div class="flex items-center gap-3 min-w-0">
+            <img src="{{ ui_assets.prostamed_logo.src }}" alt="{{ ui_assets.prostamed_logo.alt }}" class="{{ 'w-[220px] max-w-[34vw] h-auto object-contain' if wide_logo else 'w-9 h-9 object-contain' }}">
+            <h1 class="text-xl font-bold text-white tracking-tight">{{ 'Calculadora Avanzada' if wide_logo else 'ProstaMed' }}{% if not wide_logo %} <span
+                    class="text-blue-400 font-light">Calculadora Avanzada</span>{% endif %}</h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <a href="/patients"
+                class="text-sm font-medium text-slate-400 hover:text-white transition-colors flex items-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+                Pacientes
+            </a>
+            <a href="/dashboard"
+                class="text-sm font-medium text-slate-400 hover:text-white transition-colors flex items-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+                Dashboard
+            </a>
+            <a href="/clinical-hub"
+                class="text-sm font-medium text-slate-400 hover:text-white transition-colors flex items-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 6h16M4 12h16M4 18h10"></path>
+                </svg>
+                Clinical Hub
+            </a>
+            <a href="/clinical-hub#pm2OfficialClassifier"
+                class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2 px-3 rounded transition-colors flex items-center gap-2 shadow-lg shadow-blue-500/20">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
+                </svg>
+                + Nuevo Paciente
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex overflow-hidden">
+
+        <div class="absolute top-20 left-1/2 -translate-x-1/2 z-20 max-w-3xl w-[90%]">
+            <div class="bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-xl px-4 py-3 text-sm shadow-lg backdrop-blur">
+                Esta calculadora permanece como flujo legacy durante la migracion. Para evaluacion modular por estadio clinico con motor NCCN 5.2026 + comparativo EAU 2026 use
+                <a href="/clinical-hub" class="font-semibold text-amber-100 underline">Clinical Hub</a>.
+            </div>
+        </div>
+
+        <!-- Left Panel: Input Form (Scrollable) -->
+        <aside
+            class="w-1/3 min-w-[350px] max-w-[450px] bg-slate-900 border-r border-slate-700 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-700">
+            <form id="calculatorForm" class="space-y-8">
+
+                <!-- 1. Patient Data -->
+                <div>
+                    <h3 class="section-title">1. Datos del Paciente</h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium mb-1">Edad</label>
+                            <input type="number" name="age" value="65" class="w-full rounded p-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">IMC</label>
+                            <input type="number" name="bmi" value="27.5" step="0.1" class="w-full rounded p-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">Índice Charlson (CCI)</label>
+                            <select name="cci" class="w-full rounded p-2 text-sm bg-slate-800 border-slate-600">
+                                <option value="0">0 - Sin comorbilidad</option>
+                                <option value="1">1 - Leve (Ej. IAM, EPOC)</option>
+                                <option value="2">2 - Moderada</option>
+                                <option value="3">3 - Severa</option>
+                                <option value="4">4+ - Muy Severa</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">Fam. 1º Grado CaP</label>
+                            <select name="family_history" class="w-full rounded p-2 text-sm">
+                                <option value="0">No</option>
+                                <option value="1">Sí</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">ECOG</label>
+                            <select name="ecog" class="w-full rounded p-2 text-sm">
+                                <option value="0" selected>0 - Asintomático</option>
+                                <option value="1">1 - Sintomático ambulatorio</option>
+                                <option value="2">2 - En cama <50%</option>
+                                <option value="3">3 - En cama >50%</option>
+                                <option value="4">4 - Postrado</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">Etnia</label>
+                            <select name="race_ethnicity" class="w-full rounded p-2 text-sm">
+                                <option value="hispano" selected>Hispano/Latino</option>
+                                <option value="caucasico">Caucásico</option>
+                                <option value="afroamericano">Afroamericano</option>
+                                <option value="asiatico">Asiático</option>
+                                <option value="otro">Otro</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">Biopsias Previas</label>
+                            <input type="number" name="previous_biopsies" value="0" min="0" class="w-full rounded p-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">Creatinina (mg/dL)</label>
+                            <input type="number" name="creatinina" value="" step="0.1" min="0" placeholder="mg/dL" class="w-full rounded p-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">Uso 5-ARI</label>
+                            <select name="uso_5ari" class="w-full rounded p-2 text-sm">
+                                <option value="no" selected>No</option>
+                                <option value="finasteride">Finasteride</option>
+                                <option value="dutasteride">Dutasteride</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">Hemoglobina (g/dL)</label>
+                            <input type="number" name="hemoglobina" value="" step="0.1" min="0" placeholder="g/dL" class="w-full rounded p-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">Fosfatasa Alcalina</label>
+                            <input type="number" name="alp" value="" step="1" min="0" placeholder="U/L" class="w-full rounded p-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium mb-1">LDH</label>
+                            <input type="number" name="ldh" value="" step="1" min="0" placeholder="U/L" class="w-full rounded p-2 text-sm">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Biochemistry & PSA History -->
+                <div>
+                    <h3 class="section-title">2. Bioquímica & Historial APE</h3>
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium mb-1">APE Actual (ng/mL)</label>
+                                <input type="number" name="psa" value="8.5" step="0.1"
+                                    class="w-full rounded p-2 text-sm border-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium mb-1">Volumen Prostático (cc)</label>
+                                <input type="number" name="volumen" value="45" class="w-full rounded p-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium mb-1">Testosterona (ng/dL)</label>
+                                <input type="number" name="testosterone" value="350" step="1" class="w-full rounded p-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium mb-1">APE Libre / Total (%)</label>
+                                <input type="number" name="free_psa_ratio" value="15" step="1" min="0" max="100" class="w-full rounded p-2 text-sm">
+                            </div>
+                        </div>
+
+                        <!-- Mini PSA History Input -->
+                        <div class="bg-slate-800 p-3 rounded border border-slate-700">
+                            <label class="block text-xs font-medium mb-2 text-blue-300">Historial APE (Últimos 2-3
+                                años)</label>
+                            <div id="psaHistoryRows" class="space-y-2 mb-2">
+                                <div class="flex gap-2">
+                                    <input type="date" class="w-1/2 rounded p-1 text-xs" value="2024-02-14">
+                                    <input type="number" placeholder="ng/mL" class="w-1/3 rounded p-1 text-xs"
+                                        value="6.2">
+                                    <button type="button" class="text-red-400 hover:text-red-300 px-1">&times;</button>
+                                </div>
+                                <div class="flex gap-2">
+                                    <input type="date" class="w-1/2 rounded p-1 text-xs" value="2025-02-14">
+                                    <input type="number" placeholder="ng/mL" class="w-1/3 rounded p-1 text-xs"
+                                        value="8.5">
+                                    <button type="button" class="text-red-400 hover:text-red-300 px-1">&times;</button>
+                                </div>
+                            </div>
+                            <button type="button" onclick="addPsaRow()"
+                                class="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                                <span>+ Agregar medición</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Pathology & Biopsy -->
+                <div>
+                    <h3 class="section-title">3. Patología & Biopsia</h3>
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium mb-1">Gleason Prim.</label>
+                                <select name="gleason_primary" class="w-full rounded p-2 text-sm">
+                                    <option value="3">3</option>
+                                    <option value="4" selected>4</option>
+                                    <option value="5">5</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium mb-1">Gleason Sec.</label>
+                                <select name="gleason_secondary" class="w-full rounded p-2 text-sm">
+                                    <option value="3" selected>3</option>
+                                    <option value="4">4</option>
+                                    <option value="5">5</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium mb-1">Cores Positivos</label>
+                                <input type="number" name="cores_pos" value="4" class="w-full rounded p-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium mb-1">Cores Totales</label>
+                                <input type="number" name="cores_tot" value="12" class="w-full rounded p-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium mb-1">Máx. Compromiso Core (%)</label>
+                                <input type="number" name="max_core_involvement" value="0" step="1" min="0" max="100" class="w-full rounded p-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium mb-1">% Patrón 4/5</label>
+                                <input type="number" name="porcentaje_patron_4" value="" step="1" min="0" max="100" placeholder="Opcional" class="w-full rounded p-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium mb-1">Tipo de Biopsia</label>
+                                <select name="tipo_biopsia" class="w-full rounded p-2 text-sm">
+                                    <option value="sistematica">Sistemática TRUS</option>
+                                    <option value="fusion" selected>Fusión MRI/TRUS</option>
+                                    <option value="combinada">Combinada (Sist.+Fusión)</option>
+                                    <option value="transperineal">Transperineal</option>
+                                </select>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium mb-1">Estadio Clínico (T-Stage)</label>
+                        <div class="flex flex-wrap gap-2">
+                            <select name="t_stage" class="w-full rounded p-2 text-sm">
+                                <option value="T1c">T1c (No palpable)</option>
+                                <option value="T2a" selected>T2a (Palpable &le;50% un lóbulo)</option>
+                                <option value="T2b">T2b (Palpable >50% un lóbulo)</option>
+                                <option value="T2c">T2c (Ambos lóbulos)</option>
+                                <option value="T3a">T3a (Extensión extraprostática)</option>
+                                <option value="T3b">T3b (Vesículas seminales)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Checkboxes for findings -->
+                    <div class="space-y-2 pt-2">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" name="pni" class="rounded text-blue-500">
+                            <span class="text-sm">Invasión Perineural (PNI)</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" name="lvi" class="rounded text-blue-500">
+                            <span class="text-sm">Invasión Linfovascular (LVI)</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" name="patron_cribiforme" class="rounded text-blue-500">
+                            <span class="text-sm">Patrón Cribiforme</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" name="carcinoma_intraductal" class="rounded text-blue-500">
+                            <span class="text-sm">Carcinoma Intraductal (IDC-P)</span>
+                        </label>
+                    </div>
+
+                    <!-- Auto-calculated ISUP badge -->
+                    <div class="mt-3 p-2 bg-slate-800/50 rounded border border-slate-700/50 flex items-center justify-between">
+                        <span class="text-xs text-slate-400">Grupo de Grado ISUP (auto)</span>
+                        <span id="isupBadge" class="text-sm font-bold text-cyan-400 bg-cyan-900/30 px-2 py-0.5 rounded">--</span>
+                    </div>
+                </div>
+
+                <!-- 4. Imagen Avanzada -->
+                <div class="border-t border-slate-700 pt-6">
+                    <h3 class="section-title text-cyan-400 border-cyan-900/50">4. Imagen Avanzada</h3>
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium mb-1">PI-RADS (mpMRI)</label>
+                                <select name="pirads" class="w-full rounded p-2 text-sm">
+                                    <option value="0">No realizada</option>
+                                    <option value="1">PI-RADS 1</option>
+                                    <option value="2">PI-RADS 2</option>
+                                    <option value="3" selected>PI-RADS 3</option>
+                                    <option value="4">PI-RADS 4</option>
+                                    <option value="5">PI-RADS 5</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium mb-1">Tamaño Lesión (mm)</label>
+                                <input type="number" name="tamano_lesion_mm" value="" step="1" min="0" placeholder="mm" class="w-full rounded p-2 text-sm">
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" name="mpmri_ece_suspicion" class="rounded text-cyan-500">
+                                <span class="text-sm">Sospecha ECE por imagen</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" name="mpmri_svi_suspicion" class="rounded text-cyan-500">
+                                <span class="text-sm">Sospecha SVI por imagen</span>
+                            </label>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium mb-1">PSMA-PET</label>
+                                <select name="psma_resultado" class="w-full rounded p-2 text-sm">
+                                    <option value="no_realizado" selected>No realizado</option>
+                                    <option value="negativo">Negativo</option>
+                                    <option value="positivo_local">Positivo local</option>
+                                    <option value="positivo_ganglionar">Positivo ganglionar</option>
+                                    <option value="positivo_oseo">Positivo óseo</option>
+                                    <option value="positivo_visceral">Positivo visceral</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium mb-1">Gammagrama Óseo</label>
+                                <select name="bone_scan_result" class="w-full rounded p-2 text-sm">
+                                    <option value="no_realizado" selected>No realizado</option>
+                                    <option value="negativo">Negativo</option>
+                                    <option value="positivo">Positivo</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5. Genómica & Medicina de Precisión -->
+                <div class="border-t border-slate-700 pt-6">
+                    <h3 class="section-title text-amber-400 border-amber-900/50">5. Genómica & Precisión</h3>
+                    <p class="text-[10px] text-slate-500 mb-3">Llenar si se dispone de pruebas genómicas tisulares.</p>
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium mb-1">Prueba Genómica</label>
+                                <select name="genomic_test_type" class="w-full rounded p-2 text-sm" onchange="toggleGenomicFields(this)">
+                                    <option value="ninguna" selected>Ninguna</option>
+                                    <option value="decipher">Decipher</option>
+                                    <option value="prolaris">Prolaris (CCP)</option>
+                                    <option value="oncotype">Oncotype DX GPS</option>
+                                </select>
+                            </div>
+                            <div id="genomicScoreContainer" style="display:none;">
+                                <label class="block text-xs font-medium mb-1" id="genomicScoreLabel">Score</label>
+                                <input type="number" name="genomic_score" value="" step="0.01" min="0" max="1" placeholder="0.00-1.00" class="w-full rounded p-2 text-sm">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium mb-1">Estado HRR</label>
+                                <select name="hrr_status" class="w-full rounded p-2 text-sm">
+                                    <option value="desconocido" selected>Desconocido</option>
+                                    <option value="negativo">Negativo</option>
+                                    <option value="positivo_brca">Positivo (BRCA1/2)</option>
+                                    <option value="positivo_atm">Positivo (ATM)</option>
+                                    <option value="positivo_otro">Positivo (Otro HRR)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium mb-1">MSI</label>
+                                <select name="msi_status" class="w-full rounded p-2 text-sm">
+                                    <option value="desconocido" selected>Desconocido</option>
+                                    <option value="estable">MSS (Estable)</option>
+                                    <option value="inestable">MSI-H (Inestable)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 6. Factores de Riesgo & Comorbilidades -->
+                <div class="border-t border-slate-700 pt-6">
+                    <h3 class="section-title text-rose-400 border-rose-900/50">6. Factores de Riesgo</h3>
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium mb-1">Tabaquismo</label>
+                                <select name="tabaquismo" class="w-full rounded p-2 text-sm">
+                                    <option value="nunca" selected>Nunca</option>
+                                    <option value="exfumador">Exfumador</option>
+                                    <option value="activo_leve">Activo (<15 cig/día)</option>
+                                    <option value="activo_severo">Activo (>15 cig/día)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium mb-1">IPSS (0-35)</label>
+                                <input type="number" name="ipss_score" value="" min="0" max="35" placeholder="Opcional" class="w-full rounded p-2 text-sm">
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" name="diabetes_mellitus" class="rounded text-rose-500">
+                                <span class="text-sm">Diabetes Mellitus</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" name="hipertension" class="rounded text-rose-500">
+                                <span class="text-sm">Hipertensión Arterial</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" name="sindrome_metabolico" class="rounded text-rose-500">
+                                <span class="text-sm">Síndrome Metabólico</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 7. Post-Surgical Pathology (Optional) -->
+                <div class="border-t border-slate-700 pt-6">
+                    <h3 class="section-title text-purple-400 border-purple-900/50">7. Datos Post-Quirúrgicos (Opcional)
+                    </h3>
+                    <p class="text-[10px] text-slate-500 mb-4">Llenar solo si el paciente ya fue operado (Prostatectomía
+                        Radical).</p>
+                    <div class="space-y-3 bg-slate-800/50 p-3 rounded-lg border border-slate-700/50">
+                        <label class="flex items-center gap-2 cursor-pointer justify-between">
+                            <span class="text-sm">Márgenes Quirúrgicos Positivos (+)</span>
+                            <input type="checkbox" name="surgical_margin" class="rounded text-purple-500 w-4 h-4">
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer justify-between">
+                            <span class="text-sm">Extensión Extracapsular (ECE)</span>
+                            <input type="checkbox" name="ece_status" class="rounded text-purple-500 w-4 h-4">
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer justify-between">
+                            <span class="text-sm">Inv. Vesículas Seminales (SVI)</span>
+                            <input type="checkbox" name="svi_status" class="rounded text-purple-500 w-4 h-4">
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer justify-between">
+                            <span class="text-sm">Invasión Ganglionar (LNI)</span>
+                            <input type="checkbox" name="lni_status" class="rounded text-purple-500 w-4 h-4">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Calculate Button -->
+                <div class="pt-4 pb-8">
+                    <button type="button" onclick="calculateRisk()"
+                        class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded shadow-lg transition-transform transform hover:scale-[1.02]">
+                        CALCULAR RIESGO & REPORTE
+                    </button>
+                    <p class="text-xs text-center text-slate-500 mt-2">NCCN | D'Amico | EAU | CAPRA | Briganti | Kattan | MSKCC-BCR | Partin | PHI | AS | ProstaMed</p>
+                </div>
+
+            </form>
+        </aside>
+
+        <!-- Right Panel: Dashboard & Report -->
+        <section class="flex-1 bg-slate-950 p-6 overflow-y-auto relative">
+
+            <!-- Dashboard Grid -->
+            <div id="dashboard"
+                class="grid grid-cols-12 gap-6 mb-8 opacity-50 pointer-events-none transition-opacity duration-500">
+
+                <!-- Risk Gauge -->
+                <div
+                    class="col-span-12 md:col-span-4 bg-slate-900 rounded-xl p-6 border border-slate-800 flex flex-col items-center justify-center relative">
+                    <h4 class="text-sm font-semibold text-slate-400 mb-4 uppercase tracking-wider">Riesgo NCCN Integrado
+                    </h4>
+                    <div class="w-40 h-40 relative flex items-center justify-center">
+                        <!-- Placeholder for Gauge / Canvas -->
+                        <div class="text-4xl font-bold text-yellow-500" id="riskLabel">---</div>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-2 text-center" id="riskSubtext">Esperando datos...</p>
+                </div>
+
+                <!-- PSA Kinetics Chart -->
+                <div class="col-span-12 md:col-span-8 bg-slate-900 rounded-xl p-6 border border-slate-800">
+                    <h4 class="text-sm font-semibold text-slate-400 mb-2 uppercase tracking-wider">Tendencia de APE</h4>
+                    <div class="h-48 w-full">
+                        <canvas id="psaChart"></canvas>
+                    </div>
+                    <div class="flex justify-between mt-2 text-xs text-slate-400">
+                        <span id="psaVelDisplay">Velocidad: - ng/mL/año</span>
+                        <span id="psaDtDisplay">PSADT: - meses</span>
+                    </div>
+                </div>
+
+                <!-- Cards Row 1 -->
+                <div class="col-span-12 grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <!-- CAPRA Score -->
+                    <div class="bg-slate-900 p-4 rounded-lg border border-slate-800 border-l-4 border-l-blue-500">
+                        <div class="text-xs text-slate-400 uppercase">CAPRA Score</div>
+                        <div class="text-2xl font-bold text-white mt-1" id="capraScore">--</div>
+                        <div class="text-xs text-blue-400 mt-1" id="capraRisk">Riesgo --</div>
+                    </div>
+
+                    <!-- LNI Probability -->
+                    <div class="bg-slate-900 p-4 rounded-lg border border-slate-800 border-l-4 border-l-purple-500">
+                        <div class="text-xs text-slate-400 uppercase">Prob. Ganglionar (LNI)</div>
+                        <div class="text-2xl font-bold text-white mt-1" id="lniProb">-- %</div>
+                        <div class="text-xs text-purple-400 mt-1" id="eplndRec">--</div>
+                    </div>
+
+                    <!-- Life Expectancy -->
+                    <div class="bg-slate-900 p-4 rounded-lg border border-slate-800 border-l-4 border-l-teal-500">
+                        <div class="text-xs text-slate-400 uppercase">Esperanza de Vida</div>
+                        <div class="text-2xl font-bold text-white mt-1" id="lifeExpYears">--</div>
+                        <div class="text-xs text-teal-400 mt-1" id="lifeExpRec">Estimada (Ajustada)</div>
+                    </div>
+
+                    <!-- Organ Confined -->
+                    <div class="bg-slate-900 p-4 rounded-lg border border-slate-800 border-l-4 border-l-emerald-500">
+                        <div class="text-xs text-slate-400 uppercase">Enf. Órgano-Confinada</div>
+                        <div class="text-2xl font-bold text-white mt-1" id="ocProb">-- %</div>
+                        <div class="text-xs text-emerald-400 mt-1">MSK Nomogram</div>
+                    </div>
+                </div>
+
+                <!-- Cards Row 2 (NEW) -->
+                <div class="col-span-12 grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <!-- PSAD -->
+                    <div class="bg-slate-900 p-4 rounded-lg border border-slate-800 border-l-4 border-l-sky-500">
+                        <div class="text-xs text-slate-400 uppercase">Densidad APE (PSAD)</div>
+                        <div class="text-2xl font-bold text-white mt-1" id="psadValue">--</div>
+                        <div class="text-xs text-sky-400 mt-1" id="psadInterp">ng/mL/cc</div>
+                    </div>
+
+                    <!-- ProstaMed Integrated Score -->
+                    <div class="bg-slate-900 p-4 rounded-lg border border-slate-800 border-l-4 border-l-amber-500">
+                        <div class="text-xs text-slate-400 uppercase">Score ProstaMed</div>
+                        <div class="text-2xl font-bold text-white mt-1" id="prostanetScore">--</div>
+                        <div class="text-xs text-amber-400 mt-1" id="prostanetRisk">Integrado</div>
+                    </div>
+
+                    <!-- Active Surveillance Eligibility -->
+                    <div class="bg-slate-900 p-4 rounded-lg border border-slate-800 border-l-4 border-l-green-500">
+                        <div class="text-xs text-slate-400 uppercase">Vigil. Activa (AS)</div>
+                        <div class="text-2xl font-bold text-white mt-1" id="asEligibility">--</div>
+                        <div class="text-xs text-green-400 mt-1" id="asProtocols">Protocolos elegibles</div>
+                    </div>
+
+                    <!-- Partin Tables -->
+                    <div class="bg-slate-900 p-4 rounded-lg border border-slate-800 border-l-4 border-l-indigo-500">
+                        <div class="text-xs text-slate-400 uppercase">Partin (ECE)</div>
+                        <div class="text-2xl font-bold text-white mt-1" id="partinECE">-- %</div>
+                        <div class="text-xs text-indigo-400 mt-1" id="partinDetail">Ext. Extracapsular</div>
+                    </div>
+                </div>
+
+                <!-- Cards Row 3 — Nuevos Scores (Benchmarking / Protocolo UROMED) -->
+                <div class="col-span-12 grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <!-- D'Amico Classification -->
+                    <div class="bg-slate-900 p-4 rounded-lg border border-slate-800 border-l-4 border-l-orange-500">
+                        <div class="text-xs text-slate-400 uppercase">D'Amico</div>
+                        <div class="text-2xl font-bold text-white mt-1" id="damicoRisk">--</div>
+                        <div class="text-xs text-orange-400 mt-1" id="damicoBCR">JAMA 1998</div>
+                    </div>
+                    <!-- EAU Risk Group -->
+                    <div class="bg-slate-900 p-4 rounded-lg border border-slate-800 border-l-4 border-l-cyan-500">
+                        <div class="text-xs text-slate-400 uppercase">EAU 2026</div>
+                        <div class="text-2xl font-bold text-white mt-1" id="eauRisk">--</div>
+                        <div class="text-xs text-cyan-400 mt-1" id="eauIntent">Guías Europeas</div>
+                    </div>
+                    <!-- MSKCC BCR -->
+                    <div class="bg-slate-900 p-4 rounded-lg border border-slate-800 border-l-4 border-l-rose-500">
+                        <div class="text-xs text-slate-400 uppercase">MSKCC BCR 5a</div>
+                        <div class="text-2xl font-bold text-white mt-1" id="mskccBCR">-- %</div>
+                        <div class="text-xs text-rose-400 mt-1" id="mskccInterp">Libre Recurrencia</div>
+                    </div>
+                    <!-- eGFR -->
+                    <div class="bg-slate-900 p-4 rounded-lg border border-slate-800 border-l-4 border-l-lime-500">
+                        <div class="text-xs text-slate-400 uppercase">eGFR (CKD-EPI)</div>
+                        <div class="text-2xl font-bold text-white mt-1" id="egfrValue">--</div>
+                        <div class="text-xs text-lime-400 mt-1" id="egfrInterp">mL/min/1.73m²</div>
+                    </div>
+                </div>
+
+                <!-- Radar Chart Row -->
+                <div class="col-span-12 md:col-span-6 bg-slate-900 rounded-xl p-6 border border-slate-800">
+                    <h4 class="text-sm font-semibold text-slate-400 mb-2 uppercase tracking-wider">Perfil de Riesgo Multimodal</h4>
+                    <div class="h-56 w-full">
+                        <canvas id="radarChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- AS Eligibility Detail -->
+                <div class="col-span-12 md:col-span-6 bg-slate-900 rounded-xl p-6 border border-slate-800">
+                    <h4 class="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">Elegibilidad Vigilancia Activa</h4>
+                    <div id="asDetailTable" class="space-y-2 text-sm">
+                        <div class="flex justify-between items-center py-1 border-b border-slate-800">
+                            <span class="text-slate-400">NCCN low + modifiers</span>
+                            <span id="as_nccn_lm" class="font-bold">--</span>
+                        </div>
+                        <div class="flex justify-between items-center py-1 border-b border-slate-800">
+                            <span class="text-slate-400">NCCN Low</span>
+                            <span id="as_nccn_l" class="font-bold">--</span>
+                        </div>
+                        <div class="flex justify-between items-center py-1 border-b border-slate-800">
+                            <span class="text-slate-400">NCCN Fav. Intermediate</span>
+                            <span id="as_nccn_fi" class="font-bold">--</span>
+                        </div>
+                        <div class="flex justify-between items-center py-1 border-b border-slate-800">
+                            <span class="text-slate-400">PRIAS</span>
+                            <span id="as_prias" class="font-bold">--</span>
+                        </div>
+                        <div class="flex justify-between items-center py-1">
+                            <span class="text-slate-400">Johns Hopkins</span>
+                            <span id="as_jhu" class="font-bold">--</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Narrative Report Section -->
+            <div id="reportContainer"
+                class="bg-white text-slate-900 rounded-lg p-8 shadow-2xl max-w-4xl mx-auto opacity-50 pointer-events-none transition-opacity duration-500">
+                <div class="flex justify-between items-end border-b-2 border-slate-200 pb-4 mb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold text-slate-800">Informe Clínico Automatizado</h2>
+                        <p class="text-sm text-slate-500">Generado por ProstaMed v2.2</p>
+                    </div>
+                    <div class="text-right">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=60x60&data=ProstaMedReport" alt="QR"
+                            class="opacity-80">
+                    </div>
+                </div>
+
+                <div class="prose prose-slate max-w-none">
+                    <div id="reportContent"
+                        class="whitespace-pre-wrap font-serif text-lg leading-relaxed text-slate-700">
+                        <!-- Narrative Report will be injected here -->
+                        Seleccione los parámetros a la izquierda y haga clic en "Calcular" para generar el informe.
+                    </div>
+                </div>
+
+                <div class="mt-8 pt-4 border-t border-slate-200 text-xs text-slate-400 flex justify-between">
+                    <span>* Este reporte es una herramienta de apoyo a la decisión clínica y no sustituye el juicio
+                        médico.</span>
+                    <span>Fecha: <span id="reportDate"></span></span>
+                </div>
+            </div>
+
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <!-- BOTÓN: REGISTRAR PACIENTE (Visible solo después de calcular) -->
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <div id="registerPatientSection" class="hidden max-w-4xl mx-auto mt-6">
+                <div class="bg-gradient-to-r from-blue-900/50 to-cyan-900/50 rounded-xl border border-blue-700/50 p-6 shadow-xl">
+                    <div class="flex items-start gap-4">
+                        <div class="bg-blue-600 p-3 rounded-lg">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="text-lg font-bold text-white mb-1">Registrar Paciente en Base de Investigación</h3>
+                            <p class="text-sm text-slate-400 mb-4">Los datos calculados se guardarán como perfil basal del paciente. El reporte automatizado será su documento de ingreso y punto de partida para seguimiento longitudinal.</p>
+
+                            <!-- Clasificación automática -->
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4" id="classificationBadges">
+                                <!-- Filled by JS after calculation -->
+                            </div>
+
+                            <!-- Líneas de investigación elegibles -->
+                            <div class="mb-4 p-3 bg-slate-900/50 rounded-lg border border-slate-700" id="researchEligibility">
+                                <p class="text-xs text-cyan-400 font-semibold uppercase mb-2">Líneas de Investigación Elegibles</p>
+                                <div id="researchTags" class="flex flex-wrap gap-2">
+                                    <!-- Filled by JS -->
+                                </div>
+                            </div>
+
+                            <!-- Identity Fields -->
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-400 mb-1">NSS (11 dígitos)</label>
+                                    <input type="text" id="regNSS" pattern="\d{11}" placeholder="00000000000"
+                                        class="w-full rounded p-2 text-sm font-mono bg-slate-800 border border-slate-600 text-white focus:border-blue-500" required>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-400 mb-1">Nombre Completo</label>
+                                    <input type="text" id="regName" placeholder="Apellido P, Apellido M, Nombre"
+                                        class="w-full rounded p-2 text-sm bg-slate-800 border border-slate-600 text-white focus:border-blue-500" required>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-400 mb-1">Fecha Nacimiento</label>
+                                    <input type="date" id="regDOB"
+                                        class="w-full rounded p-2 text-sm bg-slate-800 border border-slate-600 text-white focus:border-blue-500" required>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-400 mb-1">Fecha Diagnóstico</label>
+                                    <input type="date" id="regDxDate" value=""
+                                        class="w-full rounded p-2 text-sm bg-slate-800 border border-slate-600 text-white focus:border-blue-500" required>
+                                </div>
+                            </div>
+
+                            <div class="flex gap-3">
+                                <button type="button" onclick="registerPatientFromCalculator()"
+                                    class="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition-transform transform hover:scale-[1.02] flex items-center justify-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                    GUARDAR PACIENTE EN BASE DE DATOS
+                                </button>
+                                <button type="button" onclick="printReport()"
+                                    class="px-4 py-3 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path>
+                                    </svg>
+                                    Imprimir
+                                </button>
+                            </div>
+                            <div id="registerResult" class="hidden mt-3 p-3 rounded-lg text-sm"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <script>
+        // ══════════════════════════════════════════════════════════════════
+        // ProstaMed Advanced Calculator v3.0 — JavaScript Engine
+        // ══════════════════════════════════════════════════════════════════
+
+        // Initialize PSA Chart
+        const ctx = document.getElementById('psaChart').getContext('2d');
+        let psaChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Feb 2024', 'Feb 2025'],
+                datasets: [{
+                    label: 'APE (ng/mL)',
+                    data: [6.2, 8.5],
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+                    x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        // Initialize Radar Chart
+        let radarChart = new Chart(document.getElementById('radarChart').getContext('2d'), {
+            type: 'radar',
+            data: {
+                labels: ['NCCN', 'CAPRA', "D'Amico", 'EAU 2026', 'Briganti LNI', 'Kattan (inv)',
+                         'MSKCC BCR', 'Cinética PSA', 'ML Risk', 'PSAD', 'eGFR (inv)', 'PHI'],
+                datasets: [{
+                    label: 'Perfil de Riesgo',
+                    data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                    borderColor: '#3b82f6',
+                    borderWidth: 2,
+                    pointBackgroundColor: '#3b82f6',
+                    pointBorderColor: '#fff',
+                    pointRadius: 3,
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: '#3b82f6'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: { color: '#94a3b8', backdropColor: 'transparent', stepSize: 25, display: false },
+                        grid: { color: '#334155' },
+                        pointLabels: { color: '#e2e8f0', font: { size: 9, weight: '500' } },
+                        angleLines: { color: '#334155' }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) { return ctx.label + ': ' + ctx.raw.toFixed(0) + '/100'; }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Auto-update ISUP badge when Gleason changes
+        function updateIsupBadge() {
+            const p1 = parseInt(document.querySelector('[name="gleason_primary"]').value) || 3;
+            const p2 = parseInt(document.querySelector('[name="gleason_secondary"]').value) || 3;
+            const total = p1 + p2;
+            let isup = 1;
+            if (total <= 6) isup = 1;
+            else if (total === 7 && p1 === 3) isup = 2;
+            else if (total === 7 && p1 === 4) isup = 3;
+            else if (total === 8) isup = 4;
+            else if (total >= 9) isup = 5;
+
+            const badge = document.getElementById('isupBadge');
+            badge.innerText = `GG ${isup}`;
+            const colors = {1:'text-green-400 bg-green-900/30', 2:'text-yellow-400 bg-yellow-900/30', 3:'text-orange-400 bg-orange-900/30', 4:'text-red-400 bg-red-900/30', 5:'text-red-600 bg-red-900/50'};
+            badge.className = `text-sm font-bold px-2 py-0.5 rounded ${colors[isup]}`;
+        }
+        document.querySelector('[name="gleason_primary"]').addEventListener('change', updateIsupBadge);
+        document.querySelector('[name="gleason_secondary"]').addEventListener('change', updateIsupBadge);
+        updateIsupBadge();
+
+        // Toggle genomic score field based on test type
+        function toggleGenomicFields(select) {
+            const container = document.getElementById('genomicScoreContainer');
+            const label = document.getElementById('genomicScoreLabel');
+            const input = container.querySelector('input');
+            if (select.value === 'ninguna') {
+                container.style.display = 'none';
+                input.value = '';
+            } else {
+                container.style.display = 'block';
+                if (select.value === 'decipher') { label.innerText = 'Decipher (0-1)'; input.max = 1; input.step = 0.01; input.placeholder = '0.00-1.00'; }
+                else if (select.value === 'prolaris') { label.innerText = 'CCP Score'; input.max = 10; input.step = 0.1; input.placeholder = 'CCP score'; }
+                else if (select.value === 'oncotype') { label.innerText = 'GPS (0-100)'; input.max = 100; input.step = 1; input.placeholder = '0-100'; }
+            }
+        }
+
+        function addPsaRow() {
+            const container = document.getElementById('psaHistoryRows');
+            const div = document.createElement('div');
+            div.className = 'flex gap-2';
+            div.innerHTML = `
+                 <input type="date" class="w-1/2 rounded p-1 text-xs">
+                 <input type="number" placeholder="ng/mL" class="w-1/3 rounded p-1 text-xs">
+                 <button type="button" class="text-red-400 hover:text-red-300 px-1" onclick="this.parentElement.remove()">&times;</button>
+             `;
+            container.appendChild(div);
+        }
+
+        async function calculateRisk() {
+            const form = document.getElementById('calculatorForm');
+            const data = {};
+
+            // All checkbox field names
+            const allCheckboxes = [
+                'pni', 'lvi', 'surgical_margin', 'ece_status', 'svi_status', 'lni_status',
+                'patron_cribiforme', 'carcinoma_intraductal',
+                'mpmri_ece_suspicion', 'mpmri_svi_suspicion',
+                'diabetes_mellitus', 'hipertension', 'sindrome_metabolico'
+            ];
+
+            // Collect non-checkbox form data
+            new FormData(form).forEach((value, key) => {
+                if (!allCheckboxes.includes(key)) {
+                    data[key] = value;
+                }
+            });
+
+            // Handle all checkboxes (unchecked = 0)
+            allCheckboxes.forEach(id => {
+                const el = form.querySelector(`input[name="${id}"]`);
+                data[id] = el && el.checked ? 1 : 0;
+            });
+
+            // PSA History
+            const dates = Array.from(document.querySelectorAll('#psaHistoryRows input[type="date"]')).map(i => i.value);
+            const values = Array.from(document.querySelectorAll('#psaHistoryRows input[type="number"]')).map(i => i.value);
+            data.psa_history = dates.map((d, i) => ({ date: d, value: parseFloat(values[i]) })).filter(x => x.date && !isNaN(x.value));
+
+            // ── Type conversion (read from form, not hardcoded) ──
+            data.age = parseInt(data.age) || 65;
+            data.psa = parseFloat(data.psa) || 0;
+            data.gleason_primary = parseInt(data.gleason_primary) || 3;
+            data.gleason_secondary = parseInt(data.gleason_secondary) || 3;
+            data.cores_pos = parseInt(data.cores_pos) || 0;
+            data.cores_tot = parseInt(data.cores_tot) || 12;
+            data.num_cores_positive = data.cores_pos;
+            data.total_cores = data.cores_tot;
+            data.clinical_tstage = data.t_stage;
+            data.volumen_prostatico = parseFloat(data.volumen) || 40;
+            data.cci = parseInt(data.cci) || 0;
+            data.ecog = parseInt(data.ecog) || 0;
+            data.pirads = parseInt(data.pirads) || 0;
+            data.bmi = parseFloat(data.bmi) || 25;
+            data.testosterone = parseFloat(data.testosterone) || 350;
+            data.previous_biopsies = parseInt(data.previous_biopsies) || 0;
+            data.family_history = parseInt(data.family_history) || 0;
+            data.genomic_score = parseFloat(data.genomic_score) || 0;
+
+            // Backend expects fraction 0.0-1.0 for these fields
+            data.pct_cores_positive = (data.cores_pos / data.cores_tot) || 0;
+            data.max_core_involvement = (parseFloat(data.max_core_involvement) || 0) / 100;
+            data.free_psa_ratio = (parseFloat(data.free_psa_ratio) || 15) / 100;
+
+            // Derived fields
+            data.dre_findings = data.t_stage;
+            data.psad = data.volumen_prostatico > 0 ? data.psa / data.volumen_prostatico : 0;
+
+            // New fields for extended analysis
+            data.porcentaje_patron_4 = parseFloat(data.porcentaje_patron_4) || 0;
+            data.tamano_lesion_mm = parseFloat(data.tamano_lesion_mm) || 0;
+            data.ipss_score = parseInt(data.ipss_score) || 0;
+
+            console.log("Sending data:", data);
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    throw new Error(errText || "Error en el cálculo");
+                }
+
+                const result = await response.json();
+                updateDashboard(result);
+
+            } catch (error) {
+                console.error(error);
+                alert("Error al conectar con el servidor: " + error.message);
+            }
+        }
+
+        function updateDashboard(data) {
+            // Unblur
+            document.getElementById('dashboard').classList.remove('opacity-50', 'pointer-events-none');
+            document.getElementById('reportContainer').classList.remove('opacity-50', 'pointer-events-none');
+
+            const scores = data.clinical_scores;
+            const nccn = scores.nccn;
+
+            // ── NCCN Risk ──
+            const rLabel = document.getElementById('riskLabel');
+            rLabel.innerText = nccn.risk_group;
+
+            if (nccn.risk_group.includes("MUY ALTO")) rLabel.className = "text-xl font-bold text-red-600 text-center uppercase";
+            else if (nccn.risk_group.includes("ALTO")) rLabel.className = "text-xl font-bold text-red-500 text-center uppercase";
+            else if (nccn.risk_group.includes("DESFAVORABLE")) rLabel.className = "text-xl font-bold text-orange-500 text-center uppercase";
+            else if (nccn.risk_group.includes("INTERMEDIO")) rLabel.className = "text-xl font-bold text-yellow-500 text-center uppercase";
+            else rLabel.className = "text-xl font-bold text-green-500 text-center uppercase";
+
+            document.getElementById('riskSubtext').innerText = nccn.referencia ? nccn.referencia.split('—')[0] : '';
+
+            // ── CAPRA / CAPRA-S ──
+            if (scores.capra_s) {
+                document.getElementById('capraScore').innerText = scores.capra_s.score + " / 12 (S)";
+                document.getElementById('capraRisk').innerText = "BCR 5a: " + scores.capra_s.bcr_free_survival['5y'] + "% Libres";
+            } else {
+                document.getElementById('capraScore').innerText = scores.capra.score + " / 10";
+                document.getElementById('capraRisk').innerText = "Riesgo " + scores.capra.risk_group;
+            }
+
+            // ── Briganti ──
+            document.getElementById('lniProb').innerText = scores.briganti.probabilidad_lni;
+            const eplnd = document.getElementById('eplndRec');
+            eplnd.innerText = scores.briganti.eplnd_recomendada ? "ePLND RECOMENDADA" : "Bajo Riesgo (<5%)";
+            eplnd.className = scores.briganti.eplnd_recomendada ? "text-xs text-red-400 mt-1 font-bold" : "text-xs text-green-400 mt-1";
+
+            // ── Kattan ──
+            document.getElementById('ocProb').innerText = scores.kattan_msk.probabilidad_organo_confinado;
+
+            // ── Life Expectancy ──
+            if (scores.life_expectancy) {
+                const le = scores.life_expectancy;
+                document.getElementById('lifeExpYears').innerText = le.years + " Años";
+                const recEl = document.getElementById('lifeExpRec');
+                if (le.less_than_10y) {
+                    recEl.innerText = "LE < 10 años: VIGILANCIA ACTIVA";
+                    recEl.className = "text-xs text-orange-400 mt-1 font-bold animate-pulse";
+                } else {
+                    recEl.innerText = "Expectativa > 10 años";
+                    recEl.className = "text-xs text-teal-400 mt-1";
+                }
+            }
+
+            // ── PSAD (NEW) ──
+            if (scores.psad !== undefined) {
+                const psadVal = typeof scores.psad === 'number' ? scores.psad.toFixed(3) : scores.psad;
+                document.getElementById('psadValue').innerText = psadVal;
+                const psadNum = parseFloat(psadVal);
+                const psadInterp = document.getElementById('psadInterp');
+                if (psadNum >= 0.15) {
+                    psadInterp.innerText = ">=0.15: Riesgo elevado";
+                    psadInterp.className = "text-xs text-orange-400 mt-1 font-bold";
+                } else {
+                    psadInterp.innerText = "<0.15: Favorable";
+                    psadInterp.className = "text-xs text-green-400 mt-1";
+                }
+            }
+
+            // ── ProstaMed Integrated Score ──
+            if (scores.prostanet_score) {
+                const ps = scores.prostanet_score;
+                document.getElementById('prostanetScore').innerText = ps.score + " / 100";
+                const psRisk = document.getElementById('prostanetRisk');
+                psRisk.innerText = "Riesgo " + ps.risk_group;
+                if (ps.risk_group === 'ALTO') psRisk.className = "text-xs text-red-400 mt-1 font-bold";
+                else if (ps.risk_group === 'INTERMEDIO') psRisk.className = "text-xs text-yellow-400 mt-1";
+                else psRisk.className = "text-xs text-green-400 mt-1";
+            }
+
+            // ── Active Surveillance Eligibility (NEW) ──
+            if (scores.as_eligibility) {
+                const as = scores.as_eligibility;
+                const eligCount = Object.values(as.protocols).filter(v => v.eligible).length;
+                const asEl = document.getElementById('asEligibility');
+                asEl.innerText = eligCount > 0 ? `${eligCount}/5` : "NO";
+                asEl.className = eligCount > 0
+                    ? "text-2xl font-bold text-green-400 mt-1"
+                    : "text-2xl font-bold text-red-400 mt-1";
+                document.getElementById('asProtocols').innerText = eligCount > 0
+                    ? `Elegible en ${eligCount} protocolo(s)`
+                    : as.exclusion_reason || "No elegible";
+
+                // Detail table
+                const proto = as.protocols;
+                const setAS = (id, p) => {
+                    const el = document.getElementById(id);
+                    if (p && p.eligible) { el.innerText = "ELEGIBLE"; el.className = "font-bold text-green-400"; }
+                    else { el.innerText = (p && p.reason) || "NO"; el.className = "font-bold text-red-400"; }
+                };
+                setAS('as_nccn_lm', proto.nccn_low_modifiers);
+                setAS('as_nccn_l', proto.nccn_low);
+                setAS('as_nccn_fi', proto.nccn_fav_intermediate);
+                setAS('as_prias', proto.prias);
+                setAS('as_jhu', proto.johns_hopkins);
+            }
+
+            // ── Partin Tables (NEW) ──
+            if (scores.partin) {
+                document.getElementById('partinECE').innerText = scores.partin.ece_prob + "%";
+                document.getElementById('partinDetail').innerText =
+                    `OC: ${scores.partin.oc_prob}% | SVI: ${scores.partin.svi_prob}% | LNI: ${scores.partin.lni_prob}%`;
+            }
+
+            // ── Radar Chart Multimodal (12 ejes) ──
+            // 1. NCCN
+            const nccnRank = {'BAJO':25, 'INTERMEDIO FAVORABLE':40, 'INTERMEDIO DESFAVORABLE':55, 'ALTO':80, 'MUY ALTO':100, 'REGIONAL N1M0':95};
+            const rNccn = nccnRank[nccn.risk_group] || 50;
+
+            // 2. CAPRA (0-10 → 0-100)
+            const rCapra = scores.capra ? (scores.capra.score / 10) * 100 : 0;
+
+            // 3. D'Amico (risk_group: BAJO, INTERMEDIO, ALTO)
+            const damicoRank = {'BAJO':20, 'INTERMEDIO':55, 'ALTO':90};
+            const rDamico = scores.damico ? (damicoRank[scores.damico.risk_group] || 50) : 0;
+
+            // 4. EAU 2026 (risk_group: BAJO, INTERMEDIO (Favorable), INTERMEDIO (Desfavorable), ALTO, MUY ALTO)
+            const eauStr = scores.eau?.risk_group || '';
+            let rEau = 50;
+            if (eauStr.includes('BAJO') && !eauStr.includes('MUY')) rEau = 15;
+            else if (eauStr.includes('Favorable')) rEau = 35;
+            else if (eauStr.includes('Desfavorable')) rEau = 55;
+            else if (eauStr.includes('MUY') || eauStr.includes('AVANZADO')) rEau = 95;
+            else if (eauStr.includes('ALTO')) rEau = 75;
+
+            // 5. Briganti LNI
+            const brigantiPct = parseFloat(String(scores.briganti?.probabilidad_lni || '0').replace('%','')) || 0;
+            const rBriganti = Math.min(brigantiPct * 2.5, 100);
+
+            // 6. Kattan inversed (organ-confined → higher = worse)
+            const kattanOC = parseFloat(String(scores.kattan_msk?.probabilidad_organo_confinado || '0').replace('%','')) || 0;
+            const rKattan = 100 - kattanOC;
+
+            // 7. MSKCC BCR (inversed: higher BCR-free = less risk → invert)
+            const mskcBCR_free = parseFloat(String(scores.mskcc_bcr?.bcr_free_5y || '0').replace('%','')) || 80;
+            const rMskccBcr = 100 - mskcBCR_free;
+
+            // 8. Cinética PSA
+            const psaVel = data.psa_kinetics?.velocity || 0;
+            const psaDT = data.psa_kinetics?.psadt_months || 999;
+            let rKinetics = 10;
+            if (psaVel > 2.0 || psaDT < 3) rKinetics = 95;
+            else if (psaVel > 0.75 || psaDT < 10) rKinetics = 70;
+            else if (psaVel > 0.35) rKinetics = 45;
+            else if (psaVel > 0) rKinetics = 25;
+
+            // 9. ML Risk (from prediction.riesgo.probabilidades.ALTO)
+            let rMlRisk = 20;
+            if (data.prediction?.riesgo?.probabilidades) {
+                const altoStr = data.prediction.riesgo.probabilidades.ALTO || '0%';
+                const interStr = data.prediction.riesgo.probabilidades.INTERMEDIO || '0%';
+                rMlRisk = parseFloat(altoStr) + (parseFloat(interStr) * 0.5); // weighted risk
+            }
+
+            // 10. PSAD (0-0.5+ → 0-100)
+            const psadVal = scores.psad || 0;
+            const rPsad = Math.min(psadVal * 500, 100); // 0.20 = 100
+
+            // 11. eGFR inversed (lower eGFR = worse kidney = higher risk)
+            const egfrVal = scores.egfr?.egfr_value || 90;
+            const rEgfrInv = Math.max(0, 100 - egfrVal); // eGFR 90 → 10, eGFR 30 → 70
+
+            // 12. PHI (>55 very high risk) — uses 'score' field, falls back to fPSA ratio
+            let phiVal = scores.phi?.score || 0;
+            if (!phiVal && scores.phi?.pct_free_psa) {
+                // Approximate: lower fPSA% → higher risk (invert fPSA 5-25% → score 20-90)
+                const fpsa = scores.phi.pct_free_psa;
+                phiVal = Math.max(0, 90 - (fpsa * 3.5));
+            }
+            const rPhi = Math.min((phiVal / 60) * 100, 100);
+
+            radarChart.data.datasets[0].data = [
+                rNccn, rCapra, rDamico, rEau, rBriganti, rKattan,
+                rMskccBcr, rKinetics, rMlRisk, rPsad, rEgfrInv, rPhi
+            ];
+            radarChart.update();
+
+            // ── Report ──
+            document.getElementById('reportContent').innerText = data.narrative_report;
+            document.getElementById('reportDate').innerText = new Date().toLocaleDateString();
+
+            // ── PSA Kinetics ──
+            if (data.psa_kinetics) {
+                document.getElementById('psaVelDisplay').innerText = `Velocidad: ${data.psa_kinetics.velocity || '-'} ng/mL/año`;
+                document.getElementById('psaDtDisplay').innerText = `PSADT: ${data.psa_kinetics.psadt_months || '-'} meses`;
+            }
+
+            // ══════════════════════════════════════════════════════════════
+            // NUEVOS SCORES — D'Amico, EAU, MSKCC BCR (Benchmarking)
+            // ══════════════════════════════════════════════════════════════
+
+            // ── D'Amico ──
+            if (scores.damico) {
+                const d = scores.damico;
+                const dEl = document.getElementById('damicoRisk');
+                dEl.innerText = d.risk_group;
+                const dColors = {'BAJO':'text-green-400','INTERMEDIO':'text-yellow-400','ALTO':'text-red-400'};
+                dEl.className = `text-xl font-bold mt-1 ${dColors[d.risk_group] || 'text-white'}`;
+                document.getElementById('damicoBCR').innerText = `BCR-free 5a: ${d.bcr_free_5y}`;
+            }
+
+            // ── EAU ──
+            if (scores.eau) {
+                const e = scores.eau;
+                const eEl = document.getElementById('eauRisk');
+                eEl.innerText = e.risk_group;
+                if (e.risk_group.includes('BAJO')) eEl.className = 'text-lg font-bold mt-1 text-green-400';
+                else if (e.risk_group.includes('INTERMEDIO')) eEl.className = 'text-lg font-bold mt-1 text-yellow-400';
+                else if (e.risk_group.includes('ALTO')) eEl.className = 'text-lg font-bold mt-1 text-red-400';
+                else eEl.className = 'text-lg font-bold mt-1 text-red-600';
+                document.getElementById('eauIntent').innerText = e.treatment_intent ? e.treatment_intent.substring(0, 50) + '...' : 'EAU 2026';
+            }
+
+            // ── MSKCC BCR ──
+            if (scores.mskcc_bcr) {
+                const m = scores.mskcc_bcr;
+                document.getElementById('mskccBCR').innerText = m.bcr_free_5y;
+                const mEl = document.getElementById('mskccInterp');
+                mEl.innerText = m.risk_category + ' | 10a: ' + m.bcr_free_10y;
+                if (m.risk_category === 'DESFAVORABLE') mEl.className = 'text-xs text-red-400 mt-1 font-bold';
+                else if (m.risk_category === 'INTERMEDIO') mEl.className = 'text-xs text-yellow-400 mt-1';
+                else mEl.className = 'text-xs text-green-400 mt-1';
+            }
+
+            // ── eGFR (from backend CKD-EPI 2021) ──
+            if (scores.egfr && scores.egfr.egfr_value > 0) {
+                const egfr = scores.egfr.egfr_value;
+                document.getElementById('egfrValue').innerText = Math.round(egfr);
+                const egfrInterp = document.getElementById('egfrInterp');
+                if (egfr >= 90) { egfrInterp.innerText = scores.egfr.egfr_category || 'Normal (G1)'; egfrInterp.className = 'text-xs text-green-400 mt-1'; }
+                else if (egfr >= 60) { egfrInterp.innerText = scores.egfr.egfr_category || 'Leve (G2)'; egfrInterp.className = 'text-xs text-yellow-400 mt-1'; }
+                else if (egfr >= 30) { egfrInterp.innerText = scores.egfr.egfr_category || 'Moderada (G3)'; egfrInterp.className = 'text-xs text-orange-400 mt-1 font-bold'; }
+                else { egfrInterp.innerText = scores.egfr.egfr_category || 'Severa (G4-5)'; egfrInterp.className = 'text-xs text-red-400 mt-1 font-bold'; }
+                // Show alert if present
+                if (scores.egfr.egfr_alert) {
+                    const alertDiv = document.createElement('div');
+                    alertDiv.className = 'text-xs text-amber-400 mt-1 p-1 bg-amber-900/20 rounded';
+                    alertDiv.innerText = scores.egfr.egfr_alert;
+                    document.getElementById('egfrInterp').parentElement.appendChild(alertDiv);
+                }
+            } else {
+                // Fallback: calculate locally if creatinine not sent to backend
+                const creat = parseFloat(document.querySelector('[name="creatinina"]')?.value) || 0;
+                const patientAge = parseInt(document.querySelector('[name="age"]')?.value) || 65;
+                if (creat > 0) {
+                    const kappa = 0.9, alpha = -0.302, minCr = Math.min(creat/kappa, 1), maxCr = Math.max(creat/kappa, 1);
+                    const egfrLocal = 142 * Math.pow(minCr, alpha) * Math.pow(maxCr, -1.200) * Math.pow(0.9938, patientAge);
+                    document.getElementById('egfrValue').innerText = Math.round(egfrLocal);
+                    const egfrInterp = document.getElementById('egfrInterp');
+                    if (egfrLocal >= 90) { egfrInterp.innerText = 'Normal (G1)'; egfrInterp.className = 'text-xs text-green-400 mt-1'; }
+                    else if (egfrLocal >= 60) { egfrInterp.innerText = 'Leve (G2)'; egfrInterp.className = 'text-xs text-yellow-400 mt-1'; }
+                    else if (egfrLocal >= 30) { egfrInterp.innerText = 'Moderada (G3)'; egfrInterp.className = 'text-xs text-orange-400 mt-1 font-bold'; }
+                    else { egfrInterp.innerText = 'Severa (G4-5)'; egfrInterp.className = 'text-xs text-red-400 mt-1 font-bold'; }
+                }
+            }
+
+            // ══════════════════════════════════════════════════════════════
+            // REGISTRAR PACIENTE — Show section + classification
+            // ══════════════════════════════════════════════════════════════
+            document.getElementById('registerPatientSection').classList.remove('hidden');
+            document.getElementById('regDxDate').value = new Date().toISOString().slice(0,10);
+
+            // Classification badges
+            const badges = document.getElementById('classificationBadges');
+            const riskColor = (g) => {
+                if (!g) return 'bg-slate-700 text-slate-300';
+                if (g.includes('BAJO') && !g.includes('MUY')) return 'bg-green-900/50 text-green-400 border-green-700';
+                if (g.includes('INTERMEDIO') || g.includes('FAVORABLE')) return 'bg-yellow-900/50 text-yellow-400 border-yellow-700';
+                if (g.includes('ALTO') || g.includes('DESFAVORABLE')) return 'bg-red-900/50 text-red-400 border-red-700';
+                if (g.includes('MUY ALTO') || g.includes('METAST')) return 'bg-red-950/50 text-red-500 border-red-800';
+                return 'bg-slate-700 text-slate-300';
+            };
+            badges.innerHTML = [
+                { label: 'NCCN', value: nccn.risk_group },
+                { label: 'D\'Amico', value: scores.damico?.risk_group || '--' },
+                { label: 'EAU', value: scores.eau?.risk_group || '--' },
+                { label: 'CAPRA', value: scores.capra?.score + '/10 (' + scores.capra?.risk_group + ')' },
+            ].map(b => `<div class="p-2 rounded border ${riskColor(b.value)} text-center">
+                <div class="text-[10px] uppercase tracking-wider opacity-70">${b.label}</div>
+                <div class="text-sm font-bold mt-0.5">${b.value}</div>
+            </div>`).join('');
+
+            // Research lines eligibility
+            const tags = document.getElementById('researchTags');
+            const researchLines = [];
+            const capraScoreVal = scores.capra?.score || 0;
+            const asElig = scores.as_eligibility;
+            const isAS = asElig && Object.values(asElig.protocols || {}).some(p => p.eligible);
+
+            if (isAS) researchLines.push({name: 'Vigilancia Activa', color: 'bg-green-800 text-green-300'});
+            if (capraScoreVal <= 5) researchLines.push({name: 'Validación CAPRA Bajo/Intermedio', color: 'bg-blue-800 text-blue-300'});
+            if (capraScoreVal >= 6) researchLines.push({name: 'CAPRA Alto Riesgo', color: 'bg-red-800 text-red-300'});
+            if (nccn.risk_group.includes('INTERMEDIO')) researchLines.push({name: 'Cohorte Riesgo Intermedio', color: 'bg-yellow-800 text-yellow-300'});
+            if (nccn.risk_group.includes('ALTO') || nccn.risk_group.includes('MUY ALTO')) researchLines.push({name: 'Cohorte Alto Riesgo', color: 'bg-red-800 text-red-300'});
+            researchLines.push({name: 'Validación CAPRA México', color: 'bg-cyan-800 text-cyan-300'});
+            researchLines.push({name: 'Epidemiología CaP UROMED', color: 'bg-purple-800 text-purple-300'});
+
+            tags.innerHTML = researchLines.map(r =>
+                `<span class="px-2 py-1 rounded-full text-xs font-medium ${r.color}">${r.name}</span>`
+            ).join('');
+
+            // Store calculated data for registration
+            window._lastCalcResult = data;
+            window._lastCalcInput = JSON.parse(JSON.stringify(data));
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // REGISTER PATIENT FROM CALCULATOR
+        // ══════════════════════════════════════════════════════════════
+        async function registerPatientFromCalculator() {
+            const nss = document.getElementById('regNSS').value.trim();
+            const name = document.getElementById('regName').value.trim();
+            const dob = document.getElementById('regDOB').value;
+            const dxDate = document.getElementById('regDxDate').value;
+
+            if (!nss || nss.length !== 11 || !/^\d{11}$/.test(nss)) {
+                alert('NSS debe ser exactamente 11 dígitos numéricos');
+                return;
+            }
+            if (!name) { alert('Nombre completo es requerido'); return; }
+            if (!dob) { alert('Fecha de nacimiento es requerida'); return; }
+
+            const resultDiv = document.getElementById('registerResult');
+            resultDiv.classList.remove('hidden');
+            resultDiv.className = 'mt-3 p-3 rounded-lg text-sm bg-blue-900/50 text-blue-300';
+            resultDiv.textContent = 'Guardando paciente...';
+
+            // Collect all form data
+            const form = document.getElementById('calculatorForm');
+            const formData = new FormData(form);
+            const calcData = {};
+            formData.forEach((v, k) => calcData[k] = v);
+
+            // Build registration payload
+            const payload = {
+                nss: nss,
+                full_name: name,
+                dob: dob,
+                diagnosis_date: dxDate,
+                // Clinical baseline from calculator
+                baseline_psa: parseFloat(calcData.psa) || 0,
+                testosterone_baseline: parseFloat(calcData.testosterone) || 350,
+                hemoglobin: parseFloat(calcData.hemoglobina) || 0,
+                alp: parseFloat(calcData.alp) || 0,
+                ldh: parseFloat(calcData.ldh) || 0,
+                gleason_score: (parseInt(calcData.gleason_primary) || 3) + (parseInt(calcData.gleason_secondary) || 3),
+                ecog_score: parseInt(calcData.ecog) || 0,
+                tnm_stage: calcData.t_stage || 'T2a',
+                metastasis_site: 'M0',
+                volume_disease: 'Low',
+                creatinina: parseFloat(calcData.creatinina) || 0,
+                uso_5ari: calcData.uso_5ari || 'no',
+                // Genomics
+                genomic_test_done: (calcData.genomic_test_type && calcData.genomic_test_type !== 'ninguna') ? 1 : 0,
+                hrr_status: calcData.hrr_status || 'desconocido',
+                msi_status: calcData.msi_status || 'desconocido',
+                // Biopsy data
+                cores_positivos: parseInt(calcData.cores_pos) || 0,
+                cores_totales: parseInt(calcData.cores_tot) || 12,
+                tipo_biopsia: calcData.tipo_biopsia || 'sistematica',
+                pirads: parseInt(calcData.pirads) || 0,
+                // Risk factors
+                tabaquismo: calcData.tabaquismo || 'nunca',
+                diabetes_mellitus: calcData.diabetes_mellitus ? 1 : 0,
+                hipertension: calcData.hipertension ? 1 : 0,
+                sindrome_metabolico: calcData.sindrome_metabolico ? 1 : 0,
+                ipss_score: parseInt(calcData.ipss_score) || 0,
+                bmi: parseFloat(calcData.bmi) || 25,
+                cci: parseInt(calcData.cci) || 0,
+                family_history: parseInt(calcData.family_history) || 0,
+                // Calculated scores (from last calculation)
+                calculated_scores: window._lastCalcResult?.clinical_scores || {},
+                narrative_report: window._lastCalcResult?.narrative_report || '',
+                psa_kinetics: window._lastCalcResult?.psa_kinetics || {},
+                // Source
+                source: 'calculator',
+            };
+
+            // PSMA / bone scan
+            if (calcData.psma_resultado && calcData.psma_resultado !== 'no_realizado') {
+                if (calcData.psma_resultado.includes('oseo') || calcData.psma_resultado.includes('visceral') || calcData.psma_resultado.includes('ganglionar')) {
+                    payload.metastasis_site = calcData.psma_resultado.replace('positivo_', '').charAt(0).toUpperCase() + calcData.psma_resultado.replace('positivo_', '').slice(1);
+                }
+            }
+            if (calcData.bone_scan_result === 'positivo') {
+                payload.metastasis_site = 'Hueso';
+            }
+
+            try {
+                const res = await fetch('/api/register_from_calculator', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (json.success) {
+                    resultDiv.className = 'mt-3 p-3 rounded-lg text-sm bg-green-900/50 text-green-300 border border-green-700';
+                    resultDiv.innerHTML = `<div class="flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                        <span><strong>Paciente registrado exitosamente.</strong> NSS: ${nss}</span>
+                    </div>
+                    <div class="mt-2 flex gap-2">
+                        <a href="/patient_profile/${nss}" class="inline-block px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded font-medium">Ver Perfil</a>
+                        <a href="/patients" class="inline-block px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded font-medium">Ver Todos</a>
+                    </div>`;
+                } else {
+                    resultDiv.className = 'mt-3 p-3 rounded-lg text-sm bg-red-900/50 text-red-300 border border-red-700';
+                    resultDiv.textContent = 'Error: ' + (json.error || 'No se pudo registrar');
+                }
+            } catch (e) {
+                resultDiv.className = 'mt-3 p-3 rounded-lg text-sm bg-red-900/50 text-red-300 border border-red-700';
+                resultDiv.textContent = 'Error de conexión: ' + e.message;
+            }
+        }
+
+        function printReport() {
+            const content = document.getElementById('reportContainer').innerHTML;
+            const w = window.open('', '_blank');
+            w.document.write(`<html><head><title>Informe ProstaMed</title>
+                <style>body{font-family:Georgia,serif;padding:40px;color:#333;max-width:800px;margin:0 auto;}
+                h2{color:#1e3a5f;} .prose{line-height:1.8;}</style></head>
+                <body>${content}</body></html>`);
+            w.document.close();
+            w.print();
+        }
+    </script>
+</body>
+
+</html>

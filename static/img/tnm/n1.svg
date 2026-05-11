@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <radialGradient id="n1_ll" cx="38%" cy="40%" r="52%">
+      <stop offset="0%" stop-color="#4cc8f0"/><stop offset="45%" stop-color="#1a8fd4"/>
+      <stop offset="80%" stop-color="#0d5fa0"/><stop offset="100%" stop-color="#062d55"/>
+    </radialGradient>
+    <radialGradient id="n1_lr" cx="62%" cy="40%" r="52%">
+      <stop offset="0%" stop-color="#4cc8f0"/><stop offset="45%" stop-color="#1a8fd4"/>
+      <stop offset="80%" stop-color="#0d5fa0"/><stop offset="100%" stop-color="#062d55"/>
+    </radialGradient>
+    <radialGradient id="n1_node" cx="45%" cy="35%" r="50%">
+      <stop offset="0%" stop-color="#6ee7b7"/><stop offset="50%" stop-color="#22c55e"/>
+      <stop offset="100%" stop-color="#15803d"/>
+    </radialGradient>
+    <filter id="n1_sh"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.3"/></filter>
+  </defs>
+  <line x1="30" y1="170" x2="170" y2="170" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+  <!-- Lóbulo izquierdo -->
+  <path d="M 92 70 C 78 62, 48 58, 32 72 C 16 86, 14 116, 22 136 C 30 156, 50 166, 66 164 C 80 162, 90 154, 94 142 C 98 130, 96 106, 94 90 Z"
+        fill="url(#n1_ll)" filter="url(#n1_sh)"/>
+  <!-- Lóbulo derecho -->
+  <path d="M 108 70 C 122 62, 152 58, 168 72 C 184 86, 186 116, 178 136 C 170 156, 150 166, 134 164 C 120 162, 110 154, 106 142 C 102 130, 104 106, 106 90 Z"
+        fill="url(#n1_lr)" filter="url(#n1_sh)"/>
+  <!-- Surco central -->
+  <path d="M 100 65 C 99 90, 98 120, 100 168" stroke="#041e45" stroke-width="2" fill="none" opacity="0.4"/>
+  <!-- Ganglios linfáticos afectados (verdes, alrededor de la próstata) -->
+  <ellipse cx="15" cy="90" rx="8" ry="10" fill="url(#n1_node)" opacity="0.85"/>
+  <ellipse cx="10" cy="115" rx="7" ry="9" fill="url(#n1_node)" opacity="0.8"/>
+  <ellipse cx="18" cy="140" rx="6" ry="8" fill="url(#n1_node)" opacity="0.75"/>
+  <ellipse cx="185" cy="90" rx="8" ry="10" fill="url(#n1_node)" opacity="0.85"/>
+  <ellipse cx="190" cy="115" rx="7" ry="9" fill="url(#n1_node)" opacity="0.8"/>
+  <ellipse cx="182" cy="140" rx="6" ry="8" fill="url(#n1_node)" opacity="0.75"/>
+  <!-- Ganglios superiores -->
+  <ellipse cx="55" cy="48" rx="6" ry="7" fill="url(#n1_node)" opacity="0.7"/>
+  <ellipse cx="145" cy="48" rx="6" ry="7" fill="url(#n1_node)" opacity="0.7"/>
+  <!-- Conexiones linfáticas -->
+  <path d="M 23 90 C 28 85, 30 80, 32 75" stroke="#22c55e" stroke-width="1" fill="none" opacity="0.4"/>
+  <path d="M 177 90 C 172 85, 170 80, 168 75" stroke="#22c55e" stroke-width="1" fill="none" opacity="0.4"/>
+  <path d="M 18 140 C 25 155, 35 160, 50 162" stroke="#22c55e" stroke-width="1" fill="none" opacity="0.4"/>
+  <path d="M 182 140 C 175 155, 165 160, 150 162" stroke="#22c55e" stroke-width="1" fill="none" opacity="0.4"/>
+  <!-- Etiqueta -->
+  <text x="100" y="36" text-anchor="middle" fill="#22c55e" font-family="Arial,sans-serif" font-size="10">Ganglios Linfáticos</text>
+  <!-- Leyenda -->
+  <ellipse cx="55" cy="188" rx="5" ry="5" fill="url(#n1_node)" opacity="0.8"/>
+  <text x="68" y="192" fill="#22c55e" font-family="Arial,sans-serif" font-size="10" font-weight="bold">Afectados</text>
+</svg>

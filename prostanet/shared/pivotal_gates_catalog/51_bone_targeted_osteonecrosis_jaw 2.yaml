@@ -1,0 +1,307 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 51: bone_targeted_osteonecrosis_jaw
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXII) — Auditoría #65 — Gate YAML-NATIVE.
+#
+# 🆕 SEGUNDO gate del catálogo en categoría bone-modifying agents
+# (post #64 hipocalcemia bone-targeted EXTENDIDA). Continúa la
+# arquitectura bone-targeted iniciada en #64.
+#
+# Razón clínica:
+#   ONJ (Osteonecrosis of the Jaw) es la 2da complicación más severa
+#   post bone-targeted (post hipocalcemia gate 50). Definida per AAOMS
+#   2022 (American Association of Oral and Maxillofacial Surgeons):
+#     1. Tratamiento actual o reciente con bone-targeted agent
+#        (bisfos IV/PO + denosumab + radium-223 + lutetium-177)
+#     2. Hueso expuesto en mandíbula o maxila O fístula intra/extraoral
+#        que sondea hasta hueso, persistente >8 semanas
+#     3. SIN historia de radiación a cabeza/cuello O metástasis
+#        evidente en mandíbula/maxila (excluir osteorradionecrosis +
+#        progresión metastásica)
+#
+#   Datos prevalencia ONJ G≥3 (ASCO Bone Health 2024 + Khan JBMR 2015):
+#     - **Denosumab (Xgeva 120 mg subQ q4 sem)**: 1.8-7.8% en oncology
+#       (mayor con duración tratamiento ≥2 años)
+#     - **Zoledronato IV (Zometa 4 mg q4 sem)**: 1-15% en oncology
+#       (varía con duración + procedimientos dentales)
+#     - **Pamidronato IV**: 1-5%
+#     - **Bisfos PO (alendronato/risedronato)**: 0.001-0.1% (mucho menor)
+#     - **Ra-223/Lu-177-PSMA**: <0.1% (raro pero reportado en literatura
+#       post-marketing por uptake óseo focal mandibular)
+#     - **Mortalidad ~1-3% por osteomielitis + sepsis** + complicaciones
+#       quirúrgicas (resección segmentaria mandibular)
+#
+#   Factores de riesgo MAYORES (estratificación AAOMS 2022 +
+#   Ruggiero JOMS 2014):
+#     - **Procedimiento dental invasivo reciente** (extracción +
+#       implante + cirugía periodontal) — riesgo 5-10× mayor
+#     - **Bisfos IV >2 años** O denosumab >18 meses (drug holiday
+#       no claramente protector)
+#     - **Higiene oral pobre** + enfermedad periodontal pre-existente
+#     - **Comorbilidades**: DM mal controlada, corticoides crónicos,
+#       quimioterapia anti-angiogénica concomitante (bevacizumab),
+#       ARSI con sequedad oral concurrente
+#     - **Trauma protésico crónico** (denturas mal ajustadas)
+#
+#   Profilaxis MANDATORIA pre-inicio (ADA 2022 + ASCO Bone Health 2024):
+#     - **Dental clearance comprehensiva pre-inicio** (panel completo)
+#     - **Tratamiento periodontal completo** + extracción dientes
+#       no salvables 1-2 MESES ANTES de primera dosis bone-targeted
+#     - **Restauración dental** completa + ajuste denturas
+#     - **Educación higiene oral** + cepillado/floss diario + revisión
+#       dental cada 6 meses durante terapia
+#     - Suplementación Ca + vitD para evitar hipocalcemia secundaria
+#
+#   Threshold canónico (AAOMS 2022 + Ruggiero JOMS 2014):
+#     - Path A: ONJ explicit diagnosis flag (cualquier estadio AAOMS
+#       1/2/3) — interpretación clínica especialista oral surgery
+#     - Path B: oral exposed bone duration >8 semanas (criterio
+#       diagnóstico AAOMS classic — distingue ONJ de osteítis
+#       reactiva post-extracción que cura típicamente en <8 sem)
+#     - Path C: ONJ AAOMS stage compound (exposed bone OR fistula +
+#       symptoms + duration ≥8 weeks + sin H&N radiation + sin
+#       metástasis mandibular evidente)
+#     - Path D: ONJ stage 3 (severo: osteomielitis + fistulas extraorales
+#       + fracture patológica + osteolisis extendida) — emergencia
+#       quirúrgica, mortalidad ~3%
+#
+#   Override: onj_resolved_for_bone_targeted=Sí
+#   (resolución completa AAOMS stage 0 documentada + dental clearance
+#   post-resolución + 25-OH-vitD + Ca normales + considera transición
+#   a bone-targeted alternativo per ASCO Bone Health 2024 + oral
+#   surgery endorsement explícito).
+#
+#   Coexistencia con gate 50 (hipocalcemia bone-targeted):
+#     - Mismo paciente bone-targeted puede tener simultáneamente
+#       gate 50 (hipocalcemia) + gate 51 (ONJ) — eje complicaciones
+#       bone-targeted COMPLETO
+#     - Pacientes con denosumab >18 meses tienen riesgo ELEVADO de
+#       AMBAS complicaciones simultáneas
+#
+#   Bloquea: REGIMEN_CODES_BONE_TARGETED (mismo scope que gate 50,
+#   reusa frozenset de #64).
+# ──────────────────────────────────────────────────────────────────────
+
+code: bone_targeted_osteonecrosis_jaw
+title: "Bone-targeted (denosumab+bisfos+radiopharmaceuticals) × ONJ AAOMS 2022 (ASCO Bone Health 2024)"
+faubot_added_in: "2026-04-25 LXII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: ONJ explicit diagnosis flag (any AAOMS stage)
+    - type: truthy_flag
+      field: osteonecrosis_jaw_documented
+      alias_fields:
+        - onj_documented
+        - mronj_documented
+        - bone_related_osteonecrosis_jaw
+        - osteonecrosis_mandibula_documentada
+        - osteonecrosis_maxilar_documentada
+    # Path B: oral exposed bone duration >8 weeks (AAOMS classic criterion)
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: oral_exposed_bone_documented
+          alias_fields:
+            - hueso_expuesto_oral
+            - exposed_jaw_bone
+            - bone_exposure_jaw
+        - type: numeric_above
+          field: oral_exposed_bone_duration_weeks
+          alias_fields:
+            - bone_exposure_duration_weeks
+            - duracion_exposicion_osea_semanas
+            - exposed_bone_weeks
+          threshold: 8
+    # Path C: AAOMS stage 2+ compound (exposed bone OR fistula + symptoms)
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: oral_exposed_bone_or_fistula_documented
+          alias_fields:
+            - exposed_bone_or_fistula_jaw
+            - fistula_intraoral_extraoral_documented
+        - type: truthy_flag
+          field: jaw_pain_or_infection_symptoms_documented
+          alias_fields:
+            - mandibular_symptoms_documented
+            - jaw_inflammation_documented
+            - dolor_mandibular_documentado
+        - type: truthy_flag
+          field: no_prior_head_neck_radiation
+          alias_fields:
+            - sin_radiacion_cabeza_cuello_previa
+            - no_prior_h_n_radiation_for_onj
+            - no_radiation_to_jaw_documented
+    # Path D: AAOMS stage 3 severe (emergencia quirúrgica)
+    - type: truthy_flag
+      field: onj_stage_3_severe_documented
+      alias_fields:
+        - onj_stage_3_for_bone_targeted
+        - severe_osteonecrosis_jaw_aaoms_stage3
+        - osteomielitis_mandibular_documentada
+        - mandibular_pathological_fracture_documented
+
+# Override: post-resolución completa + dental clearance + alternative consideration
+override:
+  type: truthy_flag
+  field: onj_resolved_for_bone_targeted
+  alias_fields:
+    - osteonecrosis_jaw_resolved
+    - mronj_resolved
+    - onj_aaoms_stage_0_documented
+    - onj_recovered_for_bone_targeted
+
+regimen_codes:
+  - REGIMEN_CODES_BONE_TARGETED
+
+keywords:
+  - KEYWORDS_BONE_TARGETED
+
+message: |
+  Bone-targeted agents (denosumab + bisfosfonatos + radiopharmaceuticals)
+  NO deben continuarse con ONJ (Osteonecrosis of the Jaw) documentado
+  AAOMS 2022 (cualquier estadio 1-3) o sospecha clínica fuerte (hueso
+  expuesto >8 semanas + sin radiación H&N previa + síntomas mandibulares).
+  ONJ stage 3 (osteomielitis + fistulas extraorales + fractura patológica)
+  es EMERGENCIA QUIRÚRGICA con mortalidad ~3% y requiere resección
+  segmentaria mandibular.
+
+  Definición ONJ per AAOMS 2022 (American Association of Oral and
+  Maxillofacial Surgeons):
+    1. Tratamiento actual o reciente con bone-targeted agent (bisfos
+       IV/PO + denosumab + radium-223 + lutetium-177)
+    2. Hueso expuesto en mandíbula/maxila O fístula intra/extraoral
+       que sondea hasta hueso, **persistente >8 semanas**
+    3. SIN historia de radiación a cabeza/cuello O metástasis mandibular
+       (excluir osteorradionecrosis + progresión metastásica)
+
+  Estadiaje AAOMS 2022:
+    - **Stage 0**: hallazgos no específicos sin hueso expuesto (dolor
+      mandibular vago, fistulas sin exposición ósea, sclerosis
+      panorámica, dental loosening). Manejo: profilaxis + observación
+    - **Stage 1**: hueso expuesto asintomático sin infección. Manejo:
+      conservador + clorhexidina 0.12% topical + monitoring
+    - **Stage 2**: hueso expuesto sintomático (dolor + signos infección
+      local). Manejo: antibiótico empírico (amoxicilina+clavulanato
+      o clindamicina si alergia) + clorhexidina + considerar curetaje
+      conservador
+    - **Stage 3**: hueso expuesto + ≥1: fistulas extraorales,
+      osteolisis extendida hasta cortical inferior, fractura patológica,
+      osteomielitis, comunicación oroantral/oronasal. Manejo: cirugía
+      maxilofacial (resección segmentaria mandibular o hemimaxilectomía)
+      + antibiótico IV + soporte nutricional + reconstrucción
+
+  Datos prevalencia ONJ (ASCO Bone Health 2024 + Khan JBMR 2015):
+    - **Denosumab (Xgeva 120 mg subQ q4 sem)**: 1.8-7.8% en oncology
+      (mayor con duración ≥2 años)
+    - **Zoledronato IV (Zometa)**: 1-15% en oncology
+    - **Pamidronato IV**: 1-5%
+    - **Bisfos PO (alendronato/risedronato)**: 0.001-0.1% (mucho menor)
+    - **Radiopharmaceuticals (Ra-223/Lu-177)**: <0.1% (raro pero
+      reportado post-marketing)
+    - **Mortalidad ~1-3%** por osteomielitis + sepsis + complicaciones
+      quirúrgicas
+
+  Factores de riesgo MAYORES (Ruggiero JOMS 2014 + AAOMS 2022):
+    - **Procedimiento dental invasivo reciente** (extracción + implante +
+      cirugía periodontal) — riesgo 5-10× MAYOR
+    - **Duración bone-targeted**: bisfos IV >2 años O denosumab >18 meses
+      (drug holiday no claramente protector)
+    - **Higiene oral pobre** + enfermedad periodontal pre-existente
+    - **Comorbilidades**: DM mal controlada, corticoides crónicos,
+      quimio anti-angiogénica concomitante (bevacizumab), ARSI con
+      sequedad oral concurrente
+    - **Trauma protésico crónico** (denturas mal ajustadas)
+
+  PROFILAXIS MANDATORIA pre-inicio (ADA 2022 + ASCO Bone Health 2024):
+    - **Dental clearance comprehensiva pre-inicio** (panorámica + exam
+      periodontal completo + radiografías intraorales)
+    - **Tratamiento periodontal completo** + extracción dientes
+      no salvables **1-2 MESES ANTES** de primera dosis bone-targeted
+      (permitir healing óseo + epitelización)
+    - **Restauración dental** completa + ajuste denturas
+    - **Educación higiene oral**: cepillado 2×/d + flossing + revisión
+      dental cada 6 meses durante terapia
+    - Suplementación Ca + vitD para evitar hipocalcemia (gate 50 monitor)
+
+  Conducta clínica obligatoria ante diagnóstico ONJ:
+  1. **Consulta oral surgery / maxilofacial URGENTE**.
+  2. **Suspender bone-targeted INMEDIATAMENTE** (decisión coordinada
+     con oncology — beneficio bone metastasis vs riesgo ONJ
+     progresión). Drug holiday recomendado pero protección parcial.
+  3. **Workup imaging**:
+     - Panorámica + CT cone-beam (extensión osteolisis + cortical
+       perforación)
+     - Considerar MRI si sospecha osteomielitis profunda
+     - Cultivo si fistula activa (típico Actinomyces +
+       streptococcos orales)
+  4. **Tratamiento por estadio AAOMS** (ver arriba estadiaje).
+  5. ⚠️ **DISCONTINUACIÓN PERMANENTE bone-targeted en**:
+     - ONJ stage 3 (cualquier paciente)
+     - ONJ stage 2 recurrente tras resolución
+     - Necesidad >12 meses para resolución
+  6. Override (`onj_resolved_for_bone_targeted=Sí`) SOLO si:
+     - Resolución completa AAOMS stage 0 documentada (sin hueso
+       expuesto + sin fistulas + sin síntomas)
+     - Dental clearance post-resolución completo
+     - 25-OH-vitD + Ca normales (descartar hipocalcemia secundaria)
+     - Oral surgery endorsement explícito en HC
+     - **Consideración cambio a bone-targeted ALTERNATIVO**
+       (denosumab→bisfos PO o viceversa per ASCO Bone Health 2024)
+  7. **NUNCA suspender denosumab abruptamente sin transición** a
+     bisfos: riesgo "rebound resorción" → fracturas vertebrales
+     múltiples + hipercalcemia paradoxal (gate 50 monitor).
+
+  Considerar terapia alternativa NO-bone-targeted:
+    - Si paciente requiere bone protection: cambiar denosumab → bisfos
+      PO (perfil ONJ menor 0.001-0.1% vs 1.8-7.8%)
+    - Si paciente recibe radiopharmaceutical: ajustar régimen Lu-177
+      cycles vs continuar bone-targeted bone protection
+    - Si bone-protection no esencial: descontinuar definitivamente
+
+  CAMPOS REQUERIDOS:
+    - `osteonecrosis_jaw_documented`: flag dx clínico (Path A)
+    - `oral_exposed_bone_documented` + `oral_exposed_bone_duration_weeks`
+      (Path B compound)
+    - `oral_exposed_bone_or_fistula_documented` +
+      `jaw_pain_or_infection_symptoms_documented` +
+      `no_prior_head_neck_radiation` (Path C compound)
+    - `onj_stage_3_severe_documented`: flag emergencia (Path D)
+    - Override: `onj_resolved_for_bone_targeted`
+
+evidence_tag: aaoms_2022_asco_bone_health_2024_ruggiero_joms_2014_khan_jbmr_2015
+trial_refs:
+  - "AAOMS 2022 Position Paper"
+  - "ASCO Bone Health 2024"
+  - "Ruggiero JOMS 2014"
+  - "Khan JBMR 2015"
+  - "ADA 2022 ONJ Prevention"
+  - "Henry JCO 2011"
+  - "Fizazi Lancet 2011"
+  - "Stopeck JCO 2010"
+  - "Xgeva label §5.5"
+  - "Zometa label §5.4"
+
+references:
+  - "Ruggiero SL et al. AAOMS Position Paper on Medication-Related Osteonecrosis of the Jaws — 2022 Update. JOMS 2022;80:920."
+  - "ASCO Clinical Practice Guideline: Bone Health in Patients with Cancer 2024 (ONJ section)."
+  - "Khan AA et al. Diagnosis and management of osteonecrosis of the jaw: international consensus. JBMR 2015;30:3."
+  - "Ruggiero SL et al. AAOMS Position Paper on MRONJ — 2014. JOMS 2014;72:1938."
+  - "ADA Council on Scientific Affairs. Antiresorptive agents and ONJ — 2022 update."
+  - "Henry DH et al. JCO 2011;29:1125 (denosumab vs zoledronate Phase 3, ONJ subset)."
+  - "Fizazi K et al. Lancet 2011;377:813 (denosumab vs zometa mCRPC, ONJ rates)."
+  - "Stopeck AT et al. JCO 2010;28:5132 (denosumab Phase 3 metastatic breast cancer ONJ)."
+  - "Xgeva (denosumab) FDA prescribing information §5.5 — Osteonecrosis of the Jaw."
+  - "Zometa (zoledronic acid) FDA prescribing information §5.4 — Osteonecrosis of the Jaw."
+  - "ESMO Bone Health Clinical Practice Guideline 2024 (ONJ management)."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Bone health: dental clearance pre-inicio + ONJ monitoring + AAOMS staging"
+  eau_section: "EAU 2026 §6.7.4 — Bone-modifying agents in mCRPC + ONJ prevention + management"
+  asco_bone_health_section: "ASCO Bone Health Clinical Practice Guideline 2024 (ONJ section)"
+  aaoms_section: "AAOMS Position Paper on MRONJ 2022 (foundational diagnostic + staging)"
+  ada_section: "ADA Council on Scientific Affairs 2022 — ONJ Prevention guideline"

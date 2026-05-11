@@ -1,0 +1,47 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 5: uncontrolled_diabetes
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XI) — Migrado a YAML declarativo.
+#
+# Razón clínica:
+#   DM no controlada → riesgo hiperglucemia ipatasertib (AKT inhibitor).
+#   IPATential150 (Sweeney Lancet 2021) excluyó DM no controlada por
+#   alta tasa de hiperglucemia tratamiento-emergente con ipatasertib.
+# ──────────────────────────────────────────────────────────────────────
+
+code: uncontrolled_diabetes
+title: "Diabetes mellitus no controlada"
+faubot_added_in: "2026-04-23 I"
+faubot_migrated_to_yaml_in: "2026-04-25 XI"
+severity: hard_block
+
+trigger:
+  type: truthy_flag
+  field: uncontrolled_diabetes
+  alias_fields:
+    - diabetes_uncontrolled
+
+override: null
+
+regimen_codes:
+  - REGIMEN_CODES_IPATASERTIB
+
+keywords:
+  - KEYWORDS_IPATASERTIB
+
+message: |
+  Ipatasertib NO recomendado con diabetes no controlada (HbA1c >7.5% o
+  glucemia plasmática en ayuno >150 mg/dL persistente). Mecanismo: AKT
+  inhibición induce hiperglucemia tratamiento-emergente significativa
+  (IPATential150 reportó ~20% hiperglucemia G≥3). Optimizar control
+  glicémico (HbA1c <7%) con metformina ± SGLT2i ± insulina antes de
+  considerar; reevaluar en 4-6 semanas con HbA1c documentada.
+
+evidence_tag: ipatential150_sweeney_lancet_2021
+trial_refs:
+  - IPATential150
+
+references:
+  - "Sweeney C, et al. IPATential150. Lancet 2021;398:131-142."
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Ipatasertib + abiraterona en mCRPC PTEN-loss"

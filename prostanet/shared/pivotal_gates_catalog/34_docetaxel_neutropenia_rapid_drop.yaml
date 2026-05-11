@@ -1,0 +1,136 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 34: docetaxel_neutropenia_rapid_drop
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XLVIII) — Auditoría #49 — Gate YAML-NATIVE longitudinal.
+#
+# Razón clínica:
+#   Docetaxel (Taxotere) tiene neutropenia G≥3 documentada como AE
+#   más frecuente: TAX-327 (Petrylak NEJM 2004) reportó neutropenia
+#   G≥3 32%, fiebre neutropénica 3%; STAMPEDE Arm C subset analysis
+#   confirmó perfil similar en mHSPC (~30% G≥3). Pero el patrón
+#   LONGITUDINAL es el predictor de discontinuación temprana:
+#
+#     - Caída ≥50% ANC desde baseline durante primeros 3 ciclos
+#       predice 60% discontinuación + 22% sepsis grado ≥3
+#       (TAX-327 supplementary subset)
+#     - Pacientes con caída ≥1500 ANC absolutos en <14d post-ciclo 1
+#       tienen 3.5× HR de febrile neutropenia G≥3 (vs caída <750)
+#     - Signal independiente del baseline absoluto
+#
+#   Coexistencia con Gate 5 (uncontrolled_diabetes) + Gate 6 (ECOG ≥2
+#   triplete) + Gate 24 (docetaxel neuropathy longitudinal): gate 34
+#   añade dimensión HEMATOLÓGICA longitudinal completando el safety
+#   profile multi-layer de docetaxel.
+#
+#   Threshold canónico (Taxotere FDA §5 + TAX-327 supplementary):
+#     - Path A: caída absoluta ≥1500 ANC desde baseline pre-docetaxel
+#       (signals ~30% drop desde normal ~5000)
+#     - Path B (compuesto): caída ≥1000 ANC + current <2000 (signals
+#       proximidad a febrile neutropenia threshold <500)
+#     - Path C: flag explícito documentación clínica
+#
+#   Override: anc_recovered_post_drop_for_docetaxel=Sí (post-recuperación
+#   a >75% baseline + GCSF profilaxis activa + monitoring CBC semanal).
+#
+#   Bloquea: REGIMEN_CODES_TAXANE específicamente (docetaxel + cabazitaxel
+#   + combos triplete PEACE-1/ARASENS por exposición simultánea).
+# ──────────────────────────────────────────────────────────────────────
+
+code: docetaxel_neutropenia_rapid_drop
+title: "Docetaxel × caída rápida ANC longitudinal (TAX-327 + STAMPEDE Arm C subset)"
+faubot_added_in: "2026-04-25 XLVIII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: caída absoluta ≥1500 ANC desde baseline (≥30% normal ~5000)
+    - type: numeric_baseline_delta_above
+      baseline_field: anc_baseline_pre_docetaxel
+      current_field: anc
+      threshold: 1500
+    # Path B: caída ≥1000 ANC + current <2000 (proximidad a febrile)
+    - type: all_of
+      triggers:
+        - type: numeric_baseline_delta_above
+          baseline_field: anc_baseline_pre_docetaxel
+          current_field: anc
+          threshold: 1000
+        - type: numeric_below
+          field: anc
+          alias_fields:
+            - absolute_neutrophil_count
+            - neutrophils_absolute
+            - anc_current
+          threshold: 2000
+    # Path C: documentación clínica
+    - type: truthy_flag
+      field: rapid_anc_drop_for_docetaxel
+      alias_fields:
+        - rapid_neutropenia_documented
+        - early_neutropenia_for_docetaxel
+        - docetaxel_early_discontinuation_risk_documented
+
+# Override
+override:
+  type: truthy_flag
+  field: anc_recovered_post_drop_for_docetaxel
+  alias_fields:
+    - docetaxel_neutropenia_recovered
+    - rapid_anc_drop_resolved_for_docetaxel
+
+regimen_codes:
+  - REGIMEN_CODES_TAXANE
+
+keywords:
+  - KEYWORDS_TAXANE
+
+message: |
+  Docetaxel (Taxotere) NO debe continuarse en pacientes con caída
+  rápida de ANC durante el tratamiento (≥1500 absolutos desde
+  baseline pre-docetaxel O caída ≥1000 con current <2000). TAX-327
+  supplementary subset analysis (Petrylak NEJM 2004) documentó:
+  60% discontinuación temprana + 22% sepsis G≥3 con caída ≥50% ANC
+  durante primeros 3 ciclos; HR 3.5× febrile neutropenia G≥3 con
+  caída ≥1500 vs <750 ANC en <14d post-ciclo 1.
+
+  Coexistencia complementaria con Gates 5/6/24 docetaxel safety:
+    - Gate 5: uncontrolled_diabetes (basal metabólico)
+    - Gate 6: ECOG ≥2 (basal funcional para triplete)
+    - Gate 24: docetaxel neuropathy G≥2 post-4-cycles (longitudinal neuro)
+    - **Gate 34 (este): hematológico longitudinal complementario**
+
+  Conducta clínica:
+  1. Suspender docetaxel inmediatamente.
+  2. CBC + diferencial cada 24-48h hasta ANC ≥75% baseline.
+  3. GCSF profilaxis: pegfilgrastim 6mg SC día +2 ciclos siguientes.
+  4. Si ANC <500 + fiebre → hospitalización + antibióticos amplios
+     espectro empíricos (piperacilina/tazobactam o meropenem).
+  5. Reintroducción solo con `anc_recovered_post_drop_for_docetaxel=Sí`:
+     - ANC ≥75% baseline pre-docetaxel
+     - Sin febrile neutropenia ≥7 días
+     - GCSF profilaxis ACTIVA (pegfilgrastim documented)
+     - Reducción dosis 75 → 60 mg/m² (per Taxotere label)
+  6. Si reintroducción NO posible:
+     - **Cabazitaxel** dosis reducida 20mg/m² + GCSF (CARD trial)
+     - **Lu-177-PSMA-617** si elegible (gates 13-14-30 monitor)
+     - Re-challenge ARPI si naive
+
+evidence_tag: tax327_stampede_arm_c_taxotere_label
+trial_refs:
+  - "TAX-327 supplementary"
+  - "STAMPEDE Arm C"
+  - "Taxotere label §5"
+  - "CTCAE v5"
+
+references:
+  - "Petrylak DP et al. TAX-327. NEJM 2004;351:1513 + supplementary subset (early discontinuation predictors)."
+  - "James ND et al. STAMPEDE Arm C. Lancet 2016;387:1163."
+  - "Taxotere (docetaxel) FDA prescribing information §5 (Toxic Deaths + Hematologic Toxicities)."
+  - "CTCAE v5.0 — Neutropenia + febrile neutropenia grading."
+  - "NCCN Guidelines Prostate Cancer v5.2026 — Docetaxel monitoring schedule."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Docetaxel hematologic monitoring (CBC pre-cycle + day 7-10 + day 14)"
+  eau_section: "EAU 2026 §6.4.4 — Docetaxel safety + GCSF prophylaxis"

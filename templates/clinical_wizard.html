@@ -1,0 +1,2552 @@
+{% extends "layouts/base_clinical.html" %}
+{% from "components/clinical_ui.html" import badge, surface_card %}
+{# Faubot LXXXV.b — Chrome-aware wizard. `chrome_mode` = 'v2' (default) | 'legacy'.
+   v2 envuelve form con pm2_sidebar + actionbar moderno preservando 100%
+   form internals (widgets + draft + consent + JS). Legacy intacto. #}
+{% if chrome_mode == 'v2' %}
+    {% from "components/pm2_sidebar.html" import pm2_sidebar %}
+{% endif %}
+
+{% block head_extra %}
+{{ super() if super }}
+{% if chrome_mode == 'v2' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
+<style>
+/* Faubot LXXXV.b — v2 wizard chrome. Sidebar + actionbar wrapping. */
+.pm2-wizard-shell{display:grid;grid-template-columns:280px 1fr;min-height:100vh;background:#0a0e1a;}
+@media (max-width:768px){.pm2-wizard-shell{grid-template-columns:1fr;}}
+.pm2-wizard-main{padding:1.5rem 2rem;overflow:visible;min-width:0;}
+.pm2-wizard-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;padding:1rem 1.25rem;border-radius:1rem;background:linear-gradient(135deg,rgba(15,23,42,0.6),rgba(15,23,42,0.3));border:1px solid rgba(148,163,184,0.15);}
+.pm2-wizard-title{color:#e2e8f0;font-size:1.5rem;font-weight:600;margin:0;line-height:1.3;}
+.pm2-wizard-subtitle{color:#94a3b8;font-size:0.875rem;margin:0.25rem 0 0;max-width:48rem;}
+.pm2-wizard-breadcrumb{display:inline-flex;align-items:center;gap:0.5rem;color:#94a3b8;font-size:0.8125rem;text-decoration:none;margin-bottom:0.5rem;transition:color 0.15s;}
+.pm2-wizard-breadcrumb:hover{color:#67e8f9;}
+.pm2-wizard-actionbar{display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;}
+.pm2-router-panel{margin-bottom:1.25rem;border:1px solid rgba(34,211,238,.22);background:rgba(8,13,26,.72);border-radius:16px;padding:1rem;}
+.pm2-router-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:.85rem;}
+.pm2-router-title{margin:0;color:#e6fbff;font-size:.9rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;}
+.pm2-router-meta{color:#8aa0bb;font-size:.78rem;margin-top:.2rem;}
+.pm2-router-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;}
+.pm2-router-group{border:1px solid rgba(148,163,184,.16);border-radius:12px;background:rgba(15,23,42,.5);padding:.8rem;min-width:0;}
+.pm2-router-group-title{display:flex;justify-content:space-between;gap:.75rem;align-items:center;color:#cfe7ff;font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;}
+.pm2-router-count{color:#67e8f9;font-family:ui-monospace,monospace;}
+.pm2-router-fields{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.65rem;}
+.pm2-router-chip{display:inline-flex;max-width:100%;align-items:center;border:1px solid rgba(103,232,249,.16);background:rgba(8,145,178,.1);color:#d8efff;border-radius:8px;padding:.28rem .45rem;font-size:.72rem;line-height:1.2;overflow-wrap:anywhere;}
+</style>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+    {% set role_tones = {
+        'required': 'success',
+        'decision_refiner': 'info',
+        'monitoring': 'warning',
+        'optional': 'muted',
+    } %}
+    {% if chrome_mode == 'v2' %}
+    {# ── v2 chrome shell con sidebar + actionbar moderno ─────────── #}
+    <div class="pm2-wizard-shell">
+        {{ pm2_sidebar(
+             active='hub',
+             identity_nss=None,
+             faubot_release=audit_dims_v2.version.faubot_release if audit_dims_v2 and audit_dims_v2.version else 'LXXXV.b',
+             gates_count=audit_dims_v2.version.gates_active_count if audit_dims_v2 and audit_dims_v2.version else 89,
+             kpi_total=0,
+             cohort_count=11,
+             therapy_count=27
+        ) }}
+        <div class="pm2-wizard-main">
+            <header class="pm2-wizard-header">
+                <div>
+                    <a href="/clinical-hub" class="pm2-wizard-breadcrumb">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                        Centro clínico por estadio
+                    </a>
+                    <h1 class="pm2-wizard-title">{{ schema.title }}</h1>
+                    <p class="pm2-wizard-subtitle">{{ schema.description }}</p>
+                </div>
+                <div class="pm2-wizard-actionbar">
+                    {{ badge(schema.module, "muted", "font-mono normal-case") }}
+                    {{ badge("NCCN + EAU", "info") }}
+                    <a href="?v=legacy" class="pn-btn pn-btn-ghost" title="Ver versión legacy v1">Ver legacy</a>
+                    <button type="button" id="submitWizardTop" class="pn-btn pn-btn-primary">Evaluar módulo</button>
+                </div>
+            </header>
+    {% endif %}
+    <div class="space-y-6">
+        {% call surface_card("Datos clínicos", "Asistente clínico por estadio", "Capture las variables mínimas del módulo para producir una recomendación clínica trazable y compatible con el flujo longitudinal.") %}
+            {% if chrome_mode != 'v2' %}
+            {# ── Legacy actionbar (solo se muestra en chrome v1) ────── #}
+            <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    {{ badge(schema.module, "muted", "font-mono normal-case") }}
+                    {{ badge("NCCN primaria + EAU comparativa", "info") }}
+                </div>
+                <div class="flex items-center gap-3">
+                    <a href="/clinical-hub" class="pn-btn pn-btn-ghost">Volver al centro clínico</a>
+                    <button type="button" id="submitWizard" class="pn-btn pn-btn-primary">Evaluar módulo</button>
+                </div>
+            </div>
+            {% else %}
+            {# v2: hidden submit button para wire del top button (preserva JS legacy) #}
+            <button type="button" id="submitWizard" class="hidden" aria-hidden="true">Evaluar módulo</button>
+            {% endif %}
+            <div class="mb-5 grid gap-3 md:grid-cols-3">
+                <div class="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-emerald-300">Mínimo para decidir</p>
+                    <p class="mt-2 text-sm text-slate-200">Variables que cambian la recomendación principal.</p>
+                </div>
+                <div class="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-cyan-300">Afina la recomendación</p>
+                    <p class="mt-2 text-sm text-slate-200">Refinadores clínicos y biomoleculares que suben o bajan intensidad.</p>
+                </div>
+                <div class="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-amber-300">Monitoreo y benchmarking</p>
+                    <p class="mt-2 text-sm text-slate-200">Datos que hacen más seguro y comparable el flujo longitudinal.</p>
+                </div>
+            </div>
+            {% if clinical_field_router and chrome_mode == 'v2' %}
+            <section class="pm2-router-panel" data-clinical-field-router data-state="{{ clinical_field_router.state }}" data-phase="{{ clinical_field_router.phase }}">
+                <div class="pm2-router-head">
+                    <div>
+                        <p class="pm2-router-title">Campos contextuales del estado</p>
+                        <p class="pm2-router-meta">{{ clinical_field_router.stage_label }} · {{ clinical_field_router.summary.total_fields }} campos activos</p>
+                    </div>
+                    {{ badge("Router clinico", "info") }}
+                </div>
+                <div class="pm2-router-grid">
+                    {% for group in clinical_field_router.get('group_order', []) %}
+                    {% set fields = group.get('fields', []) %}
+                    {% if fields %}
+                    <div class="pm2-router-group" data-router-group="{{ group.key }}">
+                        <div class="pm2-router-group-title">
+                            <span>{{ group.label }}</span>
+                            <span class="pm2-router-count">{{ group.field_count }}</span>
+                        </div>
+                        <div class="pm2-router-fields">
+                            {% for field in fields[:6] %}
+                            <span class="pm2-router-chip">{{ field.label }}</span>
+                            {% endfor %}
+                            {% if group.field_count > 6 %}
+                            <span class="pm2-router-chip">+{{ group.field_count - 6 }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+            <form id="wizardForm" class="space-y-5">
+                {% set ns = namespace(current_group='') %}
+                {% for field in schema.fields %}
+                    {% set skip_standalone_occam_field = field.name.startswith('occam_') %}
+                    {% if not skip_standalone_occam_field %}
+                        {% if field.group != ns.current_group %}
+                            {% if ns.current_group %}
+                                    </div>
+                                </section>
+                            {% endif %}
+                            <section class="rounded-3xl border border-slate-800 bg-slate-950/40 p-5" data-field-section="1">
+                                <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">{{ field.group or 'Datos clínicos' }}</p>
+                                        <p class="mt-1 text-sm text-slate-400">Complete primero los campos marcados como mínimos para decidir.</p>
+                                    </div>
+                                </div>
+                                <div class="grid gap-4 md:grid-cols-2">
+                            {% set ns.current_group = field.group %}
+                        {% endif %}
+                        {% set full_width_widget = field.field_type in ['epic26_questionnaire', 'occam_life_expectancy'] %}
+                        <div
+                            class="text-sm {{ 'md:col-span-2' if full_width_widget else '' }}"
+                            data-field-wrapper
+                            data-field-name="{{ field.name }}"
+                            {% if field.conditional_visibility %}data-conditions='{{ field.conditional_visibility | tojson }}'{% endif %}
+                        >
+                        {% if field.field_type == 'metastatic_components' %}
+                            <div class="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4" data-metastatic-widget="1" data-field-name="{{ field.name }}">
+                                <div class="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <p class="pm-field-label">{{ field.label }}{% if field.required %} *{% endif %}</p>
+                                        {% if field.help_text %}
+                                            <p class="mt-2 text-xs text-slate-400">{{ field.help_text }}</p>
+                                        {% endif %}
+                                        {% if field.benchmark_note %}
+                                            <p class="mt-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-200">{{ field.benchmark_note }}</p>
+                                        {% endif %}
+                                    </div>
+                                    {{ badge(field.clinical_role_label, role_tones.get(field.clinical_role, 'muted')) }}
+                                </div>
+                                <label class="mt-4 block text-sm">
+                                    <span class="block text-slate-300">Enfermedad metastásica conocida</span>
+                                    <select class="pn-input mt-2 w-full px-3 py-2" data-role="metastatic-known-select">
+                                        <option value="0">No</option>
+                                        <option value="1">Sí</option>
+                                    </select>
+                                    <span class="mt-2 block text-xs text-slate-500">Si selecciona Sí, documente la composición metastásica real para conservar el contexto anatómico y alimentar la lógica clínica.</span>
+                                </label>
+                                <div class="mt-4 hidden" data-role="components-shell">
+                                    <div class="grid gap-3 md:grid-cols-3">
+                                        <label class="rounded-2xl border border-slate-700/70 bg-slate-950/70 p-3">
+                                            <span class="flex items-center gap-3">
+                                                <input type="checkbox" data-role="component-toggle" value="nodes" class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-cyan-400">
+                                                <span class="text-sm text-slate-200">Ganglionares no regionales</span>
+                                            </span>
+                                        </label>
+                                        <label class="rounded-2xl border border-slate-700/70 bg-slate-950/70 p-3">
+                                            <span class="flex items-center gap-3">
+                                                <input type="checkbox" data-role="component-toggle" value="bone" class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-cyan-400">
+                                                <span class="text-sm text-slate-200">Óseas</span>
+                                            </span>
+                                        </label>
+                                        <label class="rounded-2xl border border-slate-700/70 bg-slate-950/70 p-3">
+                                            <span class="flex items-center gap-3">
+                                                <input type="checkbox" data-role="component-toggle" value="visceral" class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-cyan-400">
+                                                <span class="text-sm text-slate-200">Viscerales</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="mt-4 hidden" data-role="nodal-block">
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Distribución ganglionar no regional</p>
+                                            <p class="mt-1 text-sm text-slate-400">Agregue cadena ganglionar y número de lesiones. Puede documentar más de una cadena en el mismo caso.</p>
+                                        </div>
+                                        <button type="button" class="pn-btn pn-btn-secondary" data-role="add-nodal-row">Añadir cadena ganglionar</button>
+                                    </div>
+                                    <div class="mt-4 space-y-3" data-role="nodal-rows"></div>
+                                    <p class="mt-3 text-xs text-slate-500" data-role="nodal-hint">Capture al menos una cadena ganglionar no regional válida.</p>
+                                </div>
+                                <div class="mt-4 hidden" data-role="bone-block">
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Distribución ósea</p>
+                                            <p class="mt-1 text-sm text-slate-400">Agregue sitio anatómico y número de lesiones para conservar el contexto real y derivar el volumen automáticamente.</p>
+                                        </div>
+                                        <button type="button" class="pn-btn pn-btn-secondary" data-role="add-bone-row">Añadir sitio óseo</button>
+                                    </div>
+                                    <div class="mt-4 space-y-3" data-role="bone-rows"></div>
+                                    <p class="mt-3 text-xs text-slate-500" data-role="bone-hint">Capture al menos un sitio óseo válido.</p>
+                                </div>
+                                <div class="mt-4 hidden" data-role="visceral-block">
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Distribución visceral</p>
+                                            <p class="mt-1 text-sm text-slate-400">Agregue órgano visceral y número de lesiones. Puede documentar más de un órgano en el mismo caso.</p>
+                                        </div>
+                                        <button type="button" class="pn-btn pn-btn-secondary" data-role="add-visceral-row">Añadir órgano visceral</button>
+                                    </div>
+                                    <div class="mt-4 space-y-3" data-role="visceral-rows"></div>
+                                    <p class="mt-3 text-xs text-slate-500" data-role="visceral-hint">Capture al menos un órgano visceral válido.</p>
+                                </div>
+                                <div class="mt-4 rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4" data-role="summary-card">
+                                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Resumen metastásico</p>
+                                    <p class="mt-2 text-sm text-slate-200" data-role="summary-text">Seleccione los componentes metastásicos documentados para derivar la composición del caso.</p>
+                                </div>
+                                <input type="hidden" name="{{ field.name }}" value="">
+                                <input type="hidden" name="metastatic_disease_known" value="0">
+                                <input type="hidden" name="metastasis_site" value="M0">
+                                <input type="hidden" name="metastasis_count" value="0">
+                                <input type="hidden" name="metastatic_total_lesion_count" value="0">
+                                <input type="hidden" name="bone_metastasis_present" value="0">
+                                <input type="hidden" name="bone_site_entries" value="[]">
+                                <input type="hidden" name="visceral_metastasis_present" value="0">
+                                <input type="hidden" name="visceral_site_entries" value="[]">
+                                <input type="hidden" name="visceral_lesion_count" value="0">
+                                <input type="hidden" name="nonregional_nodal_metastasis_present" value="0">
+                                <input type="hidden" name="nonregional_nodal_count" value="0">
+                                <input type="hidden" name="nonregional_nodal_site_entries" value="[]">
+                            </div>
+                        {% elif field.field_type == 'epic26_questionnaire' %}
+                            <div
+                                class="rounded-2xl border border-fuchsia-500/20 bg-fuchsia-500/5 p-5"
+                                data-epic26-widget="1"
+                                data-field-name="{{ field.name }}"
+                                data-widget-config='{{ field.widget_config | tojson }}'
+                            >
+                                <div class="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <p class="pm-field-label">{{ field.label }}{% if field.required %} *{% endif %}</p>
+                                        {% if field.help_text %}
+                                            <p class="mt-2 text-xs text-slate-400">{{ field.help_text }}</p>
+                                        {% endif %}
+                                        {% if field.benchmark_note %}
+                                            <p class="mt-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-200">{{ field.benchmark_note }}</p>
+                                        {% endif %}
+                                    </div>
+                                    {{ badge(field.clinical_role_label, role_tones.get(field.clinical_role, 'muted')) }}
+                                </div>
+                                <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.15fr)] xl:items-start">
+                                    <div class="rounded-2xl border border-slate-700/70 bg-slate-950/50 p-4">
+                                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Cuestionario compuesto</p>
+                                        <p class="mt-2 text-sm text-slate-300">Responda los ítems en español. El sistema deriva automáticamente los 5 dominios oficiales y conserva la molestia urinaria global como dato visible no puntuado.</p>
+                                        <p class="mt-3 text-xs text-slate-500">Use esta línea basal para comparar toxicidad esperable, apoyar decisión compartida y seguir recuperación funcional sin desplazar la lógica clínica principal.</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Dominios derivados en tiempo real</p>
+                                        <div class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-role="epic26-score-cards"></div>
+                                    </div>
+                                </div>
+                                <div class="mt-4 grid gap-4 2xl:grid-cols-2" data-role="epic26-groups"></div>
+                                <input type="hidden" name="{{ field.name }}" value="">
+                                <input type="hidden" name="epic26_urinary_incontinence_domain" value="">
+                                <input type="hidden" name="epic26_urinary_irritative_domain" value="">
+                                <input type="hidden" name="epic26_bowel_domain" value="">
+                                <input type="hidden" name="epic26_sexual_domain" value="">
+                                <input type="hidden" name="epic26_hormonal_domain" value="">
+                                <input type="hidden" name="epic26_overall_urinary_bother" value="">
+                                <input type="hidden" name="epic26_urinary_domain" value="">
+                            </div>
+                        {% elif field.field_type == 'occam_life_expectancy' %}
+                            <div
+                                class="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-5"
+                                data-occam-widget="1"
+                                data-field-name="{{ field.name }}"
+                                data-widget-config='{{ field.widget_config | tojson }}'
+                            >
+                                <div class="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <p class="pm-field-label">{{ field.label }}{% if field.required %} *{% endif %}</p>
+                                        {% if field.help_text %}
+                                            <p class="mt-2 text-xs text-slate-400">{{ field.help_text }}</p>
+                                        {% endif %}
+                                        {% if field.benchmark_note %}
+                                            <p class="mt-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-200">{{ field.benchmark_note }}</p>
+                                        {% endif %}
+                                    </div>
+                                    {{ badge(field.clinical_role_label, role_tones.get(field.clinical_role, 'muted')) }}
+                                </div>
+                                <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(300px,0.9fr)_minmax(0,1.1fr)] xl:items-start">
+                                    <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Resumen derivado</p>
+                                        <p class="mt-2 text-sm text-slate-200" data-role="occam-summary">Capture talla, peso, diabetes, hipertensión, evento vascular cerebral previo y tabaquismo para derivar automáticamente la expectativa de vida. La escolaridad y el estado civil son opcionales y activan las variantes públicas ampliadas de OCCAM.</p>
+                                        <p class="mt-3 text-xs text-slate-500" data-role="occam-missing">Si faltan entradas estructuradas, la expectativa de vida queda pendiente de cálculo.</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Salida pronóstica OCCAM</p>
+                                        <div class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-role="occam-score-cards"></div>
+                                    </div>
+                                </div>
+                                {% set occam_required_names = ['occam_height_cm', 'occam_weight_kg', 'occam_diabetes', 'occam_hypertension', 'occam_stroke', 'occam_smoking_status'] %}
+                                {% set occam_optional_names = ['occam_education', 'occam_marital_status'] %}
+                                <div class="mt-4 rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Entradas estructuradas del modelo OCCAM</p>
+                                            <p class="mt-1 text-sm text-slate-400">Aquí se concentran todas las variables clínicas del modelo público Other-Cause Comorbidity-Adjusted Mortality para evitar que queden dispersas en la interfaz.</p>
+                                        </div>
+                                        {{ badge('Mínimo para decidir', 'success') }}
+                                    </div>
+                                    <div class="mt-4 grid gap-4 xl:grid-cols-3">
+                                        {% for occam_name in occam_required_names %}
+                                            {% for occam_field in schema.fields if occam_field.name == occam_name %}
+                                                <label class="text-sm">
+                                                    <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+                                                        <span class="block text-slate-300">{{ occam_field.label }}</span>
+                                                        {{ badge(occam_field.clinical_role_label, role_tones.get(occam_field.clinical_role, 'muted')) }}
+                                                    </div>
+                                                    {% if occam_field.field_type == 'select' %}
+                                                        <select name="{{ occam_field.name }}" class="pn-input w-full px-3 py-2">
+                                                            {% for option in occam_field.display_options %}
+                                                                <option value="{{ option.value }}" {% if option.value == occam_field.default %}selected{% endif %}>{{ option.label }}</option>
+                                                            {% endfor %}
+                                                        </select>
+                                                    {% else %}
+                                                        <input
+                                                            type="number"
+                                                            name="{{ occam_field.name }}"
+                                                            value="{{ occam_field.default if occam_field.default is not none else '' }}"
+                                                            class="pn-input w-full px-3 py-2"
+                                                        >
+                                                    {% endif %}
+                                                    <div class="mt-1 space-y-1">
+                                                        {% if occam_field.unit %}
+                                                            <span class="block text-[11px] uppercase tracking-[0.2em] text-slate-500">Unidad: {{ occam_field.unit }}</span>
+                                                        {% endif %}
+                                                        {% if occam_field.help_text %}
+                                                            <span class="block text-xs text-slate-500">{{ occam_field.help_text }}</span>
+                                                        {% endif %}
+                                                    </div>
+                                                </label>
+                                            {% endfor %}
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                <div class="mt-4 rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Variantes opcionales del modelo OCCAM</p>
+                                            <p class="mt-1 text-sm text-slate-400">Estas variables refinan la variante pública usada por OCCAM. Si no se documentan, el sistema conserva la versión reducida sin romper el cálculo.</p>
+                                        </div>
+                                        {{ badge('Afina la recomendación', 'info') }}
+                                    </div>
+                                    <div class="mt-4 grid gap-4 xl:grid-cols-2">
+                                        {% for occam_name in occam_optional_names %}
+                                            {% for occam_field in schema.fields if occam_field.name == occam_name %}
+                                                <label class="text-sm">
+                                                    <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+                                                        <span class="block text-slate-300">{{ occam_field.label }}</span>
+                                                        {{ badge(occam_field.clinical_role_label, role_tones.get(occam_field.clinical_role, 'muted')) }}
+                                                    </div>
+                                                    <select name="{{ occam_field.name }}" class="pn-input w-full px-3 py-2">
+                                                        {% for option in occam_field.display_options %}
+                                                            <option value="{{ option.value }}" {% if option.value == occam_field.default %}selected{% endif %}>{{ option.label }}</option>
+                                                        {% endfor %}
+                                                    </select>
+                                                    <div class="mt-1 space-y-1">
+                                                        {% if occam_field.help_text %}
+                                                            <span class="block text-xs text-slate-500">{{ occam_field.help_text }}</span>
+                                                        {% endif %}
+                                                    </div>
+                                                </label>
+                                            {% endfor %}
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                <input type="hidden" name="{{ field.name }}" value="{{ field.default }}">
+                                <input type="hidden" name="occam_base_life_expectancy_years" value="">
+                                <input type="hidden" name="occam_5yr_other_cause_mortality" value="">
+                                <input type="hidden" name="occam_10yr_other_cause_mortality" value="">
+                                <input type="hidden" name="occam_model_variant" value="">
+                                <input type="hidden" name="occam_truncated_15_plus" value="0">
+                            </div>
+                        {% elif field.field_type == 'gleason_profile' %}
+                            {% set gleason_default = field.default if field.default is mapping else {} %}
+                            {% set gleason_primary = gleason_default.get('gleason_primary', '') %}
+                            {% set gleason_secondary = gleason_default.get('gleason_secondary', '') %}
+                            {% set gleason_tertiary = gleason_default.get('gleason_tertiary', '') %}
+                            {% set gleason_score = gleason_default.get('gleason_score', '') %}
+                            {% set isup_grade = gleason_default.get('isup_grade', '') %}
+                            <div class="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4" data-gleason-profile-widget="1" data-field-name="{{ field.name }}">
+                                <div class="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <p class="pm-field-label">{{ field.label }}{% if field.required %} *{% endif %}</p>
+                                        {% if field.help_text %}
+                                            <p class="mt-2 text-xs text-slate-400">{{ field.help_text }}</p>
+                                        {% endif %}
+                                        {% if field.benchmark_note %}
+                                            <p class="mt-2 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">{{ field.benchmark_note }}</p>
+                                        {% endif %}
+                                    </div>
+                                    {{ badge(field.clinical_role_label, role_tones.get(field.clinical_role, 'muted')) }}
+                                </div>
+                                <div class="mt-4 grid gap-4 md:grid-cols-3">
+                                    <label class="text-sm">
+                                        <span class="block text-slate-300">Gleason primario</span>
+                                        <select class="pn-input mt-2 w-full px-3 py-2" data-role="gleason-primary" {% if field.required %}required{% endif %}>
+                                            <option value="">Seleccione</option>
+                                            {% for pattern in ['3', '4', '5'] %}
+                                                <option value="{{ pattern }}" {% if pattern == gleason_primary|string %}selected{% endif %}>Patrón {{ pattern }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </label>
+                                    <label class="text-sm">
+                                        <span class="block text-slate-300">Gleason secundario</span>
+                                        <select class="pn-input mt-2 w-full px-3 py-2" data-role="gleason-secondary" {% if field.required %}required{% endif %}>
+                                            <option value="">Seleccione</option>
+                                            {% for pattern in ['3', '4', '5'] %}
+                                                <option value="{{ pattern }}" {% if pattern == gleason_secondary|string %}selected{% endif %}>Patrón {{ pattern }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </label>
+                                    <label class="text-sm">
+                                        <span class="block text-slate-300">Patrón terciario (opcional)</span>
+                                        <select class="pn-input mt-2 w-full px-3 py-2" data-role="gleason-tertiary">
+                                            <option value="">Sin patrón terciario</option>
+                                            {% for pattern in ['3', '4', '5'] %}
+                                                <option value="{{ pattern }}" {% if pattern == gleason_tertiary|string %}selected{% endif %}>Patrón {{ pattern }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </label>
+                                </div>
+                                <div class="mt-4 rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4" data-role="gleason-summary-card">
+                                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Resumen histopatológico derivado</p>
+                                    <p class="mt-2 text-sm text-slate-200" data-role="gleason-summary">Seleccione Gleason primario y secundario para derivar automáticamente Gleason total e ISUP.</p>
+                                </div>
+                                <input type="hidden" name="gleason_primary" value="{{ gleason_primary }}">
+                                <input type="hidden" name="gleason_secondary" value="{{ gleason_secondary }}">
+                                <input type="hidden" name="gleason_tertiary" value="{{ gleason_tertiary }}">
+                                <input type="hidden" name="{{ field.name }}" value="{{ gleason_score }}">
+                                <input type="hidden" name="isup_grade" value="{{ isup_grade }}">
+                                <input type="hidden" name="has_adverse_tertiary_pattern" value="{{ '1' if gleason_tertiary|string == '5' else '0' }}">
+                            </div>
+                        {% else %}
+                            <label class="text-sm">
+                                <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+                                    <span class="block text-slate-300">{{ field.label }}{% if field.required %} *{% endif %}</span>
+                                    {{ badge(field.clinical_role_label, role_tones.get(field.clinical_role, 'muted')) }}
+                                </div>
+                                {% if field.field_type == 'select' %}
+                                    <select name="{{ field.name }}" class="pn-input w-full px-3 py-2">
+                                        {% for option in field.display_options %}
+                                            <option value="{{ option.value }}" {% if option.value == field.default %}selected{% endif %}>{{ option.label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% else %}
+                                    <input
+                                        type="{{ 'number' if field.field_type == 'number' else 'date' if field.field_type == 'date' else 'text' }}"
+                                        name="{{ field.name }}"
+                                        value="{{ field.default if field.default is not none and field.field_type != 'date' else '' }}"
+                                        class="pn-input w-full px-3 py-2"
+                                        {% if field.required %}required{% endif %}
+                                    >
+                                {% endif %}
+                                <div class="mt-1 space-y-1">
+                                    {% if field.unit %}
+                                        <span class="block text-[11px] uppercase tracking-[0.2em] text-slate-500">Unidad: {{ field.unit }}</span>
+                                    {% endif %}
+                                    {% if field.help_text %}
+                                        <span class="block text-xs text-slate-500">{{ field.help_text }}</span>
+                                    {% endif %}
+                                    {% if field.benchmark_note %}
+                                        <span class="block rounded-2xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-200">{{ field.benchmark_note }}</span>
+                                    {% endif %}
+                                </div>
+                            </label>
+                        {% endif %}
+                        </div>
+                    {% endif %}
+                {% endfor %}
+                {% if ns.current_group %}
+                        </div>
+                    </section>
+                {% endif %}
+            </form>
+        {% endcall %}
+
+        <aside class="space-y-6">
+            {% call surface_card("Evidencia clínica", "Marco normativo", "Paneles guía, estudios de soporte y benchmarking usados por el asistente para este contexto clínico.") %}
+                <div class="space-y-4 text-sm">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Red Nacional Integral del Cáncer (NCCN)</p>
+                        <p class="mt-1 text-slate-300">{{ evidence.nccn.version }} | {{ evidence.nccn_panels | join(', ') }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Asociación Europea de Urología (EAU)</p>
+                        <p class="mt-1 text-slate-300">{{ evidence.eau.version }} | {{ evidence.eau_sections | join(', ') }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Estudios pivotales</p>
+                        <p class="mt-1 text-slate-300">{{ evidence.pivotal_trials | join(', ') }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Fuentes estructuradas</p>
+                        <div class="mt-2 space-y-2">
+                            {% for citation in evidence.source_citations %}
+                                <div class="rounded-xl border border-slate-700/70 bg-slate-950/40 p-3">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <p class="text-sm text-slate-200">{{ citation.guideline_or_trial }}</p>
+                                        {{ badge(citation.evidence_role or 'supportive', 'success' if citation.evidence_role == 'primary_guideline' else 'warning') }}
+                                    </div>
+                                    <p class="mt-1 text-xs text-slate-400">{{ citation.title }}</p>
+                                    {% if citation.followup_implications %}
+                                        <p class="mt-2 text-xs text-slate-500">{{ citation.followup_implications }}</p>
+                                    {% endif %}
+                                    {% if citation.evidence_role != 'primary_guideline' %}
+                                        <p class="mt-2 text-[11px] text-amber-200">Influye como soporte, seguridad o benchmarking; no reemplaza la recomendación primaria de guías.</p>
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                <p class="text-sm text-slate-400">Sin fuentes estructuradas adicionales.</p>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            {% endcall %}
+
+            <section id="resultCard" class="pn-surface hidden">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.25em] text-cyan-400">Resultado clínico</p>
+                        <p id="draftStatus" class="mt-2 text-sm text-slate-400"></p>
+                    </div>
+                    <div class="flex flex-wrap justify-end gap-2">
+                        <button type="button" id="createDraftButton" class="hidden pn-btn rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Preparar registro longitudinal</button>
+                        <a href="#evidenciaClinica" class="hidden pn-btn pn-btn-secondary" id="evidenceAnchor">Ver evidencia clínica</a>
+                        <button type="button" id="resetWizardButton" class="hidden pn-btn pn-btn-secondary">Iniciar una nueva evaluación</button>
+                        <a href="/clinical-hub" class="hidden pn-btn pn-btn-secondary" id="backToHubButton">Volver al centro clínico</a>
+                    </div>
+                </div>
+                <div id="resultBody" class="mt-4 space-y-4"></div>
+            </section>
+        </aside>
+    </div>
+
+    <section id="registrationPhase" class="mt-6 hidden">
+        {% call surface_card("Registro longitudinal integrado", "Centro clínico", "La captura longitudinal ya no sale del wizard. Los datos clínicos del módulo se importan, se citan y siguen alimentando la lógica clínica, el perfil y el seguimiento integral.") %}
+            <div class="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(320px,1.1fr)]">
+                <div class="space-y-4">
+                    <div class="rounded-3xl border border-cyan-500/20 bg-cyan-500/10 p-5">
+                        <p class="text-xs uppercase tracking-[0.22em] text-cyan-300" id="registrationScopeLabel">Registro longitudinal</p>
+                        <p class="mt-2 text-sm text-slate-200" id="registrationScopeDescription"></p>
+                        <ul class="mt-4 space-y-2 text-sm text-slate-300" id="registrationScopeBullets"></ul>
+                    </div>
+                    <div class="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <p class="text-xs uppercase tracking-[0.22em] text-slate-500">Datos clínicos importados desde la evaluación</p>
+                                <p class="mt-1 text-sm text-slate-400">Se persisten sin volver a capturarlos y siguen modulando la clasificación, la seguridad y el benchmarking.</p>
+                            </div>
+                            <span class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs text-slate-300" id="importedFieldCount">0 variables importadas</span>
+                        </div>
+                        <div class="mt-4 grid gap-3 md:grid-cols-2" id="importedClinicalFields"></div>
+                    </div>
+                </div>
+
+                <div class="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.22em] text-slate-500">Captura longitudinal adicional</p>
+                            <p class="mt-1 text-sm text-slate-400">Solo se solicitan los datos que faltan para persistencia, seguimiento y refinamiento clínico compatible con el estado actual.</p>
+                        </div>
+                        <span class="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200" id="registrationAssessmentBadge">Borrador clínico listo</span>
+                    </div>
+
+                    <form id="registrationForm" class="mt-5 space-y-5">
+                        <input type="hidden" name="assessment_id" id="registrationAssessmentId">
+                        <input type="hidden" name="assessment_state" id="registrationAssessmentState">
+                        <div id="registrationFragments" class="space-y-5"></div>
+                        <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                            <p class="text-xs uppercase tracking-[0.22em] text-slate-500">Estado del registro</p>
+                            <p class="mt-2 text-sm text-slate-300" id="registrationStatus">Prepare primero el borrador clínico para habilitar este paso.</p>
+                        </div>
+                        <div class="flex flex-wrap justify-end gap-3">
+                            <button type="button" id="cancelRegistrationButton" class="pn-btn pn-btn-secondary">Ocultar registro</button>
+                            <button type="submit" id="registerPatientButton" class="pn-btn pn-btn-primary">Guardar y abrir expediente</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        {% endcall %}
+    </section>
+    {% include "components/consent_modal.html" %}
+    {% if chrome_mode == 'v2' %}
+        </div>{# /pm2-wizard-main #}
+    </div>{# /pm2-wizard-shell #}
+    {# Wire del botón superior al submit del form legacy (preserva flow draft+register+consent) #}
+    <script>
+    (function(){
+      const topBtn = document.getElementById('submitWizardTop');
+      const legacyBtn = document.getElementById('submitWizard');
+      if (topBtn && legacyBtn) {
+        topBtn.addEventListener('click', function(e){
+          e.preventDefault();
+          legacyBtn.click();
+        });
+      }
+    })();
+    </script>
+    {% endif %}
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ url_for('static', filename='js/registration_context_ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/consent_flow.js') }}"></script>
+    <script>
+        const humanizeClinicalText = window.clinicalPresentation?.humanize || ((value) => value);
+        const metastaticCaptureConfig = {{ metastatic_capture_config|tojson }};
+        const wizardModuleId = {{ schema.module|tojson }};
+        let latestPayload = null;
+        let latestResult = null;
+        let latestDraft = null;
+        const button = document.getElementById('submitWizard');
+        const createDraftButton = document.getElementById('createDraftButton');
+        const resetWizardButton = document.getElementById('resetWizardButton');
+        const evidenceAnchor = document.getElementById('evidenceAnchor');
+        const backToHubButton = document.getElementById('backToHubButton');
+        const registrationPhase = document.getElementById('registrationPhase');
+        const registrationForm = document.getElementById('registrationForm');
+        const registrationFragments = document.getElementById('registrationFragments');
+        const registrationStatus = document.getElementById('registrationStatus');
+        const registrationAssessmentId = document.getElementById('registrationAssessmentId');
+        const registrationAssessmentState = document.getElementById('registrationAssessmentState');
+        const registrationScopeLabel = document.getElementById('registrationScopeLabel');
+        const registrationScopeDescription = document.getElementById('registrationScopeDescription');
+        const registrationScopeBullets = document.getElementById('registrationScopeBullets');
+        const importedClinicalFields = document.getElementById('importedClinicalFields');
+        const importedFieldCount = document.getElementById('importedFieldCount');
+        const registrationAssessmentBadge = document.getElementById('registrationAssessmentBadge');
+        const registerPatientButton = document.getElementById('registerPatientButton');
+        const cancelRegistrationButton = document.getElementById('cancelRegistrationButton');
+        const consentFlow = new window.ProstaNetConsentFlow({
+            onStatus: (message, tone) => {
+                registrationStatus.textContent = message;
+                registrationStatus.className = `mt-2 text-sm ${tone === 'error' ? 'text-rose-300' : tone === 'success' ? 'text-emerald-300' : 'text-slate-300'}`;
+            },
+            onBusy: (isBusy, buttonText) => {
+                registerPatientButton.disabled = isBusy;
+                registerPatientButton.textContent = isBusy ? buttonText : 'Guardar y abrir expediente';
+            },
+        });
+
+        const badgeColors = {
+            'preferred': 'border-emerald-400/40 bg-emerald-500/10 text-emerald-200',
+            'selected_candidate': 'border-amber-400/40 bg-amber-500/10 text-amber-200',
+            'guideline-consistent': 'border-cyan-400/40 bg-cyan-500/10 text-cyan-200',
+            'eligible': 'border-slate-600 bg-slate-800 text-slate-200',
+        };
+
+        function renderTextList(items, emptyMessage) {
+            if (!items || !items.length) {
+                return `<li>${emptyMessage}</li>`;
+            }
+            return items.map(item => `<li>${humanizeClinicalText(item)}</li>`).join('');
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function formatRegistrationValue(value) {
+            if (value === null || value === undefined || value === '') {
+                return 'No documentado';
+            }
+            return escapeHtml(value);
+        }
+
+        function renderTreatmentPriorityLabel(item) {
+            const priority = String(item?.priority || '').toLowerCase();
+            const eligibility = String(item?.eligibility_status || '').toLowerCase();
+            if (item?.is_preferred || priority === 'preferred' || priority === 'preferente' || eligibility === 'preferred' || eligibility === 'preferente') {
+                return 'Preferente';
+            }
+            if (eligibility === 'eligible_with_caution') {
+                return 'Elegible con cautela';
+            }
+            if (eligibility === 'conditional') {
+                return 'Condicionado';
+            }
+            return 'Elegible';
+        }
+
+        function renderTreatmentList(items, emptyMessage) {
+            if (!items || !items.length) {
+                return `<li>${emptyMessage}</li>`;
+            }
+            return items.map(item => {
+                if (typeof item === 'string') {
+                    return `<li>${humanizeClinicalText(item)}</li>`;
+                }
+                const componentDrugs = Array.isArray(item.component_drugs) ? item.component_drugs : [];
+                const regimenCode = item.regimen_code
+                    ? `<div class="mt-1 text-[11px] font-mono uppercase tracking-[0.18em] text-cyan-300">${escapeHtml(item.regimen_code)}</div>`
+                    : '';
+                const componentList = componentDrugs.length
+                    ? `<div class="mt-2 space-y-2">${componentDrugs.map((component) => {
+                        const details = [component.dose, component.route, component.schedule].filter(Boolean).map(humanizeClinicalText).join(' · ');
+                        const imssKey = component.imss_key ? `<span class="text-slate-500">Clave IMSS: ${escapeHtml(component.imss_key)}</span>` : '';
+                        return `
+                            <div class="rounded-xl border border-slate-700/70 bg-slate-950/40 px-3 py-2">
+                                <div class="text-sm font-medium text-white">${humanizeClinicalText(component.drug_name || '')}</div>
+                                <div class="mt-1 text-xs text-slate-300">${details || 'Sin metadatos de dosis/ruta/frecuencia.'}</div>
+                                ${imssKey ? `<div class="mt-1 text-[11px] text-slate-500">${imssKey}</div>` : ''}
+                            </div>
+                        `;
+                    }).join('')}</div>`
+                    : '';
+                const rationale = Array.isArray(item.selection_rationale) && item.selection_rationale.length
+                    ? `<div class="mt-2 text-xs text-emerald-200">A favor: ${item.selection_rationale.slice(0, 2).map(humanizeClinicalText).join(' · ')}</div>`
+                    : '';
+                const limits = Array.isArray(item.contraindication_reasons) && item.contraindication_reasons.length
+                    ? `<div class="mt-2 text-xs text-amber-200">Límites: ${item.contraindication_reasons.slice(0, 2).map(humanizeClinicalText).join(' · ')}</div>`
+                    : '';
+                const regimenMeta = [
+                    item.dose ? `Dosis: ${humanizeClinicalText(item.dose)}` : '',
+                    item.route ? `Vía: ${humanizeClinicalText(item.route)}` : '',
+                    item.schedule ? `Esquema: ${humanizeClinicalText(item.schedule)}` : '',
+                    item.duration ? `Duración: ${humanizeClinicalText(item.duration)}` : '',
+                    item.clave_imss || item.imss_key ? `Clave IMSS: ${escapeHtml(item.clave_imss || item.imss_key)}` : '',
+                ].filter(Boolean);
+                const regimenMetaHtml = regimenMeta.length
+                    ? `<div class="mt-2 text-xs text-slate-400">${regimenMeta.join(' · ')}</div>`
+                    : '';
+                const benefitMeta = [
+                    item.benefit_endpoint_used ? `Endpoint decisivo: ${humanizeClinicalText(item.benefit_endpoint_used)}` : '',
+                    item.benefit_maturity ? `Madurez: ${humanizeClinicalText(item.benefit_maturity)}` : '',
+                ].filter(Boolean);
+                const benefitHtml = benefitMeta.length || item.benefit_basis
+                    ? `
+                        <div class="mt-2 rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2">
+                            <div class="text-[11px] uppercase tracking-[0.18em] text-cyan-300">Base de beneficio</div>
+                            ${benefitMeta.length ? `<div class="mt-1 text-xs text-slate-300">${benefitMeta.join(' · ')}</div>` : ''}
+                            ${item.benefit_basis ? `<div class="mt-1 text-xs text-slate-400">${humanizeClinicalText(item.benefit_basis)}</div>` : ''}
+                        </div>
+                    `
+                    : '';
+                const safetyDrivers = Array.isArray(item.safety_drivers_used) && item.safety_drivers_used.length
+                    ? `<div class="mt-2 text-xs text-slate-400">Discriminadores usados: ${item.safety_drivers_used.slice(0, 5).map(humanizeClinicalText).join(' · ')}</div>`
+                    : '';
+                const missingFields = Array.isArray(item.required_missing_fields) && item.required_missing_fields.length
+                    ? item.required_missing_fields.slice(0, 6).map(humanizeClinicalText).join(', ')
+                    : '';
+                const staleInputs = Array.isArray(item.stale_inputs) && item.stale_inputs.length
+                    ? item.stale_inputs.slice(0, 6).map(humanizeClinicalText).join(', ')
+                    : '';
+                const confidenceHtml = item.preference_confidence
+                    ? `
+                        <div class="mt-2 rounded-xl border ${item.preference_confidence === 'provisional' ? 'border-amber-500/20 bg-amber-500/10' : 'border-emerald-500/20 bg-emerald-500/10'} px-3 py-2">
+                            <div class="text-[11px] uppercase tracking-[0.18em] ${item.preference_confidence === 'provisional' ? 'text-amber-200' : 'text-emerald-200'}">
+                                ${item.preference_confidence === 'provisional' ? 'Ranking provisional' : 'Ranking definitivo'}
+                            </div>
+                            ${missingFields ? `<div class="mt-1 text-xs text-slate-300">Falta completar: ${missingFields}</div>` : ''}
+                            ${staleInputs ? `<div class="mt-1 text-xs text-slate-300">Datos vencidos: ${staleInputs}</div>` : ''}
+                        </div>
+                    `
+                    : '';
+                return `
+                    <li class="rounded-2xl border border-slate-700/70 bg-slate-950/50 p-4">
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <span class="font-medium text-white">${humanizeClinicalText(item.name)}</span>
+                                ${regimenCode}
+                            </div>
+                            <span class="text-xs uppercase tracking-[0.18em] ${item.is_preferred || ['preferred', 'preferente'].includes(String(item.priority || '').toLowerCase()) || ['preferred', 'preferente'].includes(String(item.eligibility_status || '').toLowerCase()) ? 'text-emerald-300' : 'text-slate-400'}">${renderTreatmentPriorityLabel(item)}</span>
+                        </div>
+                        <div class="mt-2 text-sm text-slate-300">${humanizeClinicalText(item.description || item.notes || '')}</div>
+                        ${regimenMetaHtml}
+                        ${componentList}
+                        ${benefitHtml}
+                        ${rationale}
+                        ${limits}
+                        ${confidenceHtml}
+                        ${safetyDrivers}
+                    </li>
+                `;
+            }).join('');
+        }
+
+        function renderTripletDecision(card) {
+            if (!card || !card.show) {
+                return '';
+            }
+            const toneClass = card.tone === 'emerald'
+                ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200'
+                : card.tone === 'cyan'
+                    ? 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200'
+                    : card.tone === 'amber'
+                        ? 'border-amber-500/20 bg-amber-500/10 text-amber-200'
+                        : card.tone === 'rose'
+                            ? 'border-rose-500/20 bg-rose-500/10 text-rose-200'
+                            : 'border-slate-700 bg-slate-950/60 text-slate-300';
+            const whyYes = renderTextList(card.why_yes || [], 'Hoy no existe un argumento suficiente para priorizar triplete.');
+            const whyNo = renderTextList(card.why_no || [], 'Sin limitaciones adicionales documentadas.');
+            const supported = (card.supported_triplet_backbones || []).length
+                ? `<p class="mt-2 text-xs text-slate-500">${(card.supported_triplet_backbones || []).map(humanizeClinicalText).join(', ')}</p>`
+                : '';
+            const missing = (card.missing_inputs || []).length
+                ? `<p class="mt-3 text-xs text-amber-200">Faltan datos: ${(card.missing_inputs || []).map(humanizeClinicalText).join(', ')}</p>`
+                : '';
+            const stale = (card.stale_inputs || []).length
+                ? `<p class="mt-2 text-xs text-amber-200">Datos vencidos: ${(card.stale_inputs || []).map(humanizeClinicalText).join(', ')}</p>`
+                : '';
+            const labSnapshot = card.docetaxel_lab_snapshot || {};
+            const labMeta = [labSnapshot.cbc_date ? `BHC ${humanizeClinicalText(labSnapshot.cbc_date)}` : '', labSnapshot.liver_panel_date ? `PFH ${humanizeClinicalText(labSnapshot.liver_panel_date)}` : '', labSnapshot.source ? `Fuente: ${humanizeClinicalText(labSnapshot.source)}` : '']
+                .filter(Boolean)
+                .join(' · ');
+            return `
+                <div class="rounded-2xl border border-slate-700 p-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Triplete en mHSPC</p>
+                            <p class="mt-1 text-sm font-medium text-white">${humanizeClinicalText(card.state_label || 'mHSPC')}</p>
+                        </div>
+                        <span class="rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.18em] ${toneClass}">${humanizeClinicalText(card.status_label || card.status || '')}</span>
+                    </div>
+                    <p class="mt-3 text-sm text-slate-200">${humanizeClinicalText(card.primary_reason || '')}</p>
+                    ${card.docetaxel_fitness_summary ? `<p class="mt-2 text-xs text-slate-400">${humanizeClinicalText(card.docetaxel_fitness_summary)}</p>` : ''}
+                    ${missing}
+                    ${stale}
+                    ${labMeta ? `<p class="mt-2 text-xs text-slate-500">${labMeta}</p>` : ''}
+                    <div class="mt-4 grid gap-4 md:grid-cols-2">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Por qué sí</p>
+                            <ul class="mt-2 space-y-2 text-sm text-slate-300">${whyYes}</ul>
+                        </div>
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Por qué no / qué lo limita</p>
+                            <ul class="mt-2 space-y-2 text-sm text-slate-300">${whyNo}</ul>
+                        </div>
+                    </div>
+                    <div class="mt-4 grid gap-4 md:grid-cols-2">
+                        <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-3">
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">${humanizeClinicalText(card.triplet_candidate_only_if_reopened ? 'Si hoy se reabriera triplete' : 'Mejor triplete si compite hoy')}</p>
+                            <p class="mt-2 text-sm font-medium text-cyan-200">${humanizeClinicalText(card.preferred_triplet_candidate_label || card.preferred_triplet_backbone_label || 'No corresponde backbone de triplete en este escenario.')}</p>
+                            ${supported}
+                            ${card.cross_scope_explanation ? `<p class="mt-2 text-xs text-slate-400">${humanizeClinicalText(card.cross_scope_explanation)}</p>` : ''}
+                        </div>
+                        <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-3">
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Alternativa si no va triplete</p>
+                            <p class="mt-2 text-sm font-medium text-white">${humanizeClinicalText(card.preferred_non_triplet_backbone_label || 'Sin alternativa estructurada visible.')}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderLiveBenchmarkCard(benchmark) {
+            if (!benchmark || benchmark.status === 'not_applicable') {
+                return '';
+            }
+            const flags = (benchmark.flags || []).length
+                ? (benchmark.flags || []).map((flag) => `<span class="rounded-full border border-slate-700 bg-slate-950/60 px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-300">${humanizeClinicalText(String(flag).replaceAll('_', ' '))}</span>`).join('')
+                : '<span class="rounded-full border border-slate-700 bg-slate-950/60 px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-300">Sin flags</span>';
+            return `
+                <div class="rounded-2xl border border-slate-700 p-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Benchmark Vivo</p>
+                            <p class="mt-1 text-sm font-medium text-white">${humanizeClinicalText(benchmark.primary_endpoint_label || 'Comparación longitudinal')}</p>
+                        </div>
+                        <div class="flex flex-wrap justify-end gap-2">${flags}</div>
+                    </div>
+                    <div class="mt-4 grid gap-4 md:grid-cols-3">
+                        <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-3">
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Paciente</p>
+                            <p class="mt-2 text-sm text-white">${humanizeClinicalText(benchmark.patient_endpoint?.duration_months ?? 'N/D')}</p>
+                            ${benchmark.patient_percentile !== null && benchmark.patient_percentile !== undefined ? `<p class="mt-1 text-xs text-cyan-200">Percentil ${humanizeClinicalText(benchmark.patient_percentile)}</p>` : ''}
+                        </div>
+                        <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-3">
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Cohorte similar</p>
+                            <p class="mt-2 text-sm text-white">n = ${humanizeClinicalText(benchmark.reliability?.cohort_size ?? 0)}</p>
+                            <p class="mt-1 text-xs text-slate-400">Tier: ${humanizeClinicalText(benchmark.reliability?.cohort_tier || 'none')}</p>
+                        </div>
+                        <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-3">
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Referencia publicada</p>
+                            <p class="mt-2 text-sm text-white">${humanizeClinicalText(benchmark.published_reference?.label || 'Sin referencia específica')}</p>
+                            ${benchmark.published_reference?.median_months ? `<p class="mt-1 text-xs text-cyan-200">Mediana ${humanizeClinicalText(benchmark.published_reference.median_months)} meses</p>` : ''}
+                        </div>
+                    </div>
+                    <p class="mt-4 text-sm text-slate-300">${humanizeClinicalText(benchmark.narrative || '')}</p>
+                </div>
+            `;
+        }
+
+        function renderPsaForecastCard(forecast) {
+            if (!forecast || forecast.status === 'not_applicable') {
+                return '';
+            }
+            const points = forecast.forecast_points || [];
+            const confidence = forecast.reliability?.confidence_label || forecast.status || 'unknown';
+            const alerts = renderTextList((forecast.predictive_alerts || []).map((item) => item.message), 'Sin alertas predictivas críticas.');
+            return `
+                <div class="rounded-2xl border border-slate-700 p-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">PSA prospectivo</p>
+                            <p class="mt-1 text-sm font-medium text-white">${humanizeClinicalText(forecast.current_line_label || 'Línea actual')}</p>
+                        </div>
+                        <span class="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-300">${humanizeClinicalText(confidence)}</span>
+                    </div>
+                    <div class="mt-4 grid gap-4 md:grid-cols-4">
+                        <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-3"><p class="text-xs uppercase tracking-[0.2em] text-slate-500">3m</p><p class="mt-2 text-sm text-white">${humanizeClinicalText(points[0]?.expected_psa ?? 'N/D')}</p></div>
+                        <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-3"><p class="text-xs uppercase tracking-[0.2em] text-slate-500">6m</p><p class="mt-2 text-sm text-white">${humanizeClinicalText(points[1]?.expected_psa ?? 'N/D')}</p></div>
+                        <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-3"><p class="text-xs uppercase tracking-[0.2em] text-slate-500">12m</p><p class="mt-2 text-sm text-white">${humanizeClinicalText(points[2]?.expected_psa ?? 'N/D')}</p></div>
+                        <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-3"><p class="text-xs uppercase tracking-[0.2em] text-slate-500">PSADT proyectado</p><p class="mt-2 text-sm text-white">${humanizeClinicalText(forecast.projected_psadt_months ?? 'N/D')}</p></div>
+                    </div>
+                    <ul class="mt-4 space-y-2 text-sm text-slate-300">${alerts}</ul>
+                </div>
+            `;
+        }
+
+        function renderCitationList(items, emptyMessage) {
+            if (!items || !items.length) {
+                return `<div class="rounded-2xl border border-slate-700 p-4 text-sm text-slate-300">${emptyMessage}</div>`;
+            }
+            return items.map(item => `
+                <div class="rounded-2xl border border-slate-700 p-4">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <p class="text-sm font-medium text-white">${item.guideline_or_trial || item.title || 'Fuente clínica'}</p>
+                        <span class="rounded-full border px-2 py-1 text-[11px] ${item.evidence_role === 'primary_guideline' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-amber-500/30 bg-amber-500/10 text-amber-200'}">${humanizeClinicalText(item.evidence_role || 'supportive')}</span>
+                    </div>
+                    <p class="mt-1 text-sm text-slate-300">${item.title || ''}</p>
+                    ${item.followup_implications ? `<p class="mt-2 text-sm text-slate-400">${humanizeClinicalText(item.followup_implications)}</p>` : ''}
+                    ${item.field_implications?.length ? `<p class="mt-2 text-xs text-slate-500">Impacta captura en: ${item.field_implications.map(humanizeClinicalText).join(', ')}</p>` : ''}
+                    ${item.private_index?.available ? `<p class="mt-2 text-xs text-emerald-300">Texto completo indexado localmente en el índice privado (${escapeHtml(item.private_index.indexed_at || 'listo')}).</p>` : ''}
+                    ${item.evidence_role && item.evidence_role !== 'primary_guideline' ? '<p class="mt-2 text-[11px] text-amber-200">Influye como soporte; no reemplaza la recomendación primaria de guías.</p>' : ''}
+                    ${(item.local_pdf_path || item.doi_or_url) ? `<p class="mt-2 text-xs text-slate-500">${item.local_pdf_path || item.doi_or_url}</p>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function renderTransitionList(items, emptyMessage) {
+            if (!items || !items.length) {
+                return `<li>${emptyMessage}</li>`;
+            }
+            return items.map(item => `<li><span class="font-medium text-white">${humanizeClinicalText(item.label || item.target_state)}</span><br><span class="text-slate-400">${humanizeClinicalText(item.when || '')}</span><br><span class="text-slate-400">${humanizeClinicalText(item.rationale || '')}</span></li>`).join('');
+        }
+
+        function renderOverlayList(items, emptyMessage) {
+            if (!items || !items.length) {
+                return `<div class="rounded-2xl border border-slate-700 p-4 text-sm text-slate-300">${emptyMessage}</div>`;
+            }
+            return items.map(item => `
+                <div class="rounded-2xl border border-slate-700 p-4">
+                    <p class="text-sm font-medium text-white">${humanizeClinicalText(item.title || 'Soporte clínico')}</p>
+                    <p class="mt-1 text-xs uppercase tracking-[0.2em] text-cyan-300">${humanizeClinicalText(item.status || '')}</p>
+                    <ul class="mt-3 space-y-2 text-sm text-slate-300">${renderTextList(item.reasons || [], 'Sin razones estructuradas.')}</ul>
+                    <div class="mt-3 text-xs uppercase tracking-[0.2em] text-slate-500">Acciones</div>
+                    <ul class="mt-2 space-y-2 text-sm text-slate-300">${renderTextList(item.actions || [], 'Sin acciones estructuradas.')}</ul>
+                </div>
+            `).join('');
+        }
+
+        function renderBenchmarkFlags(items, emptyMessage) {
+            if (!items || !items.length) {
+                return `<div class="rounded-2xl border border-slate-700 p-4 text-sm text-slate-300">${emptyMessage}</div>`;
+            }
+            return items.map(item => {
+                const tone = item.status === 'complete'
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                    : item.status === 'incomplete'
+                        ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                        : 'border-rose-500/30 bg-rose-500/10 text-rose-200';
+                return `
+                    <div class="rounded-2xl border border-slate-700 p-4">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <p class="text-sm font-medium text-white">${humanizeClinicalText(item.label || 'Indicador')}</p>
+                            <span class="rounded-full border px-2 py-1 text-[11px] ${tone}">${humanizeClinicalText(item.status || 'missing')}</span>
+                        </div>
+                        <p class="mt-2 text-sm text-slate-400">${humanizeClinicalText(item.rationale || '')}</p>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderAlgorithmCards(items, emptyMessage) {
+            if (!items || !items.length) {
+                return `<div class="rounded-2xl border border-slate-700 p-4 text-sm text-slate-300">${emptyMessage}</div>`;
+            }
+            return items.map(item => `
+                <div class="rounded-2xl border border-slate-700 p-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-sm font-medium text-white">${humanizeClinicalText(item.name || 'Algoritmo')}</p>
+                        <span class="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-200">${humanizeClinicalText(item.status || 'documentado')}</span>
+                    </div>
+                    <p class="mt-2 text-sm text-slate-300">${humanizeClinicalText(item.summary || '')}</p>
+                    <p class="mt-3 text-xs uppercase tracking-[0.2em] text-slate-500">Uso clinico</p>
+                    <p class="mt-1 text-sm text-slate-400">${humanizeClinicalText(item.clinical_use || '')}</p>
+                    ${item.evidence_note ? `<p class="mt-2 text-xs text-amber-200">${humanizeClinicalText(item.evidence_note)}</p>` : ''}
+                    ${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer" class="mt-3 inline-flex text-xs text-cyan-300 hover:text-cyan-200">${escapeHtml(item.source_label || item.source_url)}</a>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function epic26DomainScoresFromResult(result) {
+            const explicitScores = Array.isArray(result?.epic26_domain_scores) ? result.epic26_domain_scores.filter(Boolean) : [];
+            if (explicitScores.length) {
+                return explicitScores;
+            }
+            const snapshot = result?.score_interpretation_catalog_snapshot || {};
+            const orderedKeys = [
+                'epic26_urinary_incontinence_domain',
+                'epic26_urinary_irritative_domain',
+                'epic26_bowel_domain',
+                'epic26_sexual_domain',
+                'epic26_hormonal_domain',
+                'epic26_overall_urinary_bother',
+            ];
+            return orderedKeys.map((key) => snapshot[key]).filter(Boolean);
+        }
+
+        function renderEpic26DomainCards(scores) {
+            if (!scores || !scores.length) {
+                return '';
+            }
+            return `
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">EPIC-26 basal interpretado</p>
+                    <div class="mt-2 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        ${scores.map((score) => `
+                            <div class="rounded-2xl border border-fuchsia-500/20 bg-fuchsia-500/5 p-4">
+                                <div class="text-xs uppercase tracking-[0.2em] text-slate-500">${escapeHtml(score.score_label_es || score.score_key || 'EPIC-26')}</div>
+                                <div class="mt-2 flex items-end justify-between gap-3">
+                                    <div class="text-2xl font-bold text-white">${escapeHtml(score.score_value ?? 'N/D')}</div>
+                                    <span class="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-fuchsia-200">${escapeHtml(score.score_grade_es || 'No disponible')}</span>
+                                </div>
+                                ${score.band_range ? `<div class="mt-2 text-xs text-slate-500">Equivale a ${escapeHtml(score.band_range)}</div>` : ''}
+                                <p class="mt-2 text-sm text-slate-300">${escapeHtml(score.clinical_equivalence_es || '')}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderEpic26DecisionImpact(result) {
+            const scores = epic26DomainScoresFromResult(result);
+            if (!scores.length) {
+                return '';
+            }
+            const modalityBundle = result.localized_modality_fitness_bundle || {};
+            const tradeoffBundle = result.localized_tradeoff_bundle || {};
+            const bullets = [];
+            if (tradeoffBundle.tradeoff_summary) {
+                bullets.push(tradeoffBundle.tradeoff_summary);
+            }
+            if (modalityBundle.epic26_role_summary) {
+                bullets.push(modalityBundle.epic26_role_summary);
+            }
+            if (modalityBundle.epic26_governance_contract?.governance_guardrail) {
+                bullets.push(modalityBundle.epic26_governance_contract.governance_guardrail);
+            }
+            (modalityBundle.epic26_shared_decision_signals || []).slice(0, 4).forEach((item) => bullets.push(item));
+            return `
+                ${renderEpic26DomainCards(scores)}
+                <div class="mt-4 rounded-2xl border border-slate-700 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Cómo EPIC-26 se usa hoy</p>
+                    <ul class="mt-2 space-y-2 text-sm text-slate-300">${renderTextList(bullets, 'Sin señales funcionales estructuradas adicionales.')}</ul>
+                </div>
+            `;
+        }
+
+        function renderBoneOptionsForWidget(selectedValue = '') {
+            const groups = metastaticCaptureConfig?.bone_site_groups || [];
+            const groupsHtml = groups.map((group) => {
+                const optionsHtml = (group.options || []).map((option) => {
+                    const selected = option.site_key === selectedValue ? ' selected' : '';
+                    return `<option value="${escapeHtml(option.site_key)}"${selected}>${escapeHtml(option.label)}</option>`;
+                }).join('');
+                return `<optgroup label="${escapeHtml(group.label || '')}">${optionsHtml}</optgroup>`;
+            }).join('');
+            return `<option value="">Seleccione un sitio</option>${groupsHtml}`;
+        }
+
+        function renderVisceralOptionsForWidget(selectedValue = '') {
+            const options = metastaticCaptureConfig?.visceral_site_options || [];
+            const optionsHtml = options.map((option) => {
+                const selected = option.site_key === selectedValue ? ' selected' : '';
+                return `<option value="${escapeHtml(option.site_key)}"${selected}>${escapeHtml(option.label)}</option>`;
+            }).join('');
+            return `<option value="">Seleccione un órgano visceral</option>${optionsHtml}`;
+        }
+
+        function renderNodalOptionsForWidget(selectedValue = '') {
+            const options = metastaticCaptureConfig?.nonregional_nodal_site_options || [];
+            const optionsHtml = options.map((option) => {
+                const selected = option.site_key === selectedValue ? ' selected' : '';
+                return `<option value="${escapeHtml(option.site_key)}"${selected}>${escapeHtml(option.label)}</option>`;
+            }).join('');
+            return `<option value="">Seleccione una cadena ganglionar</option>${optionsHtml}`;
+        }
+
+        function createBoneRowForWidget(container, entry = {}) {
+            const rows = container.querySelector('[data-role="bone-rows"]');
+            if (!rows) {
+                return null;
+            }
+            const row = document.createElement('div');
+            row.className = 'rounded-2xl border border-slate-700/70 bg-slate-950/70 p-3';
+            row.dataset.boneRow = '1';
+            row.innerHTML = `
+                <div class="grid gap-3 md:grid-cols-[minmax(0,2fr)_160px_auto]">
+                    <label class="text-sm">
+                        <span class="block text-slate-300">Sitio óseo</span>
+                        <select class="pn-input mt-2 w-full px-3 py-2" data-role="bone-site-key">
+                            ${renderBoneOptionsForWidget(String(entry.site_key || ''))}
+                        </select>
+                    </label>
+                    <label class="text-sm">
+                        <span class="block text-slate-300">Número de lesiones</span>
+                        <input type="number" min="1" step="1" value="${escapeHtml(entry.lesion_count || 1)}" class="pn-input mt-2 w-full px-3 py-2" data-role="bone-lesion-count">
+                    </label>
+                    <div class="flex items-end">
+                        <button type="button" class="pn-btn pn-btn-secondary w-full" data-role="remove-bone-row">Quitar</button>
+                    </div>
+                </div>
+            `;
+            rows.appendChild(row);
+            return row;
+        }
+
+        function createVisceralRowForWidget(container, entry = {}) {
+            const rows = container.querySelector('[data-role="visceral-rows"]');
+            if (!rows) {
+                return null;
+            }
+            const row = document.createElement('div');
+            row.className = 'rounded-2xl border border-slate-700/70 bg-slate-950/70 p-3';
+            row.dataset.visceralRow = '1';
+            row.innerHTML = `
+                <div class="grid gap-3 md:grid-cols-[minmax(0,2fr)_160px_auto]">
+                    <label class="text-sm">
+                        <span class="block text-slate-300">Órgano visceral</span>
+                        <select class="pn-input mt-2 w-full px-3 py-2" data-role="visceral-site-key">
+                            ${renderVisceralOptionsForWidget(String(entry.site_key || ''))}
+                        </select>
+                    </label>
+                    <label class="text-sm">
+                        <span class="block text-slate-300">Número de lesiones</span>
+                        <input type="number" min="1" step="1" value="${escapeHtml(entry.lesion_count || 1)}" class="pn-input mt-2 w-full px-3 py-2" data-role="visceral-lesion-count">
+                    </label>
+                    <div class="flex items-end">
+                        <button type="button" class="pn-btn pn-btn-secondary w-full" data-role="remove-visceral-row">Quitar</button>
+                    </div>
+                </div>
+            `;
+            rows.appendChild(row);
+            return row;
+        }
+
+        function createNodalRowForWidget(container, entry = {}) {
+            const rows = container.querySelector('[data-role="nodal-rows"]');
+            if (!rows) {
+                return null;
+            }
+            const row = document.createElement('div');
+            row.className = 'rounded-2xl border border-slate-700/70 bg-slate-950/70 p-3';
+            row.dataset.nodalRow = '1';
+            row.innerHTML = `
+                <div class="grid gap-3 md:grid-cols-[minmax(0,2fr)_160px_auto]">
+                    <label class="text-sm">
+                        <span class="block text-slate-300">Cadena ganglionar no regional</span>
+                        <select class="pn-input mt-2 w-full px-3 py-2" data-role="nodal-site-key">
+                            ${renderNodalOptionsForWidget(String(entry.site_key || ''))}
+                        </select>
+                    </label>
+                    <label class="text-sm">
+                        <span class="block text-slate-300">Número de lesiones</span>
+                        <input type="number" min="1" step="1" value="${escapeHtml(entry.lesion_count || 1)}" class="pn-input mt-2 w-full px-3 py-2" data-role="nodal-lesion-count">
+                    </label>
+                    <div class="flex items-end">
+                        <button type="button" class="pn-btn pn-btn-secondary w-full" data-role="remove-nodal-row">Quitar</button>
+                    </div>
+                </div>
+            `;
+            rows.appendChild(row);
+            return row;
+        }
+
+        function deriveIsupFromGleasonForWidget(primary, secondary) {
+            if (!primary || !secondary) {
+                return '';
+            }
+            const total = primary + secondary;
+            if (total <= 6) {
+                return '1';
+            }
+            if (total === 7 && primary === 3 && secondary === 4) {
+                return '2';
+            }
+            if (total === 7 && primary === 4 && secondary === 3) {
+                return '3';
+            }
+            if (total === 8) {
+                return '4';
+            }
+            if (total >= 9) {
+                return '5';
+            }
+            return '';
+        }
+
+        function syncGleasonProfileWidget(container) {
+            const primarySelect = container.querySelector('[data-role="gleason-primary"]');
+            const secondarySelect = container.querySelector('[data-role="gleason-secondary"]');
+            const tertiarySelect = container.querySelector('[data-role="gleason-tertiary"]');
+            const summaryNode = container.querySelector('[data-role="gleason-summary"]');
+            const primary = Number.parseInt(primarySelect?.value || '', 10) || 0;
+            const secondary = Number.parseInt(secondarySelect?.value || '', 10) || 0;
+            const tertiary = Number.parseInt(tertiarySelect?.value || '', 10) || 0;
+            const score = primary && secondary ? primary + secondary : '';
+            const isup = primary && secondary ? deriveIsupFromGleasonForWidget(primary, secondary) : '';
+
+            container.querySelector('[name="gleason_primary"]').value = primary ? String(primary) : '';
+            container.querySelector('[name="gleason_secondary"]').value = secondary ? String(secondary) : '';
+            container.querySelector('[name="gleason_tertiary"]').value = tertiary ? String(tertiary) : '';
+            container.querySelector(`[name="${container.dataset.fieldName}"]`).value = score ? String(score) : '';
+            container.querySelector('[name="isup_grade"]').value = isup ? String(isup) : '';
+            container.querySelector('[name="has_adverse_tertiary_pattern"]').value = tertiary >= 5 ? '1' : '0';
+            container.dataset.valid = primary && secondary ? '1' : '0';
+
+            if (!(primary && secondary)) {
+                summaryNode.textContent = 'Seleccione Gleason primario y secundario para derivar automáticamente Gleason total e ISUP.';
+                return;
+            }
+
+            const parts = [`Gleason ${score} (${primary}+${secondary})`, `ISUP ${isup || 'pendiente'}`];
+            if (tertiary) {
+                parts.push(`patrón terciario ${tertiary}`);
+            }
+            summaryNode.textContent = `${parts.join(', ')}. ${tertiary ? 'El patrón terciario se conserva como rasgo adverso, sin modificar el ISUP.' : 'El ISUP se deriva automáticamente desde el patrón primario y secundario.'}`;
+        }
+
+        function initializeGleasonProfileWidgets() {
+            document.querySelectorAll('[data-gleason-profile-widget="1"]').forEach((container) => {
+                container.addEventListener('change', () => syncGleasonProfileWidget(container));
+                syncGleasonProfileWidget(container);
+            });
+        }
+
+        function epic26ConfigForWidget(container) {
+            if (container._epic26Config) {
+                return container._epic26Config;
+            }
+            try {
+                container._epic26Config = JSON.parse(container.dataset.widgetConfig || '{}');
+            } catch (error) {
+                container._epic26Config = {};
+            }
+            return container._epic26Config;
+        }
+
+        function epic26GroupTitle(config, groupId) {
+            return (config.groups || []).find((group) => group.id === groupId) || {};
+        }
+
+        function epic26ItemsForGroup(config, groupId) {
+            return (config.items || []).filter((item) => item.group === groupId);
+        }
+
+        function epic26SelectedResponsesFromContainer(container) {
+            const responses = {};
+            container.querySelectorAll('[data-role="epic26-item"]').forEach((node) => {
+                const itemId = String(node.dataset.itemId || '');
+                const value = String(node.value || '').trim();
+                if (itemId && value) {
+                    responses[itemId] = value;
+                }
+            });
+            return responses;
+        }
+
+        function epic26ResponseScore(item, value) {
+            const option = (item.options || []).find((candidate) => String(candidate.value) === String(value));
+            if (!option) {
+                return null;
+            }
+            const score = Number(option.standardized_score);
+            return Number.isFinite(score) ? score : null;
+        }
+
+        function epic26BandLabel(score) {
+            if (score === null || score === undefined || Number.isNaN(score)) {
+                return 'No calculable';
+            }
+            if (score >= 80) {
+                return 'Preservada';
+            }
+            if (score >= 60) {
+                return 'Levemente afectada';
+            }
+            if (score >= 40) {
+                return 'Moderadamente afectada';
+            }
+            return 'Severamente afectada';
+        }
+
+        function epic26FormattedScore(score) {
+            if (score === null || score === undefined || Number.isNaN(score)) {
+                return 'Incompleto';
+            }
+            return Number(score).toFixed(1);
+        }
+
+        function buildEpic26Packet(config, responses) {
+            return {
+                instrument_id: config.instrument_id || 'epic26',
+                instrument_locale: config.instrument_locale || 'es',
+                instrument_version: config.instrument_version || 'EPIC-26-short-form',
+                license_version: config.license_version || 'es-licensed-centralized-v1',
+                responses,
+            };
+        }
+
+        function computeEpic26Scores(config, responses) {
+            const threshold = Number(config.missingness_threshold ?? 0.2);
+            const derived = {};
+            const completion = {};
+            const missingItems = {};
+
+            (config.groups || []).filter((group) => !group.standalone).forEach((group) => {
+                const items = epic26ItemsForGroup(config, group.id);
+                const missing = [];
+                const scores = [];
+                items.forEach((item) => {
+                    const score = epic26ResponseScore(item, responses[item.id]);
+                    if (score === null) {
+                        missing.push(item.id);
+                        return;
+                    }
+                    scores.push(score);
+                });
+                missingItems[group.id] = missing;
+                const fieldName = (config.domain_field_map || {})[group.id];
+                const missingRatio = items.length ? missing.length / items.length : 1;
+                if (!fieldName) {
+                    return;
+                }
+                if (!scores.length || missingRatio > threshold) {
+                    derived[fieldName] = null;
+                    completion[group.id] = 'not_calculable';
+                    return;
+                }
+                const average = scores.reduce((sum, value) => sum + value, 0) / scores.length;
+                derived[fieldName] = Number(average.toFixed(1));
+                completion[group.id] = missing.length ? 'partial' : 'complete';
+            });
+
+            (config.groups || []).filter((group) => group.standalone).forEach((group) => {
+                const item = epic26ItemsForGroup(config, group.id)[0];
+                const fieldName = (config.standalone_field_map || {})[group.id];
+                if (!item || !fieldName) {
+                    return;
+                }
+                derived[fieldName] = epic26ResponseScore(item, responses[item.id]);
+            });
+
+            const urinaryFields = [
+                derived.epic26_urinary_incontinence_domain,
+                derived.epic26_urinary_irritative_domain,
+            ].filter((score) => score !== null && score !== undefined && !Number.isNaN(score));
+            derived[(config.legacy_alias_field || 'epic26_urinary_domain')] = urinaryFields.length
+                ? Number((urinaryFields.reduce((sum, value) => sum + value, 0) / urinaryFields.length).toFixed(1))
+                : null;
+
+            return { derived, completion, missingItems };
+        }
+
+        function renderEpic26Groups(container) {
+            const config = epic26ConfigForWidget(container);
+            const groupsNode = container.querySelector('[data-role="epic26-groups"]');
+            const hiddenPacket = container.querySelector(`[name="${container.dataset.fieldName}"]`);
+            let prefilledResponses = {};
+            try {
+                const packet = hiddenPacket?.value ? JSON.parse(hiddenPacket.value) : {};
+                prefilledResponses = packet?.responses && typeof packet.responses === 'object' ? packet.responses : {};
+            } catch (error) {
+                prefilledResponses = {};
+            }
+            groupsNode.innerHTML = (config.groups || []).map((group) => {
+                const items = epic26ItemsForGroup(config, group.id);
+                const itemsHtml = items.map((item) => {
+                    const options = (item.options || []).map((option) => {
+                        const selected = String(prefilledResponses[item.id] || '') === String(option.value) ? 'selected' : '';
+                        return `<option value="${escapeHtml(option.value)}" ${selected}>${escapeHtml(option.label)}</option>`;
+                    }).join('');
+                    return `
+                        <label class="block rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4 text-sm">
+                            <div class="flex flex-wrap items-start justify-between gap-3">
+                                <span class="block text-slate-200">${escapeHtml(item.prompt || item.id)}</span>
+                                <span class="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300">${escapeHtml(item.what_it_evaluates || 'Ítem clínico')}</span>
+                            </div>
+                            <select class="pn-input mt-3 w-full px-3 py-2" data-role="epic26-item" data-item-id="${escapeHtml(item.id)}">
+                                <option value="">Seleccione una respuesta</option>
+                                ${options}
+                            </select>
+                        </label>
+                    `;
+                }).join('');
+                return `
+                    <section class="rounded-2xl border border-slate-700/70 bg-slate-950/40 p-4">
+                        <div class="mb-4">
+                            <p class="text-xs uppercase tracking-[0.2em] text-fuchsia-300">${escapeHtml(group.label || group.id)}</p>
+                            <p class="mt-2 text-sm text-slate-400">${escapeHtml(group.description || '')}</p>
+                        </div>
+                        <div class="space-y-3">${itemsHtml}</div>
+                    </section>
+                `;
+            }).join('');
+        }
+
+        function renderEpic26ScoreCards(container, config, scoreData) {
+            const cardNode = container.querySelector('[data-role="epic26-score-cards"]');
+            cardNode.innerHTML = (config.groups || []).map((group) => {
+                const isStandalone = Boolean(group.standalone);
+                const fieldName = isStandalone
+                    ? (config.standalone_field_map || {})[group.id]
+                    : (config.domain_field_map || {})[group.id];
+                const score = fieldName ? scoreData.derived[fieldName] : null;
+                const band = epic26BandLabel(score);
+                const completionLabel = isStandalone
+                    ? (score === null || score === undefined ? 'No capturada' : 'Capturada')
+                    : ({
+                        complete: 'Completo',
+                        partial: 'Parcial',
+                        not_calculable: 'No calculable',
+                    }[scoreData.completion[group.id]] || 'Pendiente');
+                return `
+                    <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">${escapeHtml(group.label || group.id)}</p>
+                        <p class="mt-2 text-xl font-semibold text-white">${escapeHtml(epic26FormattedScore(score))}</p>
+                        <p class="mt-1 text-sm text-slate-300">${escapeHtml(band)}</p>
+                        <p class="mt-2 text-xs text-slate-500">${escapeHtml(completionLabel)}</p>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function syncEpic26Widget(container) {
+            const config = epic26ConfigForWidget(container);
+            const responses = epic26SelectedResponsesFromContainer(container);
+            const packet = buildEpic26Packet(config, responses);
+            const scoreData = computeEpic26Scores(config, responses);
+            container.querySelector(`[name="${container.dataset.fieldName}"]`).value = Object.keys(responses).length
+                ? JSON.stringify(packet)
+                : '';
+            [
+                'epic26_urinary_incontinence_domain',
+                'epic26_urinary_irritative_domain',
+                'epic26_bowel_domain',
+                'epic26_sexual_domain',
+                'epic26_hormonal_domain',
+                'epic26_overall_urinary_bother',
+                'epic26_urinary_domain',
+            ].forEach((fieldName) => {
+                const target = container.querySelector(`[name="${fieldName}"]`);
+                if (!target) {
+                    return;
+                }
+                const score = scoreData.derived[fieldName];
+                target.value = score === null || score === undefined || Number.isNaN(score) ? '' : String(score);
+            });
+            renderEpic26ScoreCards(container, config, scoreData);
+        }
+
+        function initializeEpic26Widgets() {
+            document.querySelectorAll('[data-epic26-widget="1"]').forEach((container) => {
+                renderEpic26Groups(container);
+                container.addEventListener('change', (event) => {
+                    if (event.target.matches('[data-role="epic26-item"]')) {
+                        syncEpic26Widget(container);
+                    }
+                });
+                syncEpic26Widget(container);
+            });
+        }
+
+        function occamParseNumber(value) {
+            const parsed = Number.parseFloat(value);
+            return Number.isFinite(parsed) ? parsed : null;
+        }
+
+        function occamFieldValue(name) {
+            return document.querySelector(`[name="${name}"]`)?.value || '';
+        }
+
+        function occamCharlsonFactor(charlson) {
+            if (charlson === null || charlson === undefined || Number.isNaN(charlson)) return 1;
+            if (charlson >= 7) return 0.65;
+            if (charlson >= 5) return 0.78;
+            if (charlson >= 3) return 0.9;
+            return 1;
+        }
+
+        function occamVariantForPayload(payload) {
+            const hasEducation = Boolean(payload.occam_education && payload.occam_education !== 'not_used');
+            const hasMarital = Boolean(payload.occam_marital_status && payload.occam_marital_status !== 'not_used');
+            if (hasEducation && hasMarital) return 'full';
+            if (hasEducation) return 'no_marital';
+            if (hasMarital) return 'no_education';
+            return 'reduced';
+        }
+
+        function occamBuildFeatures(config, payload, variant) {
+            const age = occamParseNumber(payload.age);
+            const heightCm = occamParseNumber(payload.occam_height_cm);
+            const weightKg = occamParseNumber(payload.occam_weight_kg);
+            if (age === null || heightCm === null || weightKg === null || heightCm <= 0) {
+                return null;
+            }
+            const smoking = String(payload.occam_smoking_status || '').trim().toLowerCase();
+            if (!['never', 'current', 'former'].includes(smoking)) {
+                return null;
+            }
+            const diabetes = String(payload.occam_diabetes || '') === '1';
+            const hypertension = String(payload.occam_hypertension || '') === '1';
+            const stroke = String(payload.occam_stroke || '') === '1';
+            const bmi = weightKg / Math.pow(heightCm / 100, 2);
+            const ageCtr = age - Number(config.age_center || 0);
+            const features = {
+                age_ctr_40: ageCtr,
+                diabetic_yes: diabetes ? 1 : 0,
+                hypertension_yes: hypertension ? 1 : 0,
+                stroke_yes: stroke ? 1 : 0,
+                pc_yes: 1,
+                underweight_yes: bmi < 18.5 ? 1 : 0,
+                overweight2_yes: bmi >= 25 && bmi < 40 ? 1 : 0,
+                obese2_yes: bmi >= 40 ? 1 : 0,
+                smoker_current: smoking === 'current' ? 1 : 0,
+                smoker_former: smoking === 'former' ? 1 : 0,
+                age_x_diabetic: ageCtr * (diabetes ? 1 : 0),
+                age_x_hypertension: ageCtr * (hypertension ? 1 : 0),
+                age_x_stroke: ageCtr * (stroke ? 1 : 0),
+                bmi,
+            };
+            if (variant === 'full' || variant === 'no_marital') {
+                const education = String(payload.occam_education || '').trim().toLowerCase();
+                features.educ_9_11 = education === '9th_11th' ? 1 : 0;
+                features.educ_hs = education === 'hs_graduate' ? 1 : 0;
+                features.educ_some = education === 'some_college' ? 1 : 0;
+                features.educ_college = education === 'college_graduate' ? 1 : 0;
+                features.age_x_educ_9_11 = ageCtr * features.educ_9_11;
+                features.age_x_educ_hs = ageCtr * features.educ_hs;
+                features.age_x_educ_some = ageCtr * features.educ_some;
+                features.age_x_educ_college = ageCtr * features.educ_college;
+            }
+            if (variant === 'full' || variant === 'no_education') {
+                const marital = String(payload.occam_marital_status || '').trim().toLowerCase();
+                features.marital_separated = marital === 'separated' ? 1 : 0;
+                features.marital_single = marital === 'single' ? 1 : 0;
+            }
+            return features;
+        }
+
+        function occamSurvivalAt(curve, exponent, months) {
+            let baseline = Array.isArray(curve) && curve.length ? Number(curve[0][1]) : 1;
+            for (const entry of (curve || [])) {
+                const timePoint = Number(entry[0]);
+                if (timePoint > months) break;
+                baseline = Number(entry[1]);
+            }
+            return Math.pow(baseline, exponent);
+        }
+
+        function occamMedianMonths(curve, exponent, maxDisplayYears) {
+            for (const entry of (curve || [])) {
+                const timePoint = Number(entry[0]);
+                const baseline = Number(entry[1]);
+                if (Math.pow(baseline, exponent) <= 0.5) {
+                    return { months: timePoint, truncated: false };
+                }
+            }
+            return { months: Number(maxDisplayYears || 15) * 12, truncated: true };
+        }
+
+        function computeOccamPrediction(config, payload) {
+            const requiredFields = ['age', 'occam_height_cm', 'occam_weight_kg', 'occam_diabetes', 'occam_hypertension', 'occam_stroke', 'occam_smoking_status'];
+            const missingFields = requiredFields.filter((fieldName) => {
+                const value = occamFieldValue(fieldName);
+                return value === '' || value === null || value === undefined;
+            });
+            if (missingFields.length) {
+                return {
+                    available: false,
+                    missingFields,
+                    summary: 'Faltan variables estructuradas para calcular la expectativa de vida con OCCAM.',
+                };
+            }
+
+            const variant = occamVariantForPayload(payload);
+            const features = occamBuildFeatures(config, payload, variant);
+            if (!features) {
+                return {
+                    available: false,
+                    missingFields,
+                    summary: 'No fue posible derivar el cálculo OCCAM con las entradas actuales.',
+                };
+            }
+
+            const model = (config.models || {})[variant];
+            if (!model) {
+                return {
+                    available: false,
+                    missingFields,
+                    summary: 'El modelo OCCAM no está disponible en esta surface.',
+                };
+            }
+
+            let linearPredictor = 0;
+            Object.entries(model.coefficients || {}).forEach(([featureName, coefficient]) => {
+                linearPredictor += Number(coefficient) * Number(features[featureName] || 0);
+            });
+            const exponent = Math.exp(linearPredictor);
+            const baseCurve = model.baseline_survival || [];
+            const risk5 = 1 - occamSurvivalAt(baseCurve, exponent, 60);
+            const risk10 = 1 - occamSurvivalAt(baseCurve, exponent, 120);
+            const median = occamMedianMonths(baseCurve, exponent, Number(config.max_display_years || 15));
+            const baseYears = Number((median.months / 12).toFixed(1));
+            const ecog = occamParseNumber(payload.ecog_score);
+            const charlson = occamParseNumber(payload.charlson_score);
+            const ecogFactor = Number((config.ecog_factors || {})[String(ecog ?? '')] || 1);
+            const adjustedYears = Number(Math.max(0.5, baseYears * ecogFactor * occamCharlsonFactor(charlson)).toFixed(1));
+            return {
+                available: true,
+                variant,
+                variantLabel: (config.variant_labels_es || {})[variant] || variant,
+                baseYears,
+                adjustedYears,
+                risk5,
+                risk10,
+                truncated15Plus: Boolean(median.truncated),
+                bmi: Number(features.bmi.toFixed(1)),
+            };
+        }
+
+        function renderOccamCards(container, prediction) {
+            const cardNode = container.querySelector('[data-role="occam-score-cards"]');
+            if (!prediction.available) {
+                cardNode.innerHTML = `
+                    <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4 md:col-span-2 xl:col-span-4">
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Estado del cálculo</p>
+                        <p class="mt-2 text-sm text-slate-300">Pendiente de cálculo</p>
+                    </div>
+                `;
+                return;
+            }
+            cardNode.innerHTML = `
+                <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Modelo OCCAM</p>
+                    <p class="mt-2 text-sm font-semibold text-white">${escapeHtml(prediction.variantLabel || 'modelo')}</p>
+                </div>
+                <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Base OCCAM</p>
+                    <p class="mt-2 text-xl font-semibold text-white">${escapeHtml(prediction.truncated15Plus ? `${prediction.baseYears}+` : prediction.baseYears)}</p>
+                    <p class="mt-1 text-xs text-slate-400">años</p>
+                </div>
+                <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Ajustada por ECOG/Charlson</p>
+                    <p class="mt-2 text-xl font-semibold text-white">${escapeHtml(prediction.adjustedYears)}</p>
+                    <p class="mt-1 text-xs text-slate-400">años</p>
+                </div>
+                <div class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Mortalidad otras causas</p>
+                    <p class="mt-2 text-sm font-semibold text-white">5 años ${escapeHtml(`${Math.round(Number(prediction.risk5 || 0) * 100)}%`)} / 10 años ${escapeHtml(`${Math.round(Number(prediction.risk10 || 0) * 100)}%`)}</p>
+                    <p class="mt-1 text-xs text-slate-400">BMI derivado ${escapeHtml(prediction.bmi)}</p>
+                </div>
+            `;
+        }
+
+        function syncOccamWidget(container) {
+            const config = JSON.parse(container.dataset.widgetConfig || '{}');
+            const payload = {
+                age: occamFieldValue('age'),
+                occam_height_cm: occamFieldValue('occam_height_cm'),
+                occam_weight_kg: occamFieldValue('occam_weight_kg'),
+                occam_diabetes: occamFieldValue('occam_diabetes'),
+                occam_hypertension: occamFieldValue('occam_hypertension'),
+                occam_stroke: occamFieldValue('occam_stroke'),
+                occam_smoking_status: occamFieldValue('occam_smoking_status'),
+                occam_education: occamFieldValue('occam_education'),
+                occam_marital_status: occamFieldValue('occam_marital_status'),
+                ecog_score: occamFieldValue('ecog_score'),
+                charlson_score: occamFieldValue('charlson_score'),
+            };
+            const prediction = computeOccamPrediction(config, payload);
+            const lifeExpectancyField = container.querySelector(`[name="${container.dataset.fieldName}"]`);
+            const baseField = container.querySelector('[name="occam_base_life_expectancy_years"]');
+            const risk5Field = container.querySelector('[name="occam_5yr_other_cause_mortality"]');
+            const risk10Field = container.querySelector('[name="occam_10yr_other_cause_mortality"]');
+            const variantField = container.querySelector('[name="occam_model_variant"]');
+            const truncatedField = container.querySelector('[name="occam_truncated_15_plus"]');
+            const summaryNode = container.querySelector('[data-role="occam-summary"]');
+            const missingNode = container.querySelector('[data-role="occam-missing"]');
+
+            if (!prediction.available) {
+                lifeExpectancyField.value = '';
+                baseField.value = '';
+                risk5Field.value = '';
+                risk10Field.value = '';
+                variantField.value = '';
+                truncatedField.value = '0';
+                const labels = config.missing_field_labels_es || {};
+                const readableMissing = (prediction.missingFields || []).map((fieldName) => labels[fieldName] || fieldName);
+                summaryNode.textContent = prediction.summary || 'Faltan entradas estructuradas para calcular la expectativa de vida con OCCAM.';
+                missingNode.textContent = readableMissing.length
+                    ? `Faltan: ${readableMissing.join(', ')}.`
+                    : 'Complete las entradas estructuradas del modelo.';
+                renderOccamCards(container, prediction);
+                return;
+            }
+
+            lifeExpectancyField.value = String(prediction.adjustedYears);
+            baseField.value = String(prediction.baseYears);
+            risk5Field.value = String(Number(prediction.risk5).toFixed(4));
+            risk10Field.value = String(Number(prediction.risk10).toFixed(4));
+            variantField.value = String(prediction.variant || '');
+            truncatedField.value = prediction.truncated15Plus ? '1' : '0';
+            summaryNode.textContent = `OCCAM público (${prediction.variantLabel}) estima ${prediction.truncated15Plus ? `${prediction.baseYears}+` : prediction.baseYears} años de expectativa de vida basal y ${prediction.adjustedYears} años tras ajustar por ECOG e índice de Charlson.`;
+            missingNode.textContent = `Mortalidad por otras causas: ${Math.round(Number(prediction.risk5 || 0) * 100)}% a 5 años y ${Math.round(Number(prediction.risk10 || 0) * 100)}% a 10 años.`;
+            renderOccamCards(container, prediction);
+        }
+
+        function initializeOccamWidgets() {
+            document.querySelectorAll('[data-occam-widget="1"]').forEach((container) => {
+                document.getElementById('wizardForm')?.addEventListener('change', () => syncOccamWidget(container));
+                syncOccamWidget(container);
+            });
+        }
+
+        function collectStructuredEntries(container, rowSelector, siteSelector, countSelector) {
+            return Array.from(container.querySelectorAll(rowSelector)).map((row) => {
+                const siteKey = String(row.querySelector(siteSelector)?.value || '').trim();
+                const lesionCount = Math.max(0, Number.parseInt(row.querySelector(countSelector)?.value || '0', 10) || 0);
+                return { site_key: siteKey, lesion_count: lesionCount };
+            }).filter((entry) => entry.site_key && entry.lesion_count > 0);
+        }
+
+        function resetMetastaticWidget(container) {
+            const knownSelect = container.querySelector('[data-role="metastatic-known-select"]');
+            if (knownSelect) {
+                knownSelect.value = '0';
+            }
+            container.querySelectorAll('[data-role="component-toggle"]').forEach((toggle) => {
+                toggle.checked = false;
+            });
+            const nodalRows = container.querySelector('[data-role="nodal-rows"]');
+            const boneRows = container.querySelector('[data-role="bone-rows"]');
+            const visceralRows = container.querySelector('[data-role="visceral-rows"]');
+            if (nodalRows) {
+                nodalRows.innerHTML = '';
+            }
+            if (boneRows) {
+                boneRows.innerHTML = '';
+            }
+            if (visceralRows) {
+                visceralRows.innerHTML = '';
+            }
+            syncMetastaticWidget(container);
+        }
+
+        function ensureMetastaticWidgetRows(container) {
+            const known = String(container.querySelector('[data-role="metastatic-known-select"]')?.value || '0') === '1';
+            if (!known) {
+                return;
+            }
+            const toggleSet = new Set(
+                Array.from(container.querySelectorAll('[data-role="component-toggle"]'))
+                    .filter((toggle) => toggle.checked)
+                    .map((toggle) => toggle.value)
+            );
+            if (toggleSet.has('nodes') && !container.querySelector('[data-nodal-row="1"]')) {
+                createNodalRowForWidget(container);
+            }
+            if (toggleSet.has('bone') && !container.querySelector('[data-bone-row="1"]')) {
+                createBoneRowForWidget(container);
+            }
+            if (toggleSet.has('visceral') && !container.querySelector('[data-visceral-row="1"]')) {
+                createVisceralRowForWidget(container);
+            }
+        }
+
+        function syncMetastaticWidget(container) {
+            const knownSelect = container.querySelector('[data-role="metastatic-known-select"]');
+            const toggles = Array.from(container.querySelectorAll('[data-role="component-toggle"]'));
+            const known = String(knownSelect?.value || '0') === '1';
+            if (known) {
+                ensureMetastaticWidgetRows(container);
+            }
+            const toggleSet = new Set(toggles.filter((toggle) => toggle.checked).map((toggle) => toggle.value));
+            const componentsShell = container.querySelector('[data-role="components-shell"]');
+            const boneBlock = container.querySelector('[data-role="bone-block"]');
+            const visceralBlock = container.querySelector('[data-role="visceral-block"]');
+            const nodalBlock = container.querySelector('[data-role="nodal-block"]');
+            const boneHint = container.querySelector('[data-role="bone-hint"]');
+            const visceralHint = container.querySelector('[data-role="visceral-hint"]');
+            const nodalHint = container.querySelector('[data-role="nodal-hint"]');
+            const summaryNode = container.querySelector('[data-role="summary-text"]');
+            const nodalEntries = collectStructuredEntries(container, '[data-nodal-row="1"]', '[data-role="nodal-site-key"]', '[data-role="nodal-lesion-count"]');
+            const nodalCount = toggleSet.has('nodes')
+                ? nodalEntries.reduce((acc, item) => acc + item.lesion_count, 0)
+                : 0;
+            const boneEntries = collectStructuredEntries(container, '[data-bone-row="1"]', '[data-role="bone-site-key"]', '[data-role="bone-lesion-count"]');
+            const visceralEntries = collectStructuredEntries(container, '[data-visceral-row="1"]', '[data-role="visceral-site-key"]', '[data-role="visceral-lesion-count"]');
+            const boneTotal = boneEntries.reduce((acc, item) => acc + item.lesion_count, 0);
+            const visceralTotal = visceralEntries.reduce((acc, item) => acc + item.lesion_count, 0);
+            const total = known ? boneTotal + visceralTotal + nodalCount : 0;
+            const legacySite = known && toggleSet.has('visceral') ? 'Visceral' : known && toggleSet.has('bone') ? 'Bone' : known && toggleSet.has('nodes') ? 'Node' : 'M0';
+            const valid = known
+                && toggleSet.size > 0
+                && (!toggleSet.has('bone') || boneEntries.length > 0)
+                && (!toggleSet.has('visceral') || visceralEntries.length > 0)
+                && (!toggleSet.has('nodes') || nodalEntries.length > 0);
+
+            componentsShell?.classList.toggle('hidden', !known);
+            boneBlock?.classList.toggle('hidden', !(known && toggleSet.has('bone')));
+            visceralBlock?.classList.toggle('hidden', !(known && toggleSet.has('visceral')));
+            nodalBlock?.classList.toggle('hidden', !(known && toggleSet.has('nodes')));
+            boneHint?.classList.toggle('hidden', !(known && toggleSet.has('bone') && boneEntries.length === 0));
+            visceralHint?.classList.toggle('hidden', !(known && toggleSet.has('visceral') && visceralEntries.length === 0));
+            nodalHint?.classList.toggle('hidden', !(known && toggleSet.has('nodes') && nodalEntries.length === 0));
+
+            container.querySelector('[name="metastatic_disease_known"]').value = known ? '1' : '0';
+            container.querySelector('[name="metastasis_site"]').value = legacySite;
+            container.querySelector('[name="metastasis_count"]').value = String(total);
+            container.querySelector('[name="metastatic_total_lesion_count"]').value = String(total);
+            container.querySelector('[name="bone_metastasis_present"]').value = known && toggleSet.has('bone') ? '1' : '0';
+            container.querySelector('[name="bone_site_entries"]').value = JSON.stringify(known ? boneEntries : []);
+            container.querySelector('[name="visceral_metastasis_present"]').value = known && toggleSet.has('visceral') ? '1' : '0';
+            container.querySelector('[name="visceral_site_entries"]').value = JSON.stringify(known ? visceralEntries : []);
+            container.querySelector('[name="visceral_lesion_count"]').value = String(known ? visceralTotal : 0);
+            container.querySelector('[name="nonregional_nodal_metastasis_present"]').value = known && toggleSet.has('nodes') ? '1' : '0';
+            container.querySelector('[name="nonregional_nodal_count"]').value = String(known ? nodalCount : 0);
+            container.querySelector('[name="nonregional_nodal_site_entries"]').value = JSON.stringify(known ? nodalEntries : []);
+            container.querySelector('[name="metastatic_components_capture"]').value = JSON.stringify({
+                metastatic_disease_known: known,
+                components: known ? Array.from(toggleSet) : [],
+                total_lesions: total,
+                bone_site_entries: known ? boneEntries : [],
+                visceral_site_entries: known ? visceralEntries : [],
+                nonregional_nodal_site_entries: known ? nodalEntries : [],
+                nodal_count: nodalCount,
+            });
+            container.dataset.valid = valid ? '1' : '0';
+
+            if (!known) {
+                summaryNode.textContent = 'Seleccione si existe enfermedad metastásica conocida para desplegar la captura anatómica del caso.';
+                return;
+            }
+            if (!toggleSet.size) {
+                summaryNode.textContent = 'Active al menos un componente metastásico documentado para este formulario.';
+                return;
+            }
+            const parts = [];
+            if (toggleSet.has('nodes')) {
+                parts.push(`ganglios no regionales ${nodalCount || 'pendiente'}`);
+            }
+            if (toggleSet.has('bone')) {
+                parts.push(`hueso ${boneTotal || 'pendiente'}`);
+            }
+            if (toggleSet.has('visceral')) {
+                parts.push(`víscera ${visceralTotal || 'pendiente'}`);
+            }
+            summaryNode.textContent = `Composición metastásica actual: ${parts.join(' · ')}. Sitio legado resumido: ${legacySite}.`;
+        }
+
+        function applyHubPrefillToMetastaticWidget(container, payload) {
+            if (!payload || typeof payload !== 'object') {
+                return;
+            }
+            const toggles = Array.from(container.querySelectorAll('[data-role="component-toggle"]'));
+            const knownSelect = container.querySelector('[data-role="metastatic-known-select"]');
+            const boneEntries = Array.isArray(payload.bone_site_entries) ? payload.bone_site_entries : [];
+            const visceralEntries = Array.isArray(payload.visceral_site_entries) ? payload.visceral_site_entries : [];
+            const nodalEntries = Array.isArray(payload.nonregional_nodal_site_entries) ? payload.nonregional_nodal_site_entries : [];
+            const nodalPresent = String(payload.nonregional_nodal_metastasis_present || '0') === '1';
+            const metastaticKnown = String(payload.metastatic_disease_known || '0') === '1'
+                || boneEntries.length > 0
+                || visceralEntries.length > 0
+                || nodalEntries.length > 0
+                || nodalPresent;
+            if (knownSelect) {
+                knownSelect.value = metastaticKnown ? '1' : '0';
+            }
+            toggles.forEach((toggle) => {
+                if (toggle.value === 'bone') {
+                    toggle.checked = boneEntries.length > 0 || String(payload.bone_metastasis_present || '0') === '1';
+                } else if (toggle.value === 'visceral') {
+                    toggle.checked = visceralEntries.length > 0 || String(payload.visceral_metastasis_present || '0') === '1';
+                } else if (toggle.value === 'nodes') {
+                    toggle.checked = nodalPresent;
+                }
+            });
+            const boneRows = container.querySelector('[data-role="bone-rows"]');
+            const visceralRows = container.querySelector('[data-role="visceral-rows"]');
+            if (boneRows) {
+                boneRows.innerHTML = '';
+                if (boneEntries.length) {
+                    boneEntries.forEach((entry) => createBoneRowForWidget(container, entry));
+                }
+            }
+            if (visceralRows) {
+                visceralRows.innerHTML = '';
+                if (visceralEntries.length) {
+                    visceralEntries.forEach((entry) => createVisceralRowForWidget(container, entry));
+                }
+            }
+            const nodalRows = container.querySelector('[data-role="nodal-rows"]');
+            if (nodalRows) {
+                nodalRows.innerHTML = '';
+                if (nodalEntries.length) {
+                    nodalEntries.forEach((entry) => createNodalRowForWidget(container, entry));
+                }
+            }
+            syncMetastaticWidget(container);
+        }
+
+        function initializeMetastaticWidgets() {
+            const params = new URLSearchParams(window.location.search);
+            const prefillFromHub = params.get('prefill_source') === 'clinical_hub';
+            const prefillKey = `prostanet:clinical-hub-prefill:${wizardModuleId}`;
+            let hubPrefill = null;
+            if (prefillFromHub) {
+                try {
+                    hubPrefill = JSON.parse(window.sessionStorage.getItem(prefillKey) || 'null');
+                } catch (error) {
+                    hubPrefill = null;
+                }
+            }
+
+            document.querySelectorAll('[data-metastatic-widget="1"]').forEach((container) => {
+                container.addEventListener('click', (event) => {
+                    if (event.target.closest('[data-role="add-nodal-row"]')) {
+                        createNodalRowForWidget(container);
+                        syncMetastaticWidget(container);
+                        return;
+                    }
+                    if (event.target.closest('[data-role="add-bone-row"]')) {
+                        createBoneRowForWidget(container);
+                        syncMetastaticWidget(container);
+                        return;
+                    }
+                    if (event.target.closest('[data-role="add-visceral-row"]')) {
+                        createVisceralRowForWidget(container);
+                        syncMetastaticWidget(container);
+                        return;
+                    }
+                    if (event.target.closest('[data-role="remove-bone-row"]')) {
+                        event.target.closest('[data-bone-row="1"]')?.remove();
+                        syncMetastaticWidget(container);
+                        return;
+                    }
+                    if (event.target.closest('[data-role="remove-nodal-row"]')) {
+                        event.target.closest('[data-nodal-row="1"]')?.remove();
+                        syncMetastaticWidget(container);
+                        return;
+                    }
+                    if (event.target.closest('[data-role="remove-visceral-row"]')) {
+                        event.target.closest('[data-visceral-row="1"]')?.remove();
+                        syncMetastaticWidget(container);
+                    }
+                });
+                container.addEventListener('input', () => syncMetastaticWidget(container));
+                container.addEventListener('change', () => {
+                    ensureMetastaticWidgetRows(container);
+                    syncMetastaticWidget(container);
+                });
+                if (hubPrefill) {
+                    applyHubPrefillToMetastaticWidget(container, hubPrefill);
+                } else {
+                    ensureMetastaticWidgetRows(container);
+                    syncMetastaticWidget(container);
+                }
+            });
+        }
+
+        function evaluateVisibilityConditions(conditions = {}) {
+            if (!conditions || typeof conditions !== 'object') {
+                return true;
+            }
+            if (Array.isArray(conditions.__any__)) {
+                return conditions.__any__.some((branch) => evaluateVisibilityConditions(branch));
+            }
+            if (Array.isArray(conditions.__all__)) {
+                return conditions.__all__.every((branch) => evaluateVisibilityConditions(branch));
+            }
+            return Object.entries(conditions).every(([fieldName, accepted]) => {
+                const fieldNodes = Array.from(document.querySelectorAll(`[name="${fieldName}"]`));
+                if (!fieldNodes.length) return false;
+                const acceptedValues = Array.isArray(accepted) ? accepted.map(String) : [String(accepted)];
+                const values = fieldNodes.flatMap((node) => {
+                    if (node.type === 'checkbox') {
+                        return [node.checked ? String(node.value || '1') : '0'];
+                    }
+                    return [String(node.value ?? '')];
+                });
+                return values.some((value) => acceptedValues.includes(value));
+            });
+        }
+
+        function updateConditionalFields() {
+            document.querySelectorAll('[data-conditions]').forEach((wrapper) => {
+                const conditions = JSON.parse(wrapper.dataset.conditions || '{}');
+                const visible = evaluateVisibilityConditions(conditions);
+                wrapper.classList.toggle('hidden', !visible);
+            });
+            document.querySelectorAll('[data-field-section="1"]').forEach((section) => {
+                const wrappers = Array.from(section.querySelectorAll('[data-field-wrapper]'));
+                const hasVisibleFields = wrappers.some((wrapper) => !wrapper.classList.contains('hidden'));
+                section.classList.toggle('hidden', !hasVisibleFields);
+            });
+        }
+
+        function renderRegistrationField(field, providedValue) {
+            const value = providedValue ?? field.default ?? '';
+            const required = field.required ? 'required' : '';
+            const badgeTone = {
+                'required': 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
+                'decision_refiner': 'border-cyan-500/30 bg-cyan-500/10 text-cyan-200',
+                'monitoring': 'border-amber-500/30 bg-amber-500/10 text-amber-200',
+                'optional': 'border-slate-700 bg-slate-900 text-slate-300',
+            }[field.clinical_role] || 'border-slate-700 bg-slate-900 text-slate-300';
+
+            if (field.field_type === 'select') {
+                const searchMode = field.name === 'estado_residencia' ? 'on' : 'auto';
+                const options = (field.display_options || []).map((option) => {
+                    const selected = String(option.value) === String(value) ? 'selected' : '';
+                    return `<option value="${escapeHtml(option.value)}" ${selected}>${escapeHtml(option.label)}</option>`;
+                }).join('');
+                return `
+                    <label class="text-sm">
+                        <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+                            <span class="block text-slate-300">${escapeHtml(field.label)}${field.required ? ' *' : ''}</span>
+                            <span class="rounded-full border px-2.5 py-1 text-[11px] font-medium ${badgeTone}">${escapeHtml(field.clinical_role_label || '')}</span>
+                        </div>
+                        <select
+                            name="${escapeHtml(field.name)}"
+                            class="pn-input w-full px-3 py-2"
+                            data-pn-select-variant="default"
+                            data-pn-select-search="${searchMode}"
+                            ${required}
+                        >
+                            ${options}
+                        </select>
+                        <div class="mt-1 space-y-1">
+                            ${field.unit ? `<span class="block text-[11px] uppercase tracking-[0.2em] text-slate-500">Unidad: ${escapeHtml(field.unit)}</span>` : ''}
+                            ${field.help_text ? `<span class="block text-xs text-slate-500">${escapeHtml(field.help_text)}</span>` : ''}
+                            ${field.benchmark_note ? `<span class="block rounded-2xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-200">${escapeHtml(field.benchmark_note)}</span>` : ''}
+                        </div>
+                    </label>
+                `;
+            }
+
+            const inputType = field.field_type === 'number'
+                ? 'number'
+                : field.field_type === 'date'
+                    ? 'date'
+                    : 'text';
+            const inputValue = value === null || value === undefined ? '' : value;
+
+            return `
+                <label class="text-sm">
+                    <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+                        <span class="block text-slate-300">${escapeHtml(field.label)}${field.required ? ' *' : ''}</span>
+                        <span class="rounded-full border px-2.5 py-1 text-[11px] font-medium ${badgeTone}">${escapeHtml(field.clinical_role_label || '')}</span>
+                    </div>
+                    <input
+                        type="${inputType}"
+                        name="${escapeHtml(field.name)}"
+                        value="${escapeHtml(inputValue)}"
+                        class="pn-input w-full px-3 py-2"
+                        ${required}
+                    >
+                    <div class="mt-1 space-y-1">
+                        ${field.unit ? `<span class="block text-[11px] uppercase tracking-[0.2em] text-slate-500">Unidad: ${escapeHtml(field.unit)}</span>` : ''}
+                        ${field.help_text ? `<span class="block text-xs text-slate-500">${escapeHtml(field.help_text)}</span>` : ''}
+                        ${field.benchmark_note ? `<span class="block rounded-2xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-200">${escapeHtml(field.benchmark_note)}</span>` : ''}
+                    </div>
+                </label>
+            `;
+        }
+
+        function renderFragmentFields(fields, defaults) {
+            if (!fields || !fields.length) {
+                return '<p class="text-sm text-slate-400">Sin campos adicionales para este bloque.</p>';
+            }
+
+            let html = '';
+            let currentGroup = '';
+            fields.forEach((field, index) => {
+                if (field.group !== currentGroup) {
+                    if (index > 0) {
+                        html += '</div>';
+                    }
+                    currentGroup = field.group;
+                    html += `
+                        <div class="pt-1">
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-500">${escapeHtml(currentGroup || 'Datos longitudinales')}</p>
+                            <div class="mt-3 grid gap-4 md:grid-cols-2">
+                    `;
+                }
+                html += renderRegistrationField(field, defaults[field.name]);
+                if (index === fields.length - 1) {
+                    html += '</div></div>';
+                }
+            });
+            return html;
+        }
+
+        function renderRegistrationFragments(fragments, defaults, captureLayers) {
+            window.ProstaNetRegistrationContextUI.renderRegistrationContext({
+                target: registrationFragments,
+                fragments,
+                defaults,
+                captureLayers,
+            });
+        }
+
+        function renderImportedClinicalFields(fields) {
+            window.ProstaNetRegistrationContextUI.renderImportedClinicalFields({
+                container: importedClinicalFields,
+                countNode: importedFieldCount,
+                fields,
+            });
+        }
+
+        function resetRegistrationPhase() {
+            latestDraft = null;
+            registrationPhase.classList.add('hidden');
+            registrationFragments.innerHTML = '';
+            importedClinicalFields.innerHTML = '';
+            registrationScopeLabel.textContent = 'Registro longitudinal';
+            registrationScopeDescription.textContent = '';
+            registrationScopeBullets.innerHTML = '';
+            registrationAssessmentId.value = '';
+            registrationAssessmentState.value = '';
+            registrationStatus.textContent = 'Prepare primero el borrador clínico para habilitar este paso.';
+            registrationAssessmentBadge.textContent = 'Borrador clínico listo';
+            registerPatientButton.disabled = false;
+            registerPatientButton.textContent = 'Guardar y abrir expediente';
+            createDraftButton.textContent = 'Preparar registro longitudinal';
+            createDraftButton.classList.remove('hidden');
+            importedFieldCount.textContent = '0 variables importadas';
+        }
+
+        function showRegistrationPhase(draftData) {
+            latestDraft = draftData;
+            registrationAssessmentId.value = draftData.assessment_id;
+            registrationAssessmentState.value = draftData.assessment?.state || latestResult?.state || '';
+            registrationScopeLabel.textContent = draftData.scope_label || 'Registro longitudinal';
+            registrationScopeDescription.textContent = draftData.scope_description || '';
+            registrationScopeBullets.innerHTML = (draftData.scope_bullets || []).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+            registrationAssessmentBadge.textContent = draftData.assessment?.state_label || draftData.scope_label || 'Borrador clínico listo';
+            renderImportedClinicalFields(draftData.imported_clinical_fields || []);
+            renderRegistrationFragments(
+                draftData.registration_fragments || [],
+                draftData.registration_defaults || {},
+                draftData.capture_layers || [],
+            );
+            registrationStatus.textContent = 'Complete los datos longitudinales faltantes y guarde para abrir el expediente integrado del paciente.';
+            registrationPhase.classList.remove('hidden');
+            createDraftButton.classList.add('hidden');
+            registrationPhase.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function resetWizard() {
+            latestPayload = null;
+            latestResult = null;
+            document.getElementById('wizardForm').reset();
+            document.querySelectorAll('[data-metastatic-widget="1"]').forEach((container) => {
+                resetMetastaticWidget(container);
+            });
+            document.querySelectorAll('[data-epic26-widget="1"]').forEach((container) => {
+                syncEpic26Widget(container);
+            });
+            document.querySelectorAll('[data-gleason-profile-widget="1"]').forEach((container) => {
+                syncGleasonProfileWidget(container);
+            });
+            document.querySelectorAll('[data-occam-widget="1"]').forEach((container) => {
+                syncOccamWidget(container);
+            });
+            document.getElementById('resultCard').classList.add('hidden');
+            document.getElementById('resultBody').innerHTML = '';
+            document.getElementById('draftStatus').textContent = '';
+            createDraftButton.classList.add('hidden');
+            resetWizardButton.classList.add('hidden');
+            evidenceAnchor.classList.add('hidden');
+            backToHubButton.classList.add('hidden');
+            resetRegistrationPhase();
+            updateConditionalFields();
+        }
+
+        resetWizardButton.addEventListener('click', resetWizard);
+        document.querySelectorAll('#wizardForm input, #wizardForm select').forEach((field) => {
+            field.addEventListener('change', updateConditionalFields);
+        });
+
+        button.addEventListener('click', async () => {
+            resetRegistrationPhase();
+            const metastaticWidgets = Array.from(document.querySelectorAll('[data-metastatic-widget="1"]'));
+            metastaticWidgets.forEach((container) => syncMetastaticWidget(container));
+            const epic26Widgets = Array.from(document.querySelectorAll('[data-epic26-widget="1"]'));
+            epic26Widgets.forEach((container) => syncEpic26Widget(container));
+            const invalidWidget = metastaticWidgets.find((container) => container.dataset.valid !== '1');
+            if (invalidWidget) {
+                const card = document.getElementById('resultCard');
+                const body = document.getElementById('resultBody');
+                card.classList.remove('hidden');
+                body.innerHTML = `<p class="text-sm text-rose-300">Complete la composición metastásica documentada antes de evaluar el módulo. Si selecciona ganglios no regionales, hueso o víscera, debe especificar la localización anatómica y el número de lesiones.</p>`;
+                invalidWidget.classList.add('widget-invalid-flash');
+                setTimeout(() => invalidWidget.classList.remove('widget-invalid-flash'), 2400);
+                invalidWidget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            const gleasonWidgets = Array.from(document.querySelectorAll('[data-gleason-profile-widget="1"]'));
+            gleasonWidgets.forEach((container) => syncGleasonProfileWidget(container));
+            const occamWidgets = Array.from(document.querySelectorAll('[data-occam-widget="1"]'));
+            occamWidgets.forEach((container) => syncOccamWidget(container));
+            const invalidGleasonWidget = gleasonWidgets.find((container) => container.dataset.valid !== '1');
+            if (invalidGleasonWidget) {
+                const card = document.getElementById('resultCard');
+                const body = document.getElementById('resultBody');
+                card.classList.remove('hidden');
+                body.innerHTML = `<p class="text-sm text-rose-300">Complete Gleason primario y secundario para derivar automáticamente el Gleason total y el ISUP antes de evaluar el módulo.</p>`;
+                invalidGleasonWidget.classList.add('widget-invalid-flash');
+                setTimeout(() => invalidGleasonWidget.classList.remove('widget-invalid-flash'), 2400);
+                invalidGleasonWidget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            const payload = Object.fromEntries(new FormData(document.getElementById('wizardForm')).entries());
+            latestPayload = payload;
+            const originalButtonText = button.textContent;
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
+            button.innerHTML = '<span class="pn-spinner-inline" aria-hidden="true"></span> Evaluando…';
+            let data;
+            try {
+                const response = await fetch('/api/modules/{{ schema.module }}/evaluate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload),
+                });
+                data = await response.json();
+            } finally {
+                button.disabled = false;
+                button.removeAttribute('aria-busy');
+                button.textContent = originalButtonText || 'Evaluar módulo';
+            }
+            const card = document.getElementById('resultCard');
+            const body = document.getElementById('resultBody');
+            card.classList.remove('hidden');
+
+            if (!data.success) {
+                body.innerHTML = `<p class="text-sm text-rose-300">${data.error}</p>`;
+                return;
+            }
+
+            const result = data.result;
+            latestResult = result;
+            const primary = result.nccn_primary || {};
+            const eligible = renderTreatmentList(result.eligible_treatments || [], 'Sin tratamientos estructurados.');
+            const notRecommended = renderTextList(primary.tratamientos_no_priorizados || result.not_recommended || [], 'Sin advertencias adicionales.');
+            const durations = renderTextList(primary.condiciones_y_duracion || result.durations_and_conditions || [], 'Sin duraciones adicionales.');
+            const missing = renderTextList(primary.advertencias_y_datos_faltantes || result.missing_critical_inputs || [], 'Ninguno.');
+            const tripletDecision = (result.systemic_regimen_scope || '') === 'mhspc_doublet_triplet'
+                ? renderTripletDecision(result.triplet_decision || result.triplet_decision_card || {})
+                : '';
+            const liveBenchmark = renderLiveBenchmarkCard(result.live_benchmark || {});
+            const psaForecast = renderPsaForecastCard(result.psa_forecast || {});
+            const trials = (result.visible_trial_matches || result.trial_matches || []).map(item => `<li><span class="font-medium text-white">${humanizeClinicalText(item.trial || item.study_name)}</span>: ${item.match ? 'aplica' : 'no aplica'}${item.reason ? `<br><span class="text-slate-400">${humanizeClinicalText(item.reason)}</span>` : ''}</li>`).join('');
+            const contraindications = renderTextList(result.contraindications || [], 'Sin contraindicaciones estructuradas.');
+            const fundamentals = renderTextList(primary.fundamentos_personalizados || [], 'Sin fundamentos adicionales.');
+            const alternatives = renderTextList(primary.alternativas_razonables || [], 'Sin alternativas estructuradas.');
+            const monitoringActions = renderTextList(result.monitoring_plan?.actions || [], 'Sin acciones estructuradas.');
+            const monitoringTriggers = renderTextList(result.monitoring_plan?.triggers || [], 'Sin disparadores estructurados.');
+            const transitions = renderTransitionList(result.state_transition_targets || [], 'Sin transiciones estructuradas.');
+            const survivorshipRisks = renderTextList(result.survivorship_risks || [], 'Sin riesgos estructurados.');
+            const palliativeFlags = renderTextList(result.palliative_flags || [], 'Sin banderas paliativas estructuradas.');
+            const overlays = renderOverlayList(result.care_overlays || [], 'Sin capas de soporte concurrente activas.');
+            const sources = renderCitationList(result.source_citations || [], 'Sin fuentes estructuradas adicionales.');
+            const evidenceGaps = renderTextList(result.evidence_gaps || [], 'Sin brechas críticas estructuradas.');
+            const evidence = (result.evidence_trace || []).map(item => `
+                <div class="rounded-2xl border border-slate-700 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">${humanizeClinicalText(item.title)}</p>
+                    <p class="mt-2 text-sm text-slate-300">Red Nacional Integral del Cáncer (NCCN): ${(item.nccn_panels || []).map(humanizeClinicalText).join(', ')}</p>
+                    <p class="mt-1 text-sm text-slate-400">Asociación Europea de Urología (EAU): ${(item.eau_sections || []).map(humanizeClinicalText).join(', ')}</p>
+                </div>
+            `).join('');
+            const decisionChanging = renderTextList(result.decision_changing_inputs || [], 'No hay datos adicionales priorizados.');
+            const supportiveContext = renderTextList(result.supportive_evidence_context || [], 'Sin contexto supportive adicional.');
+            const benchmarkFlags = renderBenchmarkFlags(result.benchmarking_flags || [], 'Sin indicadores de benchmarking estructurados.');
+            const algorithmCards = renderAlgorithmCards(result.validated_algorithms || [], 'Sin algoritmos estructurados para este escenario.');
+            const epic26DecisionImpact = renderEpic26DecisionImpact(result);
+            const decisionQuality = result.decision_quality || {};
+            const whyNotMoreConfident = renderTextList(result.why_not_more_confident || decisionQuality.why_not_more_confident || [], 'Sin limitaciones estructuradas adicionales.');
+            const badgeClass = badgeColors[result.applicability_badge_key] || 'border-slate-700 bg-slate-800 text-slate-200';
+
+            body.innerHTML = `
+                <div class="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-cyan-300">Recomendación principal según la Red Nacional Integral del Cáncer (NCCN)</p>
+                    <h3 class="mt-2 text-lg font-semibold text-white">${humanizeClinicalText(primary.titulo_clinico || result.nccn_primary.label)}</h3>
+                    <p class="mt-2 text-sm text-slate-300">${humanizeClinicalText(primary.resumen_del_caso || result.report_sections?.summary || '')}</p>
+                    <div class="mt-4 rounded-2xl border border-slate-700/70 bg-slate-950/40 p-4">
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Trayectoria recomendada</p>
+                        <p class="mt-2 text-sm text-slate-200">${humanizeClinicalText(primary.trayectoria_recomendada || result.nccn_primary.recommendation || '')}</p>
+                    </div>
+                </div>
+                ${tripletDecision}
+                ${liveBenchmark}
+                ${psaForecast}
+                <div class="rounded-2xl border border-slate-700 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Comparación con la Asociación Europea de Urología (EAU) 2026</p>
+                    <p class="mt-2 text-sm text-slate-200">${humanizeClinicalText(result.eau_comparison.label)}</p>
+                    <p class="mt-1 text-sm text-slate-400">${humanizeClinicalText(result.eau_comparison.explicacion_breve || result.eau_comparison.comparison?.summary || '')}</p>
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Fundamentos personalizados</p>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${fundamentals}</ul>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Alternativas razonables</p>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${alternatives}</ul>
+                    </div>
+                </div>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Tratamientos elegibles</p>
+                    <ul class="mt-2 space-y-2 text-sm text-slate-300">${eligible}</ul>
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">No recomendado</p>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${notRecommended}</ul>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Duraciones y condiciones</p>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${durations}</ul>
+                    </div>
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Advertencias y datos faltantes</p>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${missing}</ul>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Qué dato faltante cambiaría la conducta</p>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${decisionChanging}</ul>
+                    </div>
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Estudios pivotales</p>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${trials || '<li>Sin coincidencias estructuradas.</li>'}</ul>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Contraindicaciones</p>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${contraindications}</ul>
+                    </div>
+                </div>
+                <div class="rounded-2xl border p-4 ${badgeClass}">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Nivel de aplicabilidad</p>
+                    <p class="mt-2 text-sm text-slate-200">${result.applicability_badge}</p>
+                </div>
+                ${epic26DecisionImpact}
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="rounded-2xl border border-slate-700 p-4">
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Calidad de decision</p>
+                        <p class="mt-2 text-sm text-slate-200">Estado: ${humanizeClinicalText(decisionQuality.state_classification || result.state_label || result.state || '')}</p>
+                        <p class="mt-1 text-sm text-slate-300">Familia recomendada: ${humanizeClinicalText(decisionQuality.recommendation_family || result.recommendation_family || '')}</p>
+                        <p class="mt-1 text-sm text-slate-300">Confianza operativa: ${humanizeClinicalText(decisionQuality.confidence_category || 'No documentada')}</p>
+                        <p class="mt-1 text-sm ${decisionQuality.requires_human_review ? 'text-amber-300' : 'text-emerald-300'}">
+                            ${decisionQuality.requires_human_review ? 'Se recomienda revision humana o tumor board.' : 'Sin escalamiento humano obligatorio con los datos actuales.'}
+                        </p>
+                    </div>
+                    <div class="rounded-2xl border border-slate-700 p-4">
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Por que no confiar mas</p>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${whyNotMoreConfident}</ul>
+                    </div>
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div class="rounded-2xl border border-slate-700 p-4">
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Plan de monitoreo</p>
+                        <p class="mt-2 text-sm text-slate-200">${humanizeClinicalText(result.monitoring_plan?.cadence || 'Sin cadencia estructurada.')}</p>
+                        <div class="mt-3 text-xs uppercase tracking-[0.2em] text-slate-500">Acciones</div>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${monitoringActions}</ul>
+                        <div class="mt-3 text-xs uppercase tracking-[0.2em] text-slate-500">Disparadores</div>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${monitoringTriggers}</ul>
+                    </div>
+                    <div class="rounded-2xl border border-slate-700 p-4">
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Objetivos de transición entre estados</p>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${transitions}</ul>
+                    </div>
+                </div>
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Riesgos de supervivencia y toxicidad</p>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${survivorshipRisks}</ul>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Banderas paliativas</p>
+                        <ul class="mt-2 space-y-2 text-sm text-slate-300">${palliativeFlags}</ul>
+                    </div>
+                </div>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Capas de soporte concurrente</p>
+                    <div class="mt-2 space-y-3">${overlays}</div>
+                </div>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Algoritmos validados y refinadores conectados</p>
+                    <div class="mt-2 grid gap-3 md:grid-cols-2">${algorithmCards}</div>
+                </div>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Por qué estas fuentes influyen solo como soporte</p>
+                    <ul class="mt-2 space-y-2 text-sm text-slate-300">${supportiveContext}</ul>
+                </div>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Benchmarking operativo y completitud</p>
+                    <div class="mt-2 space-y-3">${benchmarkFlags}</div>
+                </div>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500" id="evidenciaClinica">Trazabilidad de evidencia</p>
+                    <div class="mt-2 space-y-3">${evidence || '<p class="text-sm text-slate-300">Sin evidencia estructurada.</p>'}</div>
+                </div>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Fuentes estructuradas y referencias adjuntas</p>
+                    <div class="mt-2 space-y-3">${sources}</div>
+                </div>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Brechas de evidencia operativa</p>
+                    <ul class="mt-2 space-y-2 text-sm text-slate-300">${evidenceGaps}</ul>
+                </div>
+            `;
+            document.getElementById('draftStatus').textContent = 'La evaluación clínica ya puede vincularse con el ingreso formal del paciente.';
+            createDraftButton.classList.remove('hidden');
+            resetWizardButton.classList.remove('hidden');
+            evidenceAnchor.classList.remove('hidden');
+            backToHubButton.classList.remove('hidden');
+            window.clinicalPresentation?.normalizeDocument();
+        });
+
+        createDraftButton.addEventListener('click', async () => {
+            if (!latestPayload || !latestResult) {
+                document.getElementById('draftStatus').textContent = 'Primero debe evaluar el caso clínico.';
+                return;
+            }
+            if (latestDraft?.assessment_id) {
+                showRegistrationPhase(latestDraft);
+                return;
+            }
+            createDraftButton.disabled = true;
+            createDraftButton.textContent = 'Preparando registro longitudinal...';
+            const response = await fetch('/api/clinical-assessments/draft', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    module_id: '{{ schema.module }}',
+                    payload: latestPayload,
+                }),
+            });
+            const data = await response.json();
+            createDraftButton.disabled = false;
+            createDraftButton.textContent = 'Preparar registro longitudinal';
+            if (!data.success) {
+                document.getElementById('draftStatus').textContent = data.error;
+                return;
+            }
+            document.getElementById('draftStatus').textContent = 'La evaluación clínica quedó guardada como borrador y el registro longitudinal ya está disponible en esta misma pantalla.';
+            showRegistrationPhase(data);
+        });
+
+        cancelRegistrationButton.addEventListener('click', () => {
+            registrationPhase.classList.add('hidden');
+            createDraftButton.classList.remove('hidden');
+            registrationStatus.textContent = 'El registro longitudinal quedó oculto. Puede reabrirlo sin perder el borrador clínico.';
+        });
+
+        registrationForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!latestDraft?.assessment_id) {
+                registrationStatus.textContent = 'Primero debe preparar el borrador clínico.';
+                return;
+            }
+
+            const payload = window.ProstaNetRegistrationContextUI.buildRegistrationPayload(registrationForm);
+            payload.assessment_id = latestDraft.assessment_id;
+            payload.assessment_state = registrationAssessmentState.value || latestResult?.state || '';
+            registrationStatus.textContent = 'Preparando consentimiento informado y evidencia de firma electrónica.';
+            try {
+                await consentFlow.open({
+                    payload,
+                    sourceContext: 'wizard',
+                    redirectUrl: payload.nss ? `/patient_profile/${encodeURIComponent(payload.nss)}` : '/patients',
+                });
+            } catch (error) {
+                registerPatientButton.disabled = false;
+                registerPatientButton.textContent = 'Guardar y abrir expediente';
+                registrationStatus.textContent = error.message || 'No se pudo iniciar el consentimiento informado.';
+            }
+        });
+
+        initializeMetastaticWidgets();
+        initializeEpic26Widgets();
+        initializeGleasonProfileWidgets();
+        initializeOccamWidgets();
+        updateConditionalFields();
+    </script>
+{% endblock %}

@@ -1,0 +1,317 @@
+{% extends "layouts/base_clinical.html" %}
+{% from "components/clinical_ui.html" import action_toolbar, empty_state, metric_card, table_shell %}
+
+{% block content %}
+    <div class="space-y-6">
+        <section class="grid grid-cols-2 gap-4 md:grid-cols-4" id="statsCards">
+            {{ metric_card("Total de pacientes", "—", "", "sky", "statTotal") }}
+            {{ metric_card("Con alertas activas", "—", "", "rose", "statAlerts") }}
+            {{ metric_card("Vigilancia activa", "—", "", "emerald", "statAS") }}
+            {{ metric_card("Ingresados en 30 días", "—", "", "cyan", "statRecent") }}
+        </section>
+
+        {% call action_toolbar() %}
+            <div class="flex flex-col gap-4 md:flex-row">
+                <div class="relative flex-1">
+                    <svg class="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                    <input type="text" id="searchInput" placeholder="Buscar por número de seguridad social, nombre o diagnóstico..."
+                        class="pn-input w-full pl-10 pr-4 py-2.5 text-sm">
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <select id="filterRisk" class="pn-input cursor-pointer px-3 py-2.5 text-sm" data-pn-select-variant="compact">
+                        <option value="">Todos los riesgos</option>
+                        <option value="BAJO">Riesgo bajo</option>
+                        <option value="INTERMEDIO">Riesgo intermedio</option>
+                        <option value="ALTO">Riesgo alto</option>
+                        <option value="MUY ALTO">Riesgo muy alto</option>
+                    </select>
+                    <select id="filterStatus" class="pn-input cursor-pointer px-3 py-2.5 text-sm" data-pn-select-variant="compact">
+                        <option value="">Todos</option>
+                        <option value="alert">Con alertas</option>
+                        <option value="as">Vigilancia activa</option>
+                        <option value="recent">Últimos 30 días</option>
+                    </select>
+                    <button onclick="exportPatientsList()" title="Exportar archivo CSV" class="pn-btn pn-btn-secondary px-3 py-2.5">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        {% endcall %}
+
+        {% call table_shell("Registro longitudinal de pacientes", "Acceda a cada expediente con filtros, alertas y exportación inmediata.", "pn-table-shell") %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-xs uppercase tracking-wider text-slate-400">
+                            <th class="px-4 py-3 text-left cursor-pointer hover:text-white" onclick="sortTable('full_name')">
+                                Paciente <span class="sort-icon">↕</span></th>
+                            <th class="px-4 py-3 text-left cursor-pointer hover:text-white" onclick="sortTable('nss')">
+                                Número de seguridad social <span class="sort-icon">↕</span></th>
+                            <th class="px-4 py-3 text-center cursor-pointer hover:text-white" onclick="sortTable('age')">
+                                Edad <span class="sort-icon">↕</span></th>
+                            <th class="px-4 py-3 text-center cursor-pointer hover:text-white" onclick="sortTable('baseline_psa')">
+                                Antígeno prostático específico <span class="sort-icon">↕</span></th>
+                            <th class="px-4 py-3 text-center">Metástasis</th>
+                            <th class="px-4 py-3 text-center">Volumen</th>
+                            <th class="px-4 py-3 text-center">Estado funcional</th>
+                            <th class="px-4 py-3 text-center cursor-pointer hover:text-white" onclick="sortTable('visit_count')">
+                                Visitas <span class="sort-icon">↕</span></th>
+                            <th class="px-4 py-3 text-center">Alertas</th>
+                            <th class="px-4 py-3 text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="patientsTable" class="divide-y divide-slate-800">
+                    </tbody>
+                </table>
+            </div>
+            <div id="emptyState" class="hidden">
+                {{ empty_state("No hay pacientes registrados", "Inicie el primer caso desde el centro clínico para comenzar la cohorte longitudinal.", "/clinical-hub#pm2OfficialClassifier", "Nuevo caso clínico") }}
+            </div>
+            <div class="flex items-center justify-between border-t border-slate-800 px-4 py-3" id="pagination">
+                <p class="text-xs text-slate-500" id="paginationInfo">Mostrando 0 pacientes</p>
+                <div class="flex gap-1" id="paginationButtons"></div>
+            </div>
+        {% endcall %}
+    </div>
+{% endblock %}
+
+{% block page_scripts %}
+    <script>
+        // ── State ─────────────────────────────────────────────────────────────
+        let allPatients = [];
+        let filteredPatients = [];
+        let currentPage = 1;
+        const PAGE_SIZE = 20;
+        let sortField = 'full_name';
+        let sortDir = 'asc';
+
+        // ── Load Data ─────────────────────────────────────────────────────────
+        async function loadPatients() {
+            try {
+                const res = await fetch('/api/patients');
+                const json = await res.json();
+                if (json.success) {
+                    allPatients = json.patients.map(p => {
+                        if (p.dob) {
+                            const dob = new Date(p.dob);
+                            const now = new Date();
+                            p.age = Math.floor((now - dob) / (365.25 * 24 * 60 * 60 * 1000));
+                        } else {
+                            p.age = '—';
+                        }
+                        return p;
+                    });
+                    applyFilters();
+                    updateStats();
+                }
+            } catch (e) {
+                console.error('Error loading patients:', e);
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('statTotal').textContent = allPatients.length;
+            const withAlerts = allPatients.filter(p => p.alert_count > 0).length;
+            document.getElementById('statAlerts').textContent = withAlerts;
+            const asCount = allPatients.filter(p => p.metastasis_site === 'M0' || !p.metastasis_site).length;
+            document.getElementById('statAS').textContent = asCount;
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const recent = allPatients.filter(p => {
+                if (!p.diagnosis_date) return false;
+                return new Date(p.diagnosis_date) >= thirtyDaysAgo;
+            }).length;
+            document.getElementById('statRecent').textContent = recent;
+            window.clinicalPresentation?.normalizeDocument();
+        }
+
+        // ── Filtering ────────────────────────────────────────────────────────
+        function applyFilters() {
+            const query = document.getElementById('searchInput').value.toLowerCase().trim();
+            const riskFilter = document.getElementById('filterRisk').value;
+            const statusFilter = document.getElementById('filterStatus').value;
+
+            filteredPatients = allPatients.filter(p => {
+                if (query) {
+                    const searchable = `${p.full_name || ''} ${p.nss || ''} ${p.metastasis_site || ''} ${p.volume_disease || ''}`.toLowerCase();
+                    if (!searchable.includes(query)) return false;
+                }
+                if (statusFilter === 'alert' && (p.alert_count || 0) === 0) return false;
+                if (statusFilter === 'as' && p.metastasis_site && p.metastasis_site !== 'M0') return false;
+                if (statusFilter === 'recent') {
+                    const d = new Date();
+                    d.setDate(d.getDate() - 30);
+                    if (!p.diagnosis_date || new Date(p.diagnosis_date) < d) return false;
+                }
+                if (riskFilter) {
+                    const normalizedRisk = String(p.risk_group || p.nccn_risk_group || '').toUpperCase();
+                    if (!normalizedRisk.includes(riskFilter)) return false;
+                }
+                return true;
+            });
+
+            filteredPatients.sort((a, b) => {
+                let va = a[sortField], vb = b[sortField];
+                if (va == null) va = '';
+                if (vb == null) vb = '';
+                if (typeof va === 'number' && typeof vb === 'number') {
+                    return sortDir === 'asc' ? va - vb : vb - va;
+                }
+                va = String(va).toLowerCase();
+                vb = String(vb).toLowerCase();
+                return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+            });
+
+            currentPage = 1;
+            renderTable();
+        }
+
+        function sortTable(field) {
+            if (sortField === field) {
+                sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortField = field;
+                sortDir = 'asc';
+            }
+            applyFilters();
+        }
+
+        // ── Render ────────────────────────────────────────────────────────────
+        function renderTable() {
+            const tbody = document.getElementById('patientsTable');
+            const empty = document.getElementById('emptyState');
+            const start = (currentPage - 1) * PAGE_SIZE;
+            const page = filteredPatients.slice(start, start + PAGE_SIZE);
+
+            if (allPatients.length === 0) {
+                tbody.innerHTML = '';
+                empty.classList.remove('hidden');
+                document.getElementById('pagination').classList.add('hidden');
+                return;
+            }
+            empty.classList.add('hidden');
+            document.getElementById('pagination').classList.remove('hidden');
+
+            tbody.innerHTML = page.map(p => {
+                const psaValue = Number.parseFloat(p.baseline_psa);
+                const psa = Number.isFinite(psaValue) ? psaValue.toFixed(1) : '—';
+                const alertBadge = p.alert_count > 0
+                    ? `<span class="inline-flex min-w-[1.125rem] items-center justify-center rounded-full bg-rose-500 px-2 py-0.5 text-[11px] font-bold text-white">${p.alert_count}</span>`
+                    : '<span class="text-slate-600">0</span>';
+                const meta = p.metastasis_site || 'M0';
+                const vol = p.volume_disease || '—';
+                const ecog = p.ecog_score != null ? p.ecog_score : '—';
+                const profileKey = (p.nss && String(p.nss).trim()) ? p.nss : p.id;
+                const hasKey = profileKey != null && String(profileKey).trim() !== '';
+
+                return `<tr class="patient-row ${hasKey ? 'cursor-pointer' : ''}" ${hasKey ? `onclick="goToProfile('${profileKey}')"` : ''}>
+                    <td class="px-4 py-3">
+                        <div class="font-medium text-white text-sm">${p.full_name || 'Sin nombre'}</div>
+                        <div class="text-xs text-slate-500">${p.diagnosis_date ? 'Diagnóstico: ' + p.diagnosis_date : ''}</div>
+                    </td>
+                    <td class="px-4 py-3 font-mono text-xs text-slate-400">${p.nss || '<span class="text-slate-600 italic">Sin número</span>'}</td>
+                    <td class="px-4 py-3 text-center">${p.age}</td>
+                    <td class="px-4 py-3 text-center font-semibold ${parseFloat(psa) > 20 ? 'text-rose-400' : parseFloat(psa) > 10 ? 'text-amber-400' : 'text-emerald-400'}">${psa}</td>
+                    <td class="px-4 py-3 text-center">
+                        <span class="rounded-full px-2 py-0.5 text-xs ${meta === 'M0' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'}">${meta}</span>
+                    </td>
+                    <td class="px-4 py-3 text-center text-xs">${vol}</td>
+                    <td class="px-4 py-3 text-center">
+                        <span class="${ecog >= 3 ? 'text-rose-400 font-bold' : ecog >= 2 ? 'text-amber-400' : 'text-slate-300'}">${ecog}</span>
+                    </td>
+                    <td class="px-4 py-3 text-center text-slate-400">${p.visit_count || 0}</td>
+                    <td class="px-4 py-3 text-center">${alertBadge}</td>
+                    <td class="px-4 py-3 text-center">
+                        ${hasKey ? `<div class="inline-flex items-center gap-3">
+                            <a href="/patient_profile/${profileKey}" onclick="event.stopPropagation()"
+                                class="inline-flex items-center gap-1 text-cyan-300 hover:text-cyan-200 text-xs font-medium transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                </svg>
+                                Ver
+                            </a>
+                            <button onclick='deletePatient(${p.id}, ${JSON.stringify(p.full_name || "Paciente")}); event.stopPropagation();'
+                                class="inline-flex items-center gap-1 text-rose-300 hover:text-rose-200 text-xs font-medium transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3m-7 0h8"></path>
+                                </svg>
+                                Eliminar
+                            </button>
+                        </div>` : '<span class="text-slate-600 text-xs">—</span>'}
+                    </td>
+                </tr>`;
+            }).join('');
+
+            const totalPages = Math.ceil(filteredPatients.length / PAGE_SIZE);
+            document.getElementById('paginationInfo').textContent =
+                `Mostrando ${start + 1}–${Math.min(start + PAGE_SIZE, filteredPatients.length)} de ${filteredPatients.length} pacientes`;
+
+            const btns = document.getElementById('paginationButtons');
+            btns.innerHTML = '';
+            if (totalPages > 1) {
+                for (let i = 1; i <= totalPages; i++) {
+                    const btn = document.createElement('button');
+                    btn.textContent = i;
+                    btn.className = `rounded-full px-3 py-1 text-xs ${i === currentPage ? 'bg-cyan-500 text-slate-950' : 'bg-slate-900 text-slate-400 border border-slate-700 hover:bg-slate-800'}`;
+                    btn.onclick = () => { currentPage = i; renderTable(); };
+                    btns.appendChild(btn);
+                }
+            }
+            window.clinicalPresentation?.normalizeDocument();
+        }
+
+        function goToProfile(nss) {
+            window.location.href = '/patient_profile/' + nss;
+        }
+
+        async function deletePatient(patientId, fullName) {
+            const confirmed = window.confirm(`Se eliminará el perfil de ${fullName} y todo su longitudinal asociado. Esta acción no se puede deshacer. ¿Desea continuar?`);
+            if (!confirmed) return;
+            try {
+                const response = await fetch(`/api/patients/${patientId}`, { method: 'DELETE' });
+                const result = await response.json();
+                if (!result.success) {
+                    alert('Error: ' + (result.error || 'No fue posible eliminar el perfil.'));
+                    return;
+                }
+                allPatients = allPatients.filter(patient => patient.id !== patientId);
+                applyFilters();
+            } catch (error) {
+                alert('Error de conexión al eliminar el perfil.');
+            }
+        }
+
+        // ── Export ────────────────────────────────────────────────────────────
+        function exportPatientsList() {
+            if (filteredPatients.length === 0) return;
+            const headers = ['NSS', 'Nombre', 'Fecha_Nacimiento', 'Fecha_Diagnostico', 'PSA_Basal', 'Metastasis', 'Volumen', 'ECOG', 'Visitas', 'Alertas'];
+            const rows = filteredPatients.map(p => [
+                p.nss, p.full_name, p.dob, p.diagnosis_date,
+                p.baseline_psa, p.metastasis_site, p.volume_disease,
+                p.ecog_score, p.visit_count, p.alert_count
+            ]);
+            let csv = headers.join(',') + '\n' + rows.map(r => r.map(v => `"${v || ''}"`).join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `prostanet_pacientes_${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+        }
+
+        // ── Event Listeners ───────────────────────────────────────────────────
+        document.getElementById('searchInput').addEventListener('input', applyFilters);
+        document.getElementById('filterRisk').addEventListener('change', applyFilters);
+        document.getElementById('filterStatus').addEventListener('change', applyFilters);
+
+        // ── Init ──────────────────────────────────────────────────────────────
+        loadPatients();
+        window.clinicalPresentation?.normalizeDocument();
+    </script>
+{% endblock %}

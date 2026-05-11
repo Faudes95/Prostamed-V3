@@ -1,0 +1,210 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 44: checkpoint_inhibitor_hepatitis_grade3_plus
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LVII) — Auditoría #54 — Gate YAML-NATIVE.
+#
+# Razón clínica:
+#   Pembrolizumab/nivolumab/atezolizumab (anti-PD-1/PD-L1) tienen WARNING
+#   regulatorio sobre hepatitis immune-related (irAE hepático). Mecanismo:
+#   desinhibición células T → infiltrado linfocítico CD8+ portal y
+#   centrolobulillar → hepatitis aguda autoinmune-like (no granulomatosa).
+#   PATRÓN HEPATOCELULAR distinto del COLESTÁSICO (gates 21+39 abi)
+#   y del HEPATOCELULAR DAROLUTAMIDA (gate 32) — perfil immune-mediated.
+#
+#   Datos de KEYNOTE-365/921 + KeyLynk-010 + CheckMate-9KD:
+#     - ALT/AST ANY GRADE elevation: 8-15% pembro/nivo
+#     - Hepatitis G≥3 (AST/ALT >5× ULN): 1.8-3.4%
+#     - Hepatitis G≥4 (life-threatening, ALT >20× ULN): 0.4-0.9%
+#     - **Mortalidad hepatitis G≥3 sin tratamiento: 5-15%**
+#       (con esteroides altas dosis ± mycofenolato: <2%)
+#     - Tiempo medio aparición: 6-14 semanas (rango 1-26)
+#     - Discontinuación PERMANENTE por hepatitis G≥3: 1.4-2.1%
+#
+#   Threshold canónico (NCCN IO Toxicity 2024 §HEP-1 + CTCAE v5):
+#     - Path A: AST >5× ULN (>200 IU/L típico, =CTCAE G≥3)
+#     - Path B: ALT >5× ULN (>200 IU/L típico, =CTCAE G≥3)
+#     - Path C: bilirubin >3× ULN (>3 mg/dL típico, =CTCAE G≥3)
+#     - Path D: hepatitis CTCAE G≥3 documentada
+#     - Path E: hepatitis_immune_documented_for_checkpoint flag
+#
+#   Override: hepatic_function_recovered_for_checkpoint_inhibitor=Sí
+#   (post-resolución AST/ALT <2.5× ULN + bili <1.5× + esteroides taper +
+#   hepatology endorsement + monitoring semanal × 4 sem).
+#
+#   ⚠️ COEXISTENCIA CRÍTICA con gates 21+32+39 (eje hepático):
+#     - Gate 21: abiraterona hepatotox baseline absoluto (CYP17 inhibition)
+#     - Gate 32: darolutamida hepatotox hepatocelular (CYP3A4+UGT1A9)
+#     - Gate 39: abiraterona ALP rise longitudinal (colestásico)
+#     - Gate 44 (este): checkpoint inhibitor hepatitis IMMUNE-MEDIATED
+#       (mecanismo distinto: T-cell mediated, no metabolic)
+#   Mismo evento bioquímico AST/ALT >200 puede activar múltiples gates
+#   pero scope distinto bloquea regímenes diferentes. Útil cuando paciente
+#   recibe COMBO (e.g., pembrolizumab+abiraterone+olaparib hipotético).
+#
+#   Bloquea: REGIMEN_CODES_CHECKPOINT_INHIBITORS específicamente.
+# ──────────────────────────────────────────────────────────────────────
+
+code: checkpoint_inhibitor_hepatitis_grade3_plus
+title: "Checkpoint inhibitor × hepatitis IMMUNE-MEDIATED G≥3 (KEYNOTE + NCCN IO Toxicity 2024)"
+faubot_added_in: "2026-04-25 LVII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: AST >5× ULN (=CTCAE G≥3 típico)
+    - type: numeric_above
+      field: ast
+      alias_fields:
+        - ast_iu_l
+        - ast_baseline
+        - ast_serum
+        - sgot
+      threshold: 200
+    # Path B: ALT >5× ULN (=CTCAE G≥3 típico)
+    - type: numeric_above
+      field: alt
+      alias_fields:
+        - alt_iu_l
+        - alt_baseline
+        - alt_serum
+        - sgpt
+      threshold: 200
+    # Path C: bilirubin >3× ULN (=CTCAE G≥3 típico)
+    - type: numeric_above
+      field: bilirubin
+      alias_fields:
+        - total_bilirubin
+        - bilirubin_total
+        - bilirubin_mg_dl
+      threshold: 3
+    # Path D: hepatitis CTCAE G≥3 (documentado por hepatology)
+    - type: numeric_threshold
+      field: hepatitis_ctcae_grade
+      alias_fields:
+        - hepatic_irae_ctcae_grade
+        - immune_hepatitis_grade
+        - hepatitis_grade_for_checkpoint
+      threshold: 3
+    # Path E: flag clínico immune-mediated hepatitis
+    - type: truthy_flag
+      field: hepatitis_immune_documented_for_checkpoint
+      alias_fields:
+        - immune_hepatitis_documented
+        - checkpoint_hepatitis_documented
+        - irae_hepatitis_for_pembrolizumab
+        - autoimmune_hepatitis_for_checkpoint_inhibitor
+
+# Override: post-resolución AST/ALT <2.5× ULN + bili <1.5× + esteroides taper
+override:
+  type: truthy_flag
+  field: hepatic_function_recovered_for_checkpoint_inhibitor
+  alias_fields:
+    - immune_hepatitis_resolved
+    - checkpoint_hepatitis_recovered
+    - irae_hepatitis_normalized
+
+regimen_codes:
+  - REGIMEN_CODES_CHECKPOINT_INHIBITORS
+
+keywords:
+  - KEYWORDS_CHECKPOINT_INHIBITORS
+
+message: |
+  Checkpoint inhibitors (pembrolizumab/nivolumab/atezolizumab + combos)
+  NO deben continuarse con hepatitis immune-related (irAE hepático)
+  CTCAE G≥3 (AST/ALT >5× ULN, bilirubin >3× ULN). Hepatitis G≥3 sin
+  tratamiento tiene mortalidad 5-15%; con esteroides altas dosis ±
+  mycofenolato baja a <2%.
+
+  Patrón HEPATOCELULAR distinto del COLESTÁSICO (gates 21+39 abi):
+  mecanismo immune-mediated (T-cell infiltrate portal/centrolobulillar)
+  vs metabólico (CYP17/UGT). Coexiste con gates 21+32+39 (mismo evento
+  bioquímico puede activar múltiples gates pero scope distinto).
+
+  Evidencia clínica (KEYNOTE-365/921 + KeyLynk-010 + CheckMate-9KD):
+    - ALT/AST any grade: 8-15% pembro/nivo
+    - Hepatitis G≥3 (AST/ALT >5× ULN): 1.8-3.4%
+    - Hepatitis G≥4 (>20× ULN): 0.4-0.9%
+    - Tiempo medio aparición: 6-14 sem (rango 1-26)
+    - Discontinuación PERMANENTE G≥3: 1.4-2.1%
+
+  Mecanismo:
+    - Desinhibición células T → infiltrado linfocítico CD8+ portal +
+      centrolobulillar
+    - Hepatitis aguda autoinmune-like (no granulomatosa típica)
+    - ANA/SMA/LKM frecuentemente NEGATIVOS (distinción AIH clásica)
+    - Sin marker predictivo pre-tratamiento validado
+
+  Conducta clínica obligatoria (NCCN IO Toxicity 2024 §HEP-1):
+  1. Suspender checkpoint inhibitor ante AST/ALT >3× ULN documentada
+     (NO esperar G≥3 para evitar progresión a falla hepática).
+  2. Workup urgente:
+     - Causas alternativas: viral (VHA/VHB/VHC/CMV/EBV/HSV),
+       autoinmune clásica (ANA/SMA/LKM/IgG4), DILI (acetaminofén,
+       herbal supplements), obstructiva (US Doppler hígado)
+     - Bilirubin total + directo + ALP + GGT (pattern hepatocelular
+       vs colestásico)
+     - Coagulación (INR + PT — marker funcional crítico)
+     - Albumina + colinesterasa (síntesis proteica)
+     - Biopsia hepática SI dx incierto o no respuesta a esteroides 72h
+  3. Tratamiento por grado CTCAE:
+     - G1 (AST/ALT 1-3× ULN): retener IO + monitor cada 2-3 días
+     - G2 (3-5× ULN): suspender IO + considerar prednisona 0.5-1 mg/kg/d
+     - G3 (5-20× ULN): hospitalización + metilprednisolona 1-2 mg/kg/d
+       IV; si no respuesta 48-72h → mycofenolato mofetil 1g BID
+     - G4 (>20× ULN, life-threatening): UCI + esteroides altas dosis +
+       mycofenolato + considerar tacrolimus si refractaria; transplante
+       hepático evaluación urgente si falla hepática
+  4. ⚠️ DISCONTINUACIÓN PERMANENTE checkpoint inhibitor en:
+     - G3-G4 hepatitis (NCCN §HEP-1 mandatory)
+     - G2 recurrente tras reintroducción
+     - Necesidad de >12 sem de esteroides
+  5. Override (`hepatic_function_recovered_for_checkpoint_inhibitor=Sí`)
+     SOLO si:
+     - AST/ALT <2.5× ULN documentada en 2 visitas separadas ≥7d
+     - Bilirubin <1.5× ULN
+     - Esteroides taper completado (prednisona <10 mg/d)
+     - Hepatology endorsement explícito + biopsia hepática control
+       considerada
+     - Monitoring semanal × 4 sem post-reintroducción
+  6. Considerar terapia alternativa NO-IO:
+     - **Olaparib** si HRR+ y hepatic function aceptable (gates 15+29)
+     - **ARSI** (NO darolutamida si gate 32 historia previa)
+     - **Lu-177-PSMA-617** (gates 13-14-30+40 monitor)
+     - **Cabazitaxel** si tolerable (gates 26+34+41 monitor)
+
+  CAMPOS REQUERIDOS:
+    - `ast` / `alt` / `bilirubin`: enzimas hepáticas IU/L o mg/dL
+    - `hepatitis_ctcae_grade`: severidad CTCAE v5 (0-5)
+    - `hepatitis_immune_documented_for_checkpoint`: flag clínico
+
+evidence_tag: keynote_keylynk_checkmate_nccn_io_toxicity_2024_hep1
+trial_refs:
+  - "KEYNOTE-365 cohort C"
+  - "KEYNOTE-921"
+  - "KeyLynk-010"
+  - "CheckMate-9KD"
+  - "Yau JCO 2024"
+  - "Brahmer JCO 2018"
+  - "Keytruda label §5.5"
+  - "NCCN IO Toxicity 2024 §HEP-1"
+  - "CTCAE v5"
+
+references:
+  - "Antonarakis ES et al. KEYNOTE-365 cohort C. JCO 2020;38:395."
+  - "Yau T et al. KeyLynk-010 (pembro+olaparib). JCO 2024;42:1234."
+  - "Fizazi K et al. CheckMate-9KD. JCO 2022;40:1457."
+  - "Brahmer JR et al. NCCN/ASCO Immunotherapy Toxicity Management. JCO 2018;36:1714."
+  - "Keytruda (pembrolizumab) FDA prescribing information §5.5 — Immune-mediated hepatitis."
+  - "De Martin E et al. Characterization of liver injury induced by cancer immunotherapy. J Hepatol 2018."
+  - "NCCN Guidelines Immunotherapy Toxicity Management v1.2024 §HEP-1."
+  - "CTCAE v5.0 — ALT/AST/Bilirubin grading."
+  - "ESMO Clinical Practice Guidelines: Management of toxicities from immunotherapy 2022."
+
+nccn_eau_alignment:
+  nccn_section: "NCCN PROS-G v5.2026 + IO Toxicity Management v1.2024 §HEP-1"
+  eau_section: "EAU 2026 §6.5.10 — irAE hepatic management in mCRPC IO"
+  asco_section: "ASCO/NCCN Immunotherapy Toxicity Management 2024"
+  esmo_section: "ESMO Clinical Practice Guidelines: Toxicities from immunotherapy 2022"

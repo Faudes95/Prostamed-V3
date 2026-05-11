@@ -1,0 +1,130 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 98: xerostomia_monitoring_lu177_grade2_plus
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.C) — Tier 3 Interaction/Synergistic Gates.
+#
+# Razón clínica:
+#   Lu-177-PSMA-617 tiene tropismo a glándulas salivares (PSMA expression
+#   en parotid + submandibular) → xerostomia (boca seca) es AE frecuente:
+#
+#   - **VISION (Sartor NEJM 2021;385:1091)**: Lu-177-PSMA en mCRPC
+#     - Xerostomia any grade 38.8% vs placebo 0.5%
+#     - Xerostomia G3+ 1.0%
+#     - Mostly G1-G2 chronic
+#
+#   - **TheraP (Hofman Lancet 2021;397:797)**: Lu-177 vs cabazitaxel
+#     - Xerostomia any 60% Lu-177 vs 4% cabazitaxel
+#     - Significant impact en QoL
+#
+#   - **PSMAfore (Sartor ESMO 2023)**: Lu-177 pre-chemo
+#     - Similar xerostomia incidence
+#
+#   Mecanismo: Lu-177 emite β-particles (~2 mm range). Glándulas salivares
+#   tienen PSMA expression → uptake significativo → radiation damage
+#   crónica + xerostomia.
+#
+#   Implicación clínica G2+ (oral intake limitada/altered):
+#   - Salivary stimulants (lemon drops, sugar-free gum)
+#   - Pilocarpine 5 mg PO TID (cholinergic agonist, glandular stimulation)
+#   - Saliva substitutes (Biotene, Oasis)
+#   - Dental hygiene aggressive (fluoride toothpaste, dental visits cada 3m)
+#   - Avoid mouth-drying medications (anticholinergics, diuretics si posible)
+#   - Considerar dose reduction Lu-177 next cycle si severe
+#
+#   Soft_warning porque NO siempre requires discontinuation, pero impacta
+#   significativamente QoL + dental health → intervención mandatory.
+# ──────────────────────────────────────────────────────────────────────
+
+code: xerostomia_monitoring_lu177_grade2_plus
+title: "Lu-177-PSMA × xerostomia G2+ → salivary management + dental protection"
+faubot_added_in: "2026-04-30 LXCVI.C"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: numeric_threshold
+  field: xerostomia_ctcae_grade
+  alias_fields:
+    - xerostomia_grade
+    - dry_mouth_grade
+    - boca_seca_grado_ctcae
+  threshold: 2
+
+regimen_codes:
+  - REGIMEN_CODES_LUTETIUM177
+
+keywords:
+  - xerostomia
+  - dry mouth
+  - boca seca
+  - Lu-177
+  - PSMA
+  - VISION
+  - TheraP
+  - salivary
+
+message: |
+  ⚠️ SOFT WARNING: Xerostomia G2+ bajo Lu-177-PSMA → salivary management
+  + dental protection mandatory.
+
+  🎯 EVIDENCIA INCIDENCIA:
+
+  | Trial | Régimen | Xerostomia any % | G3+ % |
+  |-------|---------|-------------------|-------|
+  | VISION | Lu-177 vs placebo | 38.8% vs 0.5% | 1.0% |
+  | TheraP | Lu-177 vs cabazitaxel | 60% vs 4% | <2% |
+  | PSMAfore | Lu-177 pre-chemo | ~40% | 1% |
+
+  🎯 CLASIFICACIÓN CTCAE v5:
+
+  | Grado | Síntomas | Acción |
+  |-------|----------|--------|
+  | G1 | Symptomatic, sin altered eating | Salivary stimulants + dental hygiene |
+  | **G2** | **Moderate symptoms, altered intake** | **Pilocarpine + saliva substitutes + dental consult** |
+  | G3 | Inability to adequately aliment orally | Pilocarpine + IV hydration + tube feeding considered |
+  | G4 | Life-threatening dehydration | Hospitalization + total parenteral nutrition |
+
+  🎯 MANEJO ESCALONADO G2:
+
+  1. **Salivary stimulants**:
+     - Lemon drops (sugar-free) cada 2-3h
+     - Sugar-free gum (xylitol)
+     - Hydration agresiva (8 vasos agua/d)
+
+  2. **Farmacológico**:
+     - **Pilocarpine 5 mg PO TID** (cholinergic glandular stimulation)
+     - Cevimelina 30 mg PO TID alternative
+     - Avoid anticholinergics si posible
+
+  3. **Saliva substitutes**:
+     - Biotene Oral Balance gel
+     - Oasis Moisturizing Mouth Spray
+     - Mouthwashes alcohol-free
+
+  4. **Dental protection**:
+     - Dental consult inicial + cada 3 meses
+     - Fluoride toothpaste high-concentration
+     - Fluoride trays nighttime (custom)
+     - Avoid sugary foods/drinks (caries risk ↑↑)
+
+  5. **Dose modification next cycle**:
+     - Considerar dose reduction 25% Lu-177 si G3
+     - Skip cycle si G4
+
+  🎯 LONG-TERM CONSIDERATIONS:
+  - Xerostomia puede persistir post-tratamiento (chronic)
+  - Caries multi-superficie progresiva sin protection
+  - Candidiasis oral risk ↑ → fluconazole prophylaxis si recurrent
+  - QoL impact significant → consider integration palliative care
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `xerostomia_ctcae_grade`: int 0-4 (CTCAE v5.0)
+
+evidence_tag: lu177_xerostomia_vision_therap_psmafore_2021_2023
+trial_refs:
+  - "VISION (Sartor NEJM 2021;385:1091)"
+  - "TheraP (Hofman Lancet 2021;397:797)"
+  - "PSMAfore (Sartor ESMO 2023)"
+  - "Pluvicto FDA label (2022)"
+  - "CTCAE v5.0 (NCI 2017)"
+  - "ASCO Oral Mucositis/Xerostomia Guidelines 2024"

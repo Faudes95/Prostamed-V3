@@ -1,0 +1,145 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 88: hand_foot_syndrome_tkis_grade2_plus
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.A) — Tier 1 Adverse Event Coverage Closure.
+#
+# Razón clínica:
+#   Hand-Foot Skin Reaction (HFSR / Síndrome Mano-Pie) es el efecto
+#   adverso característico + dose-limiting de cabozantinib (TKI VEGFR2 +
+#   MET + AXL):
+#
+#   - **CONTACT-02 (Agarwal Lancet Oncol 2024;25:434)**: cabozantinib +
+#     atezolizumab en mCRPC post-ARPI:
+#     - HFSR any grade: ~60%
+#     - HFSR G3+: 25-30%
+#     - Cabozantinib dose reduction por HFSR: 35%
+#     - Treatment discontinuation por HFSR: 8%
+#
+#   Mecanismo: VEGFR-2 inhibition altera vasculatura cutánea palmar/
+#   plantar + cabozantinib accumulation en zonas de presión + fricción.
+#
+#   Implicación clínica:
+#   - **G1** (mild changes asymptomatic): manejo conservador, continuar dose
+#   - **G2** (skin changes + pain WITHOUT limiting ADL): HOLD 7 días +
+#     reducir dose 1 nivel + manejo tópico agresivo. Re-start si <G1.
+#   - **G3** (severe + limiting self-care ADL): HOLD indefinido + dose
+#     reduction 2 niveles. Some patients require permanent discontinuation.
+#   - **G4**: discontinuation permanent.
+#
+#   Manejo: corticoides tópicos high-potency + emolientes urea 10-20% +
+#   evitar trauma + zapatos cushioned + onicotomías.
+#
+#   IMPORTANTE: a diferencia de capecitabina HFSR (paliperitivo), cabo
+#   HFSR puede ser irreversible si no se manejan G2 prontamente.
+#
+#   Override: si dose reduction ya implementada + manejo tópico agresivo
+#   (high-potency steroid + urea 20%) y paciente acepta riesgo.
+# ──────────────────────────────────────────────────────────────────────
+
+code: hand_foot_syndrome_tkis_grade2_plus
+title: "Cabozantinib × HFSR G2+ → HOLD + dose reduction + manejo tópico agresivo"
+faubot_added_in: "2026-04-30 LXCVI.A"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: CTCAE grade ≥2
+    - type: numeric_threshold
+      field: hfsr_ctcae_grade
+      alias_fields:
+        - hand_foot_syndrome_grade
+        - hfs_grade
+        - sindrome_mano_pie_grado
+        - hfsr_grade
+      threshold: 2
+    # Path B: HFSR documentado clínicamente
+    - type: truthy_flag
+      field: hand_foot_skin_reaction_documented
+      alias_fields:
+        - hfsr_documented
+        - sindrome_mano_pie_documentado
+
+regimen_codes:
+  - REGIMEN_CODES_CABOZANTINIB
+
+override:
+  type: truthy_flag
+  field: hfsr_aggressive_topical_management_documented
+  alias_fields:
+    - hfsr_high_potency_steroid_initiated
+    - hfsr_urea_20_started
+
+keywords:
+  - HFSR
+  - hand-foot syndrome
+  - síndrome mano-pie
+  - cabozantinib
+  - TKI
+  - VEGFR
+  - dermatology
+
+message: |
+  🚨 HARD BLOCK: HFSR G2+ bajo cabozantinib → HOLD + dose reduction +
+  manejo tópico agresivo.
+
+  🎯 EVIDENCIA INCIDENCIA CONTACT-02:
+
+  | Severity | Incidencia |
+  |----------|------------|
+  | HFSR any grade | ~60% |
+  | HFSR G3+ | 25-30% |
+  | Dose reduction por HFSR | 35% |
+  | Treatment discontinuation | 8% |
+
+  🎯 CLASIFICACIÓN CTCAE v5:
+
+  | Grado | Características | Acción |
+  |-------|-----------------|--------|
+  | G1 | Mild changes asymptomatic | Continuar dose + monitoreo |
+  | **G2** | **Skin changes + pain WITHOUT limiting ADL** | **HOLD 7 días + dose reduction 1 nivel** |
+  | **G3** | **Severe + limiting self-care ADL** | **HOLD indefinido + dose reduction 2 niveles** |
+  | G4 | Disabling | Discontinuation permanent |
+
+  🎯 MANEJO ESCALONADO:
+
+  1. **Profilaxis primaria (al iniciar cabozantinib)**:
+     - Educación paciente: signs/symptoms HFSR
+     - Evitar trauma + presión + agua caliente
+     - Hidratación piel BID con emoliente urea 10%
+     - Calzado cushioned + plantillas absorbentes
+
+  2. **G2 — manejo agresivo**:
+     - HOLD cabozantinib × 7 días (mínimo)
+     - Reducir dose 1 nivel cuando re-inicio (60→40 mg/día)
+     - Corticoide tópico high-potency BID (clobetasol 0.05%)
+     - Emoliente urea 20% TID
+     - AINEs PO si dolor moderate
+     - Onicotomía si paroniquia secundaria
+
+  3. **G3 — manejo intensivo**:
+     - HOLD indefinido hasta resolución <G1
+     - Dose reduction 2 niveles (60→20 mg/día)
+     - Considerar discontinuation permanente
+     - Dermatology consult
+     - Topical lidocaine 5% si dolor severo
+
+  4. **G4**:
+     - Discontinuation permanente
+     - Skin biopsy si lesions atípicas
+     - Consider switch a otro régimen sistémico
+
+  ⚠️ OVERRIDE: documentar `hfsr_aggressive_topical_management_documented`
+  + dose reduction permite continuar bajo dermatology consult.
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `hfsr_ctcae_grade`: int 0-4 (CTCAE v5.0)
+  - `hand_foot_skin_reaction_documented`: bool
+
+evidence_tag: cabozantinib_hfsr_contact02_2024_ctcae_v5
+trial_refs:
+  - "CONTACT-02 (Agarwal Lancet Oncol 2024;25:434)"
+  - "Cabometyx label (FDA 2024)"
+  - "CTCAE v5.0 (NCI 2017)"
+  - "NCCN Supportive Care v1.2026 - HFSR"

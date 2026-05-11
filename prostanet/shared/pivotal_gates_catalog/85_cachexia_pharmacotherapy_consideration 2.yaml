@@ -1,0 +1,292 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 85: cachexia_pharmacotherapy_consideration
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXIX) — Auditoría #67E — Cachexia treatment.
+#
+# Razón clínica:
+#   **Cancer cachexia** es síndrome multifactorial caracterizado por
+#   pérdida peso involuntaria + sarcopenia + anorexia + inflamación
+#   sistémica + alteraciones metabólicas (Fearon Lancet Oncol 2011):
+#
+#   1. **Definición consenso (Fearon 2011)**:
+#      - Pérdida peso >5% en 6 meses (sin condicionantes)
+#      - O BMI <20 + pérdida peso >2%
+#      - O sarcopenia (DEXA/CT/MRI) + pérdida peso >2%
+#
+#   2. **3 estadios cachexia**:
+#      - **Pre-cachexia**: pérdida peso ≤5% + síntomas (anorexia,
+#        cambios metabólicos)
+#      - **Cachexia**: pérdida peso >5% en 6m + síntomas asociados
+#      - **Refractory cachexia**: cachexia + procatabolismo activo
+#        irreversible + esperanza vida <3 meses
+#
+#   3. **Farmacoterapia evidence-based**:
+#      - **Megestrol acetate**: 400-800 mg/d (efectivo apetito + peso)
+#      - **Mirtazapine**: 15-30 mg HS (apetito + depresión + sleep)
+#      - **Dronabinol**: 2.5-10 mg q12h (cannabinoid, evidence menor)
+#      - **Olanzapine**: 2.5-5 mg/d (low-dose apetito stimulant)
+#      - **Anamorelin** (Japón aprobado): 100 mg/d ghrelin agonist
+#      - **Ghrelin analogues**: investigational
+#
+#   4. **Multimodal approach**:
+#      - Nutritional support (oral supplements, enteral)
+#      - Resistance exercise (preserve muscle mass)
+#      - Anti-inflammatory (omega-3, NSAIDs si tolerados)
+#      - Optimization underlying treatment
+#
+#   Severity: informational — gate alerta opciones farmacoterapia
+#   cachexia + multimodal approach.
+# ──────────────────────────────────────────────────────────────────────
+
+code: cachexia_pharmacotherapy_consideration
+title: "Cachexia pharmacotherapy (megestrol/mirtazapine) → weight loss >5%/6m + appetite loss"
+faubot_added_in: "2026-04-26 LXXIX"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: weight loss >5% en 6 meses
+    - type: numeric_above
+      field: weight_loss_percent_6mo
+      alias_fields:
+        - perdida_peso_porcentaje_6meses
+        - weight_change_pct_6mo
+      threshold: 4.99  # >5%
+    # Path B: BMI <20 + weight loss >2%
+    - type: all_of
+      triggers:
+        - type: numeric_below
+          field: bmi
+          alias_fields:
+            - body_mass_index
+            - imc
+          threshold: 20.01  # <20
+        - type: numeric_above
+          field: weight_loss_percent_6mo
+          threshold: 1.99  # >2%
+    # Path C: sarcopenia documented + weight loss >2%
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: sarcopenia_documented
+          alias_fields:
+            - sarcopenia_confirmada
+            - muscle_mass_loss_documented
+        - type: numeric_above
+          field: weight_loss_percent_6mo
+          threshold: 1.99
+    # Path D: appetite loss + cachexia clinical flag
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: appetite_loss_documented
+          alias_fields:
+            - perdida_apetito_documentada
+            - anorexia_clinical
+        - type: truthy_flag
+          field: cachexia_clinical_diagnosed
+          alias_fields:
+            - cachexia_diagnosticada
+            - cancer_cachexia_documented
+    # Path E: ESAS appetite ítem ≥4
+    - type: numeric_above
+      field: esas_appetite_score
+      alias_fields:
+        - esas_apetito
+      threshold: 3  # ≥4 (peor)
+
+regimen_codes: []  # Gate informativo — opciones farmacoterapia
+
+keywords:
+  - caquexia
+  - cachexia
+  - cancer cachexia
+  - pérdida peso
+  - weight loss
+  - anorexia
+  - sarcopenia
+  - megestrol
+  - mirtazapine
+
+message: |
+  📊 INFORMATIVO: Cancer cachexia detectada (pérdida peso >5%/6m o
+  BMI <20 o sarcopenia + appetite loss) → considerar farmacoterapia +
+  multimodal approach.
+
+  🔬 CACHEXIA DEFINICIÓN (Fearon Lancet Oncol 2011):
+
+  **Diagnóstico cachexia** (≥1 criterio):
+  - Pérdida peso >5% en 6 meses (sin condicionantes voluntarios)
+  - BMI <20 + pérdida peso >2%
+  - Sarcopenia (DEXA/CT L3 muscle area) + pérdida peso >2%
+
+  **Estadios cachexia**:
+  | Estadio | Definición | Manejo |
+  |---------|-----------|--------|
+  | **Pre-cachexia** | Pérdida ≤5% + síntomas | Multimodal preventivo |
+  | **Cachexia** | Pérdida >5% + síntomas asociados | Farmacoterapia + nutrition |
+  | **Refractory cachexia** | Procatabolismo + life exp <3m | Symptom palliation |
+
+  🎯 FARMACOTERAPIA EVIDENCE-BASED:
+
+  **1. Megestrol acetate** (Megace®) — Tier 1:
+  - Dosis: 400-800 mg/d PO (idealmente con comidas)
+  - Mecanismo: progestinic + appetite stimulation
+  - Evidencia: Loprinzi JCO 1990, meta-análisis Cochrane 2013
+  - Eficacia: 25-30% gain weight, 60% mejoran apetito
+  - Onset: 1-2 semanas
+  - **Efectos adversos críticos**:
+    * VTE risk ↑ (especialmente con coexistente PCa risk)
+    * Adrenal suppression dosis altas
+    * Edema
+    * Hyperglycemia
+    * Glucocorticoid-like effects
+  - **Cuidado en pacientes con factores VTE**: ARPI cardiotox (gates 17/18)
+    + immobility = VTE risk multiplicador
+
+  **2. Mirtazapine** (Remeron®) — Tier 1 (preferred multimodal):
+  - Dosis: 15-30 mg HS (HS = bedtime)
+  - Mecanismo: H1 antagonist (histamine) + 5-HT2 + 5-HT3
+  - **Combina BENEFICIOS**:
+    * Antidepresivo (gate 81 PHQ-9)
+    * Apetito stimulant
+    * Sleep aid (insomnio gate 80 ESAS drowsiness)
+  - Ideal multi-síntoma palliative
+  - Pocos efectos GI
+  - Sin VTE risk (vs megestrol)
+  - Onset apetito: 1-2 semanas
+  - Onset depresión: 4-6 semanas
+
+  **3. Dronabinol** (Marinol®) — Tier 2:
+  - Dosis: 2.5-10 mg q12h
+  - Mecanismo: cannabinoid (THC sintético) CB1 agonist
+  - Evidencia: limited en cachexia (vs HIV-wasting)
+  - Considerar si refractary mirtazapine + megestrol
+  - Efectos adversos: somnolencia, mareo, paranoia, dry mouth
+
+  **4. Olanzapine** (Zyprexa®) low-dose — Tier 2:
+  - Dosis: 2.5-5 mg/d
+  - Mecanismo: anti-emetic + appetite stimulation incidental
+  - Evidencia: Navari JCO 2020 (combined N/V + appetite)
+  - Útil si N/V coexistente
+  - Cuidado QTc (gate 17/18)
+
+  **5. Anamorelin** (Adlumiz® - Japón aprobado, no FDA):
+  - Dosis: 100 mg/d
+  - Mecanismo: ghrelin receptor agonist
+  - Evidencia: ROMANA trials (Currow JCO 2018)
+  - Eficacia: gain lean mass + body weight
+  - Disponibilidad: Japón aprobado, otros países off-label/trial
+
+  **6. Corticosteroids** (dexametasona/prednisone) — short-term only:
+  - Dexametasona 4-8 mg/d × 2-4 semanas
+  - Efecto rápido apetito (días)
+  - **Tachyphylaxis**: efecto se pierde tras 4-6 semanas
+  - Efectos adversos crónicos: myopathy, hyperglycemia, infection
+  - Útil short-term (preparación para mirtazapine)
+  - **Considerar end-of-life** — no preocupación efectos crónicos
+
+  🎯 MULTIMODAL APPROACH (CASH 2017):
+
+  **1. Nutritional support**:
+  - Oral nutritional supplements: Ensure®, Boost® (high-protein)
+  - 30-35 kcal/kg/día + 1.2-1.5 g/kg proteína
+  - Considerar enteral feeding tube si severo (PEG)
+  - **NPO (nada VO) si end-stage**: sin beneficio + carga
+
+  **2. Resistance exercise** (si ECOG 0-2):
+  - Preserve muscle mass (sarcopenia prevention)
+  - 2-3× semana resistance training
+  - Combine con aerobic 150 min/semana
+  - Physical therapy referral
+
+  **3. Anti-inflammatory**:
+  - Omega-3 fatty acids 2-4 g/d EPA+DHA
+  - NSAIDs si tolerados (cuidado renal/GI)
+  - Considerar role TNF-α blockers (investigational)
+
+  **4. Optimize underlying treatment**:
+  - Pain control (gate 73 BPI)
+  - Nausea control (gate 80 ESAS nausea)
+  - Depression treatment (gate 81 PHQ-9)
+  - Anxiety treatment (gate 82 GAD-7)
+
+  🎯 ALGORITMO DECISIÓN:
+
+  ```
+  Paciente cachexia → Gate 85 evalúa:
+
+  1. Cachexia + depresión coexistente (PHQ-9 ≥10 — gate 81):
+     → MIRTAZAPINE 30 mg HS (combina depresión + apetito + sleep)
+
+  2. Cachexia + N/V coexistente:
+     → OLANZAPINE 5 mg/d low-dose (anti-emetic + apetito)
+
+  3. Cachexia pure (no co-morbidities):
+     → MEGESTROL 400-800 mg/d (más potente apetito stimulant)
+     CUIDADO: VTE risk si concurrent ARPI (gates 17/18)
+
+  4. Cachexia refractary tier 1:
+     → DRONABINOL 5 mg q12h o ANAMORELIN si disponible
+
+  5. Cachexia end-stage (life exp <3m):
+     → DEXAMETASONA 4 mg/d short-term (1-2 sem efecto)
+     → Goals of care discussion + palliative-only
+
+  6. Multimodal todos casos:
+     → Nutritional supplements, exercise (si ECOG OK), anti-inflam
+  ```
+
+  🎯 SEGUIMIENTO:
+
+  - Pesar cada visita
+  - BMI tracking
+  - ESAS appetite (gate 80)
+  - PG-SGA (Patient-Generated Subjective Global Assessment)
+  - Bioimpedance/DEXA si disponible (lean mass)
+  - Albumin, prealbumin, PCR (inflamación)
+  - Re-evaluar farmacoterapia cada 4-6 semanas
+
+  ⚠️ INTEGRACIÓN COMPOSITE:
+  - Gate 85 + gate 74 (ECOG decline): considerar palliative-only pathway
+  - Gate 85 + gate 81 (depresión): mirtazapine combined
+  - Gate 85 + gates 17/18 (ARPI cardiotox): EVITAR megestrol (VTE)
+  - Gate 85 + gate 80 (ESAS multi): multi-modal optimization
+
+  🔬 EVIDENCIA:
+  - **Fearon Lancet Oncol 2011;12:489**: cachexia consensus definition
+  - **Loprinzi JCO 1990**: megestrol RCT
+  - **Cochrane 2013**: megestrol meta-analysis
+  - **ROMANA trials Currow JCO 2018**: anamorelin
+  - **Navari JCO 2020**: olanzapine N/V + apetito
+  - **CASH 2017**: cachexia consensus statement multidisciplinary
+  - **NCCN Cancer Cachexia v1.2026**: pharmacotherapy guidance
+  - **ASCO 2020 Cancer Cachexia**: management guidelines
+  - **EAU 2026 §10**: nutritional support PCa
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `weight_loss_percent_6mo`: % pérdida peso 6 meses
+  - `bmi`: body mass index
+  - `sarcopenia_documented`: flag sarcopenia confirmed
+  - `appetite_loss_documented`: flag anorexia clinical
+  - `cachexia_clinical_diagnosed`: flag cachexia diagnosed
+  - `cachexia_stage`: text (pre-cachexia/cachexia/refractory)
+  - `pg_sga_score`: PG-SGA score si disponible
+  - `current_weight_kg`: peso actual
+  - `baseline_weight_kg`: peso baseline 6m antes
+  - `albumin_g_dl`: albumina (inflamación marker)
+  - `prealbumin_mg_dl`: prealbumina
+  - `crp_mg_l`: PCR (inflamación)
+
+evidence_tag: fearon_2011_cachexia_loprinzi_megestrol_mirtazapine_anamorelin_multimodal
+trial_refs:
+  - "Fearon Lancet Oncol 2011;12:489 (cachexia definition)"
+  - "Loprinzi JCO 1990 (megestrol RCT)"
+  - "Cochrane 2013 megestrol meta-analysis"
+  - "ROMANA trials Currow JCO 2018 (anamorelin)"
+  - "Navari JCO 2020 (olanzapine appetite)"
+  - "NCCN Cancer Cachexia v1.2026"
+  - "ASCO 2020 Cancer Cachexia guidelines"
+  - "EAU 2026 §10"

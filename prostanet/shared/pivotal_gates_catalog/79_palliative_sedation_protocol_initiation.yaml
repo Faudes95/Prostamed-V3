@@ -1,0 +1,237 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 79: palliative_sedation_protocol_initiation
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXIX) — Auditoría #67E — Palliative sedation.
+#
+# Razón clínica:
+#   **Palliative sedation** es intervención end-of-life carefully
+#   regulated para refractory symptoms en pacientes terminal:
+#
+#   1. **Indicaciones aceptadas**:
+#      - Pain refractory máximas medidas analgésicas
+#      - Dyspnea refractory (terminal opioids + O2 + benzo no efectivos)
+#      - Agitation/delirium terminal refractory
+#      - Convulsiones refractarias status epilepticus terminal
+#      - Hemorrhage masiva (sedación rápida + comfort)
+#      - Vomiting persistent intractable
+#
+#   2. **Pre-requisitos OBLIGATORIOS** (EAPC + ASCO + WHO):
+#      - End-of-life imminente (días-semanas)
+#      - Symptom refractory + máximas medidas standard agotadas
+#      - MDT consensus formal (oncology + palliative + ethics si necesario)
+#      - Family meeting + informed consent escrito
+#      - Documentación detallada en HC
+#      - Goals of care alineados (DNR/DNI confirmed)
+#
+#   3. **Agentes**:
+#      - **Midazolam** (preferred): 1-5 mg IV/SC initial, 0.5-5 mg/h continuous
+#      - **Propofol**: 5-50 mg/h IV (requires monitoring intensive)
+#      - **Phenobarbital**: 100-200 mg IV q6h (alternative)
+#      - **Levomepromazine**: 12.5-50 mg SC q6h (delirium)
+#      - **Haloperidol** alternative para delirium agitado
+#
+#   Severity: hard_block — bloquea iniciación SIN documentación criterios
+#   estrictos (refractory + MDT + family consent + EOL stage).
+#
+#   Override: criterios completos documentados (EAPC compliance).
+# ──────────────────────────────────────────────────────────────────────
+
+code: palliative_sedation_protocol_initiation
+title: "Palliative sedation initiation → requiere criterios EAPC estrictos (refractory + MDT + consent)"
+faubot_added_in: "2026-04-26 LXXIX"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: clinical flag iniciación palliative sedation
+    - type: truthy_flag
+      field: palliative_sedation_initiation_planned
+      alias_fields:
+        - sedacion_paliativa_planeada
+        - inicio_sedacion_terminal
+    # Path B: refractory symptoms documented + EOL stage
+    - type: all_of
+      triggers:
+        - type: truthy_flag
+          field: end_of_life_stage_documented
+          alias_fields:
+            - estado_terminal_documentado
+            - eol_stage_imminent
+        - type: any_of
+          triggers:
+            - type: truthy_flag
+              field: refractory_pain_palliative_failure
+              alias_fields:
+                - dolor_refractario_paliativo
+            - type: truthy_flag
+              field: refractory_dyspnea_terminal
+              alias_fields:
+                - disnea_refractaria_terminal
+            - type: truthy_flag
+              field: refractory_agitation_delirium_terminal
+              alias_fields:
+                - agitacion_delirium_refractario
+
+# Override: criterios EAPC completos documentados
+override:
+  type: all_of
+  triggers:
+    - type: truthy_flag
+      field: palliative_sedation_eapc_criteria_met
+      alias_fields:
+        - criterios_eapc_cumplidos
+        - palliative_sedation_protocol_compliant
+    - type: truthy_flag
+      field: mdt_consensus_palliative_sedation_documented
+      alias_fields:
+        - consenso_mdt_sedacion_documentado
+    - type: truthy_flag
+      field: family_consent_palliative_sedation_documented
+      alias_fields:
+        - consentimiento_familiar_sedacion
+
+regimen_codes: []  # Gate procedural — bloquea iniciación sin criterios
+
+keywords:
+  - sedación paliativa
+  - palliative sedation
+  - terminal sedation
+  - refractory symptoms
+  - end of life
+
+message: |
+  ⛔ HARD BLOCK: Palliative sedation requiere CRITERIOS EAPC ESTRICTOS
+  (refractory symptoms + MDT consensus + family consent + EOL stage).
+
+  🔬 PALLIATIVE SEDATION PROTOCOLO EAPC + ASCO + WHO:
+
+  **DEFINICIÓN**:
+  Disminución intencional consciencia mediante drogas para aliviar
+  symptoms refractory en pacientes terminal (días-semanas vida).
+
+  **NO ES eutanasia**:
+  - Intent: aliviar síntomas (proporcional)
+  - Eutanasia intent: causar muerte (intencional)
+  - Doctrine of double effect aplica
+
+  🎯 CRITERIOS EAPC OBLIGATORIOS (todos requeridos):
+
+  **1. End-of-life stage imminente**:
+  - Esperanza vida horas-días-semanas
+  - Karnofsky <30 o ECOG 4
+  - Disease progression terminal documentada
+  - Goals of care: comfort only (DNR/DNI confirmed)
+
+  **2. Refractory symptoms** (≥1 obligatorio):
+  - **Pain refractory**: máximas medidas analgésicas agotadas
+    * Opioides altas dosis + adyuvantes + interventional
+    * Considerar epidural/intrathecal previo
+  - **Dyspnea refractory**: O2 + opioides + benzodiazepines no efectivos
+  - **Agitation/delirium terminal**: haloperidol + benzo failure
+  - **Convulsiones refractarias**: status epilepticus terminal
+  - **Hemorrhage masiva**: bleeding fatal (comfort sedation rapid)
+  - **Vomiting intractable**: anti-emetic combinations failure
+
+  **3. MDT consensus formal**:
+  - Oncology + palliative care + nursing
+  - Ethics consult si caso complejo
+  - Documentación reunión + decisión consensuada
+
+  **4. Family meeting + informed consent**:
+  - Discusión detallada beneficios + riesgos
+  - Consentimiento escrito firmado familia/representante legal
+  - Goals of care alineados (no hidratación artificial,
+    no nutrición artificial si pacient en final stage)
+
+  **5. Documentación HC detallada**:
+  - Indicación específica refractory symptom
+  - Medidas previas agotadas (lista detallada)
+  - Decisión MDT + consenso familia
+  - Plan sedation: agente, dosis, monitoreo
+  - Plan reevaluación 24h
+
+  🎯 PROTOCOLO SEDATION (EAPC 2009):
+
+  **Tipos sedation**:
+  - **Continuous deep sedation** (CDS): UCI-level monitoring
+  - **Continuous mild sedation**: somnolencia, despertable
+  - **Intermittent**: períodos sedation alternantes
+  - **Respite**: 24-48h temporary
+
+  **Agentes preferidos**:
+
+  1. **Midazolam** (preferred, EAPC):
+     - Initial: 1-5 mg IV/SC bolus
+     - Continuous: 0.5-5 mg/h IV/SC infusion
+     - Titration: incrementar 25-50% cada 30-60 min hasta sedation
+     - Reversible con flumazenil si necesario
+
+  2. **Propofol** (alternativa):
+     - 5-50 mg/h IV (requires intensive monitoring)
+     - Onset rápido (1-2 min)
+     - Solo experienced palliative team + monitoring
+
+  3. **Phenobarbital** (refractory cases):
+     - 100-200 mg IV q6h o continuous
+     - Long-acting (T½ 80h)
+     - Útil en convulsiones refractary
+
+  4. **Levomepromazine** (delirium):
+     - 12.5-50 mg SC q6h
+     - Antipsicótico sedante
+     - Útil en agitated delirium
+
+  5. **Haloperidol** (alternative delirium):
+     - 2.5-5 mg SC/IV q6h
+     - Menos sedante (preserva consciencia parcial)
+
+  🎯 MONITOREO:
+  - Nivel sedation: Richmond Agitation-Sedation Scale (RASS)
+  - Goal: RASS -3 a -5 (deep sedation)
+  - Comfort assessment: facial expression, respiratory rate
+  - Reevaluación cada 4-12 horas
+  - Family presence + emotional support continuous
+
+  ⚠️ PROHIBICIONES:
+  - **NO sedation electiva** (no-refractory symptoms)
+  - **NO sedation sin MDT consensus**
+  - **NO sedation sin family consent**
+  - **NO sedation en pacientes no-EOL** (treatable, prognosis >semanas)
+  - **NO mezclar con eutanasia intent** (intent comfort, no muerte)
+
+  🎯 OVERRIDE CRITERIOS COMPLETOS:
+  Activar override SOLO si TODOS:
+  - `palliative_sedation_eapc_criteria_met`: True
+  - `mdt_consensus_palliative_sedation_documented`: True
+  - `family_consent_palliative_sedation_documented`: True
+
+  🔬 EVIDENCIA:
+  - **EAPC Cherny Palliat Med 2009;23:581**: framework guidelines
+  - **ASCO 2017 Palliative Care Integration**: consensus
+  - **WHO Palliative Care Definition 2002**: end-of-life care
+  - **Schildmann J Pain Symptom Manage 2014**: ethical framework
+  - **NCCN Palliative Care v2.2026**: sedation protocols
+  - **EAU 2026 §10**: end-of-life PCa care
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `palliative_sedation_initiation_planned`: flag iniciación planeada
+  - `end_of_life_stage_documented`: flag EOL stage
+  - `refractory_pain_palliative_failure`: flag pain refractory
+  - `refractory_dyspnea_terminal`: flag dyspnea refractory
+  - `refractory_agitation_delirium_terminal`: flag agitation refractory
+  - `palliative_sedation_eapc_criteria_met`: flag override criteria
+  - `mdt_consensus_palliative_sedation_documented`: flag MDT
+  - `family_consent_palliative_sedation_documented`: flag consent
+  - `palliative_sedation_agent_selected`: text (midazolam/propofol/etc)
+  - `palliative_sedation_initiation_date`: fecha
+
+evidence_tag: eapc_cherny_2009_asco_2017_who_palliative_sedation_protocol
+trial_refs:
+  - "EAPC Cherny Palliat Med 2009;23:581"
+  - "ASCO 2017 Palliative Care Integration"
+  - "WHO Palliative Care Definition 2002"
+  - "Schildmann J Pain Symptom Manage 2014"
+  - "NCCN Palliative Care v2.2026"
+  - "EAU 2026 §10"

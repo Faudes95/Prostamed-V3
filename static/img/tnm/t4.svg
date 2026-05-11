@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="220" height="220">
+  <defs>
+    <radialGradient id="t4_ll" cx="38%" cy="40%" r="52%">
+      <stop offset="0%" stop-color="#4cc8f0"/><stop offset="45%" stop-color="#1a8fd4"/>
+      <stop offset="80%" stop-color="#0d5fa0"/><stop offset="100%" stop-color="#062d55"/>
+    </radialGradient>
+    <radialGradient id="t4_lr" cx="62%" cy="40%" r="52%">
+      <stop offset="0%" stop-color="#4cc8f0"/><stop offset="45%" stop-color="#1a8fd4"/>
+      <stop offset="80%" stop-color="#0d5fa0"/><stop offset="100%" stop-color="#062d55"/>
+    </radialGradient>
+    <radialGradient id="t4_tumor" cx="40%" cy="38%" r="55%">
+      <stop offset="0%" stop-color="#ff5555"/><stop offset="50%" stop-color="#dd2222"/><stop offset="100%" stop-color="#991515"/>
+    </radialGradient>
+    <radialGradient id="t4_organ" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#fde8e8"/><stop offset="60%" stop-color="#f5c0c0"/><stop offset="100%" stop-color="#e8a0a0"/>
+    </radialGradient>
+    <filter id="t4_sh"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.3"/></filter>
+  </defs>
+  <!-- Vejiga (arriba) -->
+  <ellipse cx="110" cy="38" rx="40" ry="25" fill="url(#t4_organ)" opacity="0.5" stroke="#d4a0a0" stroke-width="1"/>
+  <text x="110" y="42" text-anchor="middle" fill="#94a3b8" font-family="Arial,sans-serif" font-size="9">Vejiga</text>
+  <!-- Vesículas seminales (laterales arriba) -->
+  <ellipse cx="50" cy="62" rx="18" ry="8" fill="url(#t4_organ)" opacity="0.4" stroke="#d4a0a0" stroke-width="0.8" transform="rotate(-20,50,62)"/>
+  <ellipse cx="170" cy="62" rx="18" ry="8" fill="url(#t4_organ)" opacity="0.4" stroke="#d4a0a0" stroke-width="0.8" transform="rotate(20,170,62)"/>
+  <text x="38" y="52" fill="#94a3b8" font-family="Arial,sans-serif" font-size="7">Vesículas</text>
+  <text x="38" y="60" fill="#94a3b8" font-family="Arial,sans-serif" font-size="7">Seminales</text>
+  <!-- Recto (abajo) -->
+  <rect x="85" y="172" width="50" height="20" rx="10" fill="url(#t4_organ)" opacity="0.4" stroke="#d4a0a0" stroke-width="0.8"/>
+  <text x="110" y="186" text-anchor="middle" fill="#94a3b8" font-family="Arial,sans-serif" font-size="8">Recto</text>
+  <!-- Lóbulo izquierdo -->
+  <path d="M 102 82 C 88 74, 58 70, 42 84 C 26 98, 24 128, 32 148 C 40 168, 60 176, 76 174 C 90 172, 100 164, 104 152 C 108 140, 106 118, 104 100 Z"
+        fill="url(#t4_ll)" filter="url(#t4_sh)"/>
+  <!-- Lóbulo derecho -->
+  <path d="M 118 82 C 132 74, 162 70, 178 84 C 194 98, 196 128, 188 148 C 180 168, 160 176, 144 174 C 130 172, 120 164, 116 152 C 112 140, 114 118, 116 100 Z"
+        fill="url(#t4_lr)" filter="url(#t4_sh)"/>
+  <!-- Surco central -->
+  <path d="M 110 78 C 109 100, 108 135, 110 178" stroke="#041e45" stroke-width="2" fill="none" opacity="0.4"/>
+  <!-- TUMOR masivo que invade órganos -->
+  <path d="M 70 80 C 50 85, 30 100, 28 125 C 26 150, 40 170, 65 175 C 85 172, 105 158, 110 138 C 120 155, 135 168, 155 172 C 175 168, 190 148, 188 125 C 186 102, 168 88, 148 82 C 135 78, 122 80, 110 90 C 98 80, 82 78, 70 80 Z"
+        fill="url(#t4_tumor)" opacity="0.7"/>
+  <!-- Invasión hacia vejiga -->
+  <path d="M 95 82 C 92 70, 95 55, 100 45" stroke="#dd2222" stroke-width="2" fill="none" opacity="0.6" stroke-dasharray="3,2"/>
+  <path d="M 125 82 C 128 70, 125 55, 120 45" stroke="#dd2222" stroke-width="2" fill="none" opacity="0.6" stroke-dasharray="3,2"/>
+  <!-- Invasión hacia recto -->
+  <path d="M 105 168 C 103 175, 105 178, 108 180" stroke="#dd2222" stroke-width="2" fill="none" opacity="0.6" stroke-dasharray="3,2"/>
+  <text x="110" y="210" text-anchor="middle" fill="#dd2222" font-family="Arial,sans-serif" font-size="11" font-weight="bold">Invasión a órganos adyacentes</text>
+</svg>

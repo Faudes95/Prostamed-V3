@@ -1,0 +1,197 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 28: abiraterone_adrenal_insufficiency
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XXXIV) — Auditoría #43 — Gate YAML-NATIVE.
+#
+# Razón clínica:
+#   Abiraterona (Zytiga) inhibe CYP17 → bloquea biosíntesis adrenal de
+#   cortisol y aldosterona. Resultado: insuficiencia adrenal iatrogénica
+#   + exceso mineralocorticoide compensatorio (HTA + hipokalemia + edema).
+#   Profilaxis estándar: prednisona 5 mg BID O hidrocortisona 30 mg/d
+#   (split 20mg AM + 10mg PM). Sin profilaxis adecuada → crisis adrenal.
+#
+#   Si paciente YA tiene insuficiencia adrenal pre-existente (Addison,
+#   adrenal insufficiency post-cirugía, panhipopituitarismo, supresión
+#   crónica esteroides), iniciar abiraterona SIN replacement adecuado
+#   precipita crisis adrenal aguda potencialmente fatal.
+#
+#   Datos de Zytiga FDA prescribing information §5.4 (Adrenocortical
+#   insufficiency) + COU-AA-301/302 (de Bono NEJM 2011 + Ryan NEJM 2013):
+#     - Insuficiencia adrenal documentada: 0.5% (con prednisona 5 mg BID
+#       prescribed); 2-3% (sin prednisona adecuada)
+#     - Crisis adrenal: 0.1% pero potencialmente fatal sin reconocimiento
+#     - Hipotensión sintomática: 8-12% (sospecha adrenal axis suppression)
+#     - Hipokalemia G≥3 (K+ <3.0): 2-5% (mineralocorticoide excess)
+#
+#   Threshold canónico:
+#     - Cortisol basal AM (morning) <5 µg/dL = adrenal insufficiency severa
+#       (rango normal AM: 6-23 µg/dL)
+#     - Cortisol post-Cosyntropin stimulation <18 µg/dL = adrenal
+#       insufficiency (gold standard)
+#     - Sodio <130 mmol/L + potasio >5.5 mmol/L + fatiga severa =
+#       symptom complex Addison-like
+#     - ACTH stimulation test fail (<18 µg/dL @ 30-60 min)
+#
+#   Coexistencia con Gate 3 (uncontrolled_hypertension) + Gate 21
+#   (abiraterone_hepatotoxicity_grade3): gates 3+21 cubren HTA y
+#   hepatotox de abiraterona; gate 28 añade dimensión adrenal
+#   (3a layer del perfil safety abiraterona).
+#
+#   Override: corticosteroid_replacement_therapy_documented=Sí
+#   (prednisona ≥5 mg BID O hidrocortisona ≥20 mg/d documented +
+#   endocrinology endorsement + cortisol monitoring stable).
+#
+#   Bloquea: REGIMEN_CODES_ABIRATERONE específicamente.
+# ──────────────────────────────────────────────────────────────────────
+
+code: abiraterone_adrenal_insufficiency
+title: "Abiraterona × insuficiencia adrenal (Zytiga §5.4 + Addison-like)"
+faubot_added_in: "2026-04-25 XXXIV"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1. Cortisol basal AM < 5 µg/dL (adrenal insufficiency severa)
+    - type: numeric_below
+      field: cortisol_basal_am_ug_dl
+      alias_fields:
+        - cortisol_basal
+        - cortisol_morning
+        - am_cortisol
+        - cortisol_serum_am
+      threshold: 5
+    # 2. Cortisol post-Cosyntropin stimulation < 18 µg/dL (gold standard fail)
+    - type: numeric_below
+      field: cortisol_post_cosyntropin_ug_dl
+      alias_fields:
+        - cosyntropin_stim_cortisol
+        - acth_stim_cortisol
+        - synacthen_cortisol_60min
+      threshold: 18
+    # 3. Flag explícito insuficiencia adrenal activa documentada
+    - type: truthy_flag
+      field: adrenal_insufficiency_active
+      alias_fields:
+        - addison_disease_documented
+        - secondary_adrenal_insufficiency
+        - panhypopituitarism
+        - chronic_steroid_suppression
+    # 4. Symptom complex Addison-like: Na<130 + K>5.5 + fatigue + flag
+    - type: all_of
+      triggers:
+        - type: numeric_below
+          field: sodium_serum_mmol_l
+          alias_fields:
+            - serum_sodium
+            - sodium_baseline
+          threshold: 130
+        - type: numeric_above
+          field: potassium_serum_mmol_l
+          alias_fields:
+            - serum_potassium
+            - potassium_baseline
+          threshold: 5.5
+        - type: truthy_flag
+          field: severe_fatigue_addison_like
+
+# Override: corticosteroid replacement adecuado documentado
+override:
+  type: truthy_flag
+  field: corticosteroid_replacement_therapy_documented
+
+regimen_codes:
+  - REGIMEN_CODES_ABIRATERONE
+
+keywords:
+  - KEYWORDS_ABIRATERONE
+
+message: |
+  Abiraterona (Zytiga) NO debe iniciarse o continuarse en pacientes con
+  insuficiencia adrenal pre-existente (cortisol basal AM <5 µg/dL,
+  cortisol post-Cosyntropin <18 µg/dL, Addison disease documented,
+  panhipopituitarismo, supresión crónica esteroides) sin corticosteroide
+  replacement adecuado documentado (prednisona ≥5 mg BID O hidrocortisona
+  ≥20 mg/d split AM/PM).
+
+  Mecanismo: abiraterona inhibe CYP17 → bloquea biosíntesis adrenal de
+  cortisol y aldosterona → insuficiencia adrenal iatrogénica + exceso
+  mineralocorticoide compensatorio. En paciente con insuficiencia adrenal
+  pre-existente, agregar abiraterona SIN replacement adecuado precipita
+  CRISIS ADRENAL AGUDA potencialmente fatal (mortalidad ~10% sin
+  reconocimiento).
+
+  Evidencia regulatoria:
+    - Zytiga FDA prescribing information §5.4 — Adrenocortical
+      Insufficiency: monitor for symptoms; prednisone 5 mg BID OBLIGATORIO
+      cuando se administra abiraterona.
+    - COU-AA-301 (de Bono NEJM 2011;364:1995) — Insuficiencia adrenal
+      0.5% con prednisona vs 2-3% sin prednisona adecuada.
+    - COU-AA-302 (Ryan NEJM 2013;368:138) — Crisis adrenal 0.1% pero
+      casos fatales sin reconocimiento temprano.
+    - LATITUDE (Fizazi NEJM 2017;377:352) — Hipotensión sintomática
+      8-12%; hipokalemia G≥3 2-5%.
+    - Addison Society UK Clinical Guidelines 2023 — Crisis adrenal
+      diagnosis + management protocols.
+
+  Coexistencia con Gate 3 (uncontrolled_hypertension general que cubre
+  abiraterona + cabozantinib) + Gate 21 (abiraterone_hepatotoxicity_grade3).
+  Gate 28 añade DIMENSIÓN ADRENAL como 3a layer del safety profile
+  abiraterona, completando cobertura sistémica.
+
+  Conducta clínica:
+  1. Suspender abiraterona INMEDIATAMENTE si síntomas crisis adrenal:
+     - Hipotensión severa refractaria a fluidos (Sis <90 mmHg)
+     - Hipoglucemia <50 mg/dL
+     - Náusea + vómito + dolor abdominal severo
+     - Hiponatremia + hiperkalemia + acidosis metabólica
+     - Alteración estado mental + convulsiones
+  2. Manejo agudo crisis adrenal (mortalidad ~10% sin tratamiento):
+     - Hidrocortisona 100 mg IV bolo + 50-100 mg IV cada 6h
+     - NaCl 0.9% 1 L IV en 1ra hora + 1-2 L adicionales en 2-4h
+     - Glucosa IV 5% si hipoglucemia
+     - Evaluar precipitante (infección, cirugía, trauma)
+     - Endocrinología consult URGENTE
+  3. Diagnóstico ambulatorio:
+     - Cortisol basal AM (8-9 AM) — normal: 6-23 µg/dL
+     - Si <5 µg/dL O sintomático → ACTH (Cosyntropin) stimulation test
+     - Cortisol post-Cosyntropin <18 µg/dL @ 30-60 min = adrenal
+       insufficiency (gold standard)
+     - ACTH plasma + DHEAS + aldosterona + renina (diferenciar primaria
+       vs secundaria)
+  4. Replacement therapy (override gate 28):
+     - Hidrocortisona 30 mg/d (15-20 mg AM + 5-10 mg PM) — preferida
+     - O prednisona 5 mg BID — option si hidrocortisona no disponible
+     - Fludrocortisona 0.05-0.1 mg/d si insuficiencia primaria (Addison)
+     - Educación stress-dose: 2-3x dose en infección/cirugía + emergency
+       hydrocortisone IM kit
+     - Endocrinology endorsement + cortisol monitoring estable ≥4 sem
+       antes de re-iniciar abiraterona
+  5. Considerar terapia alternativa NO-abiraterona si replacement
+     no posible:
+     - Enzalutamida (sin efecto adrenal axis)
+     - Apalutamida o darolutamida (similar)
+     - Docetaxel si fitness permite
+     - Lu-177-PSMA-617 si PSMA-positive
+
+evidence_tag: zytiga_label_couaa_addison_clinical_guidelines
+trial_refs:
+  - "COU-AA-301"
+  - "COU-AA-302"
+  - LATITUDE
+  - "Zytiga label §5.4"
+  - "Addison Society UK 2023"
+
+references:
+  - "Zytiga (abiraterone) FDA prescribing information §5.4 (Adrenocortical Insufficiency)."
+  - "de Bono JS et al. COU-AA-301. NEJM 2011;364:1995-2005."
+  - "Ryan CJ et al. COU-AA-302. NEJM 2013;368:138-148."
+  - "Fizazi K et al. LATITUDE. NEJM 2017;377:352-360."
+  - "Addison Society UK Clinical Guidelines 2023 — Adrenal crisis management."
+  - "Bornstein SR et al. Adrenal insufficiency. JCEM 2016;101:364-389."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Abiraterone adrenal axis monitoring + prednisone"
+  eau_section: "EAU 2026 §6.5.5 — Abiraterone safety profile complete"
+  endocrine_section: "Endocrine Society Clinical Practice Guideline 2016"

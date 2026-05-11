@@ -1,0 +1,2 @@
+"""High-volume mCSPC domain."""
+

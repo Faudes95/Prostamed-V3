@@ -1,0 +1,148 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 58: prior_pelvic_rt_re_irradiation_contraindication
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXV) — Auditoría #67A — RP vs RT subspecialty.
+#
+# Razón clínica:
+#   Pacientes con RT pélvica previa (cualquier malignidad: PCa anterior,
+#   rectal, ginecológica, anal, vesical) tienen contraindicación absoluta
+#   para re-irradiación pélvica curativa por:
+#     - Dosis acumulada >100 Gy en órganos críticos (recto, vejiga, NVB)
+#     - Toxicidad late-effect ya establecida (proctitis crónica, cystitis)
+#     - Fistulization rate ≥15-20% en re-RT vs <2% baseline
+#     - Necrosis ósea pélvica (fémur, sacro)
+#     - Mortalidad treatment-related ≥5-8%
+#
+#   Excepciones documentadas (override):
+#     - SBRT focal salvage (>5 años intervalo + IMRT/proton previa con
+#       dose constraints documentados + multidisciplinaria approval)
+#     - Brachytherapy salvage post-EBRT recurrence (ASTRO/AUA 2022)
+#     - Re-RT paliativa para SCC o dolor refractario (no curativa)
+#
+#   Severity: hard_block — bloqueo absoluto re-RT pélvica curativa.
+#
+#   Override: salvage_re_rt_protocol_documented (caso especial con plan
+#   formal multidisciplinario) o palliative_intent_documented (re-RT
+#   paliativa permitida con dose constraints reducidos).
+# ──────────────────────────────────────────────────────────────────────
+
+code: prior_pelvic_rt_re_irradiation_contraindication
+title: "RT pélvica previa → contraindicación re-irradiación curativa"
+faubot_added_in: "2026-04-25 LXXV"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: prior pelvic RT documented
+    - type: truthy_flag
+      field: prior_pelvic_radiation
+      alias_fields:
+        - prior_pelvic_rt
+        - rt_pelvica_previa
+        - radioterapia_pelvica_anterior
+        - history_of_pelvic_rt
+    # Path B: prior RT for any malignancy with pelvic field
+    - type: string_contains_any
+      field: prior_rt_field_location
+      alias_fields:
+        - rt_previous_field
+        - campo_rt_previo
+      patterns:
+        - pelvis
+        - pelvic
+        - prostate
+        - rectum
+        - rectal
+        - bladder
+        - cervix
+        - uterine
+        - anal
+        - lower_abdomen
+    # Path C: clinical flag explicit
+    - type: truthy_flag
+      field: re_irradiation_pelvic_contraindicated
+      alias_fields:
+        - re_rt_pelvis_contraindicated
+        - reirradiacion_pelvica_contraindicada
+
+# Override: salvage re-RT protocol formal o paliative intent
+override:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: salvage_re_rt_protocol_documented
+      alias_fields:
+        - re_rt_salvage_approved
+        - protocolo_re_rt_salvataje_aprobado
+    - type: truthy_flag
+      field: palliative_intent_documented
+      alias_fields:
+        - intent_palliative
+        - intencion_paliativa
+
+regimen_codes:
+  - REGIMEN_CODES_RADIOTHERAPY_CURATIVE
+
+keywords:
+  - radioterapia curativa
+  - curative radiation
+  - external beam RT
+  - EBRT
+  - SBRT curativa
+
+message: |
+  ⛔ HARD BLOCK: RT pélvica previa contraindica re-irradiación pélvica
+  curativa (dosis acumulada, toxicidad late-effect, riesgo fístula).
+
+  📊 RIESGOS DOCUMENTADOS RE-RT pelvis curativa:
+  - Fistulization recto-vesical/recto-uretral: ≥15-20% (vs <2% baseline)
+  - Necrosis ósea pélvica (fémur, sacro): 5-10%
+  - Proctitis hemorrágica refractaria: 25-40%
+  - Cistitis radiation-induced severa: 30-50%
+  - Mortalidad treatment-related: ≥5-8%
+  - Dose constraints excedidos: rectum >75 Gy, bladder >70 Gy
+
+  🎯 ALTERNATIVAS CURATIVAS:
+  1. **RP de salvataje** (radical post-RT): morbilidad alta pero opción
+     curativa única — solo en centros especializados, complications:
+     - Stricture anastomosis: 30-40%
+     - Incontinencia severa: 30-50%
+     - Lesión rectal: 5-8%
+  2. **Brachytherapy salvage LDR/HDR** post-EBRT recurrence (ASTRO/AUA
+     2022 consensus) — en lesión local recurrente focal, no extensa
+  3. **Cryoablation focal**: opción menos invasiva, oncologic outcomes
+     intermediate
+  4. **HIFU salvage**: similar cryoablation
+  5. **Sistémica + observación**: si paciente unfit para salvage local
+
+  ⚠️ EXCEPCIONES (override gate):
+  1. **SBRT focal salvage**: >5 años intervalo + IMRT previa con
+     constraints documentados + multidisciplinaria — usar
+     `salvage_re_rt_protocol_documented` flag
+  2. **Re-RT paliativa**: SCC, dolor óseo refractario — NO curativa,
+     dose constraints muy reducidos — usar `palliative_intent_documented`
+
+  🔬 EVIDENCIA:
+  - **EAU 2026 §8.2.1**: "Prior pelvic radiation is an absolute
+    contraindication to curative pelvic re-irradiation"
+  - **NCCN Prostate v5.2026 PROS-3**: "salvage RP after RT failure
+    requires high-volume center expertise"
+  - **ASTRO/AUA 2022 Salvage Brachytherapy Consensus**: focal salvage
+    brachy possible in carefully selected patients
+  - **Tetar IJROBP 2018**: re-RT pelvic toxicity series (15% fistula)
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `prior_pelvic_radiation`: yes_documented / none
+  - `prior_rt_field_location`: pelvis / rectum / bladder / etc
+  - `prior_rt_intent`: curative_pca / curative_other_malignancy / palliative
+  - `salvage_re_rt_protocol_documented`: override flag
+  - `palliative_intent_documented`: override flag para RT paliativa
+
+evidence_tag: eau_2026_nccn_v5_re_rt_pelvic_contra_astro_aua_2022
+trial_refs:
+  - "EAU 2026 §8.2.1"
+  - "NCCN Prostate v5.2026 PROS-3"
+  - "ASTRO/AUA 2022 Salvage Brachytherapy Consensus"
+  - "Tetar IJROBP 2018 (re-RT pelvic toxicity)"

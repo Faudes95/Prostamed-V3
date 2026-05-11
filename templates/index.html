@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProstaMed — Predicción Oncológica de Precisión</title>
+    <meta name="description"
+        content="Plataforma de salud, diagnóstico y precisión para evaluación de riesgo y pronóstico en cáncer de próstata.">
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+    <!-- ═══ HERO HEADER ═══ -->
+    <header class="hero">
+        <div class="hero-bg"></div>
+        <div class="hero-content">
+            {% set wide_logo = not ui_assets.prostamed_logo.is_fallback %}
+            <div class="logo {{ 'logo-wide' if wide_logo else '' }}">
+                <div class="logo-icon {{ 'logo-icon-wide' if wide_logo else '' }}">
+                    <img src="{{ ui_assets.prostamed_logo.src }}" alt="{{ ui_assets.prostamed_logo.alt }}" />
+                </div>
+                {% if not wide_logo %}
+                <div>
+                    <h1>Prosta<span class="accent">Med</span></h1>
+                    <p class="subtitle">Salud · Diagnóstico · Precisión</p>
+                </div>
+                {% endif %}
+            </div>
+            <p class="hero-desc">
+                Plataforma de predicción oncológica con 17 variables clínicas, arquitectura residual,
+                y <strong>4 herramientas clínicas validadas</strong> (CAPRA, NCCN, Kattan/MSK, Briganti).
+                <strong>Solo para fines educativos y de investigación.</strong>
+            </p>
+        </div>
+    </header>
+
+    <!-- ═══ MAIN FORM ═══ -->
+    <main class="container">
+        <!-- Navigation Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchView('prediction')">Calculadora Clínica</button>
+            <button class="tab-btn" onclick="switchView('dashboard')">Dashboard Investigación</button>
+        </div>
+
+        <div id="predictionView">
+            <form id="predictionForm" autocomplete="off">
+
+                <!-- — Sección: Datos del Paciente — -->
+                <section class="card">
+                    <div class="card-header">
+                        <span class="card-icon">👤</span>
+                        <h2>Datos del Paciente</h2>
+                    </div>
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="age">Edad</label>
+                            <input type="number" id="age" name="age" value="68" min="18" max="120" required>
+                            <span class="hint">años</span>
+                        </div>
+                        <div class="field">
+                            <label for="bmi">IMC</label>
+                            <input type="number" id="bmi" name="bmi" value="28.5" step="0.1" min="10" max="70" required>
+                            <span class="hint">kg/m²</span>
+                        </div>
+                        <div class="field">
+                            <label for="ecog">ECOG</label>
+                            <select id="ecog" name="ecog" required>
+                                <option value="0" selected>0 — Asintomático</option>
+                                <option value="1">1 — Sintomático ambulatorio</option>
+                                <option value="2">2 — En cama <50%< /option>
+                                <option value="3">3 — En cama >50%</option>
+                                <option value="4">4 — Encamado</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="cci">Charlson (CCI)</label>
+                            <input type="number" id="cci" name="cci" value="1" min="0" max="20" required>
+                            <span class="hint">comorbilidades</span>
+                        </div>
+                        <div class="field">
+                            <label for="race_ethnicity">Raza / Etnia</label>
+                            <select id="race_ethnicity" name="race_ethnicity" required>
+                                <option value="hispano" selected>Hispano</option>
+                                <option value="caucasico">Caucásico</option>
+                                <option value="afroamericano">Afroamericano</option>
+                                <option value="asiatico">Asiático</option>
+                                <option value="otro">Otro</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="family_history">Antecedente Familiar</label>
+                            <select id="family_history" name="family_history" required>
+                                <option value="0" selected>No</option>
+                                <option value="1">Sí</option>
+                            </select>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- — Sección: Marcadores Bioquímicos — -->
+                <section class="card">
+                    <div class="card-header">
+                        <span class="card-icon">🧬</span>
+                        <h2>Marcadores Bioquímicos</h2>
+                    </div>
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="psa">PSA Total</label>
+                            <input type="number" id="psa" name="psa" value="12.5" step="0.1" min="0" required>
+                            <span class="hint">ng/mL</span>
+                        </div>
+                        <div class="field">
+                            <label for="free_psa_ratio">Ratio PSA Libre</label>
+                            <input type="number" id="free_psa_ratio" name="free_psa_ratio" value="0.15" step="0.01"
+                                min="0.01" max="1" required>
+                            <span class="hint">libre/total</span>
+                        </div>
+                        <div class="field">
+                            <label for="testosterone">Testosterona</label>
+                            <input type="number" id="testosterone" name="testosterone" value="380" step="1" min="0"
+                                max="2000" required>
+                            <span class="hint">ng/dL</span>
+                        </div>
+                        <div class="field">
+                            <label for="volumen_prostatico">Vol. Prostático</label>
+                            <input type="number" id="volumen_prostatico" name="volumen_prostatico" value="40" step="1"
+                                min="5" max="200">
+                            <span class="hint">mL (para PSAD)</span>
+                        </div>
+                        <div class="field">
+                            <label for="genomic_score">Score Genómico</label>
+                            <input type="number" id="genomic_score" name="genomic_score" value="0.42" step="0.01"
+                                min="0" max="1" required>
+                            <span class="hint">Decipher/Prolaris (0-1)</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- — Sección: Estadificación y Biopsia — -->
+                <section class="card">
+                    <div class="card-header">
+                        <span class="card-icon">🔬</span>
+                        <h2>Estadificación y Biopsia</h2>
+                    </div>
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="clinical_tstage">Estadio T Clínico (TNM)</label>
+                            <select id="clinical_tstage" name="clinical_tstage" required>
+                                <option value="T1c">T1c — No palpable (detectado por PSA)</option>
+                                <option value="T2a" selected>T2a — ≤ 50% de un lóbulo</option>
+                                <option value="T2b">T2b — > 50% de un lóbulo</option>
+                                <option value="T2c">T2c — Ambos lóbulos</option>
+                                <option value="T3a">T3a — Extensión extracapsular</option>
+                                <option value="T3b">T3b — Invasión vesículas seminales</option>
+                                <option value="T4">T4 — Fijado / invade estructuras adyacentes</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="gleason_primary">Gleason — Patrón Primario</label>
+                            <select id="gleason_primary" name="gleason_primary" required>
+                                <option value="3" selected>3 — Bien diferenciado</option>
+                                <option value="4">4 — Pobremente diferenciado</option>
+                                <option value="5">5 — Indiferenciado</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="gleason_secondary">Gleason — Patrón Secundario</label>
+                            <select id="gleason_secondary" name="gleason_secondary" required>
+                                <option value="3">3 — Bien diferenciado</option>
+                                <option value="4" selected>4 — Pobremente diferenciado</option>
+                                <option value="5">5 — Indiferenciado</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Gleason Total / ISUP</label>
+                            <div class="computed-field" id="gleasonDisplay">7 (3+4) — ISUP 2</div>
+                            <span class="hint">auto-calculado</span>
+                        </div>
+                        <div class="field">
+                            <label for="pirads">PI-RADS (MRI)</label>
+                            <select id="pirads" name="pirads" required>
+                                <option value="1">1 — Muy baja</option>
+                                <option value="2">2 — Baja</option>
+                                <option value="3">3 — Equívoca</option>
+                                <option value="4" selected>4 — Alta</option>
+                                <option value="5">5 — Muy alta</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="previous_biopsies">Biopsias Previas</label>
+                            <input type="number" id="previous_biopsies" name="previous_biopsies" value="1" min="0"
+                                max="20" required>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- — Sección: Análisis de Cores — -->
+                <section class="card">
+                    <div class="card-header">
+                        <span class="card-icon">🧪</span>
+                        <h2>Análisis de Cores de Biopsia</h2>
+                    </div>
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="total_cores">Cores Totales</label>
+                            <input type="number" id="total_cores" name="total_cores" value="12" min="1" max="30"
+                                required>
+                        </div>
+                        <div class="field">
+                            <label for="num_cores_positive">Cores Positivos</label>
+                            <input type="number" id="num_cores_positive" name="num_cores_positive" value="4" min="0"
+                                max="30" required>
+                        </div>
+                        <div class="field">
+                            <label for="pct_cores_positive">% Cores Positivos</label>
+                            <input type="number" id="pct_cores_positive" name="pct_cores_positive" value="0.33"
+                                step="0.01" min="0" max="1" required>
+                            <span class="hint">0.0 – 1.0 (auto-calculado)</span>
+                        </div>
+                        <div class="field">
+                            <label for="max_core_involvement">Máx. Compromiso Core</label>
+                            <input type="number" id="max_core_involvement" name="max_core_involvement" value="0.45"
+                                step="0.01" min="0" max="1" required>
+                            <span class="hint">% tumor en core más afectado</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- — Sección: Patología — -->
+                <section class="card">
+                    <div class="card-header">
+                        <span class="card-icon">⚕️</span>
+                        <h2>Hallazgos Patológicos</h2>
+                    </div>
+                    <div class="field-grid thirds">
+                        <div class="field">
+                            <label for="perineural_invasion">Invasión Perineural</label>
+                            <select id="perineural_invasion" name="perineural_invasion" required>
+                                <option value="0">No</option>
+                                <option value="1" selected>Sí</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="lymphovascular_invasion">Invasión Linfovascular</label>
+                            <select id="lymphovascular_invasion" name="lymphovascular_invasion" required>
+                                <option value="0" selected>No</option>
+                                <option value="1">Sí</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="surgical_margin_status">Margen Quirúrgico (+)</label>
+                            <select id="surgical_margin_status" name="surgical_margin_status" required>
+                                <option value="0" selected>Negativo</option>
+                                <option value="1">Positivo</option>
+                            </select>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Hidden fields for ML model compatibility -->
+                <input type="hidden" id="gleason" name="gleason" value="7">
+                <input type="hidden" id="isup_grade" name="isup_grade" value="2">
+                <input type="hidden" id="stage" name="stage" value="2">
+                <input type="hidden" id="dre_findings" name="dre_findings" value="T2a">
+
+                <!-- — Submit — -->
+                <div class="submit-area">
+                    <button type="submit" id="submitBtn" class="btn-primary">
+                        <span class="btn-text">Calcular</span>
+                        <span class="btn-loader" style="display:none;">
+                            <svg class="spinner" viewBox="0 0 24 24">
+                                <circle cx="12" cy="12" r="10" />
+                            </svg>
+                            Procesando…
+                        </span>
+                    </button>
+                </div>
+            </form>
+
+            <!-- ═══ CLINICAL SCORES RESULTS ═══ -->
+            <div id="clinicalScores" class="results hidden">
+                <h2 class="section-title">🏥 Herramientas Clínicas Validadas</h2>
+
+                <div class="scores-grid">
+                    <!-- CAPRA -->
+                    <section class="card score-card capra-card" id="capraCard">
+                        <div class="card-header">
+                            <span class="card-icon">📋</span>
+                            <h2>CAPRA Score</h2>
+                            <span class="score-source">UCSF · Cooperberg 2005</span>
+                        </div>
+                        <div class="score-main">
+                            <div class="score-circle" id="capraCircle">
+                                <span class="score-num" id="capraNum">—</span>
+                                <span class="score-denom">/10</span>
+                            </div>
+                            <div class="score-badge" id="capraBadge">—</div>
+                        </div>
+                        <div class="score-breakdown" id="capraBreakdown"></div>
+                        <div class="score-prognosis" id="capraPrognosis"></div>
+                    </section>
+
+                    <!-- NCCN -->
+                    <section class="card score-card nccn-card" id="nccnCard">
+                        <div class="card-header">
+                            <span class="card-icon">📊</span>
+                            <h2>NCCN Risk Group</h2>
+                            <span class="score-source">v3.2024</span>
+                        </div>
+                        <div class="score-main">
+                            <div class="nccn-badge" id="nccnBadge">—</div>
+                        </div>
+                        <div class="nccn-factors" id="nccnFactors"></div>
+                        <div class="nccn-recommendation" id="nccnRecommendation"></div>
+                    </section>
+
+                    <!-- Kattan/MSK -->
+                    <section class="card score-card kattan-card" id="kattanCard">
+                        <div class="card-header">
+                            <span class="card-icon">🏛️</span>
+                            <h2>Kattan / MSK Nomogram</h2>
+                            <span class="score-source">Memorial Sloan Kettering</span>
+                        </div>
+                        <div class="score-main">
+                            <div class="kattan-gauge">
+                                <svg viewBox="0 0 120 120">
+                                    <circle class="gauge-bg" cx="60" cy="60" r="50" />
+                                    <circle class="gauge-fill kattan-fill" id="kattanGauge" cx="60" cy="60" r="50" />
+                                </svg>
+                                <div class="gauge-value" id="kattanValue">—</div>
+                            </div>
+                            <div class="kattan-label">Prob. Órgano-Confinado</div>
+                        </div>
+                        <div class="kattan-interpretation" id="kattanInterp"></div>
+                    </section>
+
+                    <!-- Briganti -->
+                    <section class="card score-card briganti-card" id="brigantiCard">
+                        <div class="card-header">
+                            <span class="card-icon">🔗</span>
+                            <h2>Briganti Nomogram</h2>
+                            <span class="score-source">LNI · Eur Urol 2012/2017</span>
+                        </div>
+                        <div class="score-main">
+                            <div class="briganti-prob" id="brigantiProb">—</div>
+                            <div class="briganti-label">Prob. Invasión Ganglionar</div>
+                        </div>
+                        <div class="briganti-eplnd" id="brigantiEplnd"></div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- ═══ TNM STAGING PANEL ═══ -->
+            <div id="tnmPanel" class="results hidden">
+                <h2 class="section-title">🔬 Estadificación TNM — Cáncer de Próstata</h2>
+                <section class="card" style="overflow: hidden;">
+                    <div class="card-header">
+                        <span class="card-icon">📋</span>
+                        <h2>Clasificación TNM del Paciente</h2>
+                    </div>
+                    <div id="tnmContent" style="display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start;">
+                        <div id="tnmImageBox" style="flex: 0 0 220px; text-align: center;">
+                            <img id="tnmImage" src="" alt="TNM Stage" style="max-width: 200px; max-height: 180px; border-radius: 12px; object-fit: contain;" />
+                        </div>
+                        <div id="tnmInfo" style="flex: 1; min-width: 220px;">
+                            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
+                                <span id="tnmBadgeLabel" style="display: inline-flex; align-items: center; justify-content: center; min-width: 3.5rem; padding: 0.35rem 0.75rem; border-radius: 9999px; font-weight: 800; font-size: 1rem; color: #020617;"></span>
+                                <span id="tnmShortDesc" style="font-size: 1rem; font-weight: 600; color: #e8ecf4;"></span>
+                            </div>
+                            <p id="tnmLongDesc" style="font-size: 0.9rem; color: #8e99b0; line-height: 1.6; margin-bottom: 0.75rem;"></p>
+                            <div id="tnmComposite" style="margin-top: 0.5rem;">
+                                <span style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; color: #5a6580;">Estadio compuesto:</span>
+                                <span id="tnmCompositeLabel" style="display: inline-flex; padding: 0.3rem 0.75rem; border-radius: 9999px; font-weight: 800; font-size: 0.95rem; border: 2px solid; margin-left: 0.5rem;"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <p style="margin-top: 1rem; font-size: 0.7rem; color: #5a6580; font-style: italic;">
+                        Referencia: AJCC Cancer Staging Manual 8th Ed. · NCCN 5.2026
+                    </p>
+                </section>
+            </div>
+
+            <!-- ═══ CLINICAL SUMMARY (NEW) ═══ -->
+            <div id="clinicalSummary" class="results hidden">
+                <h2 class="section-title">📈 Análisis Clínico y Estadística Predictiva</h2>
+
+                <div id="discordanceAlert" class="discordance-alert hidden"></div>
+
+                <section class="card summary-card">
+                    <div class="card-header">
+                        <span class="card-icon">🧠</span>
+                        <h2>Resumen Clínico Inteligente</h2>
+                    </div>
+
+                    <div class="summary-section">
+                        <h3>Perfil de Riesgo Integrado</h3>
+                        <div class="summary-text prominent" id="sumRiskProfile"></div>
+                    </div>
+
+                    <div class="summary-grid">
+                        <div class="summary-col">
+                            <h3>Agresividad Biológica</h3>
+                            <ul id="sumAggression" class="summary-list"></ul>
+                        </div>
+                        <div class="summary-col">
+                            <h3>Extensión Local</h3>
+                            <ul id="sumLocal" class="summary-list"></ul>
+                        </div>
+                    </div>
+
+                    <div class="summary-section">
+                        <h3>Estado Ganglionar & Manejo Quirúrgico</h3>
+                        <ul id="sumLymph" class="summary-list"></ul>
+                    </div>
+
+                    <div class="summary-section highlight-box">
+                        <h3>📊 Impacto Estadístico (Outcomes a largo plazo)</h3>
+                        <ul id="sumStats" class="summary-list"></ul>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ═══ ML PREDICTION RESULTS ═══ -->
+            <div id="results" class="results hidden">
+                <h2 class="section-title">🤖 Predicción del Modelo de Deep Learning</h2>
+
+                <section class="card result-card">
+                    <div class="card-header">
+                        <span class="card-icon">📊</span>
+                        <h2>Resultado de la Predicción</h2>
+                    </div>
+
+                    <!-- Risk -->
+                    <div class="result-section">
+                        <h3>Nivel de Riesgo</h3>
+                        <div class="risk-badge" id="riskBadge">—</div>
+                        <div class="prob-bars" id="riskBars"></div>
+                    </div>
+
+                    <!-- Treatment -->
+                    <div class="result-section">
+                        <h3>Tratamiento Recomendado</h3>
+                        <div class="treatment-main" id="treatmentMain">—</div>
+                        <div class="prob-bars" id="treatBars"></div>
+                    </div>
+
+                    <!-- Survival -->
+                    <div class="result-section">
+                        <h3>Pronóstico</h3>
+                        <div class="gauges">
+                            <div class="gauge">
+                                <svg viewBox="0 0 120 120">
+                                    <circle class="gauge-bg" cx="60" cy="60" r="50" />
+                                    <circle class="gauge-fill" id="gaugeCure" cx="60" cy="60" r="50" />
+                                </svg>
+                                <div class="gauge-value" id="valCure">—</div>
+                                <div class="gauge-label">Tasa Curación</div>
+                            </div>
+                            <div class="gauge">
+                                <svg viewBox="0 0 120 120">
+                                    <circle class="gauge-bg" cx="60" cy="60" r="50" />
+                                    <circle class="gauge-fill surv5" id="gaugeSurv5" cx="60" cy="60" r="50" />
+                                </svg>
+                                <div class="gauge-value" id="valSurv5">—</div>
+                                <div class="gauge-label">Supervivencia 5 años</div>
+                            </div>
+                            <div class="gauge">
+                                <svg viewBox="0 0 120 120">
+                                    <circle class="gauge-bg" cx="60" cy="60" r="50" />
+                                    <circle class="gauge-fill surv10" id="gaugeSurv10" cx="60" cy="60" r="50" />
+                                </svg>
+                                <div class="gauge-value" id="valSurv10">—</div>
+                                <div class="gauge-label">Supervivencia 10 años</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="disclaimer">
+                    ⚠️ <strong>Aviso importante:</strong> El modelo de Deep Learning fue entrenado con datos sintéticos.
+                    Las herramientas clínicas (CAPRA, NCCN, Kattan, Briganti) usan fórmulas validadas publicadas.
+                    Ningún resultado debe usarse para decisiones clínicas reales sin supervisión médica.
+                </div>
+            </div>
+
+            <!-- Error -->
+            <div id="errorMsg" class="error-msg hidden"></div>
+        </div> <!-- End of predictionView -->
+
+        <!-- Dashboard View -->
+        <div id="dashboardView" style="display: none;">
+            <div class="header">
+                <h1>Dashboard Multicéntrico</h1>
+                <p>Análisis de Población y Métricas de Validación</p>
+            </div>
+
+            <div class="sync-section">
+                <button type="button" class="btn-primary" onclick="syncData()">
+                    <span id="syncText">Sincronizar con Base Maestra</span>
+                    <span id="syncSpinner" class="spinner hidden"></span>
+                </button>
+                <p id="syncStatus" class="status-text"></p>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <h3>Pacientes Totales</h3>
+                    <p class="metric-value" id="totalPatients">-</p>
+                </div>
+                <div class="metric-card">
+                    <h3>Tasa de Discordancia</h3>
+                    <p class="metric-value" id="discordanceRate">-</p>
+                    <p class="metric-sub">ML vs Guías Clínicas</p>
+                </div>
+                <div class="metric-card">
+                    <h3>Pacientes Discordantes</h3>
+                    <p class="metric-value" id="discordanceCount">-</p>
+                </div>
+            </div>
+
+            <div class="charts-container">
+                <div class="chart-box">
+                    <h3>Distribución de Riesgo (NCCN)</h3>
+                    <canvas id="riskChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <p>ProstaMed · Salud · Diagnóstico · Precisión · Herramientas Clínicas Validadas · 2026</p>
+    </footer>
+
+    <script>
+        // Tab Switching
+        function switchView(viewName) {
+            document.getElementById('predictionView').style.display = viewName === 'prediction' ? 'block' : 'none';
+            document.getElementById('dashboardView').style.display = viewName === 'dashboard' ? 'block' : 'none';
+
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            // Find the button that was clicked is hard without event, so just handle logic
+            if (event && event.target) {
+                document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+                event.target.classList.add('active');
+            }
+
+            if (viewName === 'dashboard') {
+                loadStats();
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+
+                document.getElementById('totalPatients').textContent = data.total_patients;
+                document.getElementById('discordanceRate').textContent = data.discordance_rate + '%';
+                document.getElementById('discordanceCount').textContent = data.discordance_count;
+
+                renderRiskChart(data.risk_distribution);
+            } catch (e) {
+                console.error("Error loading stats:", e);
+            }
+        }
+
+        async function syncData() {
+            const btn = document.querySelector('.sync-section button');
+            const spinner = document.getElementById('syncSpinner');
+            const status = document.getElementById('syncStatus');
+            const text = document.getElementById('syncText');
+
+            btn.disabled = true;
+            text.textContent = "Sincronizando...";
+            spinner.classList.remove('hidden');
+            status.textContent = "Conectando con urologia.db...";
+
+            try {
+                const response = await fetch('/api/sync', { method: 'POST' });
+                const result = await response.json();
+
+                if (result.success) {
+                    status.textContent = `Sincronización completada: ${result.synced_count} pacientes procesados.`;
+                    status.style.color = 'var(--accent)';
+                    loadStats(); // Refresh dashboard
+                } else {
+                    status.textContent = "Error en sincronización.";
+                    status.style.color = 'var(--risk-alto)';
+                }
+            } catch (e) {
+                status.textContent = "Error de conexión.";
+            } finally {
+                btn.disabled = false;
+                text.textContent = "Sincronizar con Base Maestra";
+                spinner.classList.add('hidden');
+            }
+        }
+
+        let riskChartInstance = null;
+        function renderRiskChart(dist) {
+            const ctx = document.getElementById('riskChart').getContext('2d');
+
+            if (riskChartInstance) riskChartInstance.destroy();
+
+            riskChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(dist),
+                    datasets: [{
+                        data: Object.values(dist),
+                        backgroundColor: [
+                            '#2ecc71', // Bajo
+                            '#f1c40f', // Intermedio
+                            '#e74c3c', // Alto
+                            '#8e44ad', // Muy Alto
+                            '#95a5a6'  // Otro
+                        ],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: '#e0e0e0' } }
+                    }
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // ── Auto-calcular Gleason total, ISUP y campos derivados ────────────
+            const gpSel = document.getElementById('gleason_primary');
+            const gsSel = document.getElementById('gleason_secondary');
+            const gleasonHidden = document.getElementById('gleason');
+            const isupHidden = document.getElementById('isup_grade');
+            const gleasonDisplay = document.getElementById('gleasonDisplay');
+            const tstageSel = document.getElementById('clinical_tstage');
+            const stageHidden = document.getElementById('stage');
+            const dreHidden = document.getElementById('dre_findings');
+
+            function gleasonToISUP(total, primary) {
+                if (total <= 6) return 1;
+                if (total === 7 && primary === 3) return 2;
+                if (total === 7 && primary === 4) return 3;
+                if (total === 8) return 4;
+                return 5;
+            }
+
+            function updateGleason() {
+                const gp = parseInt(gpSel.value);
+                const gs = parseInt(gsSel.value);
+                const total = gp + gs;
+                const isup = gleasonToISUP(total, gp);
+                gleasonHidden.value = total;
+                isupHidden.value = isup;
+                gleasonDisplay.textContent = `${total} (${gp}+${gs}) — ISUP ${isup}`;
+                gleasonDisplay.className = 'computed-field isup-' + isup;
+            }
+            gpSel.addEventListener('change', updateGleason);
+            gsSel.addEventListener('change', updateGleason);
+
+            // Map T-stage to numeric stage and DRE
+            function updateStage() {
+                const ts = tstageSel.value;
+                const stageMap = { 'T1c': 1, 'T2a': 2, 'T2b': 2, 'T2c': 2, 'T3a': 3, 'T3b': 3, 'T4': 4 };
+                stageHidden.value = stageMap[ts] || 2;
+                dreHidden.value = ts;
+            }
+            tstageSel.addEventListener('change', updateStage);
+
+            // Auto-calcular % cores
+            const totalCores = document.getElementById('total_cores');
+            const posCores = document.getElementById('num_cores_positive');
+            const pctCores = document.getElementById('pct_cores_positive');
+            function updatePct() {
+                const t = parseInt(totalCores.value) || 1;
+                const p = parseInt(posCores.value) || 0;
+                pctCores.value = Math.min(1, (p / t)).toFixed(2);
+            }
+            totalCores.addEventListener('input', updatePct);
+            posCores.addEventListener('input', updatePct);
+
+            // Inicializar
+            updateGleason();
+            updateStage();
+
+            // ── Submit form ─────────────────────────────────────────────────────
+            const form = document.getElementById('predictionForm');
+            const btn = document.getElementById('submitBtn');
+            const btnText = btn.querySelector('.btn-text');
+            const btnLoader = btn.querySelector('.btn-loader');
+            const results = document.getElementById('results');
+            const clinicalScores = document.getElementById('clinicalScores');
+            const errorMsg = document.getElementById('errorMsg');
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                btnText.style.display = 'none';
+                btnLoader.style.display = 'inline-flex';
+                btn.disabled = true;
+                results.classList.add('hidden');
+                clinicalScores.classList.add('hidden');
+                document.getElementById('clinicalSummary').classList.add('hidden');
+                errorMsg.classList.add('hidden');
+
+                const fd = new FormData(form);
+                const data = {};
+                fd.forEach((v, k) => data[k] = v);
+
+                try {
+                    const res = await fetch('/predict', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data),
+                    });
+                    const json = await res.json();
+
+                    if (!json.success) {
+                        errorMsg.textContent = '❌ ' + json.error;
+                        errorMsg.classList.remove('hidden');
+                        return;
+                    }
+
+                    if (json.clinical_scores) renderClinicalScores(json.clinical_scores);
+                    if (json.clinical_summary) renderClinicalSummary(json.clinical_summary);
+                    if (json.prediction) renderResults(json.prediction);
+                    renderTNMPanel(data);
+                } catch (err) {
+                    errorMsg.textContent = '❌ Error de conexión: ' + err.message;
+                    errorMsg.classList.remove('hidden');
+                } finally {
+                    btnText.style.display = 'inline';
+                    btnLoader.style.display = 'none';
+                    btn.disabled = false;
+                }
+            });
+
+            // ── Render Clinical Scores ──────────────────────────────────────────
+
+            function renderClinicalScores(scores) {
+                // CAPRA
+                const capra = scores.capra;
+                document.getElementById('capraNum').textContent = capra.score;
+                const capraBadge = document.getElementById('capraBadge');
+                capraBadge.textContent = capra.risk_group;
+                capraBadge.className = 'score-badge risk-' + capra.risk_group.toLowerCase();
+
+                const breakdown = document.getElementById('capraBreakdown');
+                const labelMap = { edad: 'Edad ≥50', psa: 'PSA', gleason: 'Gleason', estadio_t: 'Estadio T', pct_cores: '% Cores ≥34%' };
+                breakdown.innerHTML = Object.entries(capra.desglose).map(([k, v]) =>
+                    `<div class="breakdown-row"><span>${labelMap[k] || k}</span><span class="breakdown-pts">${v} pt${v !== 1 ? 's' : ''}</span></div>`
+                ).join('');
+
+                document.getElementById('capraPrognosis').innerHTML =
+                    `<div class="prognosis-row">🕐 Libre BCR 3 años: <strong>${capra.bcr_free_3y}</strong></div>` +
+                    `<div class="prognosis-row">🕐 Libre BCR 5 años: <strong>${capra.bcr_free_5y}</strong></div>`;
+
+                // NCCN
+                const nccn = scores.nccn;
+                const nccnBadge = document.getElementById('nccnBadge');
+                nccnBadge.textContent = nccn.risk_group;
+                const nccnClass = nccn.risk_group.toLowerCase()
+                    .replace(/\s+/g, '-').replace(/á/g, 'a').replace(/é/g, 'e').replace(/í/g, 'i').replace(/ó/g, 'o').replace(/ú/g, 'u');
+                nccnBadge.className = 'nccn-badge nccn-' + nccnClass;
+
+                document.getElementById('nccnFactors').innerHTML = nccn.factores
+                    .map(f => `<div class="nccn-factor">• ${f}</div>`).join('');
+                document.getElementById('nccnRecommendation').innerHTML =
+                    `<div class="nccn-rec">💡 ${nccn.recomendacion}</div>`;
+
+                // Kattan/MSK
+                const kattan = scores.kattan_msk;
+                const kattanPct = kattan.probabilidad_raw;
+                document.getElementById('kattanValue').textContent = kattan.probabilidad_organo_confinado;
+                setGauge('kattanGauge', null, kattanPct.toString());
+                document.getElementById('kattanInterp').innerHTML =
+                    `<div class="kattan-interp-text">${kattan.interpretacion}</div>`;
+
+                // Briganti
+                const brig = scores.briganti;
+                const brigantiProb = document.getElementById('brigantiProb');
+                brigantiProb.textContent = brig.probabilidad_lni;
+                brigantiProb.className = 'briganti-prob ' + (brig.eplnd_recomendada ? 'briganti-high' : 'briganti-low');
+
+                const eplndDiv = document.getElementById('brigantiEplnd');
+                eplndDiv.innerHTML = `<div class="eplnd-badge ${brig.eplnd_recomendada ? 'eplnd-yes' : 'eplnd-no'}">${brig.eplnd_texto}</div>`;
+
+                clinicalScores.classList.remove('hidden');
+                clinicalScores.classList.remove('hidden');
+            }
+
+            // ── Render Clinical Summary ─────────────────────────────────────────
+
+            function renderClinicalSummary(sum) {
+                const container = document.getElementById('clinicalSummary');
+
+                // Discordance Alert
+                const alertBox = document.getElementById('discordanceAlert');
+                if (sum.discordance_alert) {
+                    alertBox.textContent = sum.discordance_alert;
+                    alertBox.classList.remove('hidden');
+                } else {
+                    alertBox.classList.add('hidden');
+                }
+
+                document.getElementById('sumRiskProfile').textContent = sum.risk_profile;
+
+                fillList('sumAggression', sum.aggression_analysis);
+                fillList('sumLocal', sum.local_extension_analysis);
+                fillList('sumLymph', sum.lymph_node_analysis);
+                fillList('sumStats', sum.statistical_impact);
+
+                container.classList.remove('hidden');
+            }
+
+            function fillList(id, items) {
+                const ul = document.getElementById(id);
+                ul.innerHTML = items.map(i => `<li>${i}</li>`).join('');
+            }
+
+            // ── Render ML Results ────────────────────────────────────────────────
+
+            function renderResults(pred) {
+                const riskLevel = pred.riesgo.nivel;
+                const badge = document.getElementById('riskBadge');
+                badge.textContent = riskLevel;
+                badge.className = 'risk-badge risk-' + riskLevel.toLowerCase();
+
+                renderBars('riskBars', pred.riesgo.probabilidades, 'risk');
+
+                const treatLabels = {
+                    'vigilancia_activa': 'Vigilancia Activa',
+                    'radioterapia': 'Radioterapia',
+                    'prostatectomia': 'Prostatectomía',
+                    'hormonoterapia': 'Hormonoterapia',
+                    'quimioterapia': 'Quimioterapia',
+                };
+                document.getElementById('treatmentMain').textContent =
+                    treatLabels[pred.tratamiento_recomendado.principal] || pred.tratamiento_recomendado.principal;
+
+                const treatProbs = {};
+                for (const [k, v] of Object.entries(pred.tratamiento_recomendado.probabilidades)) {
+                    treatProbs[treatLabels[k] || k] = v;
+                }
+                renderBars('treatBars', treatProbs, 'treat');
+
+                setGauge('gaugeCure', 'valCure', pred.tasa_curacion);
+                setGauge('gaugeSurv5', 'valSurv5', pred.supervivencia_5_anios);
+                setGauge('gaugeSurv10', 'valSurv10', pred.supervivencia_10_anios);
+
+                results.classList.remove('hidden');
+                results.classList.remove('hidden');
+                document.getElementById('clinicalSummary').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+
+            function renderBars(containerId, probs, type) {
+                const container = document.getElementById(containerId);
+                container.innerHTML = '';
+                const sorted = Object.entries(probs).sort((a, b) => parseFloat(b[1]) - parseFloat(a[1]));
+                sorted.forEach(([label, value]) => {
+                    const pct = parseFloat(value);
+                    const bar = document.createElement('div');
+                    bar.className = 'prob-bar';
+                    bar.innerHTML = `
+                <div class="prob-label">${label}</div>
+                <div class="prob-track"><div class="prob-fill ${type}-fill" style="width:0%"></div></div>
+                <div class="prob-value">${value}</div>
+            `;
+                    container.appendChild(bar);
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            bar.querySelector('.prob-fill').style.width = pct + '%';
+                        });
+                    });
+                });
+            }
+
+            function setGauge(circleId, valueId, rawVal) {
+                const pct = parseFloat(rawVal);
+                const circle = document.getElementById(circleId);
+                const circumference = 2 * Math.PI * 50;
+                circle.style.strokeDasharray = circumference;
+                circle.style.strokeDashoffset = circumference;
+                if (valueId) document.getElementById(valueId).textContent = rawVal;
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        circle.style.strokeDashoffset = circumference * (1 - pct / 100);
+                    });
+                });
+            }
+
+            // ── TNM Panel Rendering ────────────────────────────────────────
+            const TNM_DATA = {
+                'T1c': { label: 'T1c', short: 'No palpable (PSA)', desc: 'Tumor detectado por biopsia por PSA elevado, no palpable al tacto rectal.', severity: 'low', image: '/static/img/tnm/t1.svg', color: '#10b981' },
+                'T2a': { label: 'T2a', short: '≤50% un lóbulo', desc: 'Tumor afecta la mitad o menos de un lóbulo prostático.', severity: 'low', image: '/static/img/tnm/t2a.svg', color: '#10b981' },
+                'T2b': { label: 'T2b', short: '>50% un lóbulo', desc: 'Tumor afecta más de la mitad de un lóbulo prostático.', severity: 'intermediate', image: '/static/img/tnm/t2b.svg', color: '#f59e0b' },
+                'T2c': { label: 'T2c', short: 'Ambos lóbulos', desc: 'Tumor afecta ambos lóbulos prostáticos.', severity: 'intermediate', image: '/static/img/tnm/t2c.svg', color: '#f59e0b' },
+                'T3a': { label: 'T3a', short: 'Extensión extracapsular', desc: 'Extensión extracapsular unilateral o bilateral sin invasión de vesículas seminales.', severity: 'high', image: '/static/img/tnm/t3.svg', color: '#f43f5e' },
+                'T3b': { label: 'T3b', short: 'Vesículas seminales', desc: 'Invasión de una o ambas vesículas seminales.', severity: 'high', image: '/static/img/tnm/t3.svg', color: '#f43f5e' },
+                'T4':  { label: 'T4', short: 'Órganos adyacentes', desc: 'Tumor fijado o que invade vejiga, recto, pared pélvica u otros órganos adyacentes.', severity: 'very_high', image: '/static/img/tnm/t4.svg', color: '#dc2626' },
+            };
+
+            function renderTNMPanel(formData) {
+                const panel = document.getElementById('tnmPanel');
+                const tstage = formData.clinical_tstage || 'T2a';
+                const info = TNM_DATA[tstage];
+                if (!info) { panel.classList.add('hidden'); return; }
+
+                const imgEl = document.getElementById('tnmImage');
+                imgEl.src = info.image;
+                imgEl.alt = info.label;
+                imgEl.onerror = function() { this.parentElement.style.display = 'none'; };
+
+                const badge = document.getElementById('tnmBadgeLabel');
+                badge.textContent = info.label;
+                badge.style.background = info.color;
+                badge.style.color = '#020617';
+
+                document.getElementById('tnmShortDesc').textContent = info.short;
+                document.getElementById('tnmLongDesc').textContent = info.desc;
+
+                const composite = document.getElementById('tnmCompositeLabel');
+                composite.textContent = `${info.label}N0M0`;
+                composite.style.borderColor = info.color;
+                composite.style.color = info.color;
+                composite.style.background = info.color + '15';
+
+                panel.classList.remove('hidden');
+            }
+        });
+    </script>
+
+</body>
+
+</html>

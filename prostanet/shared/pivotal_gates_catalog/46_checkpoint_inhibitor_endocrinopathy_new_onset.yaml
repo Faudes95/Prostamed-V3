@@ -1,0 +1,73 @@
+code: checkpoint_inhibitor_endocrinopathy_new_onset
+title: "Checkpoint inhibitor x endocrinopatia immune-related nueva"
+faubot_added_in: "2026-04-25 LVII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: hypophysitis_documented_for_checkpoint
+      alias_fields:
+        - immune_hypophysitis_documented
+        - checkpoint_hypophysitis_documented
+    - type: numeric_threshold
+      field: thyroiditis_ctcae_grade
+      alias_fields:
+        - immune_thyroiditis_grade
+        - thyroiditis_grade
+      threshold: 3
+    - type: truthy_flag
+      field: diabetes_new_onset_for_checkpoint
+      alias_fields:
+        - dka_for_checkpoint_inhibitor
+        - autoimmune_diabetes_for_checkpoint
+    - type: truthy_flag
+      field: adrenal_insufficiency_immune_for_checkpoint
+      alias_fields:
+        - immune_adrenal_insufficiency_documented
+        - checkpoint_adrenal_insufficiency
+    - type: numeric_above
+      field: tsh
+      alias_fields:
+        - tsh_miu_l
+        - thyroid_stimulating_hormone
+      threshold: 10
+    - type: numeric_below
+      field: cortisol_am
+      alias_fields:
+        - cortisol_morning
+        - cortisol_basal
+        - am_cortisol
+      threshold: 3
+
+override:
+  type: truthy_flag
+  field: endocrinopathy_managed_with_replacement
+  alias_fields:
+    - hormone_replacement_started_for_checkpoint
+    - endocrine_replacement_documented
+
+regimen_codes:
+  - REGIMEN_CODES_CHECKPOINT_INHIBITORS
+keywords:
+  - KEYWORDS_CHECKPOINT_INHIBITORS
+
+message: |
+  Checkpoint inhibitors requieren pausa/evaluacion endocrina ante nueva
+  endocrinopatia immune-related: hipofisitis, tiroiditis CTCAE G3+,
+  diabetes autoinmune/DKA, insuficiencia adrenal, TSH >10 mIU/L o
+  cortisol AM <3 ug/dL. Muchas endocrinopatias IO son irreversibles; el
+  override solo aplica cuando hay reemplazo hormonal y manejo documentado.
+
+evidence_tag: keynote_checkmate_keytruda_label_endocrinopathy_nccn_io_toxicity
+trial_refs:
+  - "KEYNOTE-365 cohort C"
+  - "KEYNOTE-921"
+  - "CheckMate-650"
+  - "Keytruda label 5.7"
+  - "NCCN IO Toxicity 2024 END-1"
+references:
+  - "Sznol JCO 2017."
+  - "Brahmer JCO 2018."

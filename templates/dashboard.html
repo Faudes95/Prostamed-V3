@@ -1,0 +1,1738 @@
+{% extends "layouts/base_clinical.html" %}
+{% from "components/clinical_ui.html" import metric_card, section_header %}
+
+{% block head_extra %}
+    <style>
+        .research-badge { padding: 2px 8px; border-radius: 9999px; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <div class="space-y-6">
+        <section>
+            {{ section_header("Panorama longitudinal de la cohorte", "Analítica clínica", "El tablero conserva toda la evidencia analítica, benchmarking y métricas longitudinales, pero ahora dentro del mismo shell visual del centro clínico.") }}
+            <div class="mt-4 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6" id="kpiSection">
+                {{ metric_card("Total de pacientes", "—", "", "sky", "kpiTotal", "kpiTotalSub") }}
+                {{ metric_card("Localizados sin metástasis a distancia", "—", "", "emerald", "kpiM0", "kpiM0Pct") }}
+                {{ metric_card("Metastásicos", "—", "", "rose", "kpiMeta", "kpiMetaPct") }}
+                {{ metric_card("Alertas activas", "—", "Requieren atención", "amber", "kpiAlerts") }}
+                {{ metric_card("Mediana del antígeno prostático específico", "—", "ng/mL al diagnóstico", "violet", "kpiPSAMedian") }}
+                {{ metric_card("Edad mediana", "—", "años al diagnóstico", "cyan", "kpiAgeMedian") }}
+            </div>
+        </section>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Metástasis Distribution -->
+            <div class="chart-container">
+                <h3 class="text-sm font-semibold text-white mb-4">Sitio de Metástasis</h3>
+                <canvas id="chartMetastasis" height="200"></canvas>
+            </div>
+            <!-- Volume Disease -->
+            <div class="chart-container">
+                <h3 class="text-sm font-semibold text-white mb-4">Volumen de enfermedad según el estudio CHAARTED</h3>
+                <canvas id="chartVolume" height="200"></canvas>
+            </div>
+            <!-- ECOG Distribution -->
+            <div class="chart-container">
+                <h3 class="text-sm font-semibold text-white mb-4">Estado Funcional (ECOG)</h3>
+                <canvas id="chartECOG" height="200"></canvas>
+            </div>
+        </div>
+
+        <!-- ═══════════ ROW 2: PSA + Enrollment Timeline ═══════════ -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- PSA Distribution -->
+            <div class="chart-container">
+                <h3 class="text-sm font-semibold text-white mb-4">Distribución del antígeno prostático específico al diagnóstico</h3>
+                <canvas id="chartPSA" height="220"></canvas>
+            </div>
+            <!-- Enrollment Timeline -->
+            <div class="chart-container">
+                <h3 class="text-sm font-semibold text-white mb-4">Ingresos por Mes</h3>
+                <canvas id="chartEnrollment" height="220"></canvas>
+            </div>
+        </div>
+
+        <!-- ═══════════ ROW 3: Research Metrics ═══════════ -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <!-- Completeness Score -->
+            <div class="chart-container">
+                <h3 class="text-sm font-semibold text-white mb-4">Completitud de Datos (Investigación)</h3>
+                <div id="completenessMetrics" class="space-y-3">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+            <!-- Research Lines Readiness -->
+            <div class="chart-container col-span-1 lg:col-span-2">
+                <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <h3 class="text-sm font-semibold text-white">Líneas de investigación con evidencia clínica estructurada</h3>
+                    <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                        <select id="researchFilter" onchange="renderResearchLines()" class="pn-input w-full px-2 py-2 text-xs sm:w-72 sm:py-1" data-pn-select-variant="compact">
+                            <option value="all">Todas las líneas</option>
+                            <option value="validacion">Validación de Scores</option>
+                            <option value="genomica">Genómica y biomarcadores</option>
+                            <option value="imagen">Imagen Avanzada</option>
+                            <option value="tratamiento">Tratamiento y resultados clínicos</option>
+                            <option value="vigilancia">Vigilancia Activa</option>
+                            <option value="avanzado">Enfermedad Avanzada</option>
+                            <option value="calidad">Calidad de vida y resultados reportados por el paciente</option>
+                            <option value="epidemio">Epidemiología México</option>
+                            <option value="ia">Inteligencia artificial y predicción</option>
+                        </select>
+                        <span id="researchCount" class="text-xs text-slate-500 sm:self-center"></span>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[800px] overflow-y-auto pr-1" id="researchLines">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════ ROW 4: Alerts Summary + Recent Activity ═══════════ -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- Alerts Summary -->
+            <div class="chart-container">
+                <h3 class="text-sm font-semibold text-white mb-4">Resumen de Alertas Clínicas</h3>
+                <canvas id="chartAlerts" height="200"></canvas>
+            </div>
+            <!-- Recent Patients -->
+            <div class="chart-container">
+                <h3 class="text-sm font-semibold text-white mb-4">Últimos Pacientes Ingresados</h3>
+                <div class="space-y-2" id="recentPatients">
+                    <!-- Filled by JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════ ROW 5: Benchmarking Gap Analysis ═══════════ -->
+        <div class="chart-container">
+            <h3 class="text-sm font-semibold text-white mb-4">Benchmarking operativo de captura y adopción clínica</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" id="benchmarkCards">
+                <!-- Filled by JS -->
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h3 class="text-sm font-semibold text-white mb-2">Calibración modular legacy</h3>
+            <p class="mb-4 text-xs text-slate-500">Esta sección conserva el harness modular histórico. Sirve como referencia secundaria y no sustituye el gate de release longitudinal vivo.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4" id="calibrationCards">
+                <!-- Filled by JS -->
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <div class="mb-4 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <h3 class="text-sm font-semibold text-white">Centro estadístico de scores pronósticos y reclasificación</h3>
+                    <p class="mt-1 text-xs text-slate-500">Disponibilidad, completitud y señal biológica adversa por herramienta contextualizada al momento clínico.</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">CAPRA / CAPRA-S</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="riskScoreBuckets">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4 xl:col-span-2">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Herramientas pronósticas por estado</h4>
+                    <div class="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3" id="riskToolStatsGrid">
+                        <!-- Filled by JS -->
+                    </div>
+                    <div class="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3" id="upgradeStatsGrid">
+                        <!-- Filled by JS -->
+                    </div>
+                    <div class="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3" id="prognosticImpactGrid">
+                        <!-- Filled by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <div class="mb-4 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <h3 class="text-sm font-semibold text-white">Epidemiología, calidad e investigación institucional</h3>
+                    <p class="mt-1 text-xs text-slate-500">Supervivencia, outcomes operativos, quality indicators, benchmarking, cohorting dinámico, consent governance y exports de investigación.</p>
+                </div>
+                <span class="research-badge border border-cyan-500/20 bg-cyan-500/10 text-cyan-200">Research Intelligence</span>
+            </div>
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Curva institucional OS</h4>
+                    <canvas id="chartResearchSurvival" height="220"></canvas>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Readiness de investigación</h4>
+                    <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3" id="researchReadinessGrid"></div>
+                </div>
+            </div>
+            <div class="mt-4 grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Quality indicators</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="qualityIndicatorGrid"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Outcomes operativos</h4>
+                    <canvas id="chartClavien" height="220"></canvas>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="operationalOutcomeGrid"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Benchmarking institucional</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="institutionalBenchmarkGrid"></div>
+                </div>
+            </div>
+            <div class="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Imagen avanzada PSMA</h4>
+                    <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3" id="psmaImagingGrid"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Distribución PSMA-RADS y radioligandos</h4>
+                    <canvas id="chartPsmaImaging" height="220"></canvas>
+                </div>
+            </div>
+            <div class="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Inteligencia longitudinal de laboratorios</h4>
+                    <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3" id="laboratoryIntelligenceGrid"></div>
+                </div>
+            </div>
+            <div class="mt-4 grid grid-cols-1 xl:grid-cols-5 gap-4">
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Copiloto CRPC</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="crpcCopilotGrid"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Copiloto post-RP</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="postRpSalvageGrid"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Copiloto mHSPC</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="mhspcCopilotGrid"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Copiloto diagnóstico</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="diagnosticCopilotGrid"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Copiloto localizado / AS</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="localizedCopilotGrid"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Copiloto post-RT</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="postRtSalvageGrid"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Validación longitudinal viva</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="validationRunGrid"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Cohortes dinámicas</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="dynamicCohortGrid"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Modelos multivariados</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="multivariateGrid"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Propensity & comparative effectiveness</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="comparativeGrid"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/40 p-4">
+                    <h4 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Consent governance & exports</h4>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="consentGovernanceGrid"></div>
+                    <div class="mt-4 grid grid-cols-1 gap-3" id="exportGovernanceGrid"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block page_scripts %}
+    <script>
+        // ── Chart.js Global Defaults ──────────────────────────────────────────
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.borderColor = '#334155';
+        Chart.defaults.font.family = 'Inter';
+
+        const COLORS = {
+            blue: '#3b82f6', green: '#10b981', red: '#ef4444', yellow: '#f59e0b',
+            purple: '#8b5cf6', cyan: '#06b6d4', pink: '#ec4899', orange: '#f97316',
+            blueAlpha: 'rgba(59,130,246,0.2)', greenAlpha: 'rgba(16,185,129,0.2)',
+            redAlpha: 'rgba(239,68,68,0.2)', yellowAlpha: 'rgba(245,158,11,0.2)'
+        };
+        const humanizeClinicalText = window.clinicalPresentation?.humanize || ((value) => value);
+
+        let allPatients = [];
+        let dashboardSummary = {};
+        let dashboardAnalytics = {};
+        let dashboardCalibration = {};
+        let dashboardResearch = {};
+        let dashboardData = {};
+        const dashboardCharts = {};
+
+        function mergeDashboardData() {
+            dashboardData = { ...dashboardSummary, ...dashboardAnalytics, ...dashboardCalibration, ...dashboardResearch };
+        }
+
+        function replaceChart(canvasId, config) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return null;
+            if (dashboardCharts[canvasId]) {
+                dashboardCharts[canvasId].destroy();
+            }
+            dashboardCharts[canvasId] = new Chart(canvas, config);
+            return dashboardCharts[canvasId];
+        }
+
+        function renderPanelMessage(containerId, message, tone = 'slate') {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            const accentClass = {
+                slate: 'border-slate-700 bg-slate-950/40 text-slate-400',
+                amber: 'border-amber-500/20 bg-amber-950/10 text-amber-300',
+                rose: 'border-rose-500/20 bg-rose-950/10 text-rose-300'
+            }[tone] || 'border-slate-700 bg-slate-950/40 text-slate-400';
+            container.innerHTML = `<div class="rounded-2xl border ${accentClass} p-4 text-sm leading-relaxed">${humanizeClinicalText(message)}</div>`;
+        }
+
+        function normalizePatients(patients) {
+            return (patients || []).map((patient) => {
+                const normalized = { ...patient };
+                if (normalized.dob) {
+                    const dob = new Date(normalized.dob);
+                    normalized.age = Math.floor((new Date() - dob) / (365.25 * 24 * 60 * 60 * 1000));
+                }
+                return normalized;
+            });
+        }
+
+        function initDeferredPanels() {
+            renderPanelMessage('benchmarkCards', 'Cargando benchmarking operativo de la cohorte…');
+            renderPanelMessage('calibrationCards', 'Cargando calibración del motor clínico…');
+            renderPanelMessage('riskScoreBuckets', 'Cargando distribuciones pronósticas…');
+            renderPanelMessage('riskToolStatsGrid', 'Cargando herramientas pronósticas por estado…');
+            renderPanelMessage('upgradeStatsGrid', 'Cargando métricas de upgrade y reclasificación…');
+            renderPanelMessage('prognosticImpactGrid', 'Cargando impacto pronóstico y alineación terapéutica…');
+            renderPanelMessage('researchReadinessGrid', 'Cargando readiness de investigación…');
+            renderPanelMessage('qualityIndicatorGrid', 'Cargando quality indicators institucionales…');
+            renderPanelMessage('operationalOutcomeGrid', 'Cargando outcomes operativos…');
+            renderPanelMessage('institutionalBenchmarkGrid', 'Cargando benchmarking institucional…');
+            renderPanelMessage('psmaImagingGrid', 'Cargando epidemiología PSMA estructurada…');
+            renderPanelMessage('laboratoryIntelligenceGrid', 'Cargando inteligencia longitudinal de laboratorios…');
+            renderPanelMessage('dynamicCohortGrid', 'Cargando cohortes dinámicas…');
+            renderPanelMessage('multivariateGrid', 'Cargando modelos multivariados…');
+            renderPanelMessage('comparativeGrid', 'Cargando análisis comparativo observacional…');
+            renderPanelMessage('consentGovernanceGrid', 'Cargando gobernanza de consentimiento…');
+            renderPanelMessage('exportGovernanceGrid', 'Cargando readiness de exportación…');
+        }
+
+        // ── Load All Data ─────────────────────────────────────────────────────
+        async function loadDashboard() {
+            initDeferredPanels();
+            try {
+                const [patientsRes, summaryRes] = await Promise.all([
+                    fetch('/api/patients').then(r => r.json()),
+                    fetch('/api/dashboard/summary').then(r => r.json()).catch(() => null)
+                ]);
+
+                if (patientsRes?.success) {
+                    allPatients = normalizePatients(patientsRes.patients);
+                }
+                dashboardSummary = summaryRes?.success ? summaryRes : {};
+                mergeDashboardData();
+                renderSummaryPanels();
+            } catch (e) {
+                console.error('Error loading dashboard summary:', e);
+                renderSummaryPanels();
+                renderPanelMessage('benchmarkCards', 'No fue posible cargar el benchmarking operativo.', 'rose');
+                renderPanelMessage('calibrationCards', 'No fue posible cargar la calibración del motor clínico.', 'rose');
+            }
+
+            loadDashboardAnalytics();
+            loadDashboardCalibration();
+            loadDashboardResearch();
+        }
+
+        async function loadDashboardAnalytics() {
+            try {
+                const analyticsRes = await fetch('/api/dashboard/analytics').then(r => r.json());
+                if (!analyticsRes?.success) {
+                    throw new Error(analyticsRes?.error || 'analytics_failed');
+                }
+                dashboardAnalytics = analyticsRes;
+                mergeDashboardData();
+                renderAnalyticsPanels();
+            } catch (e) {
+                console.error('Error loading dashboard analytics:', e);
+                renderPanelMessage('benchmarkCards', 'La analítica avanzada de cohorte no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('riskScoreBuckets', 'La distribución de scores pronósticos no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('riskToolStatsGrid', 'La analítica pronóstica de la cohorte no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('upgradeStatsGrid', 'Las métricas de upgrade no estuvieron disponibles en esta carga.', 'amber');
+                renderPanelMessage('prognosticImpactGrid', 'El impacto pronóstico agregado no estuvo disponible en esta carga.', 'amber');
+            }
+        }
+
+        async function loadDashboardCalibration() {
+            try {
+                const calibrationRes = await fetch('/api/dashboard/calibration').then(r => r.json());
+                if (!calibrationRes?.success) {
+                    throw new Error(calibrationRes?.error || 'calibration_failed');
+                }
+                dashboardCalibration = calibrationRes;
+                mergeDashboardData();
+                renderCalibrationPanels();
+            } catch (e) {
+                console.error('Error loading dashboard calibration:', e);
+                renderPanelMessage('calibrationCards', 'La calibración del motor no estuvo disponible en esta carga.', 'amber');
+            }
+        }
+
+        async function loadDashboardResearch() {
+            try {
+                const researchRes = await fetch('/api/dashboard/research-intelligence').then(r => r.json());
+                if (!researchRes?.success) {
+                    throw new Error(researchRes?.error || 'research_failed');
+                }
+                dashboardResearch = researchRes;
+                mergeDashboardData();
+                renderResearchPanels();
+            } catch (e) {
+                console.error('Error loading dashboard research intelligence:', e);
+                renderPanelMessage('researchReadinessGrid', 'La capa de research intelligence no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('qualityIndicatorGrid', 'Los quality indicators no estuvieron disponibles en esta carga.', 'amber');
+                renderPanelMessage('operationalOutcomeGrid', 'Los outcomes operativos no estuvieron disponibles en esta carga.', 'amber');
+                renderPanelMessage('institutionalBenchmarkGrid', 'El benchmarking institucional no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('psmaImagingGrid', 'La epidemiología PSMA no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('laboratoryIntelligenceGrid', 'La inteligencia longitudinal de laboratorios no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('crpcCopilotGrid', 'El copiloto CRPC no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('postRpSalvageGrid', 'El copiloto post-RP no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('mhspcCopilotGrid', 'El copiloto mHSPC no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('diagnosticCopilotGrid', 'El copiloto diagnóstico no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('localizedCopilotGrid', 'El copiloto localizado no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('postRtSalvageGrid', 'El copiloto post-RT no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('dynamicCohortGrid', 'Las cohortes dinámicas no estuvieron disponibles en esta carga.', 'amber');
+                renderPanelMessage('multivariateGrid', 'El análisis multivariado no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('comparativeGrid', 'El análisis comparativo no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('consentGovernanceGrid', 'La gobernanza de consentimiento no estuvo disponible en esta carga.', 'amber');
+                renderPanelMessage('exportGovernanceGrid', 'La capa de exportación no estuvo disponible en esta carga.', 'amber');
+            }
+        }
+
+        function median(arr) {
+            if (!arr.length) return 0;
+            const sorted = [...arr].sort((a, b) => a - b);
+            const mid = Math.floor(sorted.length / 2);
+            return sorted.length % 2 ? sorted[mid] : ((sorted[mid - 1] + sorted[mid]) / 2);
+        }
+
+        // ── Render Dashboard ──────────────────────────────────────────────────
+        function renderSummaryPanels() {
+            const n = allPatients.length;
+
+            // KPIs
+            document.getElementById('kpiTotal').textContent = n;
+            document.getElementById('kpiTotalSub').textContent = `Registrados en sistema`;
+
+            const m0 = allPatients.filter(p => !p.metastasis_site || p.metastasis_site === 'M0').length;
+            const meta = n - m0;
+            document.getElementById('kpiM0').textContent = m0;
+            document.getElementById('kpiM0Pct').textContent = n ? `${((m0/n)*100).toFixed(0)}% del total` : '';
+            document.getElementById('kpiMeta').textContent = meta;
+            document.getElementById('kpiMetaPct').textContent = n ? `${((meta/n)*100).toFixed(0)}% del total` : '';
+
+            const alertCount = allPatients.reduce((s, p) => s + (p.alert_count || 0), 0);
+            document.getElementById('kpiAlerts').textContent = alertCount;
+
+            const psaVals = allPatients.filter(p => p.baseline_psa > 0).map(p => p.baseline_psa);
+            document.getElementById('kpiPSAMedian').textContent = psaVals.length ? median(psaVals).toFixed(1) : '—';
+
+            const ages = allPatients.filter(p => p.age).map(p => p.age);
+            document.getElementById('kpiAgeMedian').textContent = ages.length ? Math.round(median(ages)) : '—';
+
+            // Charts
+            renderMetastasisChart();
+            renderVolumeChart();
+            renderECOGChart();
+            renderPSAChart(psaVals);
+            renderEnrollmentChart();
+            renderAlertsChart();
+            renderRecentPatients();
+            renderCompletenessMetrics();
+            renderResearchLines();
+        }
+
+        function renderAnalyticsPanels() {
+            renderCompletenessMetrics();
+            renderBenchmarkCards();
+            renderRiskToolStats();
+        }
+
+        function renderCalibrationPanels() {
+            renderCalibrationCards();
+        }
+
+        function renderResearchPanels() {
+            renderResearchSurvivalChart();
+            renderResearchReadinessPanels();
+            renderQualityIndicatorPanels();
+            renderOperationalOutcomePanels();
+            renderInstitutionalBenchmarkPanels();
+            renderPsmaImagingPanels();
+            renderLaboratoryIntelligencePanels();
+            renderCrpcCopilotPanels();
+            renderPostRPSalvagePanels();
+            renderMhspcCopilotPanels();
+            renderDiagnosticCopilotPanels();
+            renderLocalizedCopilotPanels();
+            renderPostRTSalvagePanels();
+            renderValidationPanels();
+            renderDynamicCohortPanels();
+            renderMultivariatePanels();
+            renderComparativePanels();
+            renderConsentGovernancePanels();
+            renderExportGovernancePanels();
+        }
+
+        // ── Chart: Metastasis Distribution ────────────────────────────────────
+        function renderMetastasisChart() {
+            const counts = {};
+            allPatients.forEach(p => {
+                const site = p.metastasis_site || 'M0';
+                counts[site] = (counts[site] || 0) + 1;
+            });
+            const labels = Object.keys(counts).map((label) => humanizeClinicalText(label));
+            const data = Object.values(counts);
+            replaceChart('chartMetastasis', {
+                type: 'doughnut',
+                data: {
+                    labels, datasets: [{
+                        data, backgroundColor: [COLORS.green, COLORS.red, COLORS.yellow, COLORS.purple, COLORS.cyan, COLORS.orange],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15 } }
+                    }
+                }
+            });
+        }
+
+        // ── Chart: Volume Disease ─────────────────────────────────────────────
+        function renderVolumeChart() {
+            const counts = { 'High': 0, 'Low': 0, 'No Aplica': 0 };
+            allPatients.forEach(p => {
+                const vol = p.volume_disease || 'No Aplica';
+                if (vol.includes('High') || vol.includes('high') || vol.includes('Alto')) counts['High']++;
+                else if (vol.includes('Low') || vol.includes('low') || vol.includes('Bajo')) counts['Low']++;
+                else counts['No Aplica']++;
+            });
+            replaceChart('chartVolume', {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(counts).map(label => humanizeClinicalText(label)),
+                    datasets: [{
+                        data: Object.values(counts),
+                        backgroundColor: [COLORS.red, COLORS.green, COLORS.cyan],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15 } } }
+                }
+            });
+        }
+
+        // ── Chart: ECOG ───────────────────────────────────────────────────────
+        function renderECOGChart() {
+            const counts = [0, 0, 0, 0, 0]; // ECOG 0-4
+            allPatients.forEach(p => {
+                const ecog = p.ecog_score != null ? Math.min(p.ecog_score, 4) : 0;
+                counts[ecog]++;
+            });
+            replaceChart('chartECOG', {
+                type: 'bar',
+                data: {
+                    labels: [
+                        humanizeClinicalText('ECOG 0'),
+                        humanizeClinicalText('ECOG 1'),
+                        humanizeClinicalText('ECOG 2'),
+                        humanizeClinicalText('ECOG 3'),
+                        humanizeClinicalText('ECOG 4'),
+                    ],
+                    datasets: [{
+                        data: counts,
+                        backgroundColor: [COLORS.green, COLORS.blue, COLORS.yellow, COLORS.orange, COLORS.red],
+                        borderRadius: 6, borderSkipped: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                }
+            });
+        }
+
+        // ── Chart: PSA Distribution ───────────────────────────────────────────
+        function renderPSAChart(psaVals) {
+            const bins = ['<4', '4-10', '10-20', '20-50', '50-100', '>100'];
+            const counts = [0, 0, 0, 0, 0, 0];
+            psaVals.forEach(v => {
+                if (v < 4) counts[0]++;
+                else if (v <= 10) counts[1]++;
+                else if (v <= 20) counts[2]++;
+                else if (v <= 50) counts[3]++;
+                else if (v <= 100) counts[4]++;
+                else counts[5]++;
+            });
+            replaceChart('chartPSA', {
+                type: 'bar',
+                data: {
+                    labels: bins,
+                    datasets: [{
+                        label: 'Pacientes',
+                        data: counts,
+                        backgroundColor: COLORS.blue,
+                        borderRadius: 6, borderSkipped: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { title: { display: true, text: humanizeClinicalText('PSA (ng/mL)') } },
+                        y: { beginAtZero: true, ticks: { stepSize: 1 }, title: { display: true, text: 'N' } }
+                    }
+                }
+            });
+        }
+
+        // ── Chart: Enrollment Timeline ────────────────────────────────────────
+        function renderEnrollmentChart() {
+            const monthly = {};
+            allPatients.forEach(p => {
+                const d = p.diagnosis_date;
+                if (d) {
+                    const key = d.substring(0, 7); // YYYY-MM
+                    monthly[key] = (monthly[key] || 0) + 1;
+                }
+            });
+            const labels = Object.keys(monthly).sort();
+            const data = labels.map(k => monthly[k]);
+            // Cumulative
+            const cumulative = [];
+            data.reduce((sum, v, i) => { cumulative.push(sum + v); return sum + v; }, 0);
+
+            replaceChart('chartEnrollment', {
+                type: 'bar',
+                data: {
+                    labels: labels.map(l => l.replace('-', '/')),
+                    datasets: [
+                        {
+                            label: 'Nuevos/mes', data, backgroundColor: COLORS.blue,
+                            borderRadius: 6, borderSkipped: false, yAxisID: 'y'
+                        },
+                        {
+                            label: 'Acumulado', data: cumulative, type: 'line',
+                            borderColor: COLORS.cyan, borderWidth: 2, pointRadius: 3,
+                            pointBackgroundColor: COLORS.cyan, fill: false, yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { position: 'top', labels: { boxWidth: 12 } } },
+                    scales: {
+                        y: { beginAtZero: true, position: 'left', title: { display: true, text: 'Nuevos' } },
+                        y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Acumulado' } }
+                    }
+                }
+            });
+        }
+
+        // ── Chart: Alerts ─────────────────────────────────────────────────────
+        function renderAlertsChart() {
+            const withAlerts = allPatients.filter(p => p.alert_count > 0);
+            const noAlerts = allPatients.length - withAlerts.length;
+            const total = withAlerts.reduce((s, p) => s + p.alert_count, 0);
+
+            replaceChart('chartAlerts', {
+                type: 'doughnut',
+                data: {
+                    labels: ['Sin alertas', 'Con alertas'],
+                    datasets: [{
+                        data: [noAlerts, withAlerts.length],
+                        backgroundColor: [COLORS.green, COLORS.red],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 12 } },
+                        title: { display: true, text: `${total} alertas activas en ${withAlerts.length} pacientes`, color: '#94a3b8', font: { size: 11 } }
+                    }
+                }
+            });
+        }
+
+        // ── Recent Patients ───────────────────────────────────────────────────
+        function renderRecentPatients() {
+            const container = document.getElementById('recentPatients');
+            const recent = allPatients.slice(0, 8); // Already sorted by created_at DESC
+
+            if (recent.length === 0) {
+                container.innerHTML = '<p class="text-sm text-slate-500 text-center py-4">No hay pacientes registrados</p>';
+                return;
+            }
+
+            container.innerHTML = recent.map(p => {
+                const psa = p.baseline_psa ? parseFloat(p.baseline_psa).toFixed(1) : '—';
+                const meta = p.metastasis_site || 'M0';
+                return `<a href="/patient_profile/${p.nss}" class="flex items-center justify-between p-2 rounded-lg hover:bg-slate-700/50 transition-colors">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center text-xs font-bold text-white">
+                            ${(p.full_name || '?')[0].toUpperCase()}
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-white">${p.full_name || 'Sin nombre'}</p>
+                            <p class="text-xs text-slate-500">${p.nss} · ${humanizeClinicalText('PSA')} ${psa}</p>
+                        </div>
+                    </div>
+                    <span class="px-2 py-0.5 rounded text-xs ${meta === 'M0' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}">${humanizeClinicalText(meta)}</span>
+                </a>`;
+            }).join('');
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        // ── Completeness Metrics ──────────────────────────────────────────────
+        function renderCompletenessMetrics() {
+            const container = document.getElementById('completenessMetrics');
+            const n = allPatients.length || 1;
+            const nAssessments = dashboardData.latest_assessment_count || allPatients.length || 1;
+
+            const metrics = [
+                { label: 'Antígeno prostático específico basal', count: allPatients.filter(p => p.baseline_psa > 0).length },
+                { label: 'Fecha de diagnóstico', count: allPatients.filter(p => p.diagnosis_date).length },
+                { label: 'Metástasis documentada', count: allPatients.filter(p => p.metastasis_site).length },
+                { label: 'Estado funcional del Grupo Cooperativo Oncológico del Este registrado', count: allPatients.filter(p => p.ecog_score != null).length },
+                { label: 'PROs basales documentados', count: dashboardData.pros_baseline_count || 0, denominator: nAssessments },
+                { label: 'Biomarcadores avanzados trazables', count: dashboardData.biomarker_complete_count || 0, denominator: nAssessments },
+                { label: 'Revisión de interacciones farmacológicas', count: dashboardData.ddi_reviewed_count || 0, denominator: nAssessments },
+                { label: 'Riesgo cardiovascular documentado', count: dashboardData.cv_documented_count || 0, denominator: nAssessments },
+                { label: 'Monitoreo hepático basal / riesgo hepático documentado', count: dashboardData.lft_documented_count || 0, denominator: nAssessments },
+                { label: 'Elegibilidad PSMA documentada', count: dashboardData.psma_eligibility_count || 0, denominator: nAssessments },
+                { label: 'DXA basal documentada en mHSPC', count: dashboardData.dxa_documented_count || 0, denominator: nAssessments },
+                { label: 'Bundle de salud ósea iniciado', count: dashboardData.bone_protection_count || 0, denominator: nAssessments },
+                { label: 'Factibilidad de rescate local documentada', count: dashboardData.salvage_documented_count || 0, denominator: nAssessments },
+                { label: 'Contexto de línea mCRPC documentado', count: dashboardData.mcrpc_line_context_count || 0, denominator: nAssessments },
+                { label: 'Informe molecular fechado', count: dashboardData.molecular_report_count || 0, denominator: nAssessments },
+            ];
+
+            if (dashboardData.cohort_completeness) {
+                metrics.push(
+                    { label: 'Cohorte México completa', count: dashboardData.cohort_completeness?.mexico_core_complete_count || 0, denominator: n },
+                    { label: 'Cobertura de documentos verificados', count: dashboardData.cohort_completeness?.document_verification_coverage_count || 0, denominator: n },
+                );
+            }
+
+            container.innerHTML = metrics.map(m => {
+                const denominator = m.denominator || n;
+                const pct = ((m.count / denominator) * 100).toFixed(0);
+                const color = pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-yellow-500' : 'bg-red-500';
+                return `<div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-slate-400">${m.label}</span>
+                        <span class="text-white font-medium">${m.count}/${denominator} (${pct}%)</span>
+                    </div>
+                    <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div class="h-full ${color} rounded-full transition-all" style="width:${pct}%"></div>
+                    </div>
+                </div>`;
+            }).join('');
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        // ── Research Lines ────────────────────────────────────────────────────
+        function renderResearchLines() {
+            const container = document.getElementById('researchLines');
+            const countEl = document.getElementById('researchCount');
+            const filter = document.getElementById('researchFilter').value;
+            const n = allPatients.length;
+
+            const lines = [
+                // ═══ VALIDACIÓN DE SCORES ═══
+                { cat: 'validacion', title: 'Validación CAPRA en población mexicana', desc: 'PSA, Gleason, T-stage, edad, % cores positivos — Score CAPRA nunca validado en México', minN: 50, ref: 'Cooperberg et al. Cancer 2005; J Urol 2006', nivel: 'IIb', diseno: 'Cohorte retrospectiva' },
+                { cat: 'validacion', title: 'Validación nomograma de Briganti en latinos', desc: 'PSA, Gleason, T-stage, % cores, PLND — Sesgo de población europea en cohorte original', minN: 100, ref: 'Briganti A. Eur Urol 2012; 2017 update', nivel: 'IIb', diseno: 'Cohorte retrospectiva' },
+                { cat: 'validacion', title: 'Validación D\'Amico en contexto mexicano', desc: 'PSA, Gleason, T-stage — Clasificación más usada pero nunca calibrada para latinos', minN: 60, ref: "D'Amico AV. JAMA 1998; Rodrigues G. Radiother Oncol 2012", nivel: 'IIb', diseno: 'Cohorte retrospectiva' },
+                { cat: 'validacion', title: 'Validación EAU 2024 Risk Groups vs NCCN', desc: 'Comparar concordancia EAU vs NCCN en outcomes de BCR y metástasis', minN: 80, ref: 'EAU Guidelines 2024; Mottet N. Eur Urol 2024', nivel: 'IIa', diseno: 'Cohorte comparativa' },
+                { cat: 'validacion', title: 'Calibración de Partin Tables en México', desc: 'PSA, Gleason, T-stage vs patología post-RP — Nomograma desarrollado en Johns Hopkins', minN: 80, ref: 'Eifler JB. BJU Int 2013; Makarov DV. Urology 2007', nivel: 'IIb', diseno: 'Cohorte retrospectiva' },
+                { cat: 'validacion', title: 'MSKCC Pre-RP BCR nomograma: validación externa', desc: 'Validar predicción de supervivencia libre de BCR a 5 y 10 años en cohorte local', minN: 120, ref: 'Stephenson AJ. J Clin Oncol 2006; Shariat SF. BJU Int 2008', nivel: 'IIb', diseno: 'Cohorte retrospectiva' },
+                { cat: 'validacion', title: 'Score ProstaMed Integrado vs scores individuales', desc: 'Comparar C-index de score compuesto ProstaMed vs CAPRA, NCCN, D\'Amico individual', minN: 100, ref: 'Validación interna — ProstaMed 2026', nivel: 'IIb', diseno: 'Estudio de calibración/discriminación' },
+
+                // ═══ GENÓMICA Y BIOMARCADORES ═══
+                { cat: 'genomica', title: 'Correlación Decipher vs outcomes en México', desc: 'Decipher GC score, BCR, metástasis, mortalidad — Utilidad en reclasificación', minN: 40, ref: 'Spratt DE. J Clin Oncol 2018; Nguyen PL. Eur Urol 2017', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+                { cat: 'genomica', title: 'Prevalencia mutaciones HRR en CaP mexicano', desc: 'BRCA1/2, ATM, CHEK2, PALB2, CDK12 — Fundamental para elegibilidad a olaparib', minN: 60, ref: 'de Bono J. NEJM 2020 (PROfound); Abida W. JCO Precis Oncol 2020', nivel: 'IIb', diseno: 'Transversal descriptivo' },
+                { cat: 'genomica', title: 'MSI-H/dMMR en CaP localizado y avanzado', desc: 'Frecuencia de inestabilidad microsatelital — Elegibilidad pembrolizumab', minN: 80, ref: 'Abida W. JAMA Oncol 2019; Le DT. Science 2017 (KEYNOTE-158)', nivel: 'IIb', diseno: 'Transversal descriptivo' },
+                { cat: 'genomica', title: 'PHI vs PSA libre/total para detección de GG≥2', desc: 'Prostate Health Index como biomarcador de biopsia — Reducción de biopsias innecesarias', minN: 50, ref: 'Catalona WJ. J Urol 2011; Loeb S. Eur Urol 2015', nivel: 'Ib', diseno: 'Diagnóstico prospectivo' },
+                { cat: 'genomica', title: 'AR-V7 como predictor de resistencia a ARPIs', desc: 'Splicing variante 7 del receptor de andrógenos en mCRPC — Guía para secuenciación', minN: 30, ref: 'Antonarakis ES. NEJM 2014; Armstrong AJ. JCO 2019 (PROPHECY)', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+                { cat: 'genomica', title: 'Carga mutacional tumoral (TMB) en CaP avanzado', desc: 'TMB como predictor de respuesta a inmunoterapia en mCRPC — Frecuencia en mexicanos', minN: 40, ref: 'Marabelle A. Ann Oncol 2020; Marcus L. Clin Cancer Res 2021', nivel: 'IIb', diseno: 'Transversal descriptivo' },
+                { cat: 'genomica', title: 'PSAD como predictor independiente de upgrade en AS', desc: 'PSAD ≥0.15 como criterio de reclasificación en vigilancia activa', minN: 40, ref: 'Vickers AJ. J Natl Cancer Inst 2013; Tosoian JJ. J Urol 2015', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+
+                // ═══ IMAGEN AVANZADA ═══
+                { cat: 'imagen', title: 'PI-RADS como predictor de upgrade patológico', desc: 'Correlación PI-RADS 3-5 con Gleason en pieza quirúrgica post-RP', minN: 60, ref: 'Turkbey B. Radiology 2019 (PI-RADS v2.1); Kasivisvanathan V. NEJM 2018 (PRECISION)', nivel: 'Ib', diseno: 'Diagnóstico prospectivo' },
+                { cat: 'imagen', title: 'mpMRI + biopsia fusión vs sistemática en México', desc: 'Tasa de detección de csCaP (GG≥2) por técnica de biopsia — Acceso en sistema de salud', minN: 60, ref: 'Kasivisvanathan V. NEJM 2018 (PRECISION); Rouvière O. NEJM 2022 (MRI-FIRST)', nivel: 'Ib', diseno: 'Comparativo prospectivo' },
+                { cat: 'imagen', title: 'PSMA-PET/CT en estadificación inicial de alto riesgo', desc: 'Sensibilidad y especificidad de 68Ga/18F-PSMA vs convencional para N+ y M+', minN: 40, ref: 'Hofman MS. Lancet 2020 (proPSMA); Pienta KJ. JCO 2021', nivel: 'Ib', diseno: 'Diagnóstico prospectivo' },
+                { cat: 'imagen', title: 'PSMA-PET para detección de BCR oligometastásica', desc: 'Cambio en manejo tras PSMA-PET en BCR — Tasa de SBRT/MDT dirigido', minN: 30, ref: 'Fendler WP. Lancet Oncol 2019; Calais J. J Clin Oncol 2019', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+                { cat: 'imagen', title: 'mpMRI PRECISE score para monitoreo en AS', desc: 'Cambios en MRI como predictor de reclasificación vs biopsia de confirmación', minN: 40, ref: 'Moore CM. Eur Urol 2017 (PRECISE); Klotz L. Can J Urol 2015', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+
+                // ═══ TRATAMIENTO Y OUTCOMES ═══
+                { cat: 'tratamiento', title: 'Tasa de márgenes positivos por técnica quirúrgica', desc: 'Abierta vs laparoscópica vs robótica — Impacto en BCR y continencia', minN: 80, ref: 'Yaxley JW. Lancet 2016; Coughlin GD. Lancet Oncol 2018 (ROBOCASE)', nivel: 'Ib', diseno: 'Cohorte comparativa' },
+                { cat: 'tratamiento', title: 'Patología adversa inesperada post-prostatectomía', desc: 'Tasa de upstaging (pT3a/b) y upgrading en RP — Factores predictivos', minN: 80, ref: 'Epstein JI. Am J Surg Pathol 2012; Beauval JB. World J Urol 2016', nivel: 'IIb', diseno: 'Cohorte retrospectiva' },
+                { cat: 'tratamiento', title: 'BCR temprana (<2 años) vs tardía: outcomes', desc: 'Tiempo a BCR como predictor de mortalidad CaP-específica y metástasis', minN: 60, ref: 'Freedland SJ. JAMA 2005; Pound CR. JAMA 1999 (landmark series)', nivel: 'IIa', diseno: 'Cohorte retrospectiva' },
+                { cat: 'tratamiento', title: 'Intensificación de tratamiento en alto riesgo localizado', desc: 'RP + PLND + ADT adyuvante vs RP sola — Outcomes oncológicos a 5 años', minN: 80, ref: 'Messing EM. Lancet Oncol 2006; Shipley WU. NEJM 2017 (RTOG 9601)', nivel: 'Ib', diseno: 'Cohorte comparativa' },
+                { cat: 'tratamiento', title: 'Secuenciación de terapias en mCRPC', desc: 'ARPI → taxano vs taxano → ARPI — Supervivencia y toxicidad en práctica real', minN: 40, ref: 'de Wit R. NEJM 2019 (CARD); Khalaf DJ. JAMA Oncol 2021 (TheraP)', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+                { cat: 'tratamiento', title: 'Tripleta ADT + ARPI + Docetaxel en mHSPC', desc: 'Outcomes de tripleta (ARASENS/PEACE-1) en práctica clínica mexicana', minN: 30, ref: 'Smith MR. NEJM 2022 (ARASENS); Fizazi K. NEJM 2022 (PEACE-1)', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+                { cat: 'tratamiento', title: 'Lu-177 PSMA en mCRPC: outcomes en México', desc: 'Respuesta PSA, PFS, OS y toxicidad de 177Lu-PSMA-617 en práctica real', minN: 20, ref: 'Sartor O. NEJM 2021 (VISION); Hofman MS. Lancet 2024 (PSMAfore)', nivel: 'IIa', diseno: 'Serie de casos prospectiva' },
+                { cat: 'tratamiento', title: 'Olaparib en HRR+ mCRPC: experiencia local', desc: 'Respuesta, PFS y perfil de toxicidad de PARP inhibidores en mexicanos', minN: 15, ref: 'de Bono J. NEJM 2020 (PROfound); Hussain M. NEJM 2020 (TRITON3)', nivel: 'IIa', diseno: 'Serie de casos' },
+                { cat: 'tratamiento', title: 'RT salvage temprana vs diferida post-RP', desc: 'RT adyuvante inmediata vs RT salvage temprana (PSA 0.1-0.5) — RADICALS, RAVES, GETUG-17', minN: 50, ref: 'Kneebone A. Lancet 2020 (RAVES); Parker CC. Lancet 2020 (RADICALS-RT)', nivel: 'Ib', diseno: 'Cohorte comparativa' },
+                { cat: 'tratamiento', title: 'Terapia focal (HIFU/crioterapia) en bajo-intermedio', desc: 'Outcomes oncológicos y funcionales de terapia focal vs tratamiento whole-gland', minN: 30, ref: 'Stabile A. Eur Urol 2019; Guillaumier S. Eur Urol 2018', nivel: 'IIb', diseno: 'Cohorte prospectiva' },
+
+                // ═══ VIGILANCIA ACTIVA ═══
+                { cat: 'vigilancia', title: 'Adherencia a vigilancia activa en México', desc: 'Tasa de permanencia en AS, motivos de salida, tiempo mediano en programa', minN: 40, ref: 'Klotz L. J Clin Oncol 2015 (CanPROST); Tosoian JJ. JCO 2015', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+                { cat: 'vigilancia', title: 'Tasa de reclasificación en biopsia confirmatoria', desc: 'Upgrade a GG≥2 en biopsia confirmatoria a 12 meses — Factores predictivos', minN: 40, ref: 'Tosoian JJ. J Urol 2015; Inoue LY. JCO 2014', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+                { cat: 'vigilancia', title: 'PRIAS vs NCCN vs Johns Hopkins criterios de AS', desc: 'Comparar elegibilidad y tasa de reclasificación por protocolo de AS', minN: 50, ref: 'Bul M. Eur Urol 2013 (PRIAS); Carter HB. J Urol 2007 (JH)', nivel: 'IIa', diseno: 'Cohorte comparativa' },
+                { cat: 'vigilancia', title: 'Ansiedad y calidad de vida durante AS', desc: 'STAI, MAXPC, FACT-P durante vigilancia activa — Impacto en abandono del programa', minN: 30, ref: 'Bellardita L. Eur Urol Focus 2021; Marzouk K. J Urol 2018', nivel: 'IIb', diseno: 'Transversal analítico' },
+                { cat: 'vigilancia', title: 'AS expandida: GG2 de bajo volumen con Decipher bajo', desc: 'Outcomes de AS en Gleason 3+4 con Decipher <0.45 y PI-RADS ≤3', minN: 25, ref: 'Eure G. Rev Urol 2017; Nassiri N. JCO Precis Oncol 2020', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+
+                // ═══ ENFERMEDAD AVANZADA ═══
+                { cat: 'avanzado', title: 'Cinética PSA como predictor de volumen en mHSPC', desc: 'PSADT <3m vs >10m — Correlación con high-volume CHAARTED y outcomes a intensificación', minN: 50, ref: 'Sweeney CJ. NEJM 2015 (CHAARTED); Fizazi K. NEJM 2017 (LATITUDE)', nivel: 'IIa', diseno: 'Cohorte retrospectiva' },
+                { cat: 'avanzado', title: 'Tiempo a CRPC y secuenciación terapéutica', desc: 'Mediana de tiempo a resistencia a castración — Predictores de progresión rápida', minN: 40, ref: 'Scher HI. JCO 2016; Hussain M. NEJM 2018 (PROSPER)', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+                { cat: 'avanzado', title: 'Síndrome metabólico por ADT: incidencia y prevención', desc: 'DM2, dislipidemia, osteoporosis, eventos cardiovasculares — Programa de prevención', minN: 60, ref: 'Keating NL. JCO 2010; Nguyen PL. Eur Urol 2015', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+                { cat: 'avanzado', title: 'Eventos esqueléticos en mCRPC: incidencia y costo', desc: 'SRE, fracturas, compresión medular — Uso de denosumab/ácido zoledrónico', minN: 30, ref: 'Fizazi K. Lancet 2011 (denosumab vs ZA); Smith MR. NEJM 2009', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+                { cat: 'avanzado', title: 'Oligometastásico: MDT (SBRT) vs observación', desc: 'SBRT a ≤5 metástasis detectadas por PSMA — Tiempo libre de ADT y PFS', minN: 20, ref: 'Phillips R. JCO 2020 (ORIOLE); Ost P. JCO 2018 (STOMP)', nivel: 'Ib', diseno: 'Comparativo prospectivo' },
+
+                // ═══ CALIDAD DE VIDA Y PROs ═══
+                { cat: 'calidad', title: 'IPSS pre y post-prostatectomía', desc: 'Trayectoria de síntomas urinarios a 3, 6, 12 meses post-RP — Predictores de incontinencia', minN: 60, ref: 'Sanda MG. NEJM 2008; Donovan JL. NEJM 2016 (ProtecT)', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+                { cat: 'calidad', title: 'IIEF-5 y rehabilitación sexual post-RP', desc: 'Recuperación de función eréctil por técnica quirúrgica y uso de PDE5i temprano', minN: 50, ref: 'Montorsi F. Eur Urol 2014; Mulhall JP. J Sex Med 2018', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+                { cat: 'calidad', title: 'Toxicidad CTCAE: RT vs RP en riesgo intermedio', desc: 'Complicaciones grado ≥2 gastrointestinales y genitourinarias a 2 años', minN: 60, ref: 'Hamdy FC. NEJM 2016 (ProtecT); Chen RC. JCO 2017', nivel: 'Ib', diseno: 'Cohorte comparativa' },
+                { cat: 'calidad', title: 'EQ-5D y FACT-P: calidad de vida longitudinal', desc: 'Utilidad de salud por estadio clínico y línea de tratamiento — Para análisis fármaco-económico', minN: 40, ref: 'Krahn MD. Med Decis Making 2014; Cella D. JCO 2019', nivel: 'IIa', diseno: 'Cohorte prospectiva' },
+                { cat: 'calidad', title: 'Clavien-Dindo ≥III en prostatectomía radical', desc: 'Tasa de complicaciones quirúrgicas mayores y factores de riesgo (edad, CCI, IMC)', minN: 80, ref: 'Dindo D. Ann Surg 2004; Haese A. Eur Urol 2019', nivel: 'IIb', diseno: 'Cohorte retrospectiva' },
+
+                // ═══ EPIDEMIOLOGÍA MÉXICO ═══
+                { cat: 'epidemio', title: 'PSA mediano al diagnóstico: IMSS vs privada', desc: 'Comparar PSA basal al diagnóstico por sistema de salud — Retraso diagnóstico', minN: 30, ref: 'Mediana nacional ~32 ng/mL (vs <10 en USA); INEGI, Registro Histopatológico', nivel: 'IIb', diseno: 'Transversal comparativo' },
+                { cat: 'epidemio', title: 'Impacto de diabetes en agresividad del CaP', desc: 'DM2 como factor de riesgo para Gleason alto y estadio avanzado — 20.9% en CaP mexicanos', minN: 80, ref: 'Bansal D. Asian Pac J Cancer Prev 2013; Freedland SJ. JCO 2008', nivel: 'IIb', diseno: 'Casos y controles' },
+                { cat: 'epidemio', title: 'Tabaquismo y riesgo de CaP agresivo', desc: 'Dosis-respuesta tabaquismo (>15 cig/día) con mortalidad CaP-específica — 58.2% en mexicanos', minN: 80, ref: 'Kenfield SA. JNCI 2011; Moreira DM. Cancer 2014', nivel: 'IIb', diseno: 'Cohorte retrospectiva' },
+                { cat: 'epidemio', title: 'Estadio al diagnóstico por región geográfica', desc: 'Proporción de enfermedad metastásica al diagnóstico por estado de la República', minN: 100, ref: 'Reynoso-Noverón N. Salud Pública Méx 2016; GLOBOCAN 2022', nivel: 'IIb', diseno: 'Transversal descriptivo' },
+                { cat: 'epidemio', title: 'Disparidades en acceso a terapias avanzadas', desc: 'Acceso a ARPIs, PSMA-PET, genómica por nivel socioeconómico y tipo de institución', minN: 50, ref: 'Bray F. Lancet Oncol 2018; Torres-Sánchez L. Salud Pública Méx 2014', nivel: 'IIb', diseno: 'Transversal analítico' },
+                { cat: 'epidemio', title: 'Obesidad y síndrome metabólico: impacto en outcomes', desc: 'IMC >30 y su asociación con upstaging, BCR y complicaciones quirúrgicas', minN: 60, ref: 'Allott EH. Eur Urol 2013; Cao Y. Cancer Epidemiol 2011', nivel: 'IIb', diseno: 'Cohorte retrospectiva' },
+
+                // ═══ IA Y PREDICCIÓN ═══
+                { cat: 'ia', title: 'ML multi-output vs CAPRA: C-index comparativo', desc: 'Comparar AUC/C-index del modelo ML de ProstaMed vs scores clínicos clásicos', minN: 100, ref: 'Cosma G. BMC Med Inform Decis Mak 2017; Goldenberg SL. Nat Rev Urol 2019', nivel: 'IIb', diseno: 'Estudio de validación' },
+                { cat: 'ia', title: 'Radar multimodal como herramienta de decisión', desc: 'Concordancia inter-observador usando radar de 12 ejes vs reporte textual', minN: 30, ref: 'Esteva A. Nat Med 2019; Topol EJ. NEJM 2019 (review)', nivel: 'IIb', diseno: 'Concordancia inter-observador' },
+                { cat: 'ia', title: 'Predicción de upgrade con IA + mpMRI features', desc: 'Integrar PI-RADS, volumen de lesión y features radiómicos para predecir GG≥2', minN: 50, ref: 'Schelb P. Eur Urol 2021; Hiremath A. Eur Radiol 2021', nivel: 'IIa', diseno: 'Diagnóstico prospectivo' },
+                { cat: 'ia', title: 'NLP para extracción automática de reportes patología', desc: 'Procesamiento de lenguaje natural para captura estructurada de biopsias', minN: 100, ref: 'Yim WW. J Am Med Inform Assoc 2016; Banerjee I. JCO Clin Cancer Inform 2019', nivel: 'IIb', diseno: 'Desarrollo y validación' },
+                { cat: 'ia', title: 'Score de riesgo dinámico con datos longitudinales', desc: 'Recalibración de riesgo en cada visita (PSA, imagen, biopsias) — Time-series prediction', minN: 40, ref: 'Gulati R. JNCI 2014; Coley RY. Stat Med 2017', nivel: 'IIa', diseno: 'Estudio de modelado' },
+            ];
+
+            const filtered = filter === 'all' ? lines : lines.filter(l => l.cat === filter);
+            countEl.textContent = `${filtered.length} de ${lines.length} líneas`;
+
+            const catColors = {
+                validacion: 'border-l-blue-500', genomica: 'border-l-purple-500', imagen: 'border-l-cyan-500',
+                tratamiento: 'border-l-orange-500', vigilancia: 'border-l-green-500', avanzado: 'border-l-red-500',
+                calidad: 'border-l-yellow-500', epidemio: 'border-l-pink-500', ia: 'border-l-indigo-500'
+            };
+            const catLabels = {
+                validacion: 'Validación', genomica: 'Genómica', imagen: 'Imagen', tratamiento: 'Tratamiento',
+                vigilancia: 'Vigilancia activa', avanzado: 'Enfermedad avanzada', calidad: 'Calidad de vida',
+                epidemio: 'Epidemiología de México', ia: 'Inteligencia artificial y modelado predictivo'
+            };
+
+            container.innerHTML = filtered.map(l => {
+                const pct = Math.min(100, (n / l.minN) * 100).toFixed(0);
+                const statusClass = n >= l.minN ? 'bg-green-900/20 border-green-700/40' : 'bg-slate-800 border-slate-700';
+                const badge = n >= l.minN
+                    ? '<span class="research-badge bg-green-900 text-green-400 text-[10px] px-1.5 py-0.5 rounded">VIABLE</span>'
+                    : `<span class="research-badge bg-slate-700 text-slate-400 text-[10px] px-1.5 py-0.5 rounded">Faltan ${l.minN - n}</span>`;
+                const catColor = catColors[l.cat] || 'border-l-slate-500';
+                const catLabel = catLabels[l.cat] || l.cat;
+
+                return `<div class="${statusClass} border border-l-4 ${catColor} rounded-lg p-3">
+                    <div class="flex justify-between items-start mb-1">
+                        <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">${catLabel}</span>
+                        ${badge}
+                    </div>
+                    <h4 class="text-xs font-semibold text-white leading-tight mt-1.5 mb-1">${humanizeClinicalText(l.title)}</h4>
+                    <p class="text-[11px] text-slate-400 mb-1.5 leading-relaxed">${humanizeClinicalText(l.desc)}</p>
+                    <div class="flex items-center gap-2 mb-1">
+                        <div class="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                            <div class="h-full ${n >= l.minN ? 'bg-green-500' : 'bg-blue-500'} rounded-full transition-all" style="width:${pct}%"></div>
+                        </div>
+                        <span class="text-[10px] text-slate-500 whitespace-nowrap">${n}/${l.minN} pacientes</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <p class="text-[10px] text-slate-600 italic truncate mr-2" title="${humanizeClinicalText(l.ref)}">📚 ${humanizeClinicalText(l.ref.split(';')[0])}</p>
+                        <span class="text-[10px] px-1 py-0.5 rounded ${l.nivel.startsWith('I') && l.nivel.length <= 3 ? 'bg-amber-900/40 text-amber-400' : 'bg-slate-700 text-slate-500'}">${l.nivel}</span>
+                    </div>
+                    <p class="text-[10px] text-slate-600 mt-0.5">📋 ${humanizeClinicalText(l.diseno)}</p>
+                </div>`;
+            }).join('');
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        // ── Benchmark Cards ───────────────────────────────────────────────────
+        function renderBenchmarkCards() {
+            const container = document.getElementById('benchmarkCards');
+            const denom = dashboardData.latest_assessment_count || allPatients.length || 1;
+            const cards = [
+                {
+                    name: 'Biomarcadores completos',
+                    score: Math.round(((dashboardData.biomarker_complete_count || 0) / denom) * 100),
+                    details: [
+                        'Gen HRR documentado',
+                        'Fuente del biomarcador capturada',
+                        'Listo para PARP / inmuno / secuencia precisa',
+                    ],
+                },
+                {
+                    name: 'PROs y calidad de vida basal',
+                    score: Math.round(((dashboardData.pros_baseline_count || 0) / denom) * 100),
+                    details: [
+                        'FACT-P / EPIC / EQ-5D basal',
+                        'Comparabilidad funcional entre rutas',
+                        'Base para rehab y supervivencia',
+                    ],
+                },
+                {
+                    name: 'Seguridad farmacológica',
+                    score: Math.round((((dashboardData.ddi_reviewed_count || 0) + (dashboardData.cv_documented_count || 0)) / (denom * 2)) * 100),
+                    details: [
+                        'Riesgo cardiovascular documentado',
+                        'Interacciones farmacológicas revisadas',
+                        'Cardio-oncología visible en el flujo',
+                    ],
+                },
+                {
+                    name: 'Adopción combinada en mHSPC',
+                    score: Math.round(((dashboardData.mhspc_combination_adherence_count || 0) / Math.max(1, dashboardData.latest_assessment_count || allPatients.length || 1)) * 100),
+                    details: [
+                        'No depender de ADT sola por defecto',
+                        'Seguimiento de dobletes y tripletes',
+                        'Benchmark real-world de adopción',
+                    ],
+                },
+                {
+                    name: 'Salud ósea avanzada',
+                    score: Math.round((((dashboardData.dxa_documented_count || 0) + (dashboardData.bone_protection_count || 0)) / (denom * 2)) * 100),
+                    details: [
+                        'DXA basal visible',
+                        'Calcio/vitamina D o protección ósea iniciados',
+                        'Prevención estructural dentro del flujo',
+                    ],
+                },
+                {
+                    name: 'Rescate y secuencia',
+                    score: Math.round((((dashboardData.salvage_documented_count || 0) + (dashboardData.mcrpc_line_context_count || 0)) / (denom * 2)) * 100),
+                    details: [
+                        'Salvage local documentado en BCR/post-RP',
+                        'Contexto de línea mCRPC explícito',
+                        'Evita sobreescalar sin contexto clínico',
+                    ],
+                },
+                {
+                    name: 'Cohorte publicable',
+                    score: Math.round(dashboardData.cohort_completeness?.average_pct || 0),
+                    details: [
+                        `${dashboardData.cohort_completeness?.publishable_ready_count || 0} casos listos para dataset analítico`,
+                        `${dashboardData.research_readiness?.research_ready_count || 0} casos con research readiness utilizable`,
+                        'Mide si la cohorte ya sirve para estadística y publicación clínica',
+                    ],
+                },
+            ];
+
+            container.innerHTML = cards.map((card) => {
+                const scoreColor = card.score >= 75 ? 'text-green-400' : card.score >= 50 ? 'text-yellow-400' : 'text-red-400';
+                return `<div class="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <h4 class="text-xs font-bold text-white">${humanizeClinicalText(card.name)}</h4>
+                        <span class="text-lg font-bold ${scoreColor}">${card.score}%</span>
+                    </div>
+                    <div class="space-y-1.5">
+                        ${card.details.map((detail) => `<div class="flex items-center gap-2 text-xs">
+                            <span class="text-cyan-300">•</span>
+                            <span class="text-slate-300">${humanizeClinicalText(detail)}</span>
+                        </div>`).join('')}
+                    </div>
+                </div>`;
+            }).join('');
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderCalibrationCards() {
+            const container = document.getElementById('calibrationCards');
+            const harness = dashboardData.scenario_harness || {};
+            const concordance = harness.concordance_pct || 0;
+            const summary = harness.module_summary || [];
+            const topModules = summary.slice(0, 2).map(item => `${humanizeClinicalText(item.module_id)}: ${item.passed}/${item.total}`).join(' · ');
+            const cards = [
+                {
+                    name: 'Concordancia legacy',
+                    score: concordance,
+                    details: [
+                        `${harness.passed_cases || 0}/${harness.total_cases || 0} escenarios pasados`,
+                        'Referencia histórica del harness modular pequeño',
+                        'No representa por sí solo el estado actual de release longitudinal',
+                    ],
+                },
+                {
+                    name: 'Fallos del harness legacy',
+                    score: harness.failed_cases ? Math.max(0, 100 - Math.min(100, harness.failed_cases * 10)) : 100,
+                    details: [
+                        `${harness.failed_cases || 0} fallos activos`,
+                        'Útil para regresión rápida por módulo',
+                        'Cada fallo requiere causa raíz aunque no sustituya la validación viva',
+                    ],
+                },
+                {
+                    name: 'Cobertura modular',
+                    score: summary.length ? Math.round((summary.filter(item => item.total > 0).length / 10) * 100) : 0,
+                    details: [
+                        `${summary.length || 0} modulos con casos estructurados`,
+                        topModules || 'Sin resumen modular todavia',
+                        'Cobertura del arnés legacy por familia modular',
+                    ],
+                },
+                {
+                    name: 'Base maestra activa',
+                    score: Math.round((((dashboardData.imaging_count || 0) + (dashboardData.genomics_count || 0) + (dashboardData.biopsies_count || 0) + (dashboardData.pros_count || 0)) / Math.max(1, (dashboardData.total_patients || 1) * 4)) * 100),
+                    details: [
+                        'Imagen, genómica, biopsias y PROs con persistencia real',
+                        'Mide si el expediente ya alimenta inteligencia longitudinal',
+                        'Interpretar junto a la validación longitudinal viva',
+                    ],
+                },
+            ];
+
+            container.innerHTML = cards.map((card) => {
+                const scoreColor = card.score >= 90 ? 'text-green-400' : card.score >= 70 ? 'text-yellow-400' : 'text-red-400';
+                return `<div class="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <h4 class="text-xs font-bold text-white">${humanizeClinicalText(card.name)}</h4>
+                        <span class="text-lg font-bold ${scoreColor}">${card.score}%</span>
+                    </div>
+                    <div class="space-y-1.5">
+                        ${card.details.map((detail) => `<div class="flex items-center gap-2 text-xs">
+                            <span class="text-cyan-300">•</span>
+                            <span class="text-slate-300">${humanizeClinicalText(detail)}</span>
+                        </div>`).join('')}
+                    </div>
+                </div>`;
+            }).join('');
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderRiskToolStats() {
+            const scoreBuckets = document.getElementById('riskScoreBuckets');
+            const toolGrid = document.getElementById('riskToolStatsGrid');
+            const upgradeGrid = document.getElementById('upgradeStatsGrid');
+            const prognosticGrid = document.getElementById('prognosticImpactGrid');
+            const capra = dashboardData.capra_distribution || {};
+            const damico = dashboardData.damico_distribution || {};
+            const capraS = dashboardData.capra_s_distribution || {};
+            const toolStats = dashboardData.risk_tool_stats || {};
+            const upgradeStats = dashboardData.upgrade_stats || {};
+            const modifierStats = dashboardData.prognostic_modifier_stats || {};
+            const alignmentStats = dashboardData.backbone_alignment_stats || {};
+
+            const scoreCards = [
+                { title: 'CAPRA', data: capra, surfaceClass: 'border-cyan-500/15 bg-cyan-500/5' },
+                { title: "D'Amico", data: damico, surfaceClass: 'border-emerald-500/15 bg-emerald-500/5' },
+                { title: 'CAPRA-S', data: capraS, surfaceClass: 'border-violet-500/15 bg-violet-500/5' },
+            ];
+
+            scoreBuckets.innerHTML = scoreCards.map((card) => {
+                const rows = ['BAJO', 'INTERMEDIO', 'ALTO'].map((key) => {
+                    const value = card.data?.[key] || 0;
+                    return `<div class="flex items-center justify-between rounded-xl border border-slate-700/80 bg-slate-950/40 px-3 py-2">
+                        <span class="text-xs uppercase tracking-[0.18em] text-slate-500">${humanizeClinicalText(key)}</span>
+                        <span class="text-sm font-semibold text-white">${value}</span>
+                    </div>`;
+                }).join('');
+                return `<div class="rounded-2xl border ${card.surfaceClass} p-3">
+                    <div class="text-sm font-semibold text-white">${card.title}</div>
+                    <div class="mt-3 space-y-2">${rows}</div>
+                </div>`;
+            }).join('');
+
+            const statusLabels = {
+                calculated: 'Calculado',
+                interpreted: 'Interpretado',
+                proxy: 'Proxy',
+                ready_missing_inputs: 'Faltan datos',
+                not_applicable: 'No aplica',
+            };
+
+            const toolEntries = Object.entries(toolStats);
+            toolGrid.innerHTML = toolEntries.length
+                ? toolEntries.map(([toolKey, stats]) => {
+                    const statRows = Object.entries(statusLabels).map(([key, label]) => {
+                        const value = stats?.[key] || 0;
+                        return `<div class="flex items-center justify-between text-xs">
+                            <span class="text-slate-400">${label}</span>
+                            <span class="font-medium text-white">${value}</span>
+                        </div>`;
+                    }).join('');
+                    return `<div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                        <div class="text-sm font-semibold text-white">${humanizeClinicalText(toolKey)}</div>
+                        <div class="mt-3 space-y-2">${statRows}</div>
+                    </div>`;
+                }).join('')
+                : '<div class="text-sm text-slate-500">Aún no hay herramientas pronósticas estructuradas en la cohorte.</div>';
+
+            const upgradeCards = [
+                {
+                    title: 'Upgrade histopatológico',
+                    value: upgradeStats.pathologic_upgrade_count || 0,
+                    meaning: 'Casos con upgrading o patología adversa mayor entre biopsia y reevaluación/pieza final.',
+                },
+                {
+                    title: 'Reclasificación genómica',
+                    value: upgradeStats.genomic_upclassification_count || 0,
+                    meaning: 'Casos con classifier genómico documentado que elevó la agresividad biológica esperada.',
+                },
+                {
+                    title: 'Intermedio desfavorable behaving like high risk',
+                    value: upgradeStats.unfavorable_intermediate_behaving_like_high_risk_count || 0,
+                    meaning: 'Casos intermedios desfavorables que luego mostraron biología o patología de alto riesgo.',
+                },
+            ];
+
+            upgradeGrid.innerHTML = upgradeCards.map((card) => `
+                <div class="rounded-2xl border border-rose-500/15 bg-rose-950/10 p-4">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="text-sm font-semibold text-white">${humanizeClinicalText(card.title)}</div>
+                        <div class="text-xl font-bold text-rose-200">${card.value}</div>
+                    </div>
+                    <p class="mt-3 text-xs leading-relaxed text-slate-400">${humanizeClinicalText(card.meaning)}</p>
+                </div>
+            `).join('');
+
+            const modifierList = Object.entries(modifierStats)
+                .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+                .slice(0, 4);
+            const alignmentRows = ['aligned', 'adjacent', 'divergent', 'unknown'].map((key) => `
+                <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-400">${humanizeClinicalText(key)}</span>
+                    <span class="font-medium text-white">${alignmentStats?.[key] || 0}</span>
+                </div>
+            `).join('');
+            const prognosticCards = [
+                {
+                    title: 'Modificadores pronósticos',
+                    body: modifierList.length
+                        ? modifierList.map(([key, value]) => `<div class="flex items-center justify-between text-xs"><span class="text-slate-400">${humanizeClinicalText(key)}</span><span class="font-medium text-white">${value}</span></div>`).join('')
+                        : '<div class="text-xs text-slate-500">Sin modificadores agregados todavía.</div>',
+                },
+                {
+                    title: 'Ajuste real de seguimiento',
+                    body: `<div class="text-2xl font-bold text-cyan-200">${dashboardData.prognostic_followup_impact_count || 0}</div><p class="mt-2 text-xs text-slate-400">Pacientes donde el riesgo ya cambió la cadencia o la vigilancia visible.</p>`,
+                },
+                {
+                    title: 'Scores aún incompletos',
+                    body: `<div class="text-2xl font-bold text-amber-200">${dashboardData.incomplete_prognostic_scores_count || 0}</div><p class="mt-2 text-xs text-slate-400">Casos con herramientas aplicables que todavía requieren inputs o reporte externo.</p>`,
+                },
+                {
+                    title: 'Alineación con backbone trial-like',
+                    body: `<div class="space-y-2">${alignmentRows}</div><p class="mt-3 text-xs text-slate-400">Mide si el esquema actual está alineado, cercano o divergente del backbone del estudio comparable.</p>`,
+                },
+            ];
+
+            prognosticGrid.innerHTML = prognosticCards.map((card) => `
+                <div class="rounded-2xl border border-cyan-500/15 bg-cyan-950/10 p-4">
+                    <div class="text-sm font-semibold text-white">${humanizeClinicalText(card.title)}</div>
+                    <div class="mt-3">${card.body}</div>
+                </div>
+            `).join('');
+
+            window.clinicalPresentation?.normalizeDocument(scoreBuckets);
+            window.clinicalPresentation?.normalizeDocument(toolGrid);
+            window.clinicalPresentation?.normalizeDocument(prognosticGrid);
+            window.clinicalPresentation?.normalizeDocument(upgradeGrid);
+        }
+
+        function renderResearchSurvivalChart() {
+            const bundle = dashboardResearch?.survival?.os?.curve?.curve || {};
+            const times = bundle.times || [];
+            const probs = (bundle.survival_probs || []).map((value) => Number((value * 100).toFixed(1)));
+            replaceChart('chartResearchSurvival', {
+                type: 'line',
+                data: {
+                    labels: times,
+                    datasets: [{
+                        label: 'OS institucional',
+                        data: probs,
+                        borderColor: COLORS.cyan,
+                        backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                        fill: true,
+                        tension: 0.2,
+                        pointRadius: 2,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false },
+                        title: {
+                            display: true,
+                            text: bundle.total_patients ? `n=${bundle.total_patients} · eventos=${bundle.total_events || 0}` : 'Sin datos suficientes',
+                            color: '#94a3b8',
+                            font: { size: 11 },
+                        },
+                    },
+                    scales: {
+                        x: { title: { display: true, text: 'Meses' } },
+                        y: { beginAtZero: true, max: 100, title: { display: true, text: 'Supervivencia (%)' } },
+                    },
+                },
+            });
+        }
+
+        function renderResearchReadinessPanels() {
+            const container = document.getElementById('researchReadinessGrid');
+            const readiness = dashboardResearch.research_readiness || {};
+            const consent = dashboardResearch.consent_governance || {};
+            const cards = [
+                { title: 'Pacientes research-ready', value: readiness.research_ready_patients || 0, detail: 'Pacientes con señal longitudinal utilizable y snapshots clínicos disponibles.' },
+                { title: 'Cobertura de consentimiento', value: `${consent.coverage_pct || 0}%`, detail: `${consent.signed_count || 0} firmados / ${consent.total_patients || 0} registrados` },
+                { title: 'Cohortes dinámicas', value: readiness.dynamic_cohort_count || 0, detail: 'Cohortes reutilizables para KM, Cox, logistic, PSM y export.' },
+                { title: 'Registros exportables', value: readiness.exportable_records || 0, detail: 'Pacientes disponibles en export canónico REDCap/CSV.' },
+            ];
+            container.innerHTML = cards.map((card) => `
+                <div class="rounded-2xl border border-cyan-500/15 bg-cyan-950/10 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-slate-500">${humanizeClinicalText(card.title)}</div>
+                    <div class="mt-2 text-2xl font-bold text-cyan-200">${card.value}</div>
+                    <p class="mt-2 text-xs text-slate-400">${humanizeClinicalText(card.detail)}</p>
+                </div>
+            `).join('');
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderQualityIndicatorPanels() {
+            const container = document.getElementById('qualityIndicatorGrid');
+            const results = dashboardResearch?.quality_indicators?.results || [];
+            container.innerHTML = results.length ? results.map((item) => `
+                <div class="rounded-2xl border border-emerald-500/15 bg-emerald-950/10 p-4">
+                    <div class="text-sm font-semibold text-white">${humanizeClinicalText(item.title || item.indicator_key)}</div>
+                    <div class="mt-2 text-2xl font-bold text-emerald-200">${item.percentage || 0}%</div>
+                    <div class="mt-2 text-xs text-slate-400">${item.numerator || 0}/${item.denominator || 0} · Target ${item.benchmark_target || 'institucional'}</div>
+                </div>
+            `).join('') : '<div class="text-sm text-slate-500">Sin indicadores disponibles.</div>';
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderOperationalOutcomePanels() {
+            const chartData = dashboardResearch?.operational_outcomes?.clavien_distribution || {};
+            replaceChart('chartClavien', {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(chartData).length ? Object.keys(chartData).map((label) => `Clavien ${label}`) : ['Sin eventos'],
+                    datasets: [{
+                        data: Object.keys(chartData).length ? Object.values(chartData) : [0],
+                        backgroundColor: COLORS.orange,
+                        borderRadius: 6,
+                        borderSkipped: false,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+                },
+            });
+            const container = document.getElementById('operationalOutcomeGrid');
+            const payload = dashboardResearch?.operational_outcomes || {};
+            const cards = [
+                { title: 'Cirugías con outcomes estructurados', value: payload.surgery_count || 0, detail: 'Expedientes con registro operatorio utilizable.' },
+                { title: 'Márgenes positivos', value: `${payload.positive_margin_rate || 0}%`, detail: `${payload.positive_margin_count || 0} casos con margen positivo.` },
+                { title: 'Continencia recuperada', value: payload.continence_recovered_count || 0, detail: 'Pacientes con recuperación urinaria documentada.' },
+                { title: 'Potencia funcional', value: payload.potency_recovered_count || 0, detail: 'Pacientes con recuperación sexual útil documentada.' },
+            ];
+            container.innerHTML = cards.map((card) => `
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-slate-500">${humanizeClinicalText(card.title)}</div>
+                    <div class="mt-2 text-xl font-bold text-white">${card.value}</div>
+                    <div class="mt-2 text-xs text-slate-400">${humanizeClinicalText(card.detail)}</div>
+                </div>
+            `).join('');
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderInstitutionalBenchmarkPanels() {
+            const container = document.getElementById('institutionalBenchmarkGrid');
+            const comparisons = dashboardResearch?.benchmarking?.comparisons || [];
+            container.innerHTML = comparisons.length ? comparisons.map((item) => `
+                <div class="rounded-2xl border border-purple-500/15 bg-purple-950/10 p-4">
+                    <div class="text-sm font-semibold text-white">${humanizeClinicalText(item.title || item.benchmark_key)}</div>
+                    <div class="mt-2 text-xs text-slate-400">${humanizeClinicalText(item.source_label || '')}</div>
+                    <div class="mt-3 text-xs uppercase tracking-[0.18em] text-purple-200">${humanizeClinicalText(item.comparability_tier || 'limited')}</div>
+                    <div class="mt-2 text-xs text-slate-300">${humanizeClinicalText(item.gap_label || 'Comparación institucional')}</div>
+                </div>
+            `).join('') : '<div class="text-sm text-slate-500">Sin comparaciones benchmark disponibles.</div>';
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderPsmaImagingPanels() {
+            const container = document.getElementById('psmaImagingGrid');
+            const payload = dashboardResearch?.psma_imaging || {};
+            const cards = [
+                { title: 'Cobertura PSMA estructurada', value: `${payload.structured_coverage_pct || 0}%`, detail: `${payload.structured_coverage_count || 0} pacientes con PSMA estructurado.` },
+                { title: 'Upstaging por PSMA', value: `${payload.upstaging_rate_pct || 0}%`, detail: 'Comparado contra imagen convencional cuando fue documentada.' },
+                { title: 'Cambio de conducta', value: `${payload.management_change_rate_pct || 0}%`, detail: 'Conducta modificada y registrada por PSMA.' },
+                { title: 'Estudios PSMA', value: payload.study_count || 0, detail: 'Estudios PSMA longitudinales en la cohorte institucional.' },
+            ];
+            container.innerHTML = cards.map((card) => `
+                <div class="rounded-2xl border border-cyan-500/15 bg-cyan-950/10 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-slate-500">${humanizeClinicalText(card.title)}</div>
+                    <div class="mt-2 text-xl font-bold text-cyan-200">${card.value}</div>
+                    <div class="mt-2 text-xs text-slate-400">${humanizeClinicalText(card.detail)}</div>
+                </div>
+            `).join('');
+            const rads = payload.psma_rads_distribution || {};
+            const ligands = payload.radioligand_distribution || {};
+            const labels = [...Object.keys(rads).map((key) => `RADS ${key}`), ...Object.keys(ligands)];
+            const values = [...Object.values(rads), ...Object.values(ligands)];
+            replaceChart('chartPsmaImaging', {
+                type: 'bar',
+                data: {
+                    labels: labels.length ? labels : ['Sin datos'],
+                    datasets: [{
+                        data: values.length ? values : [0],
+                        backgroundColor: labels.map((_, index) => index < Object.keys(rads).length ? COLORS.cyan : COLORS.purple),
+                        borderRadius: 6,
+                        borderSkipped: false,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+                },
+            });
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderLaboratoryIntelligencePanels() {
+            const container = document.getElementById('laboratoryIntelligenceGrid');
+            const payload = dashboardResearch?.laboratory_intelligence || {};
+            const cards = [
+                { title: 'Cobertura longitudinal', value: `${payload.longitudinal_coverage_pct || 0}%`, detail: `${payload.record_count || 0} expedientes con series multiparámetro evaluables.` },
+                { title: 'Alertas activas', value: payload.alerts_active_count || 0, detail: 'Alertas longitudinales de seguridad, castración, carga tumoral y función orgánica.' },
+                { title: 'Castración documentada', value: payload.castration_documented_count || 0, detail: 'Pacientes con testosterona longitudinal utilizable en la cohorte.' },
+                { title: 'Panel hepatorrenal', value: `${payload.hepatic_panel_count || 0}/${payload.renal_panel_count || 0}`, detail: 'Cobertura hepática y renal disponible para vigilancia terapéutica.' },
+            ];
+            container.innerHTML = cards.map((card) => `
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-slate-500">${humanizeClinicalText(card.title)}</div>
+                    <div class="mt-2 text-xl font-bold text-white">${card.value}</div>
+                    <div class="mt-2 text-xs text-slate-400">${humanizeClinicalText(card.detail)}</div>
+                </div>
+            `).join('');
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderDynamicCohortPanels() {
+            const container = document.getElementById('dynamicCohortGrid');
+            const cohorts = dashboardResearch?.dynamic_cohorts || [];
+            container.innerHTML = cohorts.length ? cohorts.map((cohort) => `
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="text-sm font-semibold text-white">${humanizeClinicalText(cohort.title)}</div>
+                        <span class="rounded-full border border-slate-700 px-2 py-1 text-[11px] text-slate-300">${cohort.member_count || cohort.patient_ids?.length || 0}</span>
+                    </div>
+                    <div class="mt-2 text-xs text-slate-400">${humanizeClinicalText(cohort.description || 'Cohorte reusable del sistema')}</div>
+                </div>
+            `).join('') : '<div class="text-sm text-slate-500">Sin cohortes dinámicas disponibles.</div>';
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderValidationPanels() {
+            const container = document.getElementById('validationRunGrid');
+            const payload = dashboardResearch?.longitudinal_validation || {};
+            if (!payload.available) {
+                container.innerHTML = '<div class="text-sm text-slate-500">Todavía no hay corridas de validación longitudinal registradas.</div>';
+                return;
+            }
+            const familyDetail = (payload.top_failing_scenario_families || []).map((item) => `${item[0]} (${item[1]})`).join(', ') || 'Sin familias fallando.';
+            const runLabel = payload.run_id ? `Corrida ${payload.run_id}` : 'Sin identificador de corrida';
+            const createdAt = payload.created_at || 'Fecha no disponible';
+            const cohortMode = payload.cohort_mode || 'current_db';
+            const reportHref = payload.run_id ? `/api/validation/run/${payload.run_id}/report` : '#';
+            const runHref = payload.run_id ? `/api/validation/run/${payload.run_id}` : '#';
+            const cards = [
+                { title: 'Estado actual de release longitudinal', value: `${payload.passed || 0}/${payload.total_trajectories || 0}`, detail: `${runLabel} · ${humanizeClinicalText(cohortMode)} · ${createdAt}` },
+                { title: 'Concordancia guía', value: `${Number(payload.guideline_concordance_pct || 0).toFixed(1)}%`, detail: 'NCCN-first con provenance explícito en el runner longitudinal vivo.' },
+                { title: 'Prompts críticos', value: `${Number(payload.missing_input_prompt_accuracy || 0).toFixed(1)}%`, detail: 'Precisión de datos faltantes que sí cambian la conducta clínica.' },
+                { title: 'Contradicciones UI', value: payload.ui_contradictions || 0, detail: payload.critical_failures ? `${payload.critical_failures} fallas críticas activas.` : 'Sin fallas críticas activas.' },
+                { title: 'Completitud longitudinal', value: `${Number(payload.data_accumulation_completeness_pct || 0).toFixed(1)}%`, detail: 'Persistencia real de laboratorios, agenda, estado y decisión a lo largo del trayecto.' },
+                { title: 'Familias con fallas', value: payload.failed || 0, detail: familyDetail },
+            ];
+            const cardsHtml = cards.map((card) => `
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-slate-500">${humanizeClinicalText(card.title)}</div>
+                    <div class="mt-2 text-xl font-bold text-white">${card.value}</div>
+                    <div class="mt-2 text-xs text-slate-400">${humanizeClinicalText(card.detail)}</div>
+                </div>
+            `).join('');
+            const artifactLinks = payload.run_id ? `
+                <div class="rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-cyan-200">Artefactos y reporte</div>
+                    <div class="mt-3 flex flex-col gap-2 text-sm">
+                        <a class="text-cyan-300 hover:text-cyan-200" href="${runHref}" target="_blank" rel="noreferrer">Abrir snapshot de la corrida</a>
+                        <a class="text-cyan-300 hover:text-cyan-200" href="${reportHref}" target="_blank" rel="noreferrer">Abrir reporte detallado</a>
+                    </div>
+                </div>
+            ` : '';
+            container.innerHTML = cardsHtml + artifactLinks;
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderCrpcCopilotPanels() {
+            const container = document.getElementById('crpcCopilotGrid');
+            const payload = dashboardResearch?.crpc_copilot || {};
+            if (!payload.available) {
+                container.innerHTML = '<div class="text-sm text-slate-500">Todavía no hay snapshots del copiloto CRPC registrados.</div>';
+                return;
+            }
+            const runtimeModes = Object.entries(payload.runtime_modes || {}).map(([mode, count]) => `${humanizeClinicalText(mode)} (${count})`).join(', ') || 'Sin modos registrados.';
+            const failureFamilies = (payload.top_failure_families || []).map((item) => `${item[0]} (${item[1]})`).join(', ') || 'Sin familias bloqueadas.';
+            const recentCases = (payload.recent_cases || []).map((item) => `
+                <div class="rounded-xl border border-slate-700/70 bg-slate-950/50 px-3 py-2">
+                    <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Paciente ${item.patient_id}</div>
+                    <div class="mt-1 text-sm font-semibold text-white">${humanizeClinicalText(item.effective_state || 'Estado no disponible')}</div>
+                    <div class="mt-1 text-xs text-slate-400">${humanizeClinicalText(item.concordance_label || 'rule_only')} · QA ${item.qa_passed ? 'pass' : 'pendiente'}</div>
+                </div>
+            `).join('');
+            const cards = [
+                { title: 'Concordancia shadow vs regla', value: `${Number(payload.shadow_rule_concordance_pct || 0).toFixed(1)}%`, detail: `Estricto ${Number(payload.strict_concordance_pct || 0).toFixed(1)}% · ${payload.total_patients || 0} pacientes con snapshot vigente.` },
+                { title: 'QA pass', value: `${Number(payload.qa_pass_pct || 0).toFixed(1)}%`, detail: `Última actualización: ${humanizeClinicalText(payload.latest_created_at || 'Fecha no disponible')}` },
+                { title: 'Bloqueados por datos faltantes', value: `${Number(payload.blocked_by_missing_data_pct || 0).toFixed(1)}%`, detail: 'Casos con blockers duros que todavía cambian conducta clínica.' },
+                { title: 'Bloqueados por seguridad', value: `${Number(payload.blocked_by_safety_pct || 0).toFixed(1)}%`, detail: 'Safety gates activos para hepatotoxicidad, PSMA, HRR y conflictos de secuencia.' },
+            ];
+            container.innerHTML = `
+                ${cards.map((card) => `
+                    <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                        <div class="text-xs uppercase tracking-[0.18em] text-slate-500">${humanizeClinicalText(card.title)}</div>
+                        <div class="mt-2 text-xl font-bold text-white">${card.value}</div>
+                        <div class="mt-2 text-xs text-slate-400">${humanizeClinicalText(card.detail)}</div>
+                    </div>
+                `).join('')}
+                <div class="rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-cyan-200">Modos y familias de fallo</div>
+                    <div class="mt-2 text-sm text-white">${humanizeClinicalText(runtimeModes)}</div>
+                    <div class="mt-2 text-xs text-slate-300">${humanizeClinicalText(failureFamilies)}</div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-slate-500">Casos recientes</div>
+                    <div class="mt-3 grid grid-cols-1 gap-2">${recentCases || '<div class="text-xs text-slate-500">Sin casos recientes.</div>'}</div>
+                </div>
+            `;
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderPostRPSalvagePanels() {
+            const container = document.getElementById('postRpSalvageGrid');
+            const payload = dashboardResearch?.post_rp_salvage_copilot || {};
+            if (!payload.available) {
+                container.innerHTML = '<div class="text-sm text-slate-500">Todavía no hay snapshots del copiloto post-RP registrados.</div>';
+                return;
+            }
+            const runtimeModes = Object.entries(payload.runtime_modes || {}).map(([mode, count]) => `${humanizeClinicalText(mode)} (${count})`).join(', ') || 'Sin modos registrados.';
+            const failureFamilies = (payload.top_failure_families || []).map((item) => `${item[0]} (${item[1]})`).join(', ') || 'Sin familias bloqueadas.';
+            const courseDistribution = Object.entries(payload.course_distribution || {}).map(([course, count]) => `${humanizeClinicalText(course)} (${count})`).join(', ') || 'Sin cursos registrados.';
+            const recentCases = (payload.recent_cases || []).map((item) => `
+                <div class="rounded-xl border border-slate-700/70 bg-slate-950/50 px-3 py-2">
+                    <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Paciente ${item.patient_id}</div>
+                    <div class="mt-1 text-sm font-semibold text-white">${humanizeClinicalText(item.post_prostatectomy_course || 'Curso no disponible')}</div>
+                    <div class="mt-1 text-xs text-slate-400">${humanizeClinicalText(item.salvage_window_status || 'closed')} · QA ${item.qa_passed ? 'pass' : 'pendiente'}</div>
+                </div>
+            `).join('');
+            const cards = [
+                { title: 'Concordancia shadow vs regla', value: `${Number(payload.shadow_rule_concordance_pct || 0).toFixed(1)}%`, detail: `${payload.total_patients || 0} pacientes con snapshot vigente.` },
+                { title: 'QA pass', value: `${Number(payload.qa_pass_pct || 0).toFixed(1)}%`, detail: `Última actualización: ${humanizeClinicalText(payload.latest_created_at || 'Fecha no disponible')}` },
+                { title: 'Ventana salvage abierta', value: `${Number(payload.salvage_window_open_pct || 0).toFixed(1)}%`, detail: 'Casos con ventana open u open_pending_restaging.' },
+                { title: 'Redirect sistémico', value: `${Number(payload.redirect_systemic_pct || 0).toFixed(1)}%`, detail: 'Casos ya redirigidos fuera de salvage local aislado.' },
+                { title: 'Bloqueados por datos faltantes', value: `${Number(payload.blocked_by_missing_data_pct || 0).toFixed(1)}%`, detail: 'Casos con blockers duros que todavía cambian conducta clínica.' },
+            ];
+            container.innerHTML = `
+                ${cards.map((card) => `
+                    <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                        <div class="text-xs uppercase tracking-[0.18em] text-slate-500">${humanizeClinicalText(card.title)}</div>
+                        <div class="mt-2 text-xl font-bold text-white">${card.value}</div>
+                        <div class="mt-2 text-xs text-slate-400">${humanizeClinicalText(card.detail)}</div>
+                    </div>
+                `).join('')}
+                <div class="rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-cyan-200">Cursos y familias de fallo</div>
+                    <div class="mt-2 text-sm text-white">${humanizeClinicalText(courseDistribution)}</div>
+                    <div class="mt-2 text-xs text-slate-300">${humanizeClinicalText(failureFamilies)}</div>
+                    <div class="mt-2 text-xs text-slate-400">${humanizeClinicalText(runtimeModes)}</div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-slate-500">Casos recientes</div>
+                    <div class="mt-3 grid grid-cols-1 gap-2">${recentCases || '<div class="text-xs text-slate-500">Sin casos recientes.</div>'}</div>
+                </div>
+            `;
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderGenericVerticalPanels(containerId, payload, emptyMessage, cards, detailTitle, detailText, recentTitle, recentFormatter) {
+            const container = document.getElementById(containerId);
+            if (!payload?.available) {
+                container.innerHTML = `<div class="text-sm text-slate-500">${emptyMessage}</div>`;
+                return;
+            }
+            const runtimeModes = Object.entries(payload.runtime_modes || {}).map(([mode, count]) => `${humanizeClinicalText(mode)} (${count})`).join(', ') || 'Sin modos registrados.';
+            const failureFamilies = (payload.top_failure_families || []).map((item) => `${item[0]} (${item[1]})`).join(', ') || 'Sin familias bloqueadas.';
+            const recentCases = (payload.recent_cases || []).map((item) => recentFormatter(item)).join('');
+            container.innerHTML = `
+                ${cards.map((card) => `
+                    <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                        <div class="text-xs uppercase tracking-[0.18em] text-slate-500">${humanizeClinicalText(card.title)}</div>
+                        <div class="mt-2 text-xl font-bold text-white">${card.value}</div>
+                        <div class="mt-2 text-xs text-slate-400">${humanizeClinicalText(card.detail)}</div>
+                    </div>
+                `).join('')}
+                <div class="rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-cyan-200">${humanizeClinicalText(detailTitle)}</div>
+                    <div class="mt-2 text-sm text-white">${humanizeClinicalText(detailText)}</div>
+                    <div class="mt-2 text-xs text-slate-300">${humanizeClinicalText(failureFamilies)}</div>
+                    <div class="mt-2 text-xs text-slate-400">${humanizeClinicalText(runtimeModes)}</div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-slate-500">${humanizeClinicalText(recentTitle)}</div>
+                    <div class="mt-3 grid grid-cols-1 gap-2">${recentCases || '<div class="text-xs text-slate-500">Sin casos recientes.</div>'}</div>
+                </div>
+            `;
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderMhspcCopilotPanels() {
+            const payload = dashboardResearch?.mhspc_copilot || {};
+            const phenotypeDistribution = Object.entries(payload.phenotype_distribution || {}).map(([label, count]) => `${humanizeClinicalText(label)} (${count})`).join(', ') || 'Sin fenotipos registrados.';
+            renderGenericVerticalPanels(
+                'mhspcCopilotGrid',
+                payload,
+                'Todavía no hay snapshots del copiloto mHSPC registrados.',
+                [
+                    { title: 'Concordancia shadow vs regla', value: `${Number(payload.shadow_rule_concordance_pct || 0).toFixed(1)}%`, detail: `${payload.total_patients || 0} pacientes con snapshot vigente.` },
+                    { title: 'QA pass', value: `${Number(payload.qa_pass_pct || 0).toFixed(1)}%`, detail: `Última actualización: ${humanizeClinicalText(payload.latest_created_at || 'Fecha no disponible')}` },
+                    { title: 'RT primaria visible', value: `${Number(payload.rt_primary_visible_pct || 0).toFixed(1)}%`, detail: 'Casos donde la RT al primario sigue siendo parte visible de la ruta.' },
+                    { title: 'Triplete visible', value: `${Number(payload.triplet_visible_pct || 0).toFixed(1)}%`, detail: 'Casos donde el bundle deja triplete como candidato visible.' },
+                ],
+                'Fenotipos y familias de fallo',
+                phenotypeDistribution,
+                'Casos recientes',
+                (item) => `
+                    <div class="rounded-xl border border-slate-700/70 bg-slate-950/50 px-3 py-2">
+                        <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Paciente ${item.patient_id}</div>
+                        <div class="mt-1 text-sm font-semibold text-white">${humanizeClinicalText(item.effective_state || 'Estado no disponible')}</div>
+                        <div class="mt-1 text-xs text-slate-400">${humanizeClinicalText(item.volume_disease || 'volumen no disponible')} · QA ${item.qa_passed ? 'pass' : 'pendiente'}</div>
+                    </div>
+                `,
+            );
+        }
+
+        function renderDiagnosticCopilotPanels() {
+            const payload = dashboardResearch?.diagnostic_biopsy_copilot || {};
+            const trackDistribution = Object.entries(payload.track_distribution || {}).map(([label, count]) => `${humanizeClinicalText(label)} (${count})`).join(', ') || 'Sin tracks registrados.';
+            renderGenericVerticalPanels(
+                'diagnosticCopilotGrid',
+                payload,
+                'Todavía no hay snapshots del copiloto diagnóstico registrados.',
+                [
+                    { title: 'Concordancia shadow vs regla', value: `${Number(payload.shadow_rule_concordance_pct || 0).toFixed(1)}%`, detail: `${payload.total_patients || 0} pacientes con snapshot vigente.` },
+                    { title: 'QA pass', value: `${Number(payload.qa_pass_pct || 0).toFixed(1)}%`, detail: `Última actualización: ${humanizeClinicalText(payload.latest_created_at || 'Fecha no disponible')}` },
+                    { title: 'Listos para biopsia', value: `${Number(payload.biopsy_ready_pct || 0).toFixed(1)}%`, detail: 'Casos donde el copiloto ya cruza el umbral visible de biopsia.' },
+                    { title: 'Reapertura tras biopsia benigna', value: `${Number(payload.reopen_after_negative_pct || 0).toFixed(1)}%`, detail: 'Casos donde la sospecha vuelve a abrir el pathway tras una biopsia benigna previa.' },
+                ],
+                'Tracks y familias de fallo',
+                trackDistribution,
+                'Casos recientes',
+                (item) => `
+                    <div class="rounded-xl border border-slate-700/70 bg-slate-950/50 px-3 py-2">
+                        <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Paciente ${item.patient_id}</div>
+                        <div class="mt-1 text-sm font-semibold text-white">${humanizeClinicalText(item.diagnostic_track || 'Track no disponible')}</div>
+                        <div class="mt-1 text-xs text-slate-400">${humanizeClinicalText(item.effective_state || 'Estado no disponible')} · QA ${item.qa_passed ? 'pass' : 'pendiente'}</div>
+                    </div>
+                `,
+            );
+        }
+
+        function renderLocalizedCopilotPanels() {
+            const payload = dashboardResearch?.localized_surveillance_copilot || {};
+            const trackDistribution = Object.entries(payload.track_distribution || {}).map(([label, count]) => `${humanizeClinicalText(label)} (${count})`).join(', ') || 'Sin tracks registrados.';
+            renderGenericVerticalPanels(
+                'localizedCopilotGrid',
+                payload,
+                'Todavía no hay snapshots del copiloto localizado registrados.',
+                [
+                    { title: 'Concordancia shadow vs regla', value: `${Number(payload.shadow_rule_concordance_pct || 0).toFixed(1)}%`, detail: `${payload.total_patients || 0} pacientes con snapshot vigente.` },
+                    { title: 'QA pass', value: `${Number(payload.qa_pass_pct || 0).toFixed(1)}%`, detail: `Última actualización: ${humanizeClinicalText(payload.latest_created_at || 'Fecha no disponible')}` },
+                    { title: 'AS visible', value: `${Number(payload.active_surveillance_visible_pct || 0).toFixed(1)}%`, detail: 'Casos donde la vigilancia activa permanece como conducta longitudinal visible.' },
+                    { title: 'Salida de AS', value: `${Number(payload.upgrade_exit_pct || 0).toFixed(1)}%`, detail: 'Casos donde ya existen triggers estructurados de salida.' },
+                ],
+                'Tracks y familias de fallo',
+                trackDistribution,
+                'Casos recientes',
+                (item) => `
+                    <div class="rounded-xl border border-slate-700/70 bg-slate-950/50 px-3 py-2">
+                        <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Paciente ${item.patient_id}</div>
+                        <div class="mt-1 text-sm font-semibold text-white">${humanizeClinicalText(item.localized_track || 'Track no disponible')}</div>
+                        <div class="mt-1 text-xs text-slate-400">${humanizeClinicalText(item.effective_state || 'Estado no disponible')} · QA ${item.qa_passed ? 'pass' : 'pendiente'}</div>
+                    </div>
+                `,
+            );
+        }
+
+        function renderPostRTSalvagePanels() {
+            const payload = dashboardResearch?.post_rt_salvage_copilot || {};
+            const courseDistribution = Object.entries(payload.course_distribution || {}).map(([label, count]) => `${humanizeClinicalText(label)} (${count})`).join(', ') || 'Sin cursos registrados.';
+            renderGenericVerticalPanels(
+                'postRtSalvageGrid',
+                payload,
+                'Todavía no hay snapshots del copiloto post-RT registrados.',
+                [
+                    { title: 'Concordancia shadow vs regla', value: `${Number(payload.shadow_rule_concordance_pct || 0).toFixed(1)}%`, detail: `${payload.total_patients || 0} pacientes con snapshot vigente.` },
+                    { title: 'QA pass', value: `${Number(payload.qa_pass_pct || 0).toFixed(1)}%`, detail: `Última actualización: ${humanizeClinicalText(payload.latest_created_at || 'Fecha no disponible')}` },
+                    { title: 'Salvage local visible', value: `${Number(payload.local_salvage_candidate_pct || 0).toFixed(1)}%`, detail: 'Casos con rescate local post-RT todavía plausible.' },
+                    { title: 'Redirect sistémico', value: `${Number(payload.redirect_systemic_pct || 0).toFixed(1)}%`, detail: 'Casos ya redirigidos fuera del rescate local aislado.' },
+                ],
+                'Cursos y familias de fallo',
+                courseDistribution,
+                'Casos recientes',
+                (item) => `
+                    <div class="rounded-xl border border-slate-700/70 bg-slate-950/50 px-3 py-2">
+                        <div class="text-[11px] uppercase tracking-[0.18em] text-slate-500">Paciente ${item.patient_id}</div>
+                        <div class="mt-1 text-sm font-semibold text-white">${humanizeClinicalText(item.post_rt_course || 'Curso no disponible')}</div>
+                        <div class="mt-1 text-xs text-slate-400">${humanizeClinicalText(item.window_status || 'Window no disponible')} · QA ${item.qa_passed ? 'pass' : 'pendiente'}</div>
+                    </div>
+                `,
+            );
+        }
+
+        function renderMultivariatePanels() {
+            const container = document.getElementById('multivariateGrid');
+            const cox = dashboardResearch?.multivariate?.cox || {};
+            const logistic = dashboardResearch?.multivariate?.logistic || {};
+            const coxRows = cox?.result?.cox_model?.summary || [];
+            const logisticRows = logistic?.rows || [];
+            container.innerHTML = `
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="text-sm font-semibold text-white">Cox proporcional</div>
+                    <div class="mt-2 text-xs text-slate-400">${cox?.result?.status || 'Sin ejecución'}</div>
+                    <div class="mt-3 space-y-2">
+                        ${coxRows.slice(0, 4).map((row) => `
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-slate-400">${humanizeClinicalText(row.covariate || '')}</span>
+                                <span class="font-medium text-white">HR ${Number(row['exp(coef)'] || 0).toFixed(2)}</span>
+                            </div>
+                        `).join('') || '<div class="text-xs text-slate-500">Sin covariables utilizables todavía.</div>'}
+                    </div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="text-sm font-semibold text-white">Regresión logística</div>
+                    <div class="mt-2 text-xs text-slate-400">${logistic?.eligible === false ? humanizeClinicalText(logistic.reason || 'No disponible') : `AUC ${logistic?.metrics?.auc ?? 'N/D'}`}</div>
+                    <div class="mt-3 space-y-2">
+                        ${logisticRows.slice(0, 4).map((row) => `
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-slate-400">${humanizeClinicalText(row.covariate || '')}</span>
+                                <span class="font-medium text-white">OR ${row.odds_ratio ?? 'N/D'}</span>
+                            </div>
+                        `).join('') || '<div class="text-xs text-slate-500">Sin modelo logístico usable todavía.</div>'}
+                    </div>
+                </div>
+            `;
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderComparativePanels() {
+            const container = document.getElementById('comparativeGrid');
+            const payload = dashboardResearch?.comparative_effectiveness || {};
+            if (!payload.eligible) {
+                container.innerHTML = `<div class="rounded-2xl border border-amber-500/20 bg-amber-950/10 p-4 text-sm text-amber-200">${humanizeClinicalText(payload.reason || 'El análisis observacional no estuvo disponible.')}</div>`;
+                return;
+            }
+            container.innerHTML = `
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="text-sm font-semibold text-white">Pairs emparejados</div>
+                    <div class="mt-2 text-2xl font-bold text-white">${payload.matched_pairs || 0}</div>
+                    <div class="mt-2 text-xs text-slate-400">${humanizeClinicalText(payload.treatment_field || '')}: ${humanizeClinicalText(payload.treatment_value || '')} vs ${humanizeClinicalText(payload.control_value || '')}</div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="text-sm font-semibold text-white">Balance de covariables</div>
+                    <div class="mt-3 space-y-2">
+                        ${(payload.balance || []).slice(0, 4).map((row) => `
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-slate-400">${humanizeClinicalText(row.covariate || '')}</span>
+                                <span class="font-medium text-white">SMD ${row.smd ?? '0.0'}</span>
+                            </div>
+                        `).join('') || '<div class="text-xs text-slate-500">Sin balance disponible.</div>'}
+                    </div>
+                </div>
+            `;
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderConsentGovernancePanels() {
+            const container = document.getElementById('consentGovernanceGrid');
+            const payload = dashboardResearch?.consent_governance || {};
+            const recent = payload.recent_consents || [];
+            container.innerHTML = `
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="text-sm font-semibold text-white">Cobertura de consentimiento</div>
+                    <div class="mt-2 text-2xl font-bold text-white">${payload.coverage_pct || 0}%</div>
+                    <div class="mt-2 text-xs text-slate-400">${payload.signed_count || 0} firmados / ${payload.total_patients || 0} pacientes</div>
+                </div>
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="text-sm font-semibold text-white">Versión vigente</div>
+                    <div class="mt-2 text-xs uppercase tracking-[0.18em] text-cyan-200">${payload.current_version?.version_code || 'N/D'}</div>
+                    <div class="mt-2 text-xs text-slate-400">${humanizeClinicalText(payload.current_version?.title || '')}</div>
+                    <div class="mt-3 space-y-2">
+                        ${recent.slice(0, 3).map((item) => `
+                            <div class="text-xs text-slate-300">${humanizeClinicalText(item.full_name || item.nss)} · ${humanizeClinicalText(item.status || '')}</div>
+                        `).join('') || '<div class="text-xs text-slate-500">Sin firmas recientes.</div>'}
+                    </div>
+                </div>
+            `;
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        function renderExportGovernancePanels() {
+            const container = document.getElementById('exportGovernanceGrid');
+            const payload = dashboardResearch?.exports || {};
+            const cards = [
+                { title: 'CSV canónico', manifest: payload.csv_manifest },
+                { title: 'REDCap', manifest: payload.redcap_manifest },
+                { title: 'CDISC mapping', manifest: payload.cdisc_manifest },
+            ];
+            container.innerHTML = cards.map((card) => `
+                <div class="rounded-2xl border border-slate-700 bg-slate-950/40 p-4">
+                    <div class="text-sm font-semibold text-white">${humanizeClinicalText(card.title)}</div>
+                    <div class="mt-2 text-xs text-slate-400">Schema ${card.manifest?.schema_version || 'N/D'}</div>
+                    <div class="mt-2 text-xs text-slate-300">${card.manifest?.record_count || 0} registros</div>
+                </div>
+            `).join('');
+            window.clinicalPresentation?.normalizeDocument(container);
+        }
+
+        // ── Init ──────────────────────────────────────────────────────────────
+        loadDashboard();
+        window.clinicalPresentation?.normalizeDocument(document.querySelector('main'));
+    </script>
+{% endblock %}

@@ -1,0 +1,257 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 55: psa_doubling_time_progressive
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXIV) — Auditoría #63A — Gate YAML-NATIVE.
+#
+# 🆕 TERCER gate informacional/anti-misinterpretation del catálogo
+# (post #62 gate 47 PSA flare ARPI + #63A gate 54 PSA bounce post-RT).
+# Cubre la ventana terapéutica m0CRPC ARPI eligibility per criterios
+# SPARTAN/PROSPER/ARAMIS pivotal trials.
+#
+# Razón clínica:
+#   m0CRPC (no metastatic Castration-Resistant Prostate Cancer) con
+#   PSADT (PSA Doubling Time) ≤10 meses es la INDICACIÓN PRINCIPAL para
+#   iniciar ARPI (apalutamida/enzalutamida/darolutamida). Los 3 ensayos
+#   pivote requirieron PSADT ≤10 meses como criterio de inclusión:
+#     - **SPARTAN** (Smith MR NEJM 2018): apalutamida + ADT vs ADT
+#       → MFS 40.5m vs 16.2m (HR 0.28)
+#     - **PROSPER** (Hussain M NEJM 2018): enzalutamida + ADT vs ADT
+#       → MFS 36.6m vs 14.7m (HR 0.29)
+#     - **ARAMIS** (Fizazi K NEJM 2019): darolutamida + ADT vs ADT
+#       → MFS 40.4m vs 18.4m (HR 0.41)
+#   Diferencia MFS ~24 meses → traduce a sobrevida ~10-15 meses
+#   ganada vs continuar solo ADT. Pacientes con PSADT ≤10m que NO
+#   reciben ARPI tienen pérdida significativa beneficio sobrevida.
+#
+#   Datos prevalencia y outcome:
+#     - **m0CRPC + PSADT ≤10m**: 30-40% pacientes m0CRPC al diagnóstico
+#       CRPC (depende de cohort)
+#     - **m0CRPC + PSADT ≤8m**: criterio "muy agresivo" — ARPI más
+#       indicado
+#     - **m0CRPC + PSADT >10m**: ARPI controvertido (no bien estudiado
+#       en pivotales)
+#     - **Mortalidad m0CRPC sin ARPI a 5 años**: ~50% (vs ~30% con ARPI)
+#
+#   Threshold canónico (SPARTAN + PROSPER + ARAMIS criterios inclusión):
+#     - Path A: psa_doubling_time_months ≤10 + m0_crpc_state_confirmed +
+#       sin ARPI activo (criterio estándar)
+#     - Path B compound: psa_doubling_time_months ≤8 +
+#       castrate_testosterone_status=confirmed_castrate +
+#       sin ARPI activo (criterio agresivo — más urgencia)
+#     - Path C: flag psadt_progressive_for_arpi_eligibility
+#       (interpretación clínica especialista)
+#
+#   ⚠️ DECISIÓN ARQUITECTÓNICA: severity=soft_warning (consistente con
+#   gates 47 + 54 — informacional/anti-misinterpretation). Gate alerta
+#   urgencia ARPI, NO bloquea tratamiento. Sienta categoría
+#   anti-misinterpretation expandida (3ra entrada del catálogo).
+#
+#   Override: arpi_already_initiated_for_m0_crpc=Sí
+#   (paciente ya bajo apalutamida/enzalutamida/darolutamida activo).
+#
+#   Coexistencia: gate 55 puede coexistir con:
+#     - Gate 47 (PSA flare ARPI) si paciente ya inició ARPI con flare
+#     - Gates 17-21 + 31 + 42 (ARSI safety) si paciente tiene
+#       contraindicaciones ARPI activas (que requieren manejo)
+#
+#   Bloquea: REGIMEN_CODES_OBSERVATION_ONLY (continuar observación con
+#   m0CRPC + PSADT ≤10m es subóptimo per evidence pivotal). Severity
+#   soft_warning → gate alerta sin filtrar regímenes activos.
+# ──────────────────────────────────────────────────────────────────────
+
+code: psa_doubling_time_progressive
+title: "PSADT ≤10m en m0CRPC → INICIAR ARPI (SPARTAN/PROSPER/ARAMIS criterio pivotal)"
+faubot_added_in: "2026-04-25 LXIV"
+faubot_yaml_native: true
+severity: soft_warning  # Informacional/anti-misinterpretation: alerta urgencia ARPI initiation
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: PSADT ≤10m + m0CRPC confirmado + sin ARPI activo (criterio estándar)
+    - type: all_of
+      triggers:
+        - type: numeric_below
+          field: psa_doubling_time_months
+          alias_fields:
+            - psadt_months
+            - psadt
+            - psa_doubling_time
+            - tiempo_duplicacion_psa_meses
+          threshold: 11  # ≤10 = numeric_below 11
+        - type: truthy_flag
+          field: m0_crpc_state_confirmed
+          alias_fields:
+            - m0_crpc_documented
+            - m0crpc_state
+            - non_metastatic_crpc_confirmed
+            - m0_crpc_diagnosed
+        - type: truthy_flag
+          field: no_active_arpi_for_m0_crpc
+          alias_fields:
+            - arpi_naive_for_m0_crpc
+            - sin_arpi_activo_m0_crpc
+            - no_apalutamide_enzalutamide_darolutamide_active
+    # Path B compound agresivo: PSADT ≤8m + castrate confirmed + sin ARPI
+    - type: all_of
+      triggers:
+        - type: numeric_below
+          field: psa_doubling_time_months
+          alias_fields:
+            - psadt_months
+            - psadt
+            - psa_doubling_time
+            - tiempo_duplicacion_psa_meses
+          threshold: 9  # ≤8 = numeric_below 9
+        - type: truthy_flag
+          field: castrate_testosterone_status_confirmed
+          alias_fields:
+            - castrate_status_confirmed
+            - testosterone_castrate
+            - estado_castracion_confirmado
+        - type: truthy_flag
+          field: no_active_arpi_for_m0_crpc
+          alias_fields:
+            - arpi_naive_for_m0_crpc
+            - sin_arpi_activo_m0_crpc
+            - no_apalutamide_enzalutamide_darolutamide_active
+    # Path C: flag clínico documentado por urology/oncology
+    - type: truthy_flag
+      field: psadt_progressive_for_arpi_eligibility
+      alias_fields:
+        - m0_crpc_arpi_eligibility_documented
+        - arpi_indication_m0_crpc_documented
+        - psadt_progresivo_m0_crpc
+
+# Override: paciente ya bajo ARPI activo para m0CRPC
+override:
+  type: truthy_flag
+  field: arpi_already_initiated_for_m0_crpc
+  alias_fields:
+    - arpi_active_for_m0_crpc
+    - apalutamide_active_m0_crpc
+    - enzalutamide_active_m0_crpc
+    - darolutamide_active_m0_crpc
+    - arpi_iniciado_m0_crpc
+
+regimen_codes:
+  - REGIMEN_CODES_OBSERVATION_ONLY
+
+keywords:
+  - KEYWORDS_OBSERVATION_ONLY
+
+message: |
+  ⚠️ ALERTA CLÍNICA URGENTE: paciente m0CRPC con PSADT ≤10 meses —
+  cumple criterio para iniciar ARPI (apalutamida/enzalutamida/
+  darolutamida) per ensayos pivote SPARTAN/PROSPER/ARAMIS.
+
+  📊 CONTEXTO DETECTADO:
+  - PSADT (PSA Doubling Time) ≤10 meses (criterio estándar)
+  - O PSADT ≤8 meses + castrate confirmed (criterio agresivo)
+  - Estado m0CRPC confirmado (no metastatic Castration-Resistant)
+  - Sin ARPI activo actualmente (apalutamida/enzalutamida/darolutamida)
+
+  🎯 ACCIÓN URGENTE RECOMENDADA — INICIAR ARPI:
+  Selección entre 3 ARPI per características paciente:
+    1. **Apalutamida (Erleada)** 240 mg/d — SPARTAN
+       - Mejor evidence en m0CRPC (MFS HR 0.28)
+       - Considerar si: paciente joven (<75) sin comorbilidades neuro
+       - Monitor: gates 18 LVEF + 19 cognitive + 42 SJS/TEN
+    2. **Enzalutamida (Xtandi)** 160 mg/d — PROSPER
+       - Eficacia comparable apalutamida (MFS HR 0.29)
+       - Considerar si: paciente joven sin historia convulsiva
+       - Monitor: gates 17 QTc + 19 cognitive + 31 elderly + 47 PSA flare
+         + 48 hyponatremia + 49 (NO aplica — solo abi) + 53 BCR (NO m0CRPC)
+    3. **Darolutamida (Nubeqa)** 600 mg BID — ARAMIS
+       - Eficacia comparable + perfil neuro favorable (menor penetración SNC)
+       - Considerar si: edad >75 + cognitive concerns + comorbilidades neuro
+       - Monitor: gates 19 cognitive + 32 hepatotox
+
+  🔬 EVIDENCIA CIENTÍFICA PIVOTAL:
+    - **SPARTAN** (Smith MR et al. NEJM 2018;378:1408)
+      → apalutamida + ADT vs ADT placebo
+      → MFS 40.5m vs 16.2m (HR 0.28, 95% CI 0.23-0.35, p<0.001)
+      → OS 73.9m vs 59.9m a follow-up extendido (HR 0.78)
+      → Criterio inclusión: m0CRPC + PSADT ≤10m
+    - **PROSPER** (Hussain M et al. NEJM 2018;378:2465)
+      → enzalutamida + ADT vs ADT placebo
+      → MFS 36.6m vs 14.7m (HR 0.29, 95% CI 0.24-0.35, p<0.001)
+      → OS extendido benefit confirmed Sternberg NEJM 2020
+      → Criterio inclusión: m0CRPC + PSADT ≤10m
+    - **ARAMIS** (Fizazi K et al. NEJM 2019;380:1235)
+      → darolutamida + ADT vs ADT placebo
+      → MFS 40.4m vs 18.4m (HR 0.41, 95% CI 0.34-0.50, p<0.001)
+      → OS benefit confirmed Fizazi NEJM 2020;383:1040
+      → Criterio inclusión: m0CRPC + PSADT ≤10m
+
+  📈 BENEFICIO ESPERADO:
+    - **Diferencia MFS ~24 meses** vs continuar solo ADT
+    - **Traduce a sobrevida ~10-15 meses ganada** (long-term follow-up)
+    - **Mortalidad m0CRPC sin ARPI a 5 años**: ~50%
+    - **Mortalidad m0CRPC con ARPI a 5 años**: ~30%
+
+  🎯 CONDUCTA CLÍNICA RECOMENDADA:
+  1. **Confirmar estado m0CRPC**: PSMA PET/CT recomendado (más
+     sensible que CT/bone scan a PSA <2 ng/mL — descarta enfermedad
+     oligometastásica que cambia approach a mCRPC)
+  2. **Confirmar PSADT ≤10m**: 3 mediciones PSA separadas ≥4 semanas
+     (cálculo robusto necesita ≥3 puntos)
+  3. **Confirmar castrate testosterone**: <50 ng/dL (idealmente <20
+     ng/dL per EAU 2026 §6.5.4)
+  4. **Decisión clínica multidisciplinaria** (urology + oncology +
+     cardiology si comorbilidades cardiacas + neurology si edad >75)
+  5. **Iniciar ARPI seleccionado** + continuar ADT (NO suspender)
+  6. **Monitoring** post-inicio ARPI: gates aplicables (47 PSA flare
+     primer mes + safety gates específicos por agente)
+
+  ❌ ERRORES COMUNES A EVITAR:
+    - Continuar solo observación con m0CRPC + PSADT ≤10m
+      (subóptimo — pérdida MFS + sobrevida)
+    - No confirmar castrate status (testosterona >50 = no es CRPC)
+    - Asumir mCRPC sin PSMA PET (cambia approach a docetaxel/Lu-177)
+    - Esperar metástasis evidente para iniciar ARPI (fuera de
+      ventana terapéutica óptima)
+
+  ⚠️ EXCEPCIONES — Gate NO dispara si:
+    - Paciente ya bajo ARPI activo (override)
+    - Paciente con metástasis confirmadas (ya es mCRPC, no m0CRPC)
+    - PSADT >10m + paciente asintomático (controvertido — discutir
+      caso a caso)
+    - Comorbilidades severas que precluyan ARPI
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+    - `psa_doubling_time_months`: PSADT calculado en meses
+    - `m0_crpc_state_confirmed`: flag estado m0CRPC documentado
+    - `castrate_testosterone_status_confirmed`: flag testosterona <50 ng/dL
+    - `no_active_arpi_for_m0_crpc`: flag confirmando ausencia ARPI activo
+
+  Este gate es **INFORMACIONAL / ANTI-MISINTERPRETATION** — alerta
+  contra continuar observación cuando paciente cumple criterios
+  pivotales para ARPI initiation. Decisión clínica final del médico.
+
+evidence_tag: spartan_smith_nejm_2018_prosper_hussain_nejm_2018_aramis_fizazi_nejm_2019_m0crpc_arpi
+trial_refs:
+  - "SPARTAN (Smith NEJM 2018)"
+  - "PROSPER (Hussain NEJM 2018)"
+  - "ARAMIS (Fizazi NEJM 2019)"
+  - "Sternberg NEJM 2020 PROSPER OS"
+  - "Fizazi NEJM 2020;383:1040 ARAMIS OS"
+  - "EAU 2026 §6.5.4"
+  - "NCCN PROS-G v5.2026 m0CRPC"
+
+references:
+  - "Smith MR et al. SPARTAN. NEJM 2018;378:1408 — apalutamida + ADT m0CRPC PSADT ≤10m."
+  - "Hussain M et al. PROSPER. NEJM 2018;378:2465 — enzalutamida + ADT m0CRPC PSADT ≤10m."
+  - "Fizazi K et al. ARAMIS. NEJM 2019;380:1235 — darolutamida + ADT m0CRPC PSADT ≤10m."
+  - "Sternberg CN et al. PROSPER OS extended follow-up. NEJM 2020;382:2197."
+  - "Fizazi K et al. ARAMIS OS update. NEJM 2020;383:1040."
+  - "EAU Guidelines 2026 §6.5.4 — m0CRPC management."
+  - "NCCN Guidelines Prostate Cancer v5.2026 — m0CRPC section + ARPI selection."
+  - "Saad F et al. PSADT calculation methodology + clinical relevance. JCO 2017."
+  - "Roviello G et al. Network meta-analysis ARPI in m0CRPC. ESMO 2021."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — m0CRPC: ARPI initiation criterion PSADT ≤10m (SPARTAN/PROSPER/ARAMIS)"
+  eau_section: "EAU 2026 §6.5.4 — m0CRPC management with apalutamida/enzalutamida/darolutamida"
+  pivotal_trials_section: "SPARTAN (NEJM 2018) + PROSPER (NEJM 2018) + ARAMIS (NEJM 2019) — three pivotal m0CRPC trials"
+  asco_section: "ASCO m0CRPC Guidelines 2024"

@@ -1,0 +1,186 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 82: gad7_anxiety_referral
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXIX) — Auditoría #67E — GAD-7 anxiety screening.
+#
+# Razón clínica:
+#   **GAD-7 (Generalized Anxiety Disorder-7)** es screening tool standard
+#   para anxiety (Spitzer 2006) — más usado mundialmente:
+#
+#   7 ítems (cada 0-3, total 0-21):
+#   1. Feeling nervous, anxious, on edge
+#   2. Not being able to stop or control worrying
+#   3. Worrying too much about different things
+#   4. Trouble relaxing
+#   5. Being so restless that it's hard to sit still
+#   6. Becoming easily annoyed or irritable
+#   7. Feeling afraid as if something awful might happen
+#
+#   CUTOFFS GAD-7:
+#   - 0-4: minimal anxiety
+#   - 5-9: mild anxiety
+#   - **10-14: moderate anxiety (referral indicated)**
+#   - **15-21: severe anxiety (urgent treatment + psych)**
+#
+#   Frequently coexists with PHQ-9 depression (gate 81).
+#
+#   Severity: informational/soft_warning — alerta anxiety moderate-severe
+#   + recomienda psych referral + farmacoterapia.
+# ──────────────────────────────────────────────────────────────────────
+
+code: gad7_anxiety_referral
+title: "GAD-7 ≥10 (anxiety moderate-severe) → psych referral + farmacoterapia consideration"
+faubot_added_in: "2026-04-26 LXXIX"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: GAD-7 score ≥10 (moderate-severe)
+    - type: numeric_above
+      field: gad7_total_score
+      alias_fields:
+        - gad7_score
+        - generalized_anxiety_disorder_7
+      threshold: 9  # ≥10
+    # Path B: clinical anxiety flag explicit
+    - type: truthy_flag
+      field: clinical_anxiety_disorder_documented
+      alias_fields:
+        - trastorno_ansiedad_documentado
+        - anxiety_disorder_diagnosed
+
+regimen_codes: []  # Gate informativo — recomienda psych referral
+
+keywords:
+  - ansiedad
+  - anxiety
+  - GAD-7
+  - generalized anxiety disorder
+  - psiquiatra
+  - ansiolítico
+
+message: |
+  📊 ALERTA: **GAD-7 ≥10 (anxiety moderate-severe)** detectada → psych
+  referral + farmacoterapia anxiolítica/antidepresiva consideration.
+
+  🔬 GAD-7 INTERPRETACIÓN:
+
+  **Score Total** (0-21):
+  | Score | Severidad | Acción |
+  |-------|-----------|--------|
+  | 0-4 | Minimal | Sin acción |
+  | 5-9 | Mild | Follow-up + psicoeducación |
+  | **10-14** | **Moderate** | **Referral psych + considerar SSRI/buspirone** |
+  | **15-21** | **Severe** | **Urgent psych + farmacoterapia agresiva** |
+
+  🎯 ACCIÓN OBLIGATORIA:
+
+  **GAD-7 ≥10 (moderate-severe)**:
+  1. **Psych referral** (psicología o psiquiatría)
+  2. **Farmacoterapia ansiolítica**:
+     - **Sertraline 25-100 mg/d** (SSRI preferred):
+       * Doble efecto: depresión + ansiedad
+       * Bien tolerado, pocas interacciones
+     - **Escitalopram 10-20 mg/d** (SSRI alternativo):
+       * Cleaner profile que citalopram
+       * Cuidado QTc (max 20 mg, gate 17/18)
+     - **Buspirone 10-20 mg q8h**:
+       * Anxiolítico no-sedante
+       * No dependencia, no withdrawal
+       * Útil GAD pure
+     - **Mirtazapine 15-30 mg HS**:
+       * Combina anxiety + depresión + apetito + sleep
+       * Útil multi-síntoma (gate 80 ESAS multi)
+     - **Pregabalin 75-150 mg q12h**:
+       * Anxiolítico + neuropathic pain
+       * Útil pain coexistente (gate 73)
+     - **Hydroxyzine 25-50 mg q8h PRN**:
+       * Anti-histaminico sedante PRN crisis
+       * No dependencia
+  3. **Lorazepam 0.5-1 mg PRN** (acute panic):
+     * Solo PRN (no schedule), riesgo dependencia
+     * Útil PRN crisis o pre-procedimientos
+     * Evitar uso crónico (tolerance + falls + cognitive)
+  4. **Counseling/CBT** (cognitive-behavioral therapy):
+     * Especialmente útil GAD (mayor evidencia que farmacoterapia)
+  5. **Mindfulness, relaxation techniques**
+
+  🎯 BENZODIAZEPINAS — CONSIDERACIONES CRÍTICAS:
+
+  **Evitar uso crónico** (NCCN + AGS Beers Criteria):
+  - Riesgo dependencia + tolerance
+  - Caídas (especialmente >65 años)
+  - Cognitive impairment
+  - Respiratory depression con opioides (sinergia)
+  - Withdrawal severo (convulsiones)
+
+  **Cuándo benzo apropiado**:
+  - PRN crisis acute (lorazepam 0.5-1 mg)
+  - End-of-life (sedation gate 79)
+  - Pre-procedimientos
+  - Bridging transition antidepresivo SSRI (2-4 sem)
+
+  **Si paciente ya bajo benzo crónico**:
+  - Evaluar tapering gradual
+  - No suspender abrupto (withdrawal severo)
+  - Reducir 10-25% cada 1-2 semanas
+
+  🎯 ANSIEDAD COEXISTENTE FRECUENTE:
+
+  - **Depresión (gate 81 PHQ-9)**: 60-80% pacientes ansiedad tienen depresión
+    * Usar antidepresivo cubriendo ambos (sertraline, mirtazapine, escitalopram)
+  - **Pain (gate 73 BPI)**: pain crónico precipita anxiety
+    * Optimizar analgesia primero
+    * Considerar duloxetine (anxiety + neuropathic pain)
+  - **Insomnia (ESAS drowsiness gate 80)**: 70% ansiedad
+    * Mirtazapine 30 mg HS combina
+  - **Existential distress** (death anxiety):
+    * Spiritual care/chaplain referral
+    * Family meeting
+    * Goals of care discussion
+
+  🎯 INTERACCIONES PCa-SPECIFIC:
+
+  **ARPI (abi/enza/apa/daro)**:
+  - Enzalutamide/apalutamide: induce CYP3A4 → reducen niveles SSRI
+  - Considerar darolutamide si polifarmacia (mejor profile)
+
+  **ADT crónico**:
+  - Hipogonadismo asociado con anxiety/depresión
+  - Considerar testosterona "low-normal" si possible (controversial)
+
+  **Pain medications**:
+  - Opioides + benzo = depresión respiratoria sinergia (BLACK BOX)
+  - Tramadol + SSRI = serotonin syndrome risk
+  - Methadone + SSRI = QTc prolongation
+
+  🔬 EVIDENCIA:
+  - **Spitzer Arch Intern Med 2006;166:1092**: GAD-7 validation
+  - **Cipriani Lancet 2018;391:1357**: antidepressants meta (anxiety subset)
+  - **Bandelow World J Biol Psychiatry 2017**: anxiety treatment guidelines
+  - **NCCN Distress Management v3.2026**: GAD-7 thresholds
+  - **ASCO 2014 Anxiety in Cancer Patients**: management guidelines
+  - **EAU 2026 §10**: psychosocial support PCa
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `gad7_total_score`: 0-21 sum
+  - `gad7_item_1_nervous_anxious`: 0-3
+  - `gad7_item_2_unable_stop_worrying`: 0-3
+  - `gad7_item_3_worrying_too_much`: 0-3
+  - `gad7_item_4_trouble_relaxing`: 0-3
+  - `gad7_item_5_restless`: 0-3
+  - `gad7_item_6_easily_annoyed`: 0-3
+  - `gad7_item_7_feeling_afraid`: 0-3
+  - `gad7_assessment_date`: fecha
+  - `clinical_anxiety_disorder_documented`: flag confirmed
+  - `anxiolytic_initiated`: flag treatment iniciado
+
+evidence_tag: gad7_spitzer_2006_bandelow_2017_nccn_distress_anxiety_management
+trial_refs:
+  - "Spitzer Arch Intern Med 2006;166:1092 (GAD-7 validation)"
+  - "Cipriani Lancet 2018;391:1357 (antidepressants meta)"
+  - "Bandelow World J Biol Psychiatry 2017 (anxiety guidelines)"
+  - "NCCN Distress Management v3.2026"
+  - "ASCO 2014 Anxiety in Cancer Patients"

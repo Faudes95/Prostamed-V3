@@ -1,0 +1,218 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 80: esas_severity_alert
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXIX) — Auditoría #67E — ESAS multi-síntoma alert.
+#
+# Razón clínica:
+#   **Edmonton Symptom Assessment System (ESAS)** es el instrumento más
+#   usado mundialmente para evaluación multi-síntoma en cuidados paliativos
+#   (Bruera 1991, validated en oncología):
+#
+#   9 ítems (cada 0-10 NRS):
+#   1. Pain (dolor)
+#   2. Fatigue (fatiga, cansancio)
+#   3. Nausea (náusea)
+#   4. Depression (depresión, tristeza)
+#   5. Anxiety (ansiedad)
+#   6. Drowsiness (somnolencia)
+#   7. Appetite (apetito — invertido: 0 mejor apetito, 10 peor)
+#   8. Wellbeing (bienestar — invertido)
+#   9. Shortness of breath (disnea)
+#
+#   CUTOFFS CLÍNICOS:
+#   - **Single ítem ≥4**: dolor moderado-severo, requiere intervención
+#   - **2+ ítems ≥4**: distress multi-síntoma significativo
+#   - **Total ESAS ≥30**: distress severo (max 90)
+#   - **Pain o disnea ≥7**: severo, urgente
+#
+#   Severity: soft_warning — alerta multi-síntoma + recomienda palliative
+#   care referral + symptom-specific interventions.
+# ──────────────────────────────────────────────────────────────────────
+
+code: esas_severity_alert
+title: "ESAS ≥2 ítems ≥4 (multi-síntoma severo) → palliative care referral + symptom optimization"
+faubot_added_in: "2026-04-26 LXXIX"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: 2+ ítems ESAS ≥4 simultáneos
+    - type: numeric_above
+      field: esas_items_above_4_count
+      alias_fields:
+        - esas_items_severos_count
+        - esas_high_score_items_count
+      threshold: 1  # ≥2 items ≥4
+    # Path B: total ESAS ≥30 (distress severo)
+    - type: numeric_above
+      field: esas_total_score
+      alias_fields:
+        - esas_score_total
+        - edmonton_total
+      threshold: 29  # ≥30
+    # Path C: single ítem severe ≥7 (pain/disnea)
+    - type: any_of
+      triggers:
+        - type: numeric_above
+          field: esas_pain_score
+          alias_fields:
+            - esas_dolor
+          threshold: 6  # ≥7 severo
+        - type: numeric_above
+          field: esas_dyspnea_score
+          alias_fields:
+            - esas_disnea
+            - esas_shortness_of_breath
+          threshold: 6  # ≥7 severo
+    # Path D: clinical flag explicit
+    - type: truthy_flag
+      field: esas_severe_distress_documented
+      alias_fields:
+        - distress_multi_sintoma_severo
+        - esas_clinical_alert
+
+regimen_codes: []  # Gate informativo — alerta palliative care
+
+keywords:
+  - ESAS
+  - Edmonton Symptom Assessment
+  - escala síntomas
+  - distress multi-síntoma
+  - palliative care
+  - cuidados paliativos
+
+message: |
+  📊 ALERTA: **ESAS multi-síntoma severo** detectado → palliative care
+  referral + symptom-specific interventions obligatorias.
+
+  🔬 ESAS INTERPRETACIÓN:
+
+  **9 ítems estándar** (cada 0-10 NRS):
+  | # | Síntoma | Cutoff Severo |
+  |---|---------|---------------|
+  | 1 | Pain (dolor) | ≥7 severo |
+  | 2 | Fatigue (fatiga) | ≥4 moderada, ≥7 severa |
+  | 3 | Nausea (náusea) | ≥4 |
+  | 4 | Depression (depresión) | ≥4 — gate 81 PHQ-9 trigger |
+  | 5 | Anxiety (ansiedad) | ≥4 — gate 82 GAD-7 trigger |
+  | 6 | Drowsiness (somnolencia) | ≥4 |
+  | 7 | Appetite (apetito) | ≥4 (peor) — gate 85 cachexia |
+  | 8 | Wellbeing (bienestar) | ≥4 (peor) |
+  | 9 | Shortness of breath (disnea) | ≥7 severo |
+
+  **Cutoffs ESAS** (NCCN Distress v3.2026):
+  - Single ítem ≥4: requiere intervención
+  - 2+ ítems ≥4: palliative care referral
+  - Total ≥30: distress severo
+  - Pain/disnea ≥7: urgente
+
+  🎯 ACCIÓN OBLIGATORIA POR SÍNTOMA:
+
+  **Pain ≥4** (gate 73 BPI más detallado):
+  - WHO ladder: AINEs → opioides débiles → fuertes
+  - Considerar palliative RT (futuro gate 83)
+  - Bone-targeted (Sm-153 gate 76, Ra-223 gate 13)
+
+  **Fatigue ≥4**:
+  - Corregir anemia (Hb <10): transfusión, EPO
+  - Optimizar sleep (gate ESAS drowsiness)
+  - Considerar methylphenidate 5-10 mg AM
+  - Ejercicio gradual si ECOG 0-2
+
+  **Nausea ≥4**:
+  - Ondansetron 8 mg q8h (5HT3)
+  - Metoclopramide 10-20 mg q6h
+  - Olanzapine 2.5-10 mg/d (refractory)
+  - Considerar SCC gut (gate 68 obstrucción)
+
+  **Depression ≥4** (gate 81 PHQ-9):
+  - PHQ-9 formal screening
+  - Si PHQ-9 ≥10: psych referral + considerar mirtazapine 15-30 mg HS
+  - Mirtazapine combina efecto: antidepresivo + apetito + sleep
+
+  **Anxiety ≥4** (gate 82 GAD-7):
+  - GAD-7 formal screening
+  - Si GAD-7 ≥10: psych referral + considerar SSRI/buspirone
+  - Lorazepam PRN agudo (0.5-2 mg q6-8h)
+
+  **Drowsiness ≥4**:
+  - Revisar opioides + benzo (rotación o reducción)
+  - Si secundario a opioides altos: methylphenidate
+  - Excluir hipercalcemia (gate 68)
+
+  **Appetite ≥4 (peor)** (gate 85 cachexia):
+  - Pesar paciente — weight loss ≥10%/6mo trigger
+  - Considerar megestrol 800 mg/d
+  - Mirtazapine 30 mg HS (combina depresión + apetito)
+  - Nutrición consult
+
+  **Wellbeing ≥4 (peor)**:
+  - Spiritual care/chaplain referral
+  - Family meeting
+  - Goals of care discussion
+
+  **Disnea ≥4**:
+  - O2 si SaO2 <90%
+  - Opioides (morfina 2-5 mg SC/IV q4h) — efectivo dyspnea
+  - Benzo (lorazepam) si componente ansiedad
+  - Excluir derrame pleural maligno (paracentesis)
+  - Excluir TEP (D-dímero, CTPA)
+  - Considerar palliative RT (linfangitis carcinomatosa)
+
+  🎯 PALLIATIVE CARE REFERRAL CRITERIA:
+
+  **Referral OBLIGATORIA** (NCCN Distress v3.2026):
+  - 2+ ítems ESAS ≥4
+  - Single ítem ≥7
+  - Pain refractory
+  - End-of-life stage (gate 79 sedation considerations)
+
+  **Referral RECOMENDADA**:
+  - Cualquier ítem ≥4
+  - mCRPC late line (después 2-3 línea sistémica)
+  - ECOG decline (gate 74)
+
+  🎯 LONGITUDINAL TRACKING:
+  - ESAS cada visita (mínimo cada 4-8 sem)
+  - Trends útiles para detección early decline
+  - Paciente self-report preferred (vs proxy si capaz)
+  - Documentar en HC + treatment changes
+
+  ⚠️ INTEGRACIÓN COMPOSITE:
+  Si gate 80 fires + gate 73 (BPI severe) + gate 74 (ECOG decline)
+  → considerar transition palliative-only pathway + family meeting
+  + ESAS-guided symptom optimization continuous.
+
+  🔬 EVIDENCIA:
+  - **Bruera J Palliat Care 1991;7:6**: ESAS validation original
+  - **Hui Cancer 2014;120:875**: ESAS revised + cutoffs
+  - **NCCN Distress Management v3.2026**: ESAS-guided thresholds
+  - **ASCO 2017 Palliative Care Integration**: routine ESAS
+  - **EAPC Symptom Assessment**: standard tool
+  - **EAU 2026 §10**: palliative care PCa
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `esas_pain_score`: 0-10
+  - `esas_fatigue_score`: 0-10
+  - `esas_nausea_score`: 0-10
+  - `esas_depression_score`: 0-10
+  - `esas_anxiety_score`: 0-10
+  - `esas_drowsiness_score`: 0-10
+  - `esas_appetite_score`: 0-10 (invertido)
+  - `esas_wellbeing_score`: 0-10 (invertido)
+  - `esas_dyspnea_score`: 0-10
+  - `esas_total_score`: suma 9 ítems (calculado)
+  - `esas_items_above_4_count`: count ítems ≥4 (calculado)
+  - `esas_assessment_date`: fecha evaluación
+  - `esas_severe_distress_documented`: flag clínico
+
+evidence_tag: esas_bruera_1991_hui_2014_nccn_distress_palliative_assessment
+trial_refs:
+  - "Bruera J Palliat Care 1991;7:6 (ESAS original)"
+  - "Hui Cancer 2014;120:875 (ESAS revised)"
+  - "NCCN Distress Management v3.2026"
+  - "ASCO 2017 Palliative Care Integration"
+  - "EAPC Symptom Assessment guidelines"
+  - "EAU 2026 §10"

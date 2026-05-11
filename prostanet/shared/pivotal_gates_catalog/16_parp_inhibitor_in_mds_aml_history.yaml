@@ -1,0 +1,72 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 16: parp_inhibitor_in_mds_aml_history
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XIII) — Migrado a YAML declarativo.
+#
+# Razón clínica:
+#   Antecedente de SMD/LMA → contraindicación absoluta de TODOS los
+#   PARP inhibitors (boxed warning Lynparza/Akeega/Talzenna/Rubraca §5.1).
+#   El antecedente pre-existente o sospecha (citopenia prolongada
+#   inexplicada) no admite override clínico.
+# ──────────────────────────────────────────────────────────────────────
+
+code: parp_inhibitor_in_mds_aml_history
+title: "Antecedente de SMD/LMA → contraindica PARP inhibitors"
+faubot_added_in: "2026-04-24 VI"
+faubot_migrated_to_yaml_in: "2026-04-25 XIII"
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: mds_aml_history
+    - type: truthy_flag
+      field: prior_mds
+    - type: truthy_flag
+      field: prior_aml
+    - type: truthy_flag
+      field: secondary_hematologic_malignancy
+    - type: truthy_flag
+      field: prolonged_cytopenia_unexplained
+
+# Sin override clínico — MDS/AML pre-existente NO es reversible.
+override: null
+
+regimen_codes:
+  - REGIMEN_CODES_PARP_INHIBITORS
+
+keywords:
+  - KEYWORDS_PARP_INHIBITORS
+
+message: |
+  PARP inhibitors (olaparib, niraparib, talazoparib, rucaparib) NO deben
+  iniciarse con antecedente de SMD/LMA. Lynparza FDA prescribing information
+  2024 §5.1 + Akeega/Zejula 2023 §5.1 + Talzenna 2024 §5.1 + Rubraca 2024
+  §5.1: TODOS los PARPi tienen advertencia de SMD/LMA con casos fatales
+  reportados en post-comercialización (tasa acumulada 0.5-2% en olaparib,
+  0.7% niraparib, casos talazoparib/rucaparib). El antecedente pre-existente
+  o sospecha no confirmada (citopenia prolongada inexplicada) es
+  contraindicación absoluta. Si se sospecha SMD no confirmado: obtener
+  aspirado/biopsia de médula ósea + cariotipo/FISH antes de iniciar PARPi.
+  Considerar tratamientos alternativos (taxanos, ARSI, Ra-223 si bone-only
+  sin MDS, Lu-177-PSMA si elegible).
+
+evidence_tag: parp_inhibitors_mds_aml_boxed_warning
+trial_refs:
+  - PROfound
+  - MAGNITUDE
+  - TALAPRO-2
+  - TRITON-3
+  - "Lynparza label"
+  - "Akeega label"
+  - "Talzenna label"
+  - "Rubraca label"
+
+references:
+  - "Lynparza (olaparib) FDA prescribing information 2024 §5.1"
+  - "Akeega/Zejula (niraparib) FDA prescribing information 2023 §5.1"
+  - "Talzenna (talazoparib) FDA prescribing information 2024 §5.1"
+  - "Rubraca (rucaparib) FDA prescribing information 2024 §5.1"
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — PARP inhibitors safety boxed warning MDS/AML"

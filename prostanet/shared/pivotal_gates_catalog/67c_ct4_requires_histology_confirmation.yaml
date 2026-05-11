@@ -1,0 +1,208 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 67C: ct4_requires_histology_confirmation
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXXIV) — Iteración #1 — cT4 sin biopsia hard_block.
+#
+# Razón clínica:
+#   Pacientes con cT4 (invasión recto/vejiga/pelvis) o TR fija/pétrea
+#   pueden tener biopsia transrectal técnicamente difícil o fallida.
+#   Sin embargo, decisión RP/RT requiere confirmación histológica:
+#
+#   1. **¿Por qué hard_block sin histología?**
+#      - RP en cT4 sin confirmación = error médico (puede ser otro cáncer
+#        infiltrando, mets de otro origen, infección bacteriana severa)
+#      - RT pélvica curativa requires diagnóstico definitivo
+#      - ADT empírico aceptable solo si gate 67B pre-NEPC fires + bulk
+#
+#   2. **Pathways aceptables para confirmar histología**:
+#      - Biopsia primaria transperineal (más rendimiento que TRUS si T4)
+#      - Biopsia metastásica (gate 66 link) — sitio accesible
+#      - Cytology de fluido (ascítico, pleural si presente)
+#      - PSA muy elevado + DRE típico = "presumptive PCa" tier
+#        (clinical_provisional_diagnosis_engine virtually_certain)
+#
+#   3. **Override SI presumptive_diagnosis tier ≥ highly_probable**:
+#      - PSA >100 + DRE T4 + sitio mets evaluable = aceptable iniciar ADT
+#      - PERO debe documentarse "presumptive_treatment_initiation_documented"
+#      - Y biopsia debe agendarse antes de definir tratamiento local
+#
+#   Severity: hard_block — bloquea decisión RP/RT/Brachy curativa hasta
+#   confirmación histológica O presumptive_diagnosis virtually_certain.
+#
+#   Override: histology_confirmed_metastatic_site (gate 66 sitio
+#   accesible) O presumptive_treatment_documented_with_2week_biopsy_plan.
+# ──────────────────────────────────────────────────────────────────────
+
+code: ct4_requires_histology_confirmation
+title: "cT4 sin biopsia + decisión RP/RT activa → bloquea hasta histología confirmada O presumptive virtually_certain"
+faubot_added_in: "2026-04-26 LXXXIV"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: cT4 explícito + sin biopsia + decisión local activa
+    - type: all_of
+      triggers:
+        - type: string_match
+          field: clinical_t_stage
+          alias_fields:
+            - clinical_tstage
+            - cT_stage
+            - estadio_clinico_t
+          patterns:
+            - cT4
+            - T4
+            - cT3b
+        - type: truthy_flag
+          field: primary_biopsy_not_performed
+          alias_fields:
+            - sin_biopsia_primaria
+            - histology_not_confirmed
+        - type: any_of
+          triggers:
+            - type: truthy_flag
+              field: decision_rp_vs_rt_active
+              alias_fields:
+                - decision_modalidad_localized
+            - type: truthy_flag
+              field: planning_radical_prostatectomy
+              alias_fields:
+                - planning_rp
+            - type: truthy_flag
+              field: planning_radiotherapy_curative
+              alias_fields:
+                - planning_rt_curative
+    # Path B: DRE T4 fijo/pétreo + sin biopsia + decisión activa
+    - type: all_of
+      triggers:
+        - type: string_match
+          field: dre_fixation
+          alias_fields:
+            - dre_fijacion
+            - tacto_rectal_fijacion
+          patterns:
+            - Confirmada
+            - T4_fijo_petreo
+            - confirmed_fixed
+        - type: truthy_flag
+          field: primary_biopsy_not_performed
+        - type: truthy_flag
+          field: decision_rp_vs_rt_active
+
+# Override: histología confirmada O presumptive virtually_certain con plan biopsia
+override:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: histology_already_confirmed
+      alias_fields:
+        - diagnostico_tisular_confirmado
+        - histology_confirmed_any_site
+    - type: truthy_flag
+      field: histology_confirmed_metastatic_site
+      alias_fields:
+        - biopsia_metastasica_confirmada
+        - mets_biopsy_positive
+    - type: truthy_flag
+      field: presumptive_treatment_documented_with_2week_biopsy_plan
+      alias_fields:
+        - presumptive_dx_with_biopsy_scheduled
+        - tratamiento_presuntivo_con_biopsia_agendada
+
+regimen_codes:
+  - REGIMEN_CODES_RADICAL_PROSTATECTOMY
+  - REGIMEN_CODES_RADIOTHERAPY_CURATIVE
+  - REGIMEN_CODES_BRACHYTHERAPY
+
+keywords:
+  - prostatectomía radical
+  - radioterapia curativa
+  - braquiterapia
+  - tratamiento local definitivo
+
+message: |
+  ⛔ HARD BLOCK: cT4 (o DRE fijo/pétreo confirmado) + sin biopsia primaria
+  + decisión RP/RT activa → BLOQUEA tratamiento local definitivo hasta
+  confirmación histológica.
+
+  🔬 RAZÓN CLÍNICA:
+
+  Decidir RP vs RT en cT4 SIN confirmación histológica es error médico:
+  - Diagnóstico diferencial incluye: otros cánceres pelvianos (urotelial,
+    rectal, sarcoma), infecciones severas, granulomatosis, mets de origen
+    desconocido infiltrando próstata
+  - RP en cT4 sin biopsia: cirugía mayor con riesgo significativo
+  - RT curativa: dosis prescritas asumen adenocarcinoma de próstata
+  - ADT empírico: aceptable SOLO si gate 67B pre-NEPC fires + bulk
+
+  🎯 PATHWAYS PARA CONFIRMAR HISTOLOGÍA:
+
+  **1. Biopsia primaria transperineal** (preferida para T4):
+  - Mayor rendimiento que TRUS si próstata infiltrante
+  - Templated 12-24 cores
+  - Anestesia regional/general
+  - Logística: agenda 7-14 días
+
+  **2. Biopsia metastásica** (gate 66 link):
+  - Sitio accesible: hepática (alto rendimiento), ósea, ganglionar
+  - Mismo workup IHC que primaria
+  - Permite simultáneo NEPC ruling out (gate 67 + 67B)
+  - Logística: 5-7 días si sitio accesible
+
+  **3. Cytology fluid si presente**:
+  - Ascítico, pleural, líquido bursa
+  - Inmunohistoquímica diagnóstica (PSA, NKX3.1, AMACR)
+
+  **4. Override "presumptive_diagnosis"**:
+  - SI PSA >100 + DRE T4 típico + ECOG declining + bulk
+  - + plan formal de biopsia agendada en próximas 2 semanas
+  - PUEDE iniciar ADT empírico antes de resultado
+  - Documentar `presumptive_treatment_documented_with_2week_biopsy_plan`
+
+  🎯 CONDUCTA RECOMENDADA:
+
+  **A. Si paciente clínicamente estable** (ECOG ≤2, sin urgencia):
+  - Esperar biopsia primaria transperineal (1-2 sem)
+  - Workup paralelo: imaging extensión (TAC + PSMA PET o bone scan)
+  - MDT review post-biopsia para definir tratamiento local
+
+  **B. Si paciente con bulk disease + ECOG declining** (presumptive virtually_certain):
+  - Biopsia metastásica urgente (sitio accesible) — más rápido
+  - Iniciar ADT empírico CON `presumptive_treatment_documented` flag
+  - Definir tratamiento local (RP vs RT) post-confirmación
+  - Multidisciplinaria urgente
+
+  **C. Si urgencia oncológica activa** (gate 68 fires):
+  - Manejo emergency-first PRIMERO
+  - Biopsia metastásica simultánea
+  - ADT empírico SI tier virtually_certain
+
+  ⚠️ OVERRIDE OBLIGATORIO POST-CONFIRMACIÓN:
+  Activar uno de:
+  - `histology_already_confirmed` = True (cualquier sitio)
+  - `histology_confirmed_metastatic_site` = True (gate 66 link)
+  - `presumptive_treatment_documented_with_2week_biopsy_plan` = True
+
+  🔬 EVIDENCIA:
+  - **NCCN Prostate v5.2026 PROS-2** — staging requirements
+  - **EAU 2026 §5.3** — biopsy indications
+  - **AUA Guidelines 2024** — pre-treatment confirmation
+  - **PCWG3** — staging documentation requirements
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `clinical_t_stage`: estadio T (cT4, cT3b)
+  - `dre_fixation`: nuevo field DRE finality
+  - `primary_biopsy_not_performed`: flag sin biopsia
+  - `decision_rp_vs_rt_active`: flag decisión activa
+  - `histology_already_confirmed`: flag override
+  - `histology_confirmed_metastatic_site`: flag override
+  - `presumptive_treatment_documented_with_2week_biopsy_plan`: flag override
+
+evidence_tag: ct4_staging_nccn_v5_2026_eau_section_5_3_aua_2024
+trial_refs:
+  - "NCCN Prostate v5.2026 PROS-2"
+  - "EAU 2026 §5.3 (biopsy indications)"
+  - "AUA Guidelines 2024 (pre-treatment confirmation)"
+  - "PCWG3 (Scher JCO 2016)"

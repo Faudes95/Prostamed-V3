@@ -1,0 +1,157 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 74: ecog_decline_alert
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXVIII) — Auditoría #67D — ECOG decline.
+#
+# Razón clínica:
+#   **ECOG Performance Status (PS)** es predictor robusto de:
+#
+#   1. **Tolerabilidad tratamiento**: chemo apta solo ECOG 0-2
+#   2. **Survival pronóstico**: HR mortalidad 1.5-2× cada grado peor
+#   3. **Trial eligibility**: ECOG 0-1 standard inclusion
+#   4. **Decisión palliative-only**: ECOG ≥3 favorece BSC
+#
+#   ECOG SCALE:
+#   - **0**: fully active, sin restricciones
+#   - **1**: ambulatorio + actividad ligera
+#   - **2**: ambulatorio + autocuidado, no trabajo, ≥50% día up
+#   - **3**: limitado autocuidado, >50% día en cama
+#   - **4**: completamente discapacitado, totalmente cama/silla
+#   - **5**: muerto
+#
+#   ECOG DECLINE TRIGGERS:
+#   - Cambio ≥1 grado vs baseline (within 3-6 meses)
+#   - ECOG actual ≥2 (cambio significativo treatment options)
+#   - ECOG actual ≥3 (cambio palliative pathway)
+#
+#   Severity: soft_warning — alerta cambio fitness + reevaluación
+#   tratamiento + considerar palliative early.
+# ──────────────────────────────────────────────────────────────────────
+
+code: ecog_decline_alert
+title: "ECOG decline ≥1 grade vs baseline → reevaluar fitness + tratamiento + palliative early"
+faubot_added_in: "2026-04-26 LXXVIII"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: ECOG cambio ≥1 grado peor vs baseline
+    - type: numeric_above
+      field: ecog_change_from_baseline
+      alias_fields:
+        - cambio_ecog_baseline
+        - ecog_decline_grades
+      threshold: 0  # ≥1 grado peor
+    # Path B: ECOG actual ≥2 (treatment options change)
+    - type: numeric_above
+      field: ecog_current
+      alias_fields:
+        - ecog_actual
+        - ecog_status
+        - performance_status_ecog
+      threshold: 1  # ≥2 = numeric_above 1
+    # Path C: ECOG ≥3 (palliative pathway favor)
+    - type: numeric_above
+      field: ecog_current
+      alias_fields:
+        - ecog_actual
+        - ecog_status
+      threshold: 2  # ≥3 = palliative
+    # Path D: clinical flag explicit
+    - type: truthy_flag
+      field: ecog_significant_decline_documented
+      alias_fields:
+        - declive_funcional_significativo
+        - functional_decline_ecog_clinical
+
+regimen_codes: []  # Gate alerta — no bloquea, sugiere reevaluación
+
+keywords:
+  - ECOG
+  - performance status
+  - estado funcional
+  - PS
+  - performance score
+
+message: |
+  📊 ALERTA: ECOG decline ≥1 grado vs baseline → reevaluar fitness
+  treatment + considerar palliative early integration.
+
+  🔬 INTERPRETACIÓN ECOG:
+
+  **ECOG Scale**:
+  | Grade | Definición | Treatment Options |
+  |-------|-----------|-------------------|
+  | 0 | Fully active | Todas opciones |
+  | 1 | Ambulatorio + ligera actividad | Chemo + ARPI + radioligand |
+  | 2 | Autocuidado, ≥50% día up | Reducción dosis chemo + ARPI |
+  | 3 | Limitado autocuidado, >50% cama | Best supportive care + paliative RT |
+  | 4 | Totalmente cama/silla | BSC only |
+
+  **ECOG Decline triggers reevaluación**:
+  - Cambio ≥1 grado vs baseline (3-6 meses)
+  - ECOG actual ≥2: chemo dose reduction o switch
+  - ECOG actual ≥3: palliative pathway favor
+  - ECOG actual ≥4: BSC only + hospice referral
+
+  🎯 ACCIÓN OBLIGATORIA:
+
+  **1. Workup causa decline**:
+  - Progresión enfermedad? (PSMA-PET, CT)
+  - Toxicidad treatment? (CBC, CMP, PCR)
+  - Comorbidad nueva (infección, descompensación cardiaca)
+  - Anemia? (Hb <10 → transfusión, EPO)
+  - Caquexia? (futuro gate 85, weight loss)
+  - Depresión? (futuro gate 81, PHQ-9)
+
+  **2. Reevaluar línea actual**:
+  - Si ECOG worsens bajo chemo: dose reduction 25-50% o switch
+  - Si ECOG worsens bajo ARPI: progresión vs toxicidad
+  - Si ECOG ≥3: considerar suspender treatment activo + BSC
+
+  **3. Palliative care integration**:
+  - ECOG 2: palliative consult referral
+  - ECOG 3: palliative co-management activo
+  - ECOG 4: hospice referral
+
+  **4. Goals of care discussion**:
+  - Mediana survival post-decline ECOG: variable (depende causa)
+  - Discutir DNR/DNI + AD (advance directives)
+  - Family meeting + chaplain support
+
+  **5. Symptom optimization**:
+  - Pain: BPI evaluation (gate 73)
+  - Fatigue: corregir anemia, optimizar sleep
+  - Anorexia: megestrol/mirtazapine (futuro gate 85)
+  - ESAS multi-síntoma (futuro gate 80)
+
+  ⚠️ INTEGRACIÓN COMPOSITE:
+  Si gate 74 fires + gate 73 (BPI) + gate 71 (PSMA prog) + gate 53/55
+  (PSA prog) → gate 75 composite rPFS "clinical + radiographic + biochemical"
+  → reroute palliative pathway o trial enrollment último-resorte.
+
+  🔬 EVIDENCIA:
+  - **Oken Am J Clin Oncol 1982;5:649**: ECOG validation original
+  - **PCWG3 (Scher JCO 2016)**: ECOG decline como clinical progression
+  - **CHAARTED (Sweeney NEJM 2015)**: ECOG ≤2 inclusion criteria
+  - **CARD (de Wit NEJM 2019)**: cabazitaxel ECOG 2 acceptable
+  - **NCCN Prostate v5.2026 PROS-G**: ECOG-based treatment selection
+  - **EAU 2026 §10**: palliative care integration ECOG ≥2
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `ecog_current`: 0-5 ECOG actual
+  - `ecog_baseline`: 0-5 baseline (treatment start)
+  - `ecog_change_from_baseline`: cambio calculado (negativo = decline)
+  - `ecog_decline_documented_date`: fecha decline
+  - `ecog_significant_decline_documented`: flag clínico
+
+evidence_tag: oken_ecog_1982_pcwg3_clinical_progression_chaarted_card
+trial_refs:
+  - "Oken Am J Clin Oncol 1982;5:649 (ECOG validation)"
+  - "PCWG3 (Scher JCO 2016;34:1402)"
+  - "CHAARTED (Sweeney NEJM 2015)"
+  - "CARD (de Wit NEJM 2019)"
+  - "NCCN Prostate v5.2026 PROS-G"
+  - "EAU 2026 §10 (palliative care)"

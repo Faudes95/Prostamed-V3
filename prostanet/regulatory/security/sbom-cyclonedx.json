@@ -1,0 +1,34 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-04-27T20:00:00Z",
+    "tools": [{"vendor": "Faubot", "name": "manual-bootstrap", "version": "LXXXVIII"}],
+    "component": {
+      "type": "application",
+      "bom-ref": "prostamed",
+      "name": "ProstaMed/ProstaNet",
+      "version": "2026-04-27 LXXXVIII",
+      "description": "Clinical Decision Engine Auditable for prostate cancer (SaMD Class IIb 510(k))"
+    }
+  },
+  "components": [
+    {"type": "library", "bom-ref": "flask", "name": "flask", "version": ">=3.0", "purl": "pkg:pypi/flask", "scope": "required"},
+    {"type": "library", "bom-ref": "pyyaml", "name": "pyyaml", "version": ">=6.0", "purl": "pkg:pypi/pyyaml", "scope": "required"},
+    {"type": "library", "bom-ref": "torch", "name": "torch", "version": ">=2.0", "purl": "pkg:pypi/torch", "scope": "required", "notes": "ML inference (Decipher predictions)"},
+    {"type": "library", "bom-ref": "numpy", "name": "numpy", "version": ">=1.24", "purl": "pkg:pypi/numpy", "scope": "required"},
+    {"type": "library", "bom-ref": "pandas", "name": "pandas", "version": ">=2.0", "purl": "pkg:pypi/pandas", "scope": "required"},
+    {"type": "library", "bom-ref": "scikit-learn", "name": "scikit-learn", "version": ">=1.3", "purl": "pkg:pypi/scikit-learn", "scope": "required"},
+    {"type": "library", "bom-ref": "lifelines", "name": "lifelines", "version": ">=0.27", "purl": "pkg:pypi/lifelines", "scope": "required"},
+    {"type": "library", "bom-ref": "joblib", "name": "joblib", "version": ">=1.3", "purl": "pkg:pypi/joblib", "scope": "required"},
+    {"type": "library", "bom-ref": "requests", "name": "requests", "version": ">=2.31", "purl": "pkg:pypi/requests", "scope": "required"},
+    {"type": "library", "bom-ref": "pytest", "name": "pytest", "version": ">=7.4", "purl": "pkg:pypi/pytest", "scope": "test-only"},
+    {"type": "framework", "bom-ref": "tailwindcss-cdn", "name": "Tailwind CSS", "version": "3.x (CDN)", "scope": "required"},
+    {"type": "framework", "bom-ref": "chartjs-cdn", "name": "Chart.js", "version": "4.4.0 (CDN)", "scope": "required"},
+    {"type": "framework", "bom-ref": "chartjs-annotation", "name": "chartjs-plugin-annotation", "version": "3.0.1 (CDN)", "scope": "required"}
+  ],
+  "vulnerabilities": [],
+  "_pinning_status": "BOOTSTRAP — versions specified as floor (>=); strict pinning (==) pending pip-audit integration in LXXXVIII iteration +N (see pillar_3_lifecycle:sbom_unpinned_dependencies gap)",
+  "_next_review": "Pillar 6 scorer reads this file via _score_sbom() to compute compliance"
+}

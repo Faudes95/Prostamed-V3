@@ -1,0 +1,30 @@
+code: arsi_in_seizure_history_grade3
+title: "Seizure disorder or grade 3 seizure risk before ARSI"
+faubot_added_in: "2026-05-11 Clinical Memory recovery"
+severity: hard_block
+trigger:
+  type: any_of
+  triggers:
+    - type: numeric_threshold
+      field: seizure_ctcae_grade
+      threshold: 3
+    - type: truthy_flag
+      field: active_seizure_disorder
+    - type: truthy_flag
+      field: seizure_history_grade3_documented
+override:
+  type: truthy_flag
+  field: seizure_disorder_controlled_for_arpi
+regimen_codes:
+  - REGIMEN_CODES_ENZALUTAMIDE
+  - REGIMEN_CODES_APALUTAMIDE
+keywords:
+  - enzalutamide
+  - apalutamide
+message: |
+  Active seizure disorder or grade 3 seizure history blocks ARSI release until
+  neurology control and alternative risk mitigation are documented.
+evidence_tag: arsi_seizure_label_warning
+trial_refs:
+  - PROSPER
+  - SPARTAN

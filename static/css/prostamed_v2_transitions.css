@@ -1,0 +1,110 @@
+/* ────────────────────────────────────────────────────────────────────────
+   ProstaMed v2 — Transition Framework (LXCI Fase 6)
+   ────────────────────────────────────────────────────────────────────────
+   Fade-in al cargar/navegar + skeleton loader + tab transitions + sidebar
+   hover hint. NO afecta lógica clínica; solo navegación visual smooth.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* ── Page-level fade-in al cargar/navegar ── */
+@keyframes pm2-page-fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+main[id="main-content"],
+.pm2-app-main > .pm2-app-content,
+.pm2-longitudinal-main {
+    animation: pm2-page-fade-in 220ms ease-out;
+}
+
+/* ── Skeleton loader durante fetch ── */
+@keyframes pm2-skeleton-pulse {
+    0%, 100% { opacity: 0.4; }
+    50%      { opacity: 0.8; }
+}
+
+@keyframes pm2-skeleton-shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.pm2-skeleton {
+    background: linear-gradient(90deg,
+        rgba(56, 189, 248, 0.05) 0%,
+        rgba(56, 189, 248, 0.18) 50%,
+        rgba(56, 189, 248, 0.05) 100%);
+    background-size: 200% 100%;
+    animation: pm2-skeleton-pulse 1.6s ease-in-out infinite,
+               pm2-skeleton-shimmer 2s linear infinite;
+    border-radius: 6px;
+    min-height: 14px;
+    width: 100%;
+}
+
+.pm2-skeleton-text {
+    height: 14px;
+    margin-bottom: 6px;
+}
+.pm2-skeleton-text--lg { height: 20px; }
+.pm2-skeleton-text--sm { height: 10px; width: 60%; }
+
+.pm2-skeleton-card {
+    height: 80px;
+    margin-bottom: 12px;
+    border-radius: 12px;
+}
+
+/* ── Sidebar link hover prefetch indicator ── */
+.pm2-sidebar-link {
+    transition: background 150ms ease, padding-left 200ms ease, color 150ms ease;
+}
+
+.pm2-sidebar-link:hover {
+    padding-left: calc(var(--space-3) + 4px);
+}
+
+/* ── Tab transitions (no full reload) ── */
+.pm2-tab-panel {
+    transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.pm2-tab-panel:not(.is-active) {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(2px);
+}
+
+.pm2-tab-panel.is-active {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* ── Toast slide-in (refinement of pm2Toast existente) ── */
+@keyframes pm2-toast-slide-in {
+    from { opacity: 0; transform: translateX(20px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+#pm2-toast-host > div {
+    animation: pm2-toast-slide-in 180ms ease-out;
+}
+
+/* ── Modal backdrop fade ── */
+@keyframes pm2-modal-fade-in {
+    from { opacity: 0; backdrop-filter: blur(0); }
+    to   { opacity: 1; backdrop-filter: blur(6px); }
+}
+
+[role="dialog"] {
+    animation: pm2-modal-fade-in 200ms ease-out;
+}
+
+/* ── Reduced motion respect ── */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

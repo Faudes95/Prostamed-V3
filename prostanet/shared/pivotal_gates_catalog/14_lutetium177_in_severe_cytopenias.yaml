@@ -1,0 +1,63 @@
+# Faubot 2026-04-25 (XVIII) — Gate 14 migrado de Python a YAML.
+# Originalmente en `pivotal_contraindication_gates.detect_lutetium177_in_severe_cytopenias`.
+# Activo en Faubot 2026-04-24 V (gates 13-14 Lu-177-PSMA × emergencias).
+#
+# Threshold rationale: usamos Pluvicto label (cycle gate ANC ≥1500, plaq
+# ≥75 000, Hb ≥9), no VISION (más estricto), porque la pregunta clínica es
+# "¿el paciente puede recibir el SIGUIENTE ciclo?" y la etiqueta es la
+# referencia regulatoria vigente.
+#
+# Nota: el mensaje migrado a YAML es estático y describe los thresholds en
+# absoluto (ANC <1500/µL O plaq <75 000/µL O Hb <9 g/dL). Los valores
+# específicos del paciente que dispararon están en `input_snapshot` y
+# accesibles desde el dashboard / endpoint decision-audit.
+
+code: lutetium177_in_severe_cytopenias
+title: "Lu-177-PSMA-617 con citopenias basales severas"
+faubot_added_in: "2026-04-24 V"
+faubot_migrated_to_yaml_in: "2026-04-25 XVIII"
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # 1) Flag explícito de citopenia severa para radioligando
+    - type: truthy_flag
+      field: severe_cytopenia_for_radioligand
+    # 2) ANC < 1500 /µL (con alias)
+    - type: numeric_below
+      field: anc
+      alias_fields:
+        - anc_baseline
+      threshold: 1500
+    # 3) Plaquetas < 75 000 /µL
+    - type: numeric_below
+      field: platelets
+      threshold: 75000
+    # 4) Hemoglobina < 9 g/dL (con alias)
+    - type: numeric_below
+      field: hemoglobin_g_dl
+      alias_fields:
+        - hemoglobin
+        - hb
+      threshold: 9.0
+
+override:
+  type: truthy_flag
+  field: cytopenias_corrected_for_radioligand
+
+regimen_codes:
+  - REGIMEN_CODES_LUTETIUM177
+keywords:
+  - KEYWORDS_LUTETIUM177
+
+message: |
+  Lu-177-PSMA-617 (Pluvicto) NO debe iniciarse con citopenias basales severas (ANC <1500/µL, plaquetas <75 000/µL, o hemoglobina <9 g/dL). Pluvicto FDA prescribing information (Novartis 2022-2024) requiere antes de cada ciclo: ANC ≥1.5×10⁹/L (1500/µL), plaquetas ≥75×10⁹/L (75 000/µL), hemoglobina ≥9 g/dL, eGFR ≥30 mL/min. VISION (Sartor NEJM 2021;385:2197) excluyó valores menores. La mielosupresión es acumulativa (anemia 32%, trombocitopenia 17%, neutropenia 9%); iniciar con citopenias basales severas implica riesgo de falla medular irreversible o sangrado/infección graves. Optimizar con transfusión, EPO, G-CSF según indicación; reevaluar (`cytopenias_corrected_for_radioligand=Sí`) tras documentar recuperación laboratorial.
+
+evidence_tag: pluvicto_label_vision
+trial_refs:
+  - VISION
+  - Pluvicto label
+references:
+  - Pluvicto (Lu-177-PSMA-617) FDA prescribing information. Novartis 2022-2024.
+  - Sartor O et al. VISION trial. NEJM 2021;385:2197.

@@ -1,0 +1,277 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 49: abiraterone_hypokalemia_grade3
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LX) — Auditoría #59 — Gate YAML-NATIVE.
+#
+# 🆕 SEGUNDO GATE DEL CATÁLOGO PARA ELECTRÓLITOS CRÍTICOS — completa
+# eje Na+K junto con gate 48 (hyponatremia enzalutamida). Los 2
+# electrólitos más letales cubiertos sistemáticamente.
+#
+# Razón clínica:
+#   Abiraterona (Zytiga) tiene WARNING regulatorio sobre hipokalemia
+#   por mecanismo PSEUDO-ALDOSTERONISMO secundario. Mecanismo distintivo:
+#     - Abiraterona inhibe CYP17A1 (17α-hidroxilasa + 17,20-liasa)
+#       → bloquea síntesis cortisol + andrógenos suprarrenales
+#     - Acumulación pregnenolona/progesterona → conversión a DOC
+#       (deoxicorticosterona) por 21-hidroxilasa
+#     - DOC tiene actividad MINERALOCORTICOIDE potente — activa receptor
+#       MR (mineralocorticoide) en tubulo distal renal
+#     - Activación MR → retención Na (HTA secundaria, gate 3) +
+#       excreción K (hipokalemia, gate 49 NUEVO) + excreción H+
+#       (alcalosis metabólica)
+#   Por eso COU-AA-302 + LATITUDE recomendaron PROFILAXIS con
+#   prednisona 5-10 mg/d (suprime ACTH → reduce DOC) +
+#   eplerenone/spironolactone (antagonistas MR) para mitigar
+#   pseudo-aldosteronismo.
+#
+#   Datos prevalencia (COU-AA-302 + LATITUDE):
+#     - Hipokalemia ANY GRADE: 17-30% pacientes abiraterona (vs 8-13% placebo)
+#     - Hipokalemia G≥3 (K <3.0 mEq/L): 4-6% (vs <2% placebo)
+#     - Hipokalemia G≥4 (K <2.5, life-threatening, riesgo torsades de
+#       pointes + arritmias ventriculares): 0.4-1.0%
+#     - **Mortalidad G≥3 ~3% por arritmias ventriculares**
+#       (torsades de pointes, fibrilación ventricular, paro cardíaco)
+#     - Tiempo medio aparición: 4-8 sem (rango 1-26)
+#     - Discontinuación PERMANENTE por hipokalemia G≥3 recurrente
+#       refractaria: 0.3%
+#
+#   Threshold canónico (CTCAE v5 + COU-AA-302/LATITUDE):
+#     - Path A: K sérico <3.0 mEq/L (CTCAE v5 G≥3 severo —
+#       sintomático intervención médica indicada)
+#     - Path B: K sérico <2.5 mEq/L (CTCAE v5 G≥4 emergencia —
+#       riesgo torsades de pointes + arritmia letal)
+#     - Path C: Criterios pseudo-aldosteronismo compound (hipokalemia
+#       <3.5 + HTA documentada + alcalosis metabólica + hipernatremia
+#       relativa) — patrón patognomónico
+#     - Path D: hypokalemia_pseudoaldosteronism_documented_for_abiraterone
+#       flag (interpretación clínica especialista)
+#
+#   Override: hypokalemia_resolved_for_abiraterone=Sí
+#   (K recuperado ≥3.5 mEq/L documentado en 2 mediciones ≥7d +
+#   suplementación oral KCl 60-80 mEq/d activa + eplerenone 50 mg BID
+#   o spironolactone 100 mg/d activos como antagonistas MR +
+#   cardiology endorsement + ECG baseline normal sin QT prolongation +
+#   monitoring K + ECG quincenal × 4 sem post-reintroducción).
+#
+#   Coexistencia rica con gates 3+28+39 (eje abiraterona toxicidad
+#   CYP17 inhibition completa):
+#     - Gate 3: HTA descontrolada (mismo mecanismo MR activación)
+#     - Gate 21: hepatotoxicity G≥3 (AST/ALT) — eje hepático
+#     - Gate 28: adrenal axis insufficiency (cortisol bajo) — eje
+#       adrenal central
+#     - Gate 35: ARSI/abi VTE risk (riesgo trombótico)
+#     - Gate 39: ALP rise longitudinal colestásico — eje hepático tardío
+#     - Gate 49 (este): hipokalemia G≥3 — eje electrólitos CYP17
+#   Mismo paciente puede disparar 6 gates simultáneamente
+#   (abiraterona ahora tiene la 2da mayor cobertura del catálogo
+#   tras enzalutamida 7 gates).
+#
+#   Bloquea: REGIMEN_CODES_ABIRATERONE (6 regímenes incluyendo combos
+#   PROpel + MAGNITUDE + PEACE-1 + IPATential150).
+# ──────────────────────────────────────────────────────────────────────
+
+code: abiraterone_hypokalemia_grade3
+title: "Abiraterona × hipokalemia G≥3 / pseudo-aldosteronismo (COU-AA-302+LATITUDE + CYP17 inhibition)"
+faubot_added_in: "2026-04-25 LX"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: K sérico <3.0 mEq/L (CTCAE v5 G≥3 severo)
+    - type: numeric_below
+      field: potassium_serum
+      alias_fields:
+        - potassium
+        - k_serum
+        - potassium_meq_l
+        - serum_k
+        - potasio
+      threshold: 3.0
+    # Path B: K sérico <2.5 mEq/L (CTCAE v5 G≥4 emergencia — torsades)
+    - type: numeric_below
+      field: potassium_serum
+      alias_fields:
+        - potassium
+        - k_serum
+        - potassium_meq_l
+        - serum_k
+        - potasio
+      threshold: 2.5
+    # Path C: Criterios pseudo-aldosteronismo compound
+    - type: all_of
+      triggers:
+        - type: numeric_below
+          field: potassium_serum
+          alias_fields:
+            - potassium
+            - k_serum
+            - potassium_meq_l
+            - serum_k
+            - potasio
+          threshold: 3.5
+        - type: truthy_flag
+          field: hypertension_active_documented
+          alias_fields:
+            - hta_documented
+            - hipertension_active
+            - blood_pressure_uncontrolled
+            - htn_present
+        - type: truthy_flag
+          field: metabolic_alkalosis_documented
+          alias_fields:
+            - alkalosis_metabolic_documented
+            - alcalosis_metabolica
+            - bicarbonate_elevated_documented
+    # Path D: flag clínico documentado por endocrinólogo/nefrólogo/cardiólogo
+    - type: truthy_flag
+      field: hypokalemia_pseudoaldosteronism_documented_for_abiraterone
+      alias_fields:
+        - pseudoaldosteronism_for_abiraterone_documented
+        - secondary_hyperaldosteronism_for_abiraterone
+        - cyp17_mineralocorticoid_excess_documented
+        - abiraterone_hypokalemia_documented
+
+# Override: post-resolución K + suplementación + antagonistas MR + cardiology endorsement
+override:
+  type: truthy_flag
+  field: hypokalemia_resolved_for_abiraterone
+  alias_fields:
+    - potassium_recovered_for_abiraterone
+    - hipokalemia_normalizada_para_abiraterona
+    - k_normalized_for_abiraterone
+    - pseudoaldosteronism_controlled_for_abiraterone
+
+regimen_codes:
+  - REGIMEN_CODES_ABIRATERONE
+
+keywords:
+  - KEYWORDS_ABIRATERONE
+
+message: |
+  Abiraterona (Zytiga) NO debe continuarse con hipokalemia G≥3
+  (K <3.0 mEq/L) o criterios de pseudo-aldosteronismo
+  (hipokalemia + HTA + alcalosis metabólica). Hipokalemia G≥4
+  (K <2.5 mEq/L) es EMERGENCIA CARDIOVASCULAR — riesgo torsades
+  de pointes + arritmias ventriculares letales con mortalidad ~3%.
+
+  Mecanismo distintivo PSEUDO-ALDOSTERONISMO (COU-AA-302 + LATITUDE):
+    - Abiraterona inhibe CYP17A1 (17α-hidroxilasa + 17,20-liasa)
+      → bloquea síntesis cortisol + andrógenos suprarrenales
+    - Acumulación pregnenolona/progesterona en glándula suprarrenal
+      → conversión a DOC (deoxicorticosterona) por 21-hidroxilasa
+    - DOC tiene ACTIVIDAD MINERALOCORTICOIDE potente — activa receptor
+      MR en tubulo distal renal (mismo receptor que aldosterona)
+    - Activación MR → retención Na + agua (HTA secundaria, gate 3) +
+      excreción K (hipokalemia, gate 49) + excreción H+ (alcalosis
+      metabólica) — patrón pseudo-aldosteronismo clásico
+
+  Evidencia clínica (COU-AA-302 + LATITUDE):
+    - Hipokalemia any grade: 17-30% abiraterona (vs 8-13% placebo)
+    - Hipokalemia G≥3 (K <3.0): 4-6% (vs <2% placebo)
+    - Hipokalemia G≥4 (K <2.5, riesgo torsades): 0.4-1.0%
+    - Mortalidad G≥3: ~3% por arritmias ventriculares
+    - Tiempo medio aparición: 4-8 sem (rango 1-26)
+
+  Conducta clínica obligatoria (COU-AA-302 + LATITUDE + ASCO 2024
+  Cardio-Oncology):
+  1. **PROFILAXIS PRE-INICIO** (estándar de cuidado):
+     - **Prednisona 5-10 mg/d** (10 mg/d en mCRPC per COU-AA-302;
+       5 mg/d en mCSPC per LATITUDE) — suprime ACTH hipofisaria
+       → reduce producción DOC en suprarrenal → previene
+       pseudo-aldosteronismo. NO opcional — debe iniciarse JUNTO
+       con abiraterona (no después).
+     - Considerar **eplerenone 50 mg BID** (antagonista MR
+       selectivo, NO inhibe CYP17 como spironolactone) o
+       **spironolactone 100 mg/d** profiláctica si paciente alto
+       riesgo (ICC + HTA + edad >75 + K basal <4.0)
+     - Suplementación oral KCl 20-40 mEq/d desde inicio si K basal
+       <4.0 mEq/L
+  2. **Workup ante hipokalemia detectada**:
+     - K sérico repetido + Na + Cl + bicarbonato (alcalosis si
+       HCO3 >28 mEq/L) + creatinina + Mg sérico (hipomagnesemia
+       coexistente común — debe corregir Mg ANTES de K)
+     - K urinario 24h o ratio K/creatinina urinaria spot
+       (renal vs extrarrenal — abi típicamente >20 mEq/24h = renal)
+     - PA sistémica + ECG basal (QTc + ondas U + extrasistolia
+       ventricular = signos hipokalemia + riesgo torsades)
+     - Aldosterona sérica + actividad renina plasmática
+       (PSEUDO-aldosteronismo: aldosterona BAJA + renina BAJA;
+       hiperaldosteronismo primario: aldosterona ALTA + renina BAJA)
+     - Evaluar adherencia prednisona 5-10 mg/d profiláctica
+  3. Tratamiento por severidad:
+     - **G2 (K 3.0-3.5)**: continuar abi + KCl oral 40-60 mEq/d +
+       monitoring K cada 24-48h + asegurar prednisona 5-10 mg/d
+       activa
+     - **G3 (K 2.5-3.0)**: suspender abi + KCl IV 10-20 mEq/h
+       (vía central preferida) + monitoring K cada 12h + ECG
+       continuo + corregir Mg si <1.7 mg/dL + iniciar/aumentar
+       eplerenone 50-100 mg BID
+     - **G4 (K <2.5, life-threatening)**: UCI + KCl IV 20-40 mEq/h
+       central + monitoring K horario + ECG continuo + considerar
+       MgSO4 IV profiláctico (anti-arrítmico) + spironolactone
+       200-400 mg/d transitorio + corrección hasta K ≥3.5 ANTES
+       de plantear reintroducción
+  4. ⚠️ DISCONTINUACIÓN PERMANENTE abiraterona en:
+     - G3 recurrente tras reintroducción (con o sin eplerenone)
+     - G4 cualquier evento (riesgo arritmia letal recurrente)
+     - QT prolongation >500 ms persistente atribuible a hipokalemia
+     - Necesidad >12 sem de eplerenone/spironolactone para
+       mantener K normal
+  5. Override (`hypokalemia_resolved_for_abiraterone=Sí`)
+     SOLO si:
+     - K ≥3.5 mEq/L documentado en 2 mediciones separadas ≥7d
+     - Suplementación oral KCl 60-80 mEq/d activa
+     - Eplerenone 50 mg BID o spironolactone 100 mg/d activos
+       (antagonistas MR)
+     - ECG baseline normal sin QT prolongation
+     - Cardiology endorsement explícito
+     - Plan monitoring K + ECG QUINCENAL × 4 sem post-reintroducción
+       + mensual × 8 sem
+  6. Considerar terapia alternativa NO-abiraterona:
+     - **Enzalutamida** (Xtandi) — perfil hipokalemia mínimo (~1%);
+       gates 17 QTc + 19 cognitive + 31 elderly + 47 PSA flare +
+       48 hyponatremia/SIADH monitor
+     - **Apalutamida** (Erleada/TITAN) — perfil hipokalemia bajo
+       (~0.5%); gates 18 LVEF + 19 + 42 SJS/TEN monitor
+     - **Darolutamida** (Nubeqa/ARAMIS) — perfil hipokalemia muy bajo
+       (<0.3%) + menor penetración SNC (preferida si edad >75); gates
+       19 + 32 hepatotox monitor
+     - **NO docetaxel/cabazitaxel** si quimio-tolerable — perfil
+       hipokalemia mínimo en taxanos
+
+  CAMPOS REQUERIDOS:
+    - `potassium_serum`: K sérico mEq/L (rango normal 3.5-5.0)
+    - `hypertension_active_documented`: flag HTA actual (Path C)
+    - `metabolic_alkalosis_documented`: flag alcalosis (Path C)
+    - `hypokalemia_pseudoaldosteronism_documented_for_abiraterone`:
+      flag dx clínico
+
+evidence_tag: cou_aa_302_latitude_zytiga_label_section_5_4_pseudoaldosteronism_ctcae_v5
+trial_refs:
+  - "COU-AA-302"
+  - "LATITUDE"
+  - "Ryan NEJM 2013"
+  - "Fizazi NEJM 2017"
+  - "Zytiga label §5.4"
+  - "Yamada Endocr Rev 2017"
+  - "ASCO Cardio-Oncology 2024"
+  - "CTCAE v5"
+
+references:
+  - "Ryan CJ et al. COU-AA-302. NEJM 2013;368:138 (mCRPC chemo-naive abiraterona)."
+  - "Fizazi K et al. LATITUDE. NEJM 2017;377:352 (mCSPC abiraterona)."
+  - "Zytiga (abiraterone) FDA prescribing information §5.4 — Hypertension, Hypokalemia, Fluid Retention."
+  - "Yamada Y et al. CYP17 Inhibition + Mineralocorticoid Excess: Mechanism + Management. Endocr Rev 2017;38:103."
+  - "Auchus RJ et al. Pseudohyperaldosteronism with abiraterone: subset analysis. JCO 2014;32:3526."
+  - "ASCO Cardio-Oncology Guideline 2024 — Hypokalemia + arrhythmia management in cancer therapy."
+  - "Verbalis JG et al. Endocrine Society Clinical Practice Guideline 2014."
+  - "CTCAE v5.0 — Hypokalemia grading (G1 3.0-3.5 → G4 <2.5 life-threatening)."
+  - "NCCN Guidelines Prostate Cancer v5.2026 — Abiraterone monitoring + electrolyte management."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Abiraterone hypokalemia + pseudo-aldosteronism monitoring + prednisone profilaxis mandatory"
+  eau_section: "EAU 2026 §6.5.7 — ARSI safety profile (abiraterone-specific pseudo-aldosteronism warnings)"
+  asco_cardio_oncology_section: "ASCO Cardio-Oncology 2024 — Hypokalemia + arrhythmia management"
+  endocrine_society_section: "Verbalis 2014 — Electrolyte abnormalities clinical practice guideline"

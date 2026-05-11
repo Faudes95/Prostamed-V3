@@ -1,0 +1,51 @@
+name: Scenario Drift Detection (LXCV)
+
+# Faubot LXCV — Iterative Improvement Loop · Weekly Wednesday 00:00 UTC
+# Re-corre 5 casos clínicos sintéticos vs baseline; alerta si gates/trials
+# elegibles divergen.
+
+on:
+  schedule:
+    - cron: "0 0 * * 3"  # Weekly Wednesday 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  scenario-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deps
+        run: pip install pyyaml pytest flask
+
+      - name: Run 5 clinical cases
+        run: |
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest \
+            tests/test_audit_lxciv_clinical_validation_5_cases.py \
+            -v --tb=short --no-header -c /dev/null --rootdir=/tmp \
+            -o cache_dir=/tmp/pytest_cache
+
+      - name: Record drift result
+        if: always()
+        run: |
+          python -c "
+          from prostanet.presentation.loop_monitor import record_iteration
+          import datetime
+          # Test result captured by previous step exit code; if reached here, ok
+          status = 'ok' if '${{ job.status }}' == 'success' else 'critical'
+          record_iteration(
+              iteration_id=f'scenario-drift-{datetime.date.today().isoformat()}',
+              vector='recommendation_accuracy',
+              metric='5_clinical_cases_pass_rate',
+              value=100.0 if status == 'ok' else 0.0,
+              status=status,
+              notes='Weekly drift detection — 5 synthetic cases vs baseline',
+          )
+          "

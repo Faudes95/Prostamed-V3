@@ -1,0 +1,48 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 2: severe_neuropathy_grade3
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (XIII) — Migrado a YAML declarativo.
+#
+# Razón clínica:
+#   Neuropatía periférica grado ≥3 (CTCAE v5) contraindica taxanos.
+#   TAX-327 / TROPIC / CHAARTED restringieron taxanos por riesgo de
+#   neurotoxicidad incapacitante.
+# ──────────────────────────────────────────────────────────────────────
+
+code: severe_neuropathy_grade3
+title: "Neuropatía periférica grado ≥3 (CTCAE v5)"
+faubot_added_in: "2026-04-23 I"
+faubot_migrated_to_yaml_in: "2026-04-25 XIII"
+severity: hard_block
+
+trigger:
+  type: numeric_threshold
+  field: peripheral_neuropathy_grade
+  threshold: 3            # >= 3 dispara
+
+override: null
+
+regimen_codes:
+  - REGIMEN_CODES_TAXANE
+
+keywords:
+  - KEYWORDS_TAXANE
+
+message: |
+  Docetaxel/cabazitaxel NO recomendados por neuropatía periférica grado ≥3
+  (CTCAE v5). Riesgo de neurotoxicidad incapacitante. Considerar ARPI,
+  Lu-177 PSMA-617 o radioligando alternativo (TAX-327 / TROPIC / CHAARTED
+  restringieron taxanos por neuropatía).
+
+evidence_tag: ctcae_v5_neuropathy
+trial_refs:
+  - TAX-327
+  - TROPIC
+  - CHAARTED
+
+references:
+  - "Tannock IF et al. TAX-327. NEJM 2004;351:1502-1512."
+  - "de Bono JS et al. TROPIC. Lancet 2010;376:1147-1154."
+  - "Sweeney CJ et al. CHAARTED. NEJM 2015;373:737-746."
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Taxanos en mCRPC y mHSPC"

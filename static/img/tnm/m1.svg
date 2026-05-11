@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 200" width="220" height="200">
+  <defs>
+    <radialGradient id="m1_met" cx="45%" cy="35%" r="50%">
+      <stop offset="0%" stop-color="#fbbf24"/><stop offset="50%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </radialGradient>
+    <filter id="m1_glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- ===== HUESOS (izquierda) ===== -->
+  <g transform="translate(15, 20)">
+    <!-- Fémur simplificado -->
+    <rect x="15" y="10" width="12" height="60" rx="5" fill="#e8ddd0" stroke="#c4b5a0" stroke-width="1"/>
+    <ellipse cx="21" cy="10" rx="10" ry="8" fill="#e8ddd0" stroke="#c4b5a0" stroke-width="1"/>
+    <!-- Metástasis en hueso -->
+    <circle cx="21" cy="30" r="6" fill="url(#m1_met)" filter="url(#m1_glow)" opacity="0.9"/>
+    <circle cx="18" cy="50" r="4" fill="url(#m1_met)" filter="url(#m1_glow)" opacity="0.8"/>
+    <text x="21" y="88" text-anchor="middle" fill="#f59e0b" font-family="Arial,sans-serif" font-size="10" font-weight="bold">Huesos</text>
+  </g>
+
+  <!-- ===== PULMONES (centro) ===== -->
+  <g transform="translate(70, 15)">
+    <!-- Pulmón izquierdo -->
+    <path d="M 35 10 C 15 15, 5 35, 5 55 C 5 72, 15 82, 30 82 L 35 82 Z" fill="#d4e6f0" stroke="#a0b8c8" stroke-width="1"/>
+    <!-- Pulmón derecho -->
+    <path d="M 45 10 C 65 15, 75 35, 75 55 C 75 72, 65 82, 50 82 L 45 82 Z" fill="#d4e6f0" stroke="#a0b8c8" stroke-width="1"/>
+    <!-- Tráquea -->
+    <rect x="37" y="0" width="6" height="15" rx="2" fill="#c0d4e0" stroke="#a0b8c8" stroke-width="0.8"/>
+    <!-- Metástasis en pulmones -->
+    <circle cx="22" cy="45" r="5" fill="url(#m1_met)" filter="url(#m1_glow)" opacity="0.9"/>
+    <circle cx="15" cy="62" r="3.5" fill="url(#m1_met)" filter="url(#m1_glow)" opacity="0.8"/>
+    <circle cx="58" cy="40" r="4.5" fill="url(#m1_met)" filter="url(#m1_glow)" opacity="0.85"/>
+    <circle cx="62" cy="58" r="3" fill="url(#m1_met)" filter="url(#m1_glow)" opacity="0.75"/>
+    <text x="40" y="100" text-anchor="middle" fill="#f59e0b" font-family="Arial,sans-serif" font-size="10" font-weight="bold">Pulmones</text>
+  </g>
+
+  <!-- ===== HÍGADO (derecha) ===== -->
+  <g transform="translate(160, 20)">
+    <!-- Hígado -->
+    <path d="M 5 25 C 0 15, 10 5, 30 5 C 48 5, 55 18, 52 35 C 50 48, 38 60, 22 62 C 10 60, 2 45, 5 25 Z"
+          fill="#c8a088" stroke="#a88068" stroke-width="1"/>
+    <!-- Metástasis -->
+    <circle cx="25" cy="28" r="5" fill="url(#m1_met)" filter="url(#m1_glow)" opacity="0.9"/>
+    <circle cx="38" cy="40" r="3.5" fill="url(#m1_met)" filter="url(#m1_glow)" opacity="0.8"/>
+    <circle cx="15" cy="42" r="3" fill="url(#m1_met)" filter="url(#m1_glow)" opacity="0.75"/>
+    <text x="28" y="80" text-anchor="middle" fill="#f59e0b" font-family="Arial,sans-serif" font-size="10" font-weight="bold">Otros</text>
+    <text x="28" y="92" text-anchor="middle" fill="#f59e0b" font-family="Arial,sans-serif" font-size="10" font-weight="bold">Órganos</text>
+  </g>
+
+  <!-- Líneas de conexión desde centro -->
+  <path d="M 110 140 C 80 130, 50 100, 36 75" stroke="#f59e0b" stroke-width="1.2" fill="none" opacity="0.4" stroke-dasharray="4,3"/>
+  <path d="M 110 140 C 110 120, 110 100, 110 95" stroke="#f59e0b" stroke-width="1.2" fill="none" opacity="0.4" stroke-dasharray="4,3"/>
+  <path d="M 110 140 C 140 130, 165 100, 185 75" stroke="#f59e0b" stroke-width="1.2" fill="none" opacity="0.4" stroke-dasharray="4,3"/>
+
+  <!-- Próstata pequeña (referencia) -->
+  <ellipse cx="100" cy="155" rx="14" ry="12" fill="#0d5fa0" opacity="0.6"/>
+  <ellipse cx="120" cy="155" rx="14" ry="12" fill="#0d64ad" opacity="0.6"/>
+  <path d="M 110 148 C 109 155, 109 160, 110 168" stroke="#041e45" stroke-width="1" fill="none" opacity="0.3"/>
+
+  <!-- Etiqueta principal -->
+  <text x="110" y="190" text-anchor="middle" fill="#f59e0b" font-family="Arial,sans-serif" font-size="11" font-weight="bold">Metástasis a distancia</text>
+</svg>

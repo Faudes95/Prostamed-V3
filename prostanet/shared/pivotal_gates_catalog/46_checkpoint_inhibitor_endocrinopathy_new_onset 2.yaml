@@ -1,0 +1,259 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 46: checkpoint_inhibitor_endocrinopathy_new_onset
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LVII) — Auditoría #54 — Gate YAML-NATIVE.
+#
+# Razón clínica:
+#   Pembrolizumab/nivolumab/atezolizumab tienen WARNING regulatorio sobre
+#   endocrinopatías immune-related (irAE endocrino). A diferencia de
+#   pneumonitis/hepatitis/colitis que son típicamente REVERSIBLES con
+#   esteroides + suspensión IO, las **endocrinopatías irAE son
+#   FRECUENTEMENTE IRREVERSIBLES** y requieren reemplazo hormonal de
+#   por vida. Mecanismo: desinhibición células T + autoanticuerpos
+#   anti-tiroides/hipófisis/células β-páncreas → destrucción glándula.
+#
+#   Datos de KEYNOTE-365/921 + CheckMate-9KD + KeyLynk-010:
+#     - **Hipofisitis** (insuficiencia adrenal central + hipotiroidismo
+#       central + hipogonadismo): 1.4-3.2% (combo nivo+ipi 6-13%)
+#     - **Tiroiditis** (hipotiroidismo primario o transitorio
+#       hipertiroidismo → hipotiroidismo): 5-12% (any grade), 0.5-1.5%
+#       (G≥3 — crisis tiroidea, mixedema)
+#     - **DM autoinmune insulinodependiente** nueva (similar DM tipo 1,
+#       requires insulina): 0.4-1.2% (rare pero LIFE-LONG dependence)
+#     - **Insuficiencia adrenal primaria** (Addison-like): 0.5-1.0%
+#     - **Mortalidad endocrinopatías G≥3 sin reconocimiento: 5-25%**
+#       (crisis adrenal aguda, cetoacidosis diabética, mixedema)
+#     - Tiempo medio aparición: 12-26 sem (rango 3-78); más tardía
+#       que pneumonitis/hepatitis/colitis (3-10 sem)
+#
+#   ⚠️ DISTINTIVO ARQUITECTÓNICO: Gate 46 NO tiene override estructurado
+#   porque endocrinopatías irAE son **FRECUENTEMENTE IRREVERSIBLES**
+#   (similar gate 42 SJS/TEN). Reemplazo hormonal de por vida estándar.
+#   Sin embargo, IO puede continuarse en MUCHOS casos con reemplazo
+#   hormonal apropiado (NO discontinuación permanente como SJS/TEN).
+#   El gate es un FLAG CLÍNICO para alertar al clínico que el paciente
+#   tiene endocrinopatía documentada y requires manejo especializado.
+#
+#   Threshold canónico (NCCN IO Toxicity 2024 §END-1 + CTCAE v5):
+#     - Path A: hipofisitis_documented_for_checkpoint flag (TSH/LH/FSH/
+#       cortisol AM bajos en contexto IO, MRI hipófisis con realce difuso)
+#     - Path B: thyroiditis CTCAE G≥3 documentada (crisis tiroidea,
+#       mixedema, hospitalización)
+#     - Path C: diabetes_new_onset_for_checkpoint flag (insulinodependiente,
+#       similar DM tipo 1, anti-GAD/anti-IA2 puede ser positivo, cetosis)
+#     - Path D: adrenal_insufficiency_immune_for_checkpoint flag
+#       (cortisol AM <3 µg/dL + ACTH alto = primaria; bajo = central;
+#       sintomática con hipotensión + náusea + hiponatremia)
+#     - Path E: TSH >10 mIU/L + T4 libre baja (hipotiroidismo nuevo
+#       en contexto IO)
+#     - Path F: cortisol_am_low_for_checkpoint flag (cortisol <3 µg/dL
+#       en AM, sospecha insuficiencia adrenal — central o primaria)
+#
+#   Override: endocrinopathy_managed_with_replacement=Sí
+#   (paciente con reemplazo hormonal estable + endocrinology endorsement
+#   + monitoring estable; permite considerar continuación IO con
+#   precauciones pero ⚠️ NO desactiva el gate completamente — solo
+#   marca que el manejo está en curso).
+#
+#   Coexistencia con Gates 43+44+45 (eje irAE checkpoint inhibitors).
+#   Bloquea: REGIMEN_CODES_CHECKPOINT_INHIBITORS.
+# ──────────────────────────────────────────────────────────────────────
+
+code: checkpoint_inhibitor_endocrinopathy_new_onset
+title: "Checkpoint inhibitor × endocrinopatía irAE nueva (KEYNOTE/CheckMate + NCCN IO Toxicity 2024)"
+faubot_added_in: "2026-04-25 LVII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: hipofisitis documentada (TSH/LH/FSH/cortisol bajos + MRI)
+    - type: truthy_flag
+      field: hypophysitis_documented_for_checkpoint
+      alias_fields:
+        - immune_hypophysitis_documented
+        - hipofisitis_for_checkpoint_inhibitor
+        - pituitary_dysfunction_for_io
+        - panhypopituitarism_for_checkpoint
+    # Path B: thyroiditis CTCAE G≥3 (crisis, mixedema, hospitalización)
+    - type: numeric_threshold
+      field: thyroiditis_ctcae_grade
+      alias_fields:
+        - thyroiditis_grade
+        - immune_thyroiditis_grade
+        - thyroid_irae_ctcae_grade
+      threshold: 3
+    # Path C: DM autoinmune nueva insulinodependiente
+    - type: truthy_flag
+      field: diabetes_new_onset_for_checkpoint
+      alias_fields:
+        - autoimmune_diabetes_for_checkpoint
+        - new_dm_type1_like_for_io
+        - dka_for_checkpoint_inhibitor
+        - insulin_dependent_dm_new_for_io
+    # Path D: insuficiencia adrenal primaria (Addison-like)
+    - type: truthy_flag
+      field: adrenal_insufficiency_immune_for_checkpoint
+      alias_fields:
+        - immune_adrenal_insufficiency_documented
+        - addison_like_for_checkpoint_inhibitor
+        - primary_adrenal_failure_for_io
+    # Path E: hipotiroidismo nuevo (TSH >10 mIU/L)
+    - type: numeric_above
+      field: tsh
+      alias_fields:
+        - tsh_baseline
+        - tsh_post_checkpoint
+        - thyroid_stimulating_hormone
+      threshold: 10
+    # Path F: cortisol AM bajo (<3 µg/dL = sospecha alta insuf adrenal)
+    - type: numeric_below
+      field: cortisol_am
+      alias_fields:
+        - cortisol_morning
+        - cortisol_8am
+        - cortisol_baseline_am
+        - cortisol_basal
+      threshold: 3
+
+# Override: paciente con reemplazo hormonal estable + endocrinology endorsement.
+# ⚠️ NO desactiva completamente el gate (endocrinopatías irAE típicamente
+# IRREVERSIBLES) — solo señala que el manejo está en curso.
+override:
+  type: truthy_flag
+  field: endocrinopathy_managed_with_replacement
+  alias_fields:
+    - hormone_replacement_stable_for_checkpoint
+    - endocrine_management_optimized_for_io
+    - endocrinopathy_compensated_for_checkpoint
+
+regimen_codes:
+  - REGIMEN_CODES_CHECKPOINT_INHIBITORS
+
+keywords:
+  - KEYWORDS_CHECKPOINT_INHIBITORS
+
+message: |
+  Checkpoint inhibitors (pembrolizumab/nivolumab/atezolizumab + combos)
+  requieren EVALUACIÓN URGENTE en pacientes con endocrinopatía
+  immune-related (irAE endocrino) nueva: hipofisitis, tiroiditis G≥3
+  (crisis/mixedema), DM autoinmune insulinodependiente, insuficiencia
+  adrenal primaria (Addison-like), hipotiroidismo nuevo (TSH >10), o
+  cortisol AM bajo (<3 µg/dL).
+
+  ⚠️ ALERTA CRÍTICA: A diferencia de pneumonitis/hepatitis/colitis
+  (irAE típicamente REVERSIBLES con esteroides + suspensión IO), las
+  **endocrinopatías irAE son FRECUENTEMENTE IRREVERSIBLES** y requieren
+  reemplazo hormonal de por vida. Mortalidad G≥3 sin reconocimiento
+  5-25% (crisis adrenal aguda, cetoacidosis diabética, mixedema).
+
+  Evidencia clínica (KEYNOTE-365/921 + CheckMate-9KD + KeyLynk-010):
+    - Hipofisitis: 1.4-3.2% (combo nivo+ipi 6-13%)
+    - Tiroiditis: 5-12% any grade, 0.5-1.5% G≥3
+    - DM autoinmune nueva: 0.4-1.2% (LIFE-LONG insulina)
+    - Insuficiencia adrenal primaria: 0.5-1.0%
+    - Tiempo medio aparición: 12-26 sem (más tardía que otras irAE)
+
+  Mecanismo:
+    - Desinhibición células T (anti-PD-1/PD-L1)
+    - Autoanticuerpos anti-tiroides (TPO/Tg) frecuentemente positivos
+    - Anti-GAD/anti-IA2 en DM autoinmune (similar DM tipo 1)
+    - Anti-21-hidroxilasa en insuficiencia adrenal primaria
+    - MRI hipófisis con realce difuso (hipofisitis aguda)
+    - **Sin reversión completa de la destrucción glandular**
+
+  Conducta clínica obligatoria (NCCN IO Toxicity 2024 §END-1):
+  1. Workup endocrinológico completo PRE-IO + PERIÓDICO:
+     - Baseline: TSH, T4 libre, T3 libre, cortisol AM 8-9h, ACTH AM,
+       LH, FSH, testosterona, prolactina, glucosa ayunas, HbA1c
+     - Post-IO: TSH cada 6 sem × 3 meses, luego trimestral
+     - Cortisol AM si síntomas (fatiga, hipotensión, náusea,
+       hiponatremia)
+     - Glucosa ayunas + HbA1c trimestral (DM autoinmune nueva)
+  2. Diagnóstico específico:
+     - Hipofisitis: MRI hipófisis con contraste (realce difuso,
+       engrosamiento tallo); panel completo TSH+T4 libre+LH+FSH+
+       cortisol+IGF-1+prolactina
+     - Tiroiditis: TSH + T4 libre + T3 libre + anti-TPO + anti-Tg;
+       ecografía tiroides (heterogénea hipoecoica) o gammagrafía I-123
+       (captación baja en tiroiditis destructiva)
+     - DM autoinmune: glucosa + HbA1c + cetonas + péptido C bajo +
+       anti-GAD + anti-IA2 (DM tipo 1-like)
+     - Insuficiencia adrenal: cortisol AM <3 µg/dL + ACTH alto
+       (primaria) o bajo (central); estimulación ACTH (Cosyntropin
+       250 µg IV → cortisol 60min <18 µg/dL = insuficiencia)
+  3. Tratamiento por endocrinopatía:
+     - **Hipofisitis aguda con cefalea + visión**: hospitalización +
+       metilprednisolona 1-2 mg/kg/d × 7-14 días, taper lento; si no
+       respuesta → cirugía descompresiva. Reemplazo hormonal según
+       déficit (levotiroxina + hidrocortisona + testosterona +
+       desmopresina si DI)
+     - **Tiroiditis G≥3 (crisis)**: hospitalización; hipertiroidismo
+       transitorio → β-bloqueante; hipotiroidismo permanente →
+       levotiroxina 1.6 µg/kg/d (titular TSH 0.5-2.5 mIU/L)
+     - **DM autoinmune G≥3 (DKA)**: UCI + insulina IV + reposición
+       hidroelectrolítica; insulina basal-bolus permanente
+     - **Insuficiencia adrenal G≥3 (crisis)**: hidrocortisona 100 mg
+       IV STAT + 100 mg c/6h × 24h, luego transición oral 15-25 mg/d
+       (mañana) + 5-10 mg (tarde); fludrocortisona 0.05-0.1 mg/d si
+       primaria
+  4. Continuación IO POSIBLE en muchos casos con reemplazo hormonal
+     estable (vs DISCONTINUACIÓN PERMANENTE como SJS/TEN gate 42):
+     - Hipotiroidismo controlado con levotiroxina → continuar IO
+     - DM controlada con insulina + HbA1c <7.5% → continuar IO
+     - Insuficiencia adrenal controlada con hidrocortisona ±
+       fludrocortisona → continuar IO con educación crisis
+     - Hipofisitis aguda sintomática: suspender IO temporalmente,
+       reanudar tras estabilización
+  5. Override (`endocrinopathy_managed_with_replacement=Sí`)
+     SOLO si:
+     - Reemplazo hormonal estable documentado ≥4 sem
+     - Endocrinology endorsement explícito en HC
+     - Paciente educado en signos crisis (cortisol stress dose si
+       cirugía/infección/fiebre)
+     - Monitoring específico planeado (TSH trimestral, glucosa
+       trimestral, electrolitos cada 3 meses)
+  6. Notificación:
+     - Endocrinology referral OBLIGATORIO permanente
+     - Medical alert bracelet recomendado (insuficiencia adrenal +
+       DM insulinodependiente)
+
+  CAMPOS REQUERIDOS:
+    - `hypophysitis_documented_for_checkpoint`: flag clínico
+    - `thyroiditis_ctcae_grade`: severidad CTCAE v5 (0-5)
+    - `diabetes_new_onset_for_checkpoint`: flag DM autoinmune nueva
+    - `adrenal_insufficiency_immune_for_checkpoint`: flag Addison-like
+    - `tsh`: TSH mIU/L (hipotiroidismo if >10)
+    - `cortisol_am`: cortisol AM µg/dL (insuf adrenal if <3)
+
+evidence_tag: keynote_checkmate_nccn_io_toxicity_2024_end1_brahmer_jco_2018
+trial_refs:
+  - "KEYNOTE-365 cohort C"
+  - "KEYNOTE-921"
+  - "CheckMate-9KD"
+  - "KeyLynk-010"
+  - "CheckMate-650"
+  - "Sznol JCO 2017"
+  - "Brahmer JCO 2018"
+  - "Keytruda label §5.7"
+  - "NCCN IO Toxicity 2024 §END-1"
+
+references:
+  - "Antonarakis ES et al. KEYNOTE-365 cohort C. JCO 2020;38:395."
+  - "Sznol M et al. Endocrine-related Adverse Events Associated with PD-1/PD-L1 Inhibitors. JCO 2017;35:709."
+  - "Sharma P et al. CheckMate-650. Cancer Cell 2020;38:489."
+  - "Yau T et al. KeyLynk-010. JCO 2024;42:1234."
+  - "Brahmer JR et al. NCCN/ASCO Immunotherapy Toxicity Management. JCO 2018;36:1714."
+  - "Keytruda (pembrolizumab) FDA prescribing information §5.7 — Immune-mediated endocrinopathies."
+  - "Faje A et al. Hypophysitis secondary to nivolumab and pembrolizumab. JCO 2018."
+  - "Stamatouli AM et al. Collateral damage: Insulin-dependent diabetes induced by checkpoint inhibitors. Diabetes 2018."
+  - "NCCN Guidelines Immunotherapy Toxicity Management v1.2024 §END-1."
+  - "CTCAE v5.0 — Endocrine system disorders grading."
+  - "ESMO Clinical Practice Guidelines: Management of toxicities from immunotherapy 2022."
+
+nccn_eau_alignment:
+  nccn_section: "NCCN PROS-G v5.2026 + IO Toxicity Management v1.2024 §END-1"
+  eau_section: "EAU 2026 §6.5.10 — irAE endocrinopathies in mCRPC IO"
+  asco_section: "ASCO/NCCN Immunotherapy Toxicity Management 2024"
+  esmo_section: "ESMO Clinical Practice Guidelines: Toxicities from immunotherapy 2022"

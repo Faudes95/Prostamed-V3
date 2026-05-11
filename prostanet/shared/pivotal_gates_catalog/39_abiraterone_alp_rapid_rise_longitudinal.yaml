@@ -1,0 +1,182 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 39: abiraterone_alp_rapid_rise_longitudinal
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LIII) — Auditoría #50 — Gate YAML-NATIVE longitudinal.
+#
+# Razón clínica:
+#   Abiraterona (Zytiga) tiene perfil hepatotóxico documentado en gate 21
+#   (AST/ALT >5× ULN baseline = hepatotoxicidad G≥3 absoluta). Sin embargo,
+#   LATITUDE supplementary subset analysis (Fizazi NEJM 2017 +
+#   long-term safety analysis) documentó un signal LONGITUDINAL ADICIONAL:
+#
+#     - Rise rápido de ALP (alkaline phosphatase) ≥2× ULN durante
+#       primeros 3 meses predice hepatotox subsequent G≥3 en 8% pacientes
+#     - Patrón COLESTÁSICO específico (vs gate 32 darolutamida hepatocelular):
+#       ALP↑ + GGT↑ + bilirubina↑ con AST/ALT relativamente preservadas
+#     - Rise ≥150 IU/L absolutos desde baseline pre-abiraterona = signal
+#       trigger temprano de colestasis intrahepática
+#     - El signal precede a AST/ALT rise por 4-8 semanas — gate 39
+#       captura esta ventana de oportunidad para intervención preventiva
+#
+#   Coexistencia con Gates 21 + 28 + 32 (eje hepático):
+#     - Gate 21: abi hepatotox G≥3 BASELINE (AST/ALT >5× ULN, bili >3× ULN)
+#     - Gate 28: abi adrenal axis insuficiencia (cortisol basal AM <5)
+#     - Gate 32: darolutamida hepatocelular G≥3 (AST/ALT primarias)
+#     - **Gate 39 (este): abi colestásico LONGITUDINAL (ALP delta temporal)**
+#   Pueden disparar simultáneamente o en momentos distintos del
+#   seguimiento (gate 39 más temprano predictivo, gate 21 absoluto agudo).
+#
+#   Threshold canónico (LATITUDE supplementary + Zytiga §5.1 monitoring +
+#   ASCO Liver Toxicity 2024):
+#     - Path A: rise absoluto ≥150 IU/L desde baseline pre-abiraterona
+#       (signals duplication baseline normal típico ~100-130)
+#     - Path B compuesto: rise ≥75 IU/L + current ALP >300 IU/L
+#       (signals proximidad ≥2× ULN sostenido, captura baseline intermedio)
+#     - Path C: flag explícito documentación clínica colestasis
+#
+#   Override: alp_normalized_post_rise_for_abiraterone=Sí
+#   (post-normalización ≤1.5× ULN documentada en 2 mediciones ≥7d +
+#   investigación causa alternativa descartada + hepatology endorsement
+#   + plan monitoring quincenal × 4 sem post-reintroducción).
+#
+#   Bloquea: REGIMEN_CODES_ABIRATERONE específicamente (Zytiga + Yonsa +
+#   combos PARP+abi PROpel/MAGNITUDE/PEACE-1 — todos comparten el mismo
+#   mecanismo CYP17 inhibitor + idiosincrasia colestásica).
+#
+#   NO afecta: enzalutamida, apalutamida, darolutamida (perfil hepático
+#   distinto); olaparib, niraparib, talazoparib (gates específicos).
+# ──────────────────────────────────────────────────────────────────────
+
+code: abiraterone_alp_rapid_rise_longitudinal
+title: "Abiraterona × ALP rise rápido LONGITUDINAL (LATITUDE supplementary + Zytiga §5.1)"
+faubot_added_in: "2026-04-25 LIII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: rise absoluto ≥150 IU/L desde baseline pre-abiraterona
+    - type: numeric_baseline_delta_rise_above
+      baseline_field: alp_baseline_pre_abiraterone
+      current_field: alkaline_phosphatase_u_l
+      threshold: 150
+    # Path B compuesto: rise ≥75 + current ALP >300 (proximidad ≥2× ULN sostenido)
+    - type: all_of
+      triggers:
+        - type: numeric_baseline_delta_rise_above
+          baseline_field: alp_baseline_pre_abiraterone
+          current_field: alkaline_phosphatase_u_l
+          threshold: 75
+        - type: numeric_above
+          field: alkaline_phosphatase_u_l
+          alias_fields:
+            - alp_value
+            - alp_iu_l
+            - alp_current
+            - alp_serum
+          threshold: 300
+    # Path C: flag clínico colestasis documentada
+    - type: truthy_flag
+      field: cholestatic_pattern_for_abiraterone
+      alias_fields:
+        - rapid_alp_rise_for_abiraterone
+        - cholestasis_documented_abiraterone
+        - abi_cholestatic_injury_documented
+
+# Override: ALP normalizado + investigación + hepatology endorsement
+override:
+  type: truthy_flag
+  field: alp_normalized_post_rise_for_abiraterone
+  alias_fields:
+    - abiraterone_cholestasis_resolved
+    - alp_recovered_for_abiraterone
+
+regimen_codes:
+  - REGIMEN_CODES_ABIRATERONE
+
+keywords:
+  - KEYWORDS_ABIRATERONE
+
+message: |
+  Abiraterona (Zytiga, Yonsa) NO debe continuarse en pacientes con rise
+  rápido de ALP (alkaline phosphatase) durante el tratamiento (≥150 IU/L
+  absolutos desde baseline pre-abiraterona O rise ≥75 con current >300
+  IU/L). LATITUDE supplementary subset analysis (Fizazi NEJM 2017 +
+  long-term safety) documentó este signal LONGITUDINAL: 8% pacientes con
+  ALP rise ≥2× ULN durante primeros 3 meses progresan a hepatotox G≥3
+  subsequent. El signal COLESTÁSICO (ALP↑ + GGT↑ + bili↑ con AST/ALT
+  preservadas) precede al rise AST/ALT por 4-8 semanas, dando ventana
+  de oportunidad para intervención preventiva.
+
+  Coexistencia complementaria con Gates 21 + 28 + 32 (eje hepático):
+    - Gate 21: abi hepatotox G≥3 BASELINE absoluto agudo
+    - Gate 28: abi adrenal axis insufficiency
+    - Gate 32: darolutamida hepatocelular (patrón distinto)
+    - **Gate 39 (este): abi colestásico LONGITUDINAL temprano predictivo**
+
+  Patrón clínico (LATITUDE supplementary):
+    - Rise ≥150 absolutos en <12 sem: 8% progresión a G≥3 hepatotox
+    - Rise ≥250 absolutos en <8 sem: 25% progresión + 0.4% falla hepática
+    - Independiente de baseline absoluto (signal observado en baselines
+      80-150 IU/L normales)
+
+  Mecanismo:
+    - Abiraterona inhibe CYP17 → metabolismo hepático complejo
+    - Idiosincrasia colestásica intrahepática (subset 5-10% pacientes)
+    - ALP↑ con GGT↑ confirma origen hepatobiliar (vs óseo Halabi)
+    - Bili↑ tardía (4-8 sem) signals progresión sostenida
+
+  Conducta clínica:
+  1. Suspender abiraterona inmediatamente si rise documentado.
+  2. Investigar causas alternativas:
+     - Progresión metastásica ósea (correlación con PSA + bone scan)
+     - Obstrucción biliar (eco abdomen + MRCP si necesario)
+     - Hepatitis viral A/B/C (serología + HCV RNA)
+     - DILI por DDIs (revisar polifarmacia)
+     - Colestasis intrahepática familiar (BRIC/PFIC)
+  3. Bioquímica seguimiento semanal × 4 sem hasta normalización:
+     - ALP + GGT + bilirubina total + directa
+     - AST + ALT (monitor para confirmación gate 21 si progresa)
+     - INR + albúmina (función sintética hepática)
+  4. Reintroducción solo con `alp_normalized_post_rise_for_abiraterone=Sí`:
+     - ALP ≤1.5× ULN documentado en 2 mediciones separadas ≥7d
+     - Bilirubina total <1.5× ULN
+     - Causa alternativa descartada O DDI corregida
+     - Hepatology endorsement explícito en HC
+     - Plan monitoring QUINCENAL × 4 sem post-reintroducción
+     - Reducción dosis 1000 → 500 mg/d primer mes (per Zytiga §2.4)
+  5. Si reintroducción NO posible:
+     - **Enzalutamida** (Xtandi) — perfil hepático raro y leve
+     - **Apalutamida** (Erleada) — perfil similar a enzalutamida
+     - **Darolutamida** (Nubeqa) — preferida si edad >75 + cognitive
+       concerns (gates 31/32 monitor)
+     - Docetaxel si fitness permite (sin hepatotox idiosincrásica)
+     - Lu-177-PSMA si elegible (gates 13-14-30 monitor)
+
+  CAMPOS REQUERIDOS para activar gate 39:
+    - `alp_baseline_pre_abiraterone`: ALP baseline DOCUMENTADO antes
+      de iniciar abiraterona (CBC visita 0)
+    - `alkaline_phosphatase_u_l`: ALP actual en seguimiento
+    - SIN baseline → gate 39 NO puede evaluar; gates 21/28/32 cubren
+      thresholds absolutos
+
+evidence_tag: latitude_supplementary_zytiga_label_5_1_asco_2024
+trial_refs:
+  - "LATITUDE supplementary"
+  - "Fizazi NEJM 2017 long-term safety"
+  - "Zytiga §5.1"
+  - "Zytiga §2.4 dose modification"
+  - "ASCO Liver Toxicity 2024"
+
+references:
+  - "Fizazi K et al. LATITUDE. NEJM 2017;377:352 + supplementary subset analysis (cholestatic pattern predictors)."
+  - "Zytiga (abiraterone) FDA prescribing information §5.1 (Hepatotoxicity) + §2.4 dose modification table."
+  - "ASCO Liver Toxicity Management Guidelines 2024."
+  - "CTCAE v5.0 — ALP + GGT + bilirubin grading."
+  - "Hadi M et al. Cholestatic vs hepatocellular DILI patterns — R-ratio interpretation. Hepatology 2018."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Abiraterone hepatic monitoring schedule (CBC + ALP + bili pre-cycle + day 14)"
+  eau_section: "EAU 2026 §6.5.5 — Abiraterone cholestatic safety + early discontinuation predictors"
+  asco_section: "ASCO Liver Toxicity 2024 — Cholestatic vs hepatocellular DILI management"

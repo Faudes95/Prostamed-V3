@@ -1,0 +1,1230 @@
+{% extends "layouts/base_clinical.html" %}
+{% from "components/clinical_ui.html" import badge, section_header, surface_card %}
+
+{% block content %}
+    {% set domain_groups = [
+        {
+            'id': 'diagnostico',
+            'title': 'Diagnóstico',
+            'subtitle': 'Confirme histología, refine sospecha persistente y encamine el caso antes de abrir rutas de progresión o recurrencia.',
+            'modules': ['diagnostic_workup', 'post_negative_biopsy_followup'],
+        },
+        {
+            'id': 'localizado-postlocal',
+            'title': 'Localizado y postlocal',
+            'subtitle': 'Agrupa el trayecto inicial localizado, la vigilancia posterior a tratamiento local y la recurrencia bioquímica documentada.',
+            'modules': ['localized_initial', 'post_prostatectomy', 'post_radiotherapy_followup', 'recurrence_bcr', 'post_radiotherapy_or_local_salvage'],
+        },
+        {
+            'id': 'sistemico-sensible',
+            'title': 'Sistémico sensible a la castración',
+            'subtitle': 'Ordena verificación bajo ADT y los distintos escenarios mHSPC según distribución metastásica y volumen clínico.',
+            'modules': ['adt_progression_verification', 'mcspc_oligo_metachronous', 'mcspc_low_volume_sync_oligo', 'mcspc_high_volume_sync', 'mcspc_high_volume_metachronous'],
+        },
+        {
+            'id': 'resistente-castracion',
+            'title': 'Resistente a la castración',
+            'subtitle': 'Concentra la toma de decisiones cuando la enfermedad ya cumple criterios de progresión resistente a la castración.',
+            'modules': ['m0_crpc', 'm1_crpc'],
+        },
+        {
+            'id': 'seguimiento-secuelas',
+            'title': 'Seguimiento y secuelas',
+            'subtitle': 'Convierte survivorship, toxicidad tardía, rehabilitación y prevención secundaria en un carril clínico visible.',
+            'modules': ['survivorship_and_toxicity_followup'],
+        },
+    ] %}
+
+    <div id="clinicalHubTop" class="space-y-8">
+        <section class="pm-mobile-domain-nav lg:hidden">
+            {% for group in domain_groups %}
+                <details class="pm-mobile-domain-card">
+                    <summary class="pm-mobile-domain-summary">
+                        <div>
+                            <p class="pm-micro-label">Dominio {{ "%02d"|format(loop.index) }}</p>
+                            <p class="pm-mobile-domain-title mt-2">{{ group.title }}</p>
+                        </div>
+                        <span class="pm-micro-label">Abrir</span>
+                    </summary>
+                    <div class="pm-mobile-domain-links">
+                        <a href="#domain-{{ group.id }}" class="pm-mobile-domain-link" data-domain-link="{{ group.id }}">
+                            <span class="pm-label">Ir al bloque</span>
+                            <span class="pm-body mt-2 block">{{ group.subtitle }}</span>
+                        </a>
+                        {% for module in modules if module.module in group.modules %}
+                            <a href="#module-{{ module.module }}" class="pm-mobile-domain-link">
+                                <span class="pm-card-title">{{ module.title }}</span>
+                                <span class="pm-body mt-2 block">{{ module.core_questions[0] if module.core_questions else 'Ruta clínica estructurada por etapa.' }}</span>
+                            </a>
+                        {% endfor %}
+                    </div>
+                </details>
+            {% endfor %}
+        </section>
+
+        <div class="pm-hub-layout">
+            <aside class="pm-hub-sidebar hidden lg:block">
+                <section class="pn-surface pm-hub-sidebar-card">
+                    <p class="pm-label">Asistentes por dominio</p>
+                    <h2 class="pm-section-title mt-3">Centro clínico organizado</h2>
+                    <p class="pm-body mt-3">Ubique cada asistente por momento clínico y reduzca el ruido visual sin alterar los flujos existentes.</p>
+                    <nav class="pm-hub-nav-list mt-6">
+                        {% for group in domain_groups %}
+                            <a href="#domain-{{ group.id }}" class="pm-hub-nav-link" data-domain-link="{{ group.id }}">
+                                <span class="pm-hub-nav-kicker">Dominio {{ "%02d"|format(loop.index) }}</span>
+                                <span class="pm-card-title mt-2 block">{{ group.title }}</span>
+                                <span class="pm-hub-nav-copy">{{ group.subtitle }}</span>
+                            </a>
+                        {% endfor %}
+                    </nav>
+                </section>
+            </aside>
+
+            <div class="pm-hub-main space-y-8">
+                <section class="pm-classifier-grid">
+                    {% call surface_card("Selección rápida del módulo clínico", "Clasificación clínica", "Defina el escenario real y abra el asistente correcto.", "pm-classifier-card lg:col-span-2") %}
+                        <form id="stateForm" class="grid gap-4 md:grid-cols-2">
+                            <div class="md:col-span-2">
+                                <p class="pm-step-label">1. Confirmación diagnóstica</p>
+                                <p class="pm-body">Primero separe triage diagnóstico de cáncer ya confirmado.</p>
+                            </div>
+                            <label class="text-sm">
+                                <span class="pm-field-label">Diagnóstico confirmado de cáncer de próstata</span>
+                                <select name="known_cancer_diagnosis" class="pn-input w-full px-3 py-2">
+                                    <option value="1">Sí</option>
+                                    <option value="0">No</option>
+                                </select>
+                            </label>
+                            <label class="text-sm">
+                                <span class="pm-field-label">Biopsia prostática previa benigna</span>
+                                <select name="prior_negative_biopsy" class="pn-input w-full px-3 py-2">
+                                    <option value="0">No</option>
+                                    <option value="1">Sí</option>
+                                </select>
+                            </label>
+
+                            <div id="localRecurrenceStageHeader" class="hidden md:col-span-2">
+                                <p class="pm-step-label">2. Tratamiento local previo y recurrencia</p>
+                                <p class="pm-body">Solo aplica si ya hubo tratamiento local por cáncer de próstata.</p>
+                            </div>
+                            <div id="priorProstatectomyWrapper" class="hidden text-sm">
+                                <span class="pm-field-label">Prostatectomía radical previa por cáncer de próstata</span>
+                                <select name="prior_prostatectomy" class="pn-input w-full px-3 py-2">
+                                    <option value="0">No</option>
+                                    <option value="1">Sí</option>
+                                </select>
+                            </div>
+                            <div id="priorRadiationWrapper" class="hidden text-sm">
+                                <span class="pm-field-label">Radioterapia previa por cáncer de próstata</span>
+                                <select name="prior_radiation" class="pn-input w-full px-3 py-2">
+                                    <option value="0">No</option>
+                                    <option value="1">Sí</option>
+                                </select>
+                            </div>
+                            <div id="bcrDetectedWrapper" class="hidden text-sm md:col-span-2">
+                                <span class="pm-field-label">Recurrencia bioquímica y segunda recurrencia bioquímica sin metástasis</span>
+                                <select name="bcr_detected" class="pn-input w-full px-3 py-2">
+                                    <option value="0">No</option>
+                                    <option value="1">Sí</option>
+                                </select>
+                                <p class="pm-muted-copy mt-2">Úselo cuando ya exista recurrencia bioquímica documentada sin metástasis a distancia. Si permanece en No, el hub conserva la ruta de seguimiento post-tratamiento local correspondiente.</p>
+                            </div>
+                            <div id="bcr2Wrapper" class="hidden text-sm md:col-span-2">
+                                <span class="pm-field-label">Segunda recurrencia bioquímica tras tratamiento local</span>
+                                <select name="bcr2" class="pn-input w-full px-3 py-2">
+                                    <option value="0">No</option>
+                                    <option value="1">Sí</option>
+                                </select>
+                                <p class="pm-muted-copy mt-2">Solo aplica si ya hubo cáncer confirmado, terapia local previa y una primera recurrencia bioquímica documentada.</p>
+                            </div>
+
+                            <div id="metastaticStageHeader" class="hidden md:col-span-2">
+                                <p class="pm-step-label">3. Enfermedad metastásica conocida</p>
+                                <p class="pm-body">Use este bloque solo con estadificación metastásica ya documentada.</p>
+                            </div>
+                            <div id="metastaticKnownWrapper" class="hidden text-sm">
+                                <span class="pm-field-label">Enfermedad metastásica conocida</span>
+                                <select name="metastatic_disease_known" class="pn-input w-full px-3 py-2">
+                                    <option value="0">No</option>
+                                    <option value="1">Sí</option>
+                                </select>
+                                <p class="pm-muted-copy mt-2">Si selecciona Sí, capture la composición metastásica real del paciente para clasificar correctamente el escenario y el volumen.</p>
+                            </div>
+                            <div id="metastaticComponentsWrapper" class="hidden text-sm md:col-span-2">
+                                <div class="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p class="pm-field-label">Composición metastásica documentada</p>
+                                            <p class="pm-muted-copy mt-2">Active todos los componentes realmente presentes. Si no activa ninguno, el caso se tratará como M0. El backend derivará automáticamente subtipo M, composición y volumen.</p>
+                                        </div>
+                                    </div>
+                                    <div class="mt-4 grid gap-3 md:grid-cols-3">
+                                        <label class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-3">
+                                            <span class="flex items-center gap-3">
+                                                <input type="checkbox" data-role="met-component" value="nodes" class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-cyan-400">
+                                                <span>
+                                                    <span class="pm-field-label">Ganglionares no regionales</span>
+                                                    <span class="pm-muted-copy mt-1 block">Permite coexistir con hueso o víscera.</span>
+                                                </span>
+                                            </span>
+                                        </label>
+                                        <label class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-3">
+                                            <span class="flex items-center gap-3">
+                                                <input type="checkbox" data-role="met-component" value="bone" class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-cyan-400">
+                                                <span>
+                                                    <span class="pm-field-label">Óseas</span>
+                                                    <span class="pm-muted-copy mt-1 block">Requiere distribución anatómica por sitio.</span>
+                                                </span>
+                                            </span>
+                                        </label>
+                                        <label class="rounded-2xl border border-slate-700/70 bg-slate-950/60 p-3">
+                                            <span class="flex items-center gap-3">
+                                                <input type="checkbox" data-role="met-component" value="visceral" class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-cyan-400">
+                                                <span>
+                                                    <span class="pm-field-label">Viscerales</span>
+                                                    <span class="pm-muted-copy mt-1 block">Permite múltiples órganos viscerales coexistentes.</span>
+                                                </span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <div id="nodalMetastaticWrapper" class="mt-4 hidden">
+                                        <div class="flex flex-wrap items-start justify-between gap-3">
+                                            <div>
+                                                <p class="pm-field-label">Distribución ganglionar no regional</p>
+                                                <p class="pm-muted-copy mt-2">Documente cadena ganglionar y número de lesiones. Puede capturar más de una cadena en el mismo caso.</p>
+                                            </div>
+                                            <button type="button" id="addNodalSiteEntry" class="pn-btn pn-btn-secondary">Añadir cadena ganglionar</button>
+                                        </div>
+                                        <div id="nodalSiteEntries" class="mt-4 space-y-3"></div>
+                                        <p id="nodalDistributionHint" class="pm-muted-copy mt-3">Capture al menos una cadena ganglionar no regional válida para conservar el contexto anatómico real del caso.</p>
+                                    </div>
+                                    <input type="hidden" name="metastasis_site" value="M0">
+                                    <input type="hidden" name="metastasis_count" value="0">
+                                    <input type="hidden" name="nonregional_nodal_metastasis_present" value="0">
+                                    <input type="hidden" name="nonregional_nodal_count" value="0">
+                                    <input type="hidden" name="nonregional_nodal_site_entries" value="[]">
+                                    <input type="hidden" name="bone_metastasis_present" value="0">
+                                    <input type="hidden" name="bone_site_entries" value="[]">
+                                    <input type="hidden" name="visceral_metastasis_present" value="0">
+                                    <input type="hidden" name="visceral_site_entries" value="[]">
+                                    <input type="hidden" name="visceral_lesion_count" value="0">
+                                    <input type="hidden" name="metastatic_total_lesion_count" value="0">
+                                </div>
+                            </div>
+                            <div id="boneDistributionWrapper" class="hidden text-sm md:col-span-2">
+                                <div class="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p class="pm-field-label">Distribución de metástasis óseas</p>
+                                            <p class="pm-muted-copy mt-2">Documente sitio anatómico y número de lesiones para derivar automáticamente bajo volumen, alto volumen u oligometastásico operativo.</p>
+                                        </div>
+                                        <button type="button" id="addBoneSiteEntry" class="pn-btn pn-btn-secondary">Añadir sitio óseo</button>
+                                    </div>
+                                    <div id="boneSiteEntries" class="mt-4 space-y-3"></div>
+                                    <p id="boneDistributionHint" class="pm-muted-copy mt-3">Capture al menos un sitio óseo válido para clasificar correctamente el escenario mHSPC.</p>
+                                    <div id="boneDistributionSummary" class="mt-4 hidden rounded-2xl border border-cyan-500/20 bg-slate-950/50 p-4">
+                                        <p class="pm-micro-label text-cyan-200">Resumen derivado de carga metastásica</p>
+                                        <div class="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                                            <div>
+                                                <p class="pm-micro-label">Lesiones totales</p>
+                                                <p id="boneSummaryTotal" class="pm-card-title mt-2">0</p>
+                                            </div>
+                                            <div>
+                                                <p class="pm-micro-label">Lesiones axiales</p>
+                                                <p id="boneSummaryAxial" class="pm-card-title mt-2">0</p>
+                                            </div>
+                                            <div>
+                                                <p class="pm-micro-label">Lesiones apendiculares</p>
+                                                <p id="boneSummaryAppendicular" class="pm-card-title mt-2">0</p>
+                                            </div>
+                                            <div>
+                                                <p class="pm-micro-label">Volumen derivado</p>
+                                                <p id="boneSummaryVolume" class="pm-card-title mt-2">Pendiente</p>
+                                            </div>
+                                            <div>
+                                                <p class="pm-micro-label">Subescenario sugerido</p>
+                                                <p id="boneSummaryScenario" class="pm-card-title mt-2">Pendiente</p>
+                                            </div>
+                                        </div>
+                                        <p id="boneSummaryReason" class="pm-body mt-3 text-slate-200"></p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="visceralDistributionWrapper" class="hidden text-sm md:col-span-2">
+                                <div class="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                                    <div class="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p class="pm-field-label">Distribución de metástasis viscerales</p>
+                                            <p class="pm-muted-copy mt-2">Documente órgano visceral y número de lesiones. Puede capturar más de un órgano en el mismo paciente.</p>
+                                        </div>
+                                        <button type="button" id="addVisceralSiteEntry" class="pn-btn pn-btn-secondary">Añadir órgano visceral</button>
+                                    </div>
+                                    <div id="visceralSiteEntries" class="mt-4 space-y-3"></div>
+                                    <p id="visceralDistributionHint" class="pm-muted-copy mt-3">Capture al menos un órgano visceral válido para conservar el contexto anatómico real de la enfermedad.</p>
+                                </div>
+                            </div>
+                            <div id="metachronousWrapper" class="hidden text-sm">
+                                <span class="pm-field-label">Metástasis metacrónicas</span>
+                                <select name="metachronous_metastasis" class="pn-input w-full px-3 py-2">
+                                    <option value="0">No</option>
+                                    <option value="1">Sí</option>
+                                </select>
+                            </div>
+
+                            <div id="systemicStageHeader" class="hidden md:col-span-2">
+                                <p class="pm-step-label">4. Progresión bajo ADT / CRPC</p>
+                                <p class="pm-body">CRPC solo existe con progresión y castración adecuada documentadas.</p>
+                            </div>
+                            <div id="systemicContextWrapper" class="hidden text-sm md:col-span-2">
+                                <span class="pm-field-label">Contexto de progresión sistémica</span>
+                                <select name="systemic_progression_context" class="pn-input w-full px-3 py-2">
+                                    <option value="none">No aplica / sin contexto de progresión bajo ADT</option>
+                                    <option value="progression_on_adt_verify_castration">Progresión bajo ADT: verificar castración</option>
+                                    <option value="confirmed_crpc">CRPC ya confirmado</option>
+                                </select>
+                                <p class="pm-muted-copy mt-2">Este contexto solo aplica cuando ya existe cáncer de próstata confirmado y una duda real de progresión bajo ADT o CRPC.</p>
+                            </div>
+                            <div id="adtVerificationFields" class="hidden md:col-span-2">
+                                <div class="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                                    <p class="pm-step-label">Verificación bajo ADT</p>
+                                    <p class="pm-body mt-3">No etiquetar enfermedad resistente a la castración sin testosterona en rango de castración confirmada y reestadificación convencional suficiente.</p>
+                                    <div class="mt-4 grid gap-4 md:grid-cols-2">
+                                        <label class="text-sm">
+                                            <span class="pm-field-label">Contexto actual de ADT</span>
+                                            <select name="current_adt_context" class="pn-input w-full px-3 py-2">
+                                                <option value="none">Sin ADT activa</option>
+                                                <option value="medical_adt_continuous">ADT médica continua</option>
+                                                <option value="orchiectomy">Orquiectomía</option>
+                                                <option value="intermittent_adt">ADT intermitente</option>
+                                            </select>
+                                        </label>
+                                        <label class="text-sm">
+                                            <span class="pm-field-label">Estado de testosterona en rango de castración</span>
+                                            <select name="castrate_testosterone_status" class="pn-input w-full px-3 py-2">
+                                                <option value="unknown">Desconocido</option>
+                                                <option value="confirmed_castrate">Castración confirmada</option>
+                                                <option value="not_castrate">No castrado</option>
+                                            </select>
+                                        </label>
+                                        <label class="text-sm">
+                                            <span class="pm-field-label">Patrón de progresión</span>
+                                            <select name="progression_pattern" class="pn-input w-full px-3 py-2">
+                                                <option value="biochemical_only">Solo bioquímica</option>
+                                                <option value="radiographic">Radiográfica</option>
+                                                <option value="clinical">Clínica</option>
+                                                <option value="mixed">Mixta</option>
+                                            </select>
+                                        </label>
+                                        <label class="text-sm">
+                                            <span class="pm-field-label">Estado de imagen convencional</span>
+                                            <select name="conventional_imaging_status" class="pn-input w-full px-3 py-2">
+                                                <option value="not_restaged">Sin reestadificación convencional reciente</option>
+                                                <option value="M0">Imagen convencional M0</option>
+                                                <option value="M1">Imagen convencional M1</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+                        <div class="mt-5 flex flex-wrap items-center gap-3">
+                            <span id="classifierStatus" class="pm-body"></span>
+                        </div>
+                        <div id="classifierResult" class="mt-4 hidden rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4"></div>
+                    {% endcall %}
+                </section>
+
+                <section id="hubEmptyState" class="pn-surface border border-slate-700/70 bg-slate-950/50">
+                    <p class="pm-label">Escenario por dominio</p>
+                    <h2 class="pm-section-title mt-3">Seleccione un dominio o complete el clasificador</h2>
+                    <p class="pm-body mt-3 max-w-3xl">Los asistentes clínicos se mantienen ocultos hasta que usted elija un dominio desde el menú lateral o el clasificador identifique el escenario más probable.</p>
+                </section>
+
+                <section>
+                    {{ section_header("Asistentes clínicos por dominio", "Módulos clínicos", "El centro clínico se ordena por dominios para mostrar primero el momento clínico correcto y después el asistente preciso.") }}
+                </section>
+
+                {% for group in domain_groups %}
+                    <section id="domain-{{ group.id }}" class="pm-domain-section" data-domain-section="{{ group.id }}">
+                        <div class="pm-domain-header">
+                            <div>
+                                <p class="pm-label">Dominio {{ "%02d"|format(loop.index) }}</p>
+                                <h2 class="pm-section-title mt-3">{{ group.title }}</h2>
+                                <p class="pm-body mt-3 max-w-4xl">{{ group.subtitle }}</p>
+                            </div>
+                            <span class="pm-domain-pill">Asistentes {{ group.modules | length }}</span>
+                        </div>
+
+                        <div class="pm-domain-grid">
+                            {% for module in modules if module.module in group.modules %}
+                                <article id="module-{{ module.module }}" class="pn-surface pm-module-card">
+                                    <div class="pm-module-card-body">
+                                        <div class="flex items-center justify-between gap-3">
+                                            {{ badge("Módulo clínico", "info") }}
+                                            {{ badge(module.module, "muted", "font-mono normal-case") }}
+                                        </div>
+                                        <p class="pm-module-kicker mt-5">Asistente clínico</p>
+                                        <h3 class="pm-card-title mt-2">{{ module.title }}</h3>
+                                        <p class="pm-body mt-3">{{ module.core_questions[0] if module.core_questions else 'Ruta clínica estructurada por etapa.' }}</p>
+
+                                        <div class="pm-module-when">
+                                            <p class="pm-label">Aplica cuando</p>
+                                            <p class="pm-inline-meta mt-3">{{ module.nccn_panels[0] if module.nccn_panels else 'Hay una duda clínica o un checkpoint activo en este escenario.' }}</p>
+                                        </div>
+
+                                        <details class="pn-accordion pm-accordion mt-4 rounded-2xl p-4 text-sm text-slate-300">
+                                            <summary class="pm-card-title">Ver evidencia y preguntas</summary>
+                                            <div class="mt-4 space-y-4">
+                                                <div>
+                                                    <p class="pm-micro-label">Paneles NCCN</p>
+                                                    <p class="pm-body mt-2">{{ module.nccn_panels | join(', ') }}</p>
+                                                </div>
+                                                <div>
+                                                    <p class="pm-micro-label">Estudios pivotales</p>
+                                                    <p class="pm-body mt-2">{{ module.pivotal_trials | join(', ') }}</p>
+                                                </div>
+                                                <div>
+                                                    <p class="pm-micro-label">Preguntas clínicas</p>
+                                                    <ul class="pm-body mt-2 space-y-2">
+                                                        {% for question in module.core_questions[:3] %}
+                                                            <li>{{ question }}</li>
+                                                        {% endfor %}
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </details>
+                                        <a href="/wizard/{{ module.module }}" class="pm-module-cta mt-5">Abrir asistente clínico</a>
+                                    </div>
+                                </article>
+                            {% endfor %}
+                        </div>
+                    </section>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block page_scripts %}
+    <script>
+        const humanizeClinicalText = window.clinicalPresentation?.humanize || ((value) => value);
+        const quickClassifierConfig = {{ quick_classifier_config|tojson }};
+        const stateForm = document.getElementById('stateForm');
+        const classifierStatus = document.getElementById('classifierStatus');
+        const classifierResult = document.getElementById('classifierResult');
+        const hubEmptyState = document.getElementById('hubEmptyState');
+        const knownDiagnosisField = stateForm.querySelector('[name="known_cancer_diagnosis"]');
+        const progressionContextField = stateForm.querySelector('[name="systemic_progression_context"]');
+        const metastaticDiseaseKnownField = stateForm.querySelector('[name="metastatic_disease_known"]');
+        const metastasisSiteField = stateForm.querySelector('[name="metastasis_site"]');
+        const metastasisCountField = stateForm.querySelector('[name="metastasis_count"]');
+        const nonregionalNodalPresentField = stateForm.querySelector('[name="nonregional_nodal_metastasis_present"]');
+        const nonregionalNodalCountField = stateForm.querySelector('[name="nonregional_nodal_count"]');
+        const nonregionalNodalSiteEntriesField = stateForm.querySelector('[name="nonregional_nodal_site_entries"]');
+        const boneMetastasisPresentField = stateForm.querySelector('[name="bone_metastasis_present"]');
+        const boneSiteEntriesField = stateForm.querySelector('[name="bone_site_entries"]');
+        const visceralMetastasisPresentField = stateForm.querySelector('[name="visceral_metastasis_present"]');
+        const visceralSiteEntriesField = stateForm.querySelector('[name="visceral_site_entries"]');
+        const visceralLesionCountField = stateForm.querySelector('[name="visceral_lesion_count"]');
+        const metastaticTotalLesionCountField = stateForm.querySelector('[name="metastatic_total_lesion_count"]');
+        const metachronousField = stateForm.querySelector('[name="metachronous_metastasis"]');
+        const priorProstatectomyField = stateForm.querySelector('[name="prior_prostatectomy"]');
+        const priorRadiationField = stateForm.querySelector('[name="prior_radiation"]');
+        const bcrDetectedField = stateForm.querySelector('[name="bcr_detected"]');
+        const metastaticKnownWrapper = document.getElementById('metastaticKnownWrapper');
+        const metastaticComponentsWrapper = document.getElementById('metastaticComponentsWrapper');
+        const metastaticComponentToggles = Array.from(stateForm.querySelectorAll('[data-role="met-component"]'));
+        const nodalMetastaticWrapper = document.getElementById('nodalMetastaticWrapper');
+        const nodalSiteEntries = document.getElementById('nodalSiteEntries');
+        const addNodalSiteEntryButton = document.getElementById('addNodalSiteEntry');
+        const nodalDistributionHint = document.getElementById('nodalDistributionHint');
+        const boneDistributionWrapper = document.getElementById('boneDistributionWrapper');
+        const boneSiteEntries = document.getElementById('boneSiteEntries');
+        const addBoneSiteEntryButton = document.getElementById('addBoneSiteEntry');
+        const boneDistributionHint = document.getElementById('boneDistributionHint');
+        const boneDistributionSummary = document.getElementById('boneDistributionSummary');
+        const boneSummaryTotal = document.getElementById('boneSummaryTotal');
+        const boneSummaryAxial = document.getElementById('boneSummaryAxial');
+        const boneSummaryAppendicular = document.getElementById('boneSummaryAppendicular');
+        const boneSummaryVolume = document.getElementById('boneSummaryVolume');
+        const boneSummaryScenario = document.getElementById('boneSummaryScenario');
+        const boneSummaryReason = document.getElementById('boneSummaryReason');
+        const visceralDistributionWrapper = document.getElementById('visceralDistributionWrapper');
+        const visceralSiteEntries = document.getElementById('visceralSiteEntries');
+        const addVisceralSiteEntryButton = document.getElementById('addVisceralSiteEntry');
+        const visceralDistributionHint = document.getElementById('visceralDistributionHint');
+        const boneSiteGroups = quickClassifierConfig?.bone_site_groups || [];
+        const visceralSiteOptions = quickClassifierConfig?.visceral_site_options || [];
+        const nodalSiteOptions = quickClassifierConfig?.nonregional_nodal_site_options || [];
+        const boneSiteRegionIndex = {};
+        let lastDerivedMetastaticContext = null;
+        const moduleToDomain = {
+            {% for group in domain_groups %}
+                {% for module_id in group.modules %}
+                    "{{ module_id }}": "{{ group.id }}",
+                {% endfor %}
+            {% endfor %}
+        };
+        const wrapperIds = {
+            localRecurrenceStageHeader: document.getElementById('localRecurrenceStageHeader'),
+            priorProstatectomyWrapper: document.getElementById('priorProstatectomyWrapper'),
+            priorRadiationWrapper: document.getElementById('priorRadiationWrapper'),
+            bcrDetectedWrapper: document.getElementById('bcrDetectedWrapper'),
+            bcr2Wrapper: document.getElementById('bcr2Wrapper'),
+            metastaticStageHeader: document.getElementById('metastaticStageHeader'),
+            metastaticKnownWrapper,
+            metastaticComponentsWrapper,
+            nodalMetastaticWrapper,
+            boneDistributionWrapper,
+            visceralDistributionWrapper,
+            metachronousWrapper: document.getElementById('metachronousWrapper'),
+            systemicStageHeader: document.getElementById('systemicStageHeader'),
+            systemicContextWrapper: document.getElementById('systemicContextWrapper'),
+        };
+        const systemicContextWrapper = document.getElementById('systemicContextWrapper');
+        const adtVerificationFields = document.getElementById('adtVerificationFields');
+        const resetAudit = [];
+
+        boneSiteGroups.forEach((group) => {
+            const region = String(group.label || '').toLowerCase().includes('apendicular') ? 'appendicular' : 'axial';
+            (group.options || []).forEach((option) => {
+                boneSiteRegionIndex[option.site_key] = region;
+            });
+        });
+
+        function field(name) {
+            return stateForm.querySelector(`[name="${name}"]`);
+        }
+
+        function syncStateForm() {
+            window.clinicalSelects?.syncAll(stateForm);
+        }
+
+        function recordReset(reason, fields) {
+            resetAudit.push({ reason, fields, ts: Date.now() });
+            stateForm.dataset.resetAudit = JSON.stringify(resetAudit.slice(-10));
+        }
+
+        function resetFields(reason, values) {
+            Object.entries(values).forEach(([name, value]) => {
+                const target = field(name);
+                if (!target) {
+                    return;
+                }
+                target.value = String(value);
+            });
+            recordReset(reason, Object.keys(values));
+        }
+
+        function resetSystemicContext() {
+            resetFields('systemic_not_applicable', {
+                systemic_progression_context: 'none',
+                current_adt_context: 'none',
+                castrate_testosterone_status: 'unknown',
+                progression_pattern: 'biochemical_only',
+                conventional_imaging_status: 'not_restaged',
+            });
+        }
+
+        function resetLocalRecurrenceContext() {
+            resetFields('local_recurrence_not_applicable', {
+                prior_prostatectomy: '0',
+                prior_radiation: '0',
+                bcr_detected: '0',
+                bcr2: '0',
+            });
+        }
+
+        function renderBoneSiteOptions(selectedValue = '') {
+            const groupsHtml = boneSiteGroups.map((group) => {
+                const optionsHtml = (group.options || []).map((option) => {
+                    const selected = option.site_key === selectedValue ? ' selected' : '';
+                    return `<option value="${option.site_key}"${selected}>${option.label}</option>`;
+                }).join('');
+                return `<optgroup label="${group.label}">${optionsHtml}</optgroup>`;
+            }).join('');
+            return `<option value="">Seleccione un sitio</option>${groupsHtml}`;
+        }
+
+        function renderVisceralSiteOptions(selectedValue = '') {
+            const optionsHtml = visceralSiteOptions.map((option) => {
+                const selected = option.site_key === selectedValue ? ' selected' : '';
+                return `<option value="${option.site_key}"${selected}>${option.label}</option>`;
+            }).join('');
+            return `<option value="">Seleccione un órgano visceral</option>${optionsHtml}`;
+        }
+
+        function renderNodalSiteOptions(selectedValue = '') {
+            const optionsHtml = nodalSiteOptions.map((option) => {
+                const selected = option.site_key === selectedValue ? ' selected' : '';
+                return `<option value="${option.site_key}"${selected}>${option.label}</option>`;
+            }).join('');
+            return `<option value="">Seleccione una cadena ganglionar</option>${optionsHtml}`;
+        }
+
+        function createBoneSiteRow(entry = {}) {
+            const row = document.createElement('div');
+            row.className = 'rounded-2xl border border-slate-700/70 bg-slate-950/70 p-3';
+            row.dataset.boneRow = '1';
+            row.innerHTML = `
+                <div class="grid gap-3 md:grid-cols-[minmax(0,2fr)_160px_auto]">
+                    <label class="text-sm">
+                        <span class="pm-field-label">Sitio anatómico</span>
+                        <select class="pn-input mt-2 w-full px-3 py-2" data-role="bone-site-key">
+                            ${renderBoneSiteOptions(String(entry.site_key || ''))}
+                        </select>
+                    </label>
+                    <label class="text-sm">
+                        <span class="pm-field-label">Número de lesiones</span>
+                        <input type="number" min="1" step="1" value="${entry.lesion_count || 1}" class="pn-input mt-2 w-full px-3 py-2" data-role="bone-lesion-count">
+                    </label>
+                    <div class="flex items-end">
+                        <button type="button" class="pn-btn pn-btn-secondary w-full" data-role="remove-bone-row">Quitar</button>
+                    </div>
+                </div>
+            `;
+            boneSiteEntries.appendChild(row);
+            return row;
+        }
+
+        function clearBoneSiteEntries() {
+            boneSiteEntries.innerHTML = '';
+            lastDerivedMetastaticContext = null;
+        }
+
+        function createNodalSiteRow(entry = {}) {
+            const row = document.createElement('div');
+            row.className = 'rounded-2xl border border-slate-700/70 bg-slate-950/70 p-3';
+            row.dataset.nodalRow = '1';
+            row.innerHTML = `
+                <div class="grid gap-3 md:grid-cols-[minmax(0,2fr)_160px_auto]">
+                    <label class="text-sm">
+                        <span class="pm-field-label">Cadena ganglionar no regional</span>
+                        <select class="pn-input mt-2 w-full px-3 py-2" data-role="nodal-site-key">
+                            ${renderNodalSiteOptions(String(entry.site_key || ''))}
+                        </select>
+                    </label>
+                    <label class="text-sm">
+                        <span class="pm-field-label">Número de lesiones</span>
+                        <input type="number" min="1" step="1" value="${entry.lesion_count || 1}" class="pn-input mt-2 w-full px-3 py-2" data-role="nodal-lesion-count">
+                    </label>
+                    <div class="flex items-end">
+                        <button type="button" class="pn-btn pn-btn-secondary w-full" data-role="remove-nodal-row">Quitar</button>
+                    </div>
+                </div>
+            `;
+            nodalSiteEntries.appendChild(row);
+            return row;
+        }
+
+        function clearNodalSiteEntries() {
+            nodalSiteEntries.innerHTML = '';
+            lastDerivedMetastaticContext = null;
+        }
+
+        function createVisceralSiteRow(entry = {}) {
+            const row = document.createElement('div');
+            row.className = 'rounded-2xl border border-slate-700/70 bg-slate-950/70 p-3';
+            row.dataset.visceralRow = '1';
+            row.innerHTML = `
+                <div class="grid gap-3 md:grid-cols-[minmax(0,2fr)_160px_auto]">
+                    <label class="text-sm">
+                        <span class="pm-field-label">Órgano visceral</span>
+                        <select class="pn-input mt-2 w-full px-3 py-2" data-role="visceral-site-key">
+                            ${renderVisceralSiteOptions(String(entry.site_key || ''))}
+                        </select>
+                    </label>
+                    <label class="text-sm">
+                        <span class="pm-field-label">Número de lesiones</span>
+                        <input type="number" min="1" step="1" value="${entry.lesion_count || 1}" class="pn-input mt-2 w-full px-3 py-2" data-role="visceral-lesion-count">
+                    </label>
+                    <div class="flex items-end">
+                        <button type="button" class="pn-btn pn-btn-secondary w-full" data-role="remove-visceral-row">Quitar</button>
+                    </div>
+                </div>
+            `;
+            visceralSiteEntries.appendChild(row);
+            return row;
+        }
+
+        function clearVisceralSiteEntries() {
+            visceralSiteEntries.innerHTML = '';
+            lastDerivedMetastaticContext = null;
+        }
+
+        function getBoneSiteEntries() {
+            return Array.from(boneSiteEntries.querySelectorAll('[data-bone-row="1"]')).map((row) => {
+                const siteKey = String(row.querySelector('[data-role="bone-site-key"]')?.value || '').trim();
+                const lesionCount = Math.max(0, Number.parseInt(row.querySelector('[data-role="bone-lesion-count"]')?.value || '0', 10) || 0);
+                return { site_key: siteKey, lesion_count: lesionCount };
+            }).filter((entry) => entry.site_key && entry.lesion_count > 0);
+        }
+
+        function buildBoneDistributionSnapshot() {
+            const entries = getBoneSiteEntries();
+            return entries.reduce((acc, entry) => {
+                acc.entries.push(entry);
+                acc.total += entry.lesion_count;
+                if ((boneSiteRegionIndex[entry.site_key] || 'axial') === 'appendicular') {
+                    acc.appendicular += entry.lesion_count;
+                } else {
+                    acc.axial += entry.lesion_count;
+                }
+                return acc;
+            }, { entries: [], total: 0, axial: 0, appendicular: 0 });
+        }
+
+        function getNodalSiteEntries() {
+            return Array.from(nodalSiteEntries.querySelectorAll('[data-nodal-row="1"]')).map((row) => {
+                const siteKey = String(row.querySelector('[data-role="nodal-site-key"]')?.value || '').trim();
+                const lesionCount = Math.max(0, Number.parseInt(row.querySelector('[data-role="nodal-lesion-count"]')?.value || '0', 10) || 0);
+                return { site_key: siteKey, lesion_count: lesionCount };
+            }).filter((entry) => entry.site_key && entry.lesion_count > 0);
+        }
+
+        function buildNodalDistributionSnapshot() {
+            const entries = getNodalSiteEntries();
+            return entries.reduce((acc, entry) => {
+                acc.entries.push(entry);
+                acc.total += entry.lesion_count;
+                return acc;
+            }, { entries: [], total: 0 });
+        }
+
+        function getVisceralSiteEntries() {
+            return Array.from(visceralSiteEntries.querySelectorAll('[data-visceral-row="1"]')).map((row) => {
+                const siteKey = String(row.querySelector('[data-role="visceral-site-key"]')?.value || '').trim();
+                const lesionCount = Math.max(0, Number.parseInt(row.querySelector('[data-role="visceral-lesion-count"]')?.value || '0', 10) || 0);
+                return { site_key: siteKey, lesion_count: lesionCount };
+            }).filter((entry) => entry.site_key && entry.lesion_count > 0);
+        }
+
+        function buildVisceralDistributionSnapshot() {
+            const entries = getVisceralSiteEntries();
+            return entries.reduce((acc, entry) => {
+                acc.entries.push(entry);
+                acc.total += entry.lesion_count;
+                return acc;
+            }, { entries: [], total: 0 });
+        }
+
+        function isMetastaticComponentSelected(component) {
+            return metastaticComponentToggles.some((toggle) => toggle.value === component && toggle.checked);
+        }
+
+        function syncMetastaticHiddenFields() {
+            const metastaticKnown = metastaticDiseaseKnownField?.value === '1';
+            const boneSelected = isMetastaticComponentSelected('bone');
+            const visceralSelected = isMetastaticComponentSelected('visceral');
+            const nodalSelected = isMetastaticComponentSelected('nodes');
+            const nodalSnapshot = buildNodalDistributionSnapshot();
+            const boneSnapshot = buildBoneDistributionSnapshot();
+            const visceralSnapshot = buildVisceralDistributionSnapshot();
+            if (!metastaticKnown) {
+                metastasisSiteField.value = 'M0';
+                metastasisCountField.value = '0';
+                metastaticTotalLesionCountField.value = '0';
+                nonregionalNodalPresentField.value = '0';
+                nonregionalNodalCountField.value = '0';
+                nonregionalNodalSiteEntriesField.value = '[]';
+                boneMetastasisPresentField.value = '0';
+                boneSiteEntriesField.value = '[]';
+                visceralMetastasisPresentField.value = '0';
+                visceralSiteEntriesField.value = '[]';
+                visceralLesionCountField.value = '0';
+                return;
+            }
+            const nodalCount = nodalSelected ? nodalSnapshot.total : 0;
+            const total = boneSnapshot.total + visceralSnapshot.total + nodalCount;
+            const legacySite = visceralSelected ? 'Visceral' : boneSelected ? 'Bone' : nodalSelected ? 'Node' : 'M0';
+
+            metastasisSiteField.value = legacySite;
+            metastasisCountField.value = String(total);
+            metastaticTotalLesionCountField.value = String(total);
+            nonregionalNodalPresentField.value = nodalSelected ? '1' : '0';
+            nonregionalNodalCountField.value = String(nodalCount);
+            nonregionalNodalSiteEntriesField.value = JSON.stringify(nodalSnapshot.entries);
+            boneMetastasisPresentField.value = boneSelected ? '1' : '0';
+            boneSiteEntriesField.value = JSON.stringify(boneSnapshot.entries);
+            visceralMetastasisPresentField.value = visceralSelected ? '1' : '0';
+            visceralSiteEntriesField.value = JSON.stringify(visceralSnapshot.entries);
+            visceralLesionCountField.value = String(visceralSnapshot.total);
+        }
+
+        function buildSuggestedMetastaticScenario(context) {
+            if (!context) {
+                return 'Clasificando...';
+            }
+            const highVolume = String(context.volume_disease || '').toLowerCase() === 'high';
+            const oligometastatic = Boolean(context.oligometastatic_operational);
+            const metachronous = metachronousField.value === '1';
+            if (context.has_mixed_metastatic_sites && highVolume) {
+                return metachronous ? 'mHSPC mixto de alto volumen metacrónico' : 'mHSPC mixto de alto volumen sincrónico';
+            }
+            if (highVolume) {
+                return metachronous ? 'mHSPC de alto volumen metacrónico' : 'mHSPC de alto volumen sincrónico';
+            }
+            if (oligometastatic && metachronous) {
+                return 'mHSPC oligometastásico metacrónico';
+            }
+            return 'mHSPC de bajo volumen / oligometastásico sincrónico';
+        }
+
+        function updateBoneDistributionSummary(context = lastDerivedMetastaticContext) {
+            const metastaticKnown = metastaticDiseaseKnownField?.value === '1';
+            const isBone = isMetastaticComponentSelected('bone');
+            const isVisceral = isMetastaticComponentSelected('visceral');
+            const hasNodes = isMetastaticComponentSelected('nodes');
+            const nodalSnapshot = buildNodalDistributionSnapshot();
+            const snapshot = buildBoneDistributionSnapshot();
+            const visceralSnapshot = buildVisceralDistributionSnapshot();
+            const nodalCount = hasNodes ? nodalSnapshot.total : 0;
+            toggleElement(boneDistributionSummary, isBone);
+            toggleElement(boneDistributionHint, isBone && snapshot.entries.length === 0);
+            toggleElement(visceralDistributionHint, isVisceral && visceralSnapshot.entries.length === 0);
+            toggleElement(nodalDistributionHint, hasNodes && nodalSnapshot.entries.length === 0);
+            boneSummaryTotal.textContent = String(snapshot.total);
+            boneSummaryAxial.textContent = String(snapshot.axial);
+            boneSummaryAppendicular.textContent = String(snapshot.appendicular);
+            if (!metastaticKnown) {
+                boneSummaryVolume.textContent = 'No aplica';
+                boneSummaryScenario.textContent = 'No aplica';
+                boneSummaryReason.textContent = '';
+                return;
+            }
+            if (!isBone) {
+                boneSummaryVolume.textContent = isVisceral || hasNodes ? 'Pendiente' : 'No aplica';
+                boneSummaryScenario.textContent = isVisceral || hasNodes ? 'Clasificando...' : 'No aplica';
+                boneSummaryReason.textContent = '';
+                return;
+            }
+            if (!snapshot.entries.length) {
+                boneSummaryVolume.textContent = 'Pendiente';
+                boneSummaryScenario.textContent = 'Completar distribución ósea';
+                boneSummaryReason.textContent = 'Falta documentar al menos un sitio óseo con su número de lesiones para derivar el volumen metastásico.';
+                return;
+            }
+            boneSummaryVolume.textContent = context?.volume_disease === 'high'
+                ? 'Alto volumen'
+                : context?.volume_disease === 'low'
+                    ? 'Bajo volumen'
+                    : 'Clasificando...';
+            boneSummaryScenario.textContent = buildSuggestedMetastaticScenario(context);
+            if (context?.volume_reason) {
+                const extras = [];
+                if (visceralSnapshot.total > 0) {
+                    extras.push(`víscera ${visceralSnapshot.total}`);
+                }
+                if (nodalCount > 0) {
+                    extras.push(`ganglios ${nodalCount}`);
+                }
+                boneSummaryReason.textContent = [humanizeClinicalText(context.volume_reason), extras.length ? `Composición mixta documentada: ${extras.join(' · ')}.` : ''].filter(Boolean).join(' ');
+            } else {
+                boneSummaryReason.textContent = 'La derivación clínica se actualizará cuando el clasificador confirme el patrón anatómico.';
+            }
+        }
+
+        function resetMetastaticContext() {
+            resetFields('metastatic_not_applicable', {
+                metastatic_disease_known: '0',
+                metastasis_site: 'M0',
+                metastasis_count: '0',
+                nonregional_nodal_metastasis_present: '0',
+                nonregional_nodal_count: '0',
+                nonregional_nodal_site_entries: '[]',
+                bone_metastasis_present: '0',
+                bone_site_entries: '[]',
+                visceral_metastasis_present: '0',
+                visceral_site_entries: '[]',
+                visceral_lesion_count: '0',
+                metastatic_total_lesion_count: '0',
+                metachronous_metastasis: '0',
+            });
+            metastaticComponentToggles.forEach((toggle) => { toggle.checked = false; });
+            clearNodalSiteEntries();
+            clearBoneSiteEntries();
+            clearVisceralSiteEntries();
+            updateBoneDistributionSummary();
+        }
+
+        function toggleElement(element, shouldShow) {
+            if (!element) {
+                return;
+            }
+            element.classList.toggle('hidden', !shouldShow);
+        }
+
+        function updateClassifierStages() {
+            const diagnosisConfirmed = knownDiagnosisField.value === '1';
+            if (!diagnosisConfirmed) {
+                resetLocalRecurrenceContext();
+                resetMetastaticContext();
+                resetSystemicContext();
+            }
+            const hasPriorLocalTherapy = diagnosisConfirmed && (priorProstatectomyField.value === '1' || priorRadiationField.value === '1');
+            if (!hasPriorLocalTherapy) {
+                resetFields('bcr_not_applicable', {
+                    bcr_detected: '0',
+                    bcr2: '0',
+                });
+            }
+            const hasBcrShortcutSignal = hasPriorLocalTherapy && bcrDetectedField?.value === '1';
+            if (!hasBcrShortcutSignal) {
+                resetFields('bcr2_not_applicable', { bcr2: '0' });
+            }
+            const metastaticKnown = diagnosisConfirmed && metastaticDiseaseKnownField.value === '1';
+            const boneMetastatic = metastaticKnown && isMetastaticComponentSelected('bone');
+            const visceralMetastatic = metastaticKnown && isMetastaticComponentSelected('visceral');
+            const nodalMetastatic = metastaticKnown && isMetastaticComponentSelected('nodes');
+            syncMetastaticHiddenFields();
+            if (!metastaticKnown) {
+                resetFields('metastatic_detail_not_applicable', {
+                    metastasis_count: '0',
+                    metachronous_metastasis: '0',
+                });
+                metastaticComponentToggles.forEach((toggle) => { toggle.checked = false; });
+                clearNodalSiteEntries();
+                clearBoneSiteEntries();
+                clearVisceralSiteEntries();
+            }
+            const needsVerificationContext = diagnosisConfirmed && progressionContextField.value !== 'none';
+            if (!needsVerificationContext) {
+                resetFields('adt_verification_not_applicable', {
+                    current_adt_context: 'none',
+                    castrate_testosterone_status: 'unknown',
+                    progression_pattern: 'biochemical_only',
+                    conventional_imaging_status: 'not_restaged',
+                });
+            }
+
+            toggleElement(wrapperIds.localRecurrenceStageHeader, diagnosisConfirmed);
+            toggleElement(wrapperIds.priorProstatectomyWrapper, diagnosisConfirmed);
+            toggleElement(wrapperIds.priorRadiationWrapper, diagnosisConfirmed);
+            toggleElement(wrapperIds.bcrDetectedWrapper, hasPriorLocalTherapy);
+            toggleElement(wrapperIds.bcr2Wrapper, hasBcrShortcutSignal);
+            toggleElement(wrapperIds.metastaticStageHeader, diagnosisConfirmed);
+            toggleElement(wrapperIds.metastaticKnownWrapper, diagnosisConfirmed);
+            toggleElement(wrapperIds.metastaticComponentsWrapper, metastaticKnown);
+            toggleElement(wrapperIds.nodalMetastaticWrapper, nodalMetastatic);
+            toggleElement(wrapperIds.boneDistributionWrapper, boneMetastatic);
+            toggleElement(wrapperIds.visceralDistributionWrapper, visceralMetastatic);
+            toggleElement(wrapperIds.metachronousWrapper, metastaticKnown);
+            toggleElement(wrapperIds.systemicStageHeader, diagnosisConfirmed);
+            toggleElement(systemicContextWrapper, diagnosisConfirmed);
+            toggleElement(adtVerificationFields, needsVerificationContext);
+            if (nodalMetastatic && !nodalSiteEntries.querySelector('[data-nodal-row="1"]')) {
+                createNodalSiteRow();
+            }
+            if (boneMetastatic && !boneSiteEntries.querySelector('[data-bone-row="1"]')) {
+                createBoneSiteRow();
+            }
+            if (visceralMetastatic && !visceralSiteEntries.querySelector('[data-visceral-row="1"]')) {
+                createVisceralSiteRow();
+            }
+            updateBoneDistributionSummary();
+            syncStateForm();
+        }
+
+        [
+            knownDiagnosisField,
+            progressionContextField,
+            metastaticDiseaseKnownField,
+            priorProstatectomyField,
+            priorRadiationField,
+            bcrDetectedField,
+            metachronousField,
+        ].forEach((control) => control.addEventListener('change', updateClassifierStages));
+        metastaticComponentToggles.forEach((toggle) => toggle.addEventListener('change', updateClassifierStages));
+        nodalSiteEntries.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-role="remove-nodal-row"]');
+            if (!button) {
+                return;
+            }
+            const row = button.closest('[data-nodal-row="1"]');
+            if (row) {
+                row.remove();
+            }
+            lastDerivedMetastaticContext = null;
+            syncMetastaticHiddenFields();
+            updateBoneDistributionSummary();
+        });
+        nodalSiteEntries.addEventListener('input', () => {
+            lastDerivedMetastaticContext = null;
+            syncMetastaticHiddenFields();
+            updateBoneDistributionSummary();
+        });
+        nodalSiteEntries.addEventListener('change', () => {
+            lastDerivedMetastaticContext = null;
+            syncMetastaticHiddenFields();
+            updateBoneDistributionSummary();
+        });
+        addNodalSiteEntryButton?.addEventListener('click', () => {
+            createNodalSiteRow();
+            syncMetastaticHiddenFields();
+            updateBoneDistributionSummary();
+            syncStateForm();
+        });
+
+        boneSiteEntries.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-role="remove-bone-row"]');
+            if (!button) {
+                return;
+            }
+            const row = button.closest('[data-bone-row="1"]');
+            if (row) {
+                row.remove();
+            }
+            lastDerivedMetastaticContext = null;
+            syncMetastaticHiddenFields();
+            updateBoneDistributionSummary();
+        });
+        boneSiteEntries.addEventListener('input', () => {
+            lastDerivedMetastaticContext = null;
+            syncMetastaticHiddenFields();
+            updateBoneDistributionSummary();
+        });
+        boneSiteEntries.addEventListener('change', () => {
+            lastDerivedMetastaticContext = null;
+            syncMetastaticHiddenFields();
+            updateBoneDistributionSummary();
+        });
+        addBoneSiteEntryButton?.addEventListener('click', () => {
+            createBoneSiteRow();
+            syncMetastaticHiddenFields();
+            updateBoneDistributionSummary();
+            syncStateForm();
+        });
+        visceralSiteEntries.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-role="remove-visceral-row"]');
+            if (!button) {
+                return;
+            }
+            const row = button.closest('[data-visceral-row="1"]');
+            if (row) {
+                row.remove();
+            }
+            lastDerivedMetastaticContext = null;
+            syncMetastaticHiddenFields();
+            updateBoneDistributionSummary();
+        });
+        visceralSiteEntries.addEventListener('input', () => {
+            lastDerivedMetastaticContext = null;
+            syncMetastaticHiddenFields();
+            updateBoneDistributionSummary();
+        });
+        visceralSiteEntries.addEventListener('change', () => {
+            lastDerivedMetastaticContext = null;
+            syncMetastaticHiddenFields();
+            updateBoneDistributionSummary();
+        });
+        addVisceralSiteEntryButton?.addEventListener('click', () => {
+            createVisceralSiteRow();
+            syncMetastaticHiddenFields();
+            updateBoneDistributionSummary();
+            syncStateForm();
+        });
+        updateClassifierStages();
+
+        const domainSections = Array.from(document.querySelectorAll('[data-domain-section]'));
+        const domainLinks = Array.from(document.querySelectorAll('[data-domain-link]'));
+        const setActiveDomain = (domainId) => {
+            domainLinks.forEach((link) => {
+                link.classList.toggle('is-active', Boolean(domainId) && link.dataset.domainLink === domainId);
+            });
+            domainSections.forEach((section) => {
+                const isVisible = Boolean(domainId) && section.dataset.domainSection === domainId;
+                section.classList.toggle('is-hidden', !isVisible);
+                section.classList.toggle('is-visible', isVisible);
+            });
+            if (hubEmptyState) {
+                hubEmptyState.classList.toggle('hidden', Boolean(domainId));
+            }
+        };
+
+        async function runClassifier() {
+            syncMetastaticHiddenFields();
+            const payload = Object.fromEntries(new FormData(stateForm).entries());
+            const metastaticKnown = metastaticDiseaseKnownField?.value === '1';
+            const boneSelected = metastaticKnown && isMetastaticComponentSelected('bone');
+            const visceralSelected = metastaticKnown && isMetastaticComponentSelected('visceral');
+            const nodalSelected = metastaticKnown && isMetastaticComponentSelected('nodes');
+            const nodalSnapshot = buildNodalDistributionSnapshot();
+            const boneSnapshot = buildBoneDistributionSnapshot();
+            const visceralSnapshot = buildVisceralDistributionSnapshot();
+            const nodalCount = nodalSelected ? nodalSnapshot.total : 0;
+
+            if (metastaticKnown && !boneSelected && !visceralSelected && !nodalSelected) {
+                classifierStatus.textContent = '';
+                classifierResult.classList.remove('hidden');
+                classifierResult.innerHTML = `
+                    <p class="pm-micro-label text-amber-200">Clasificación pendiente</p>
+                    <h3 class="pm-card-title mt-3">Falta composición metastásica documentada</h3>
+                    <p class="pm-body mt-3 text-slate-200">Seleccione al menos un componente metastásico documentado para conservar el contexto anatómico real del caso.</p>
+                `;
+                setActiveDomain(null);
+                updateBoneDistributionSummary(null);
+                return;
+            }
+            if (boneSelected && !boneSnapshot.entries.length) {
+                classifierStatus.textContent = '';
+                classifierResult.classList.remove('hidden');
+                classifierResult.innerHTML = `
+                    <p class="pm-micro-label text-amber-200">Clasificación pendiente</p>
+                    <h3 class="pm-card-title mt-3">Falta distribución ósea documentada</h3>
+                    <p class="pm-body mt-3 text-slate-200">Capture al menos un sitio anatómico y el número de lesiones para derivar automáticamente el volumen metastásico y abrir el asistente correcto.</p>
+                `;
+                setActiveDomain(null);
+                updateBoneDistributionSummary(null);
+                return;
+            }
+            if (visceralSelected && !visceralSnapshot.entries.length) {
+                classifierStatus.textContent = '';
+                classifierResult.classList.remove('hidden');
+                classifierResult.innerHTML = `
+                    <p class="pm-micro-label text-amber-200">Clasificación pendiente</p>
+                    <h3 class="pm-card-title mt-3">Falta distribución visceral documentada</h3>
+                    <p class="pm-body mt-3 text-slate-200">Capture al menos un órgano visceral y su número de lesiones para conservar el contexto anatómico real de la enfermedad metastásica.</p>
+                `;
+                setActiveDomain(null);
+                updateBoneDistributionSummary(null);
+                return;
+            }
+            if (nodalSelected && nodalCount <= 0) {
+                classifierStatus.textContent = '';
+                classifierResult.classList.remove('hidden');
+                classifierResult.innerHTML = `
+                    <p class="pm-micro-label text-amber-200">Clasificación pendiente</p>
+                    <h3 class="pm-card-title mt-3">Falta distribución ganglionar no regional</h3>
+                    <p class="pm-body mt-3 text-slate-200">Capture al menos una cadena ganglionar no regional y su número de lesiones para completar la composición metastásica del caso.</p>
+                `;
+                setActiveDomain(null);
+                return;
+            }
+
+            payload.nonregional_nodal_site_entries = nodalSnapshot.entries;
+            payload.bone_site_entries = boneSnapshot.entries;
+            payload.visceral_site_entries = visceralSnapshot.entries;
+            payload.metastasis_count = String(Number.parseInt(payload.metastasis_count || '0', 10) || 0);
+
+            classifierStatus.textContent = 'Clasificando...';
+            const response = await fetch('/api/state-classifier', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json();
+            classifierStatus.textContent = '';
+            if (!data.success) {
+                classifierResult.classList.remove('hidden');
+                classifierResult.innerHTML = `<p class="pm-body text-rose-300">${data.error}</p>`;
+                return;
+            }
+
+            const targetDomain = moduleToDomain[data.state] || null;
+            lastDerivedMetastaticContext = data.derived_metastatic_context || null;
+            updateBoneDistributionSummary(lastDerivedMetastaticContext);
+
+            const derivedContext = data.derived_metastatic_context || {};
+            const derivedMeta = derivedContext.metastasis_count
+                ? `
+                    <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+                        <div>
+                            <p class="pm-micro-label text-cyan-200">Lesiones totales</p>
+                            <p class="pm-body mt-2 text-slate-100">${derivedContext.metastasis_count}</p>
+                        </div>
+                        <div>
+                            <p class="pm-micro-label text-cyan-200">Axiales</p>
+                            <p class="pm-body mt-2 text-slate-100">${derivedContext.bone_axial_count || 0}</p>
+                        </div>
+                        <div>
+                            <p class="pm-micro-label text-cyan-200">Apendiculares</p>
+                            <p class="pm-body mt-2 text-slate-100">${derivedContext.bone_appendicular_count || 0}</p>
+                        </div>
+                        <div>
+                            <p class="pm-micro-label text-cyan-200">Víscera</p>
+                            <p class="pm-body mt-2 text-slate-100">${derivedContext.visceral_distribution_summary || 'No documentada'}</p>
+                        </div>
+                        <div>
+                            <p class="pm-micro-label text-cyan-200">Ganglios</p>
+                            <p class="pm-body mt-2 text-slate-100">${derivedContext.nodal_distribution_summary || 'No documentados'}</p>
+                        </div>
+                        <div>
+                            <p class="pm-micro-label text-cyan-200">Composición</p>
+                            <p class="pm-body mt-2 text-slate-100">${humanizeClinicalText((derivedContext.metastatic_components || []).join(' · ') || 'No documentada')}</p>
+                        </div>
+                        <div>
+                            <p class="pm-micro-label text-cyan-200">Volumen derivado</p>
+                            <p class="pm-body mt-2 text-slate-100">${humanizeClinicalText(derivedContext.volume_disease || 'unknown')}</p>
+                        </div>
+                    </div>
+                `
+                : '';
+            const derivedSummary = derivedContext.volume_reason
+                ? `<p class="pm-body mt-3 text-slate-200">${humanizeClinicalText(derivedContext.volume_reason)}${derivedContext.metastatic_profile_summary ? ` ${humanizeClinicalText(derivedContext.metastatic_profile_summary)}.` : ''}</p>`
+                : '';
+            const progressionGate = data.progression_gate_active
+                ? `
+                    <div class="mt-4 rounded-2xl border border-amber-500/30 bg-amber-950/20 px-4 py-3">
+                        <p class="pm-micro-label text-amber-200">Gate activo de progresión bajo ADT</p>
+                        <p class="pm-body mt-2 text-slate-100">${humanizeClinicalText(data.progression_gate_reason || 'La intensificación resistente sigue bloqueada hasta confirmar castración y reestadificación convencional.')}</p>
+                    </div>
+                `
+                : '';
+            try {
+                window.sessionStorage.setItem(
+                    `prostanet:clinical-hub-prefill:${data.state}`,
+                    JSON.stringify(payload),
+                );
+            } catch (error) {
+                console.warn('No se pudo persistir el prefill del hub clínico.', error);
+            }
+
+            classifierResult.classList.remove('hidden');
+            classifierResult.innerHTML = `
+                <p class="pm-micro-label text-cyan-200">Módulo sugerido</p>
+                <h3 class="pm-card-title mt-3">${data.state_label || data.state}</h3>
+                <p class="pm-body mt-3 text-slate-200">${humanizeClinicalText(data.classification_reason)}</p>
+                ${derivedMeta}
+                ${derivedSummary}
+                ${progressionGate}
+                <a href="/wizard/${data.state}?prefill_source=clinical_hub" class="pn-btn pn-btn-primary mt-4 inline-flex">Ir al asistente clínico</a>
+            `;
+            setActiveDomain(targetDomain);
+            window.clinicalPresentation?.normalizeDocument();
+        }
+
+        if (domainSections.length && domainLinks.length) {
+            domainLinks.forEach((link) => {
+                link.addEventListener('click', () => {
+                    const targetId = link.dataset.domainLink;
+                    if (targetId) {
+                        setActiveDomain(targetId);
+                    }
+                });
+            });
+
+            let classifyDebounce = null;
+            let hasUserInteraction = false;
+            stateForm.addEventListener('input', () => {
+                hasUserInteraction = true;
+                clearTimeout(classifyDebounce);
+                classifyDebounce = window.setTimeout(() => {
+                    if (hasUserInteraction) {
+                        runClassifier();
+                    }
+                }, 320);
+            });
+            stateForm.addEventListener('change', () => {
+                hasUserInteraction = true;
+                clearTimeout(classifyDebounce);
+                classifyDebounce = window.setTimeout(() => {
+                    if (hasUserInteraction) {
+                        runClassifier();
+                    }
+                }, 320);
+            });
+
+            setActiveDomain(null);
+        }
+    </script>
+{% endblock %}

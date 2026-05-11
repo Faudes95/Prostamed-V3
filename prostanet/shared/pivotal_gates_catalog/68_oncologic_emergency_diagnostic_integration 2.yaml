@@ -1,0 +1,258 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 68: oncologic_emergency_diagnostic_integration
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXVII) — Auditoría #67C — Pre-diagnostic emergency.
+#
+# Razón clínica:
+#   Pacientes con presentación inicial de **oncologic emergency**
+#   (spinal cord compression, visceral crisis, paraneoplastic syndrome,
+#   hipercalcemia maligna, CID) requieren manejo **emergency-first**
+#   antes/paralelo de diagnostic workup convencional:
+#
+#   1. **Spinal Cord Compression (SCC)** — emergencia neuroquirúrgica:
+#      - Window de oportunidad: 24-48h para preservar function
+#      - **Acción inmediata**: dexametasona 16 mg load IV → 4 mg q6h
+#      - Imaging emergency: RM columna full-spine <24h
+#      - Decisión cirugía vs RT urgente <48h
+#      - Biopsia de lesión epidural si única opción dx
+#
+#   2. **Visceral Crisis** (liver failure, lung crisis, GI obstruction):
+#      - Liver: ascitis tensa, encefalopatía, INR elevado
+#      - Lung: lymphangitic carcinomatosis con disnea severa
+#      - GI: obstrucción intestinal por mets peritoneales
+#      - **Acción**: stabilización + biopsia rapid + ADT empírico SI
+#        provisional_diagnosis_tier virtually_certain
+#
+#   3. **Hipercalcemia Maligna** (Ca corrected >12 mg/dL):
+#      - Bisphosphonate IV (zoledronic acid 4 mg)
+#      - Hidratación agresiva (2-3 L NS/24h)
+#      - Calcitonin si Ca >14 (rapid effect)
+#      - Diagnóstico paralelo
+#
+#   4. **CID (Coagulopatía Intravascular Diseminada)**:
+#      - PCa rare cause (vs gastric, prostate adenocarcinoma raro)
+#      - PT/INR + fibrinógeno + dimero-D
+#      - FFP + plaquetas si bleeding active
+#
+#   5. **Paraneoplastic syndromes**:
+#      - SIADH (Sodio bajo)
+#      - Syndrome neurological paraneoplastic
+#      - Hypercoagulability (Trousseau)
+#      - **Acción**: tratar manifestación paralela a workup oncológico
+#
+#   Severity: hard_block — bloquea progression a tratamiento standard
+#   hasta resolución/estabilización emergency. Force priorización
+#   emergency pathway sobre diagnostic standard.
+#
+#   Override: emergency_resolved_or_stabilized_documented (paciente
+#   estabilizado por emergency team, documenta resolución).
+#
+#   Coexistencia: gate puede coexistir con gate 66 (metastatic biopsy
+#   pathway) — emergency + biopsy alternativa pueden ser concurrentes.
+# ──────────────────────────────────────────────────────────────────────
+
+code: oncologic_emergency_diagnostic_integration
+title: "Oncologic emergency (SCC/visceral crisis/hipercalcemia/CID/paraneoplastic) → emergency-first pathway"
+faubot_added_in: "2026-04-25 LXXVII"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: Spinal Cord Compression
+    - type: any_of
+      triggers:
+        - type: truthy_flag
+          field: spinal_cord_compression_suspected
+          alias_fields:
+            - scc_suspected
+            - compresion_medular_sospechada
+            - cord_compression_clinical
+        - type: truthy_flag
+          field: spinal_cord_compression_confirmed
+          alias_fields:
+            - scc_confirmed
+            - compresion_medular_confirmada
+    # Path B: Visceral Crisis
+    - type: any_of
+      triggers:
+        - type: truthy_flag
+          field: visceral_crisis_documented
+          alias_fields:
+            - crisis_visceral_documentada
+            - liver_failure_acute
+            - lung_crisis_acute
+            - gi_obstruction_malignant
+        - type: truthy_flag
+          field: lymphangitic_carcinomatosis
+          alias_fields:
+            - linfangitis_carcinomatosa
+    # Path C: Hipercalcemia Maligna severa
+    - type: numeric_above
+      field: calcium_corrected_mg_dl
+      alias_fields:
+        - calcio_corregido
+        - corrected_calcium
+        - serum_calcium_corrected
+      threshold: 11  # >11 mg/dL = hipercalcemia maligna
+    # Path D: CID (DIC)
+    - type: any_of
+      triggers:
+        - type: truthy_flag
+          field: dic_diagnosed
+          alias_fields:
+            - cid_diagnosticada
+            - disseminated_intravascular_coagulation
+        - type: all_of
+          triggers:
+            - type: numeric_above
+              field: inr_value
+              alias_fields:
+                - INR
+                - international_normalized_ratio
+              threshold: 1.5
+            - type: truthy_flag
+              field: bleeding_active_documented
+              alias_fields:
+                - sangrado_activo_documentado
+    # Path E: Paraneoplastic SIADH severo (Na <125)
+    - type: numeric_below
+      field: sodium_value
+      alias_fields:
+        - sodio
+        - serum_sodium
+        - na_serum
+      threshold: 126  # <125 mEq/L = severe hyponatremia
+    # Path F: clinical flag explicit
+    - type: truthy_flag
+      field: oncologic_emergency_active
+      alias_fields:
+        - emergencia_oncologica_activa
+        - emergency_oncologic_documented
+
+# Override: emergency stabilized
+override:
+  type: any_of
+  triggers:
+    - type: truthy_flag
+      field: emergency_resolved_or_stabilized_documented
+      alias_fields:
+        - emergencia_resuelta_estabilizada
+        - emergency_stabilized
+    - type: truthy_flag
+      field: oncologic_emergency_managed
+      alias_fields:
+        - emergencia_manejada_documentada
+
+regimen_codes:
+  - REGIMEN_CODES_OBSERVATION_ONLY
+  - REGIMEN_CODES_RADICAL_PROSTATECTOMY
+  - REGIMEN_CODES_RADIOTHERAPY_CURATIVE
+
+keywords:
+  - vigilancia activa
+  - active surveillance
+  - prostatectomía
+  - radioterapia curativa
+  - tratamiento electivo
+
+message: |
+  ⛔ HARD BLOCK CRITICAL: Oncologic emergency activa (SCC / visceral
+  crisis / hipercalcemia maligna / CID / paraneoplastic SIADH) →
+  EMERGENCY-FIRST pathway obligatorio antes de tratamiento standard.
+
+  📊 EMERGENCIES DETECTADAS:
+
+  **1. Spinal Cord Compression (SCC)**:
+  - Window 24-48h crítica para preservar neurological function
+  - **ACCIÓN INMEDIATA**:
+    1. Dexametasona 16 mg IV load → 4 mg IV q6h
+    2. RM columna full-spine emergency <24h
+    3. Decisión multidisciplinaria <48h:
+       - Cirugía descompresiva si paciente fit + esperanza vida >3m
+       - RT post-cirugía: 30 Gy / 10 fx
+       - RT solo si paciente no quirúrgico: 20 Gy/5 fx o 30 Gy/10 fx
+    4. Biopsia lesión epidural si única opción dx (gate 66 también)
+  - **Evidencia**: Patchell Lancet 2005 (cirugía + RT > RT alone)
+
+  **2. Visceral Crisis** (liver/lung/GI):
+  - **ACCIÓN**:
+    1. Stabilización inmediata (UCI/oncology floor)
+    2. Biopsia rapid (sitio accesible) — gate 66 metastatic pathway
+    3. ADT empírico SI provisional_diagnosis virtually_certain
+    4. Considerar urgent chemotherapy si NEPC sospecha (gate 67)
+  - **Liver crisis**: paracentesis si ascitis tensa, lactulose si HE
+  - **Lung crisis**: O2 + corticoides si linfangitis, broncodilatadores
+  - **GI obstruction**: NG decompression + nada VO + cirugía consult
+
+  **3. Hipercalcemia Maligna** (Ca corrected >12 mg/dL):
+  - **ACCIÓN**:
+    1. Hidratación agresiva: 2-3 L NS/24h IV
+    2. **Zoledronic acid 4 mg IV** o pamidronate 90 mg IV
+    3. Si Ca >14: **Calcitonin 4 IU/kg q12h** (rapid 2-4h effect)
+    4. Furosemide solo POST-hidratación (no antes — empeora deshidrat)
+    5. Considerar denosumab 120 mg SC si refractary
+  - Re-check Ca cada 24h hasta normalización
+
+  **4. CID (DIC)**:
+  - **ACCIÓN**:
+    1. PT/INR + fibrinógeno + dímero-D + plaquetas + esquistocitos
+    2. Si bleeding active: FFP + plaquetas + crioprecipitado
+    3. Heparin LOW DOSE solo si trombosis dominant (controversial PCa)
+    4. Tratamiento causa subyacente = PCa = ADT empírico + chemo
+  - **PCa rare cause** vs adenocarcinoma gastric
+
+  **5. Paraneoplastic SIADH** (Na <125 severe):
+  - **ACCIÓN**:
+    1. Restricción agua libre <800 mL/día
+    2. Tolvaptan 15 mg/d si Na <120 + síntomas
+    3. NaCl 3% IV solo si convulsiones/coma (raro PCa)
+    4. **Corregir lentamente** (max 8-10 mEq/L/24h evitar mielinolisis)
+    5. Tratamiento causa = ADT/chemo
+  - **PCa raro** SIADH primary (vs SCLC más común)
+
+  🎯 CONDUCTA CLÍNICA INTEGRADA:
+  1. **Activate Rapid Response/Code Team** (UCI/oncology emergency)
+  2. **NO postergar emergency management** por workup convencional
+  3. **Workup paralelo**: imaging + labs + biopsia rapid en mismo
+     timeframe (no secuencial)
+  4. **Multidisciplinaria**: oncology + uro + emergency med +
+     specialty (neurology si SCC, hepatology si liver crisis, etc.)
+  5. **Documentar emergency resolution** antes de activar override
+  6. **Goals of care discussion** crucial — emergency presentation
+     puede indicar disease advanced + considerar palliative early
+
+  ⚠️ OVERRIDE OBLIGATORIO POST-RESOLUCIÓN:
+  Activar `emergency_resolved_or_stabilized_documented` SOLO cuando:
+  - SCC: function neurológica preservada O establecida deficit
+  - Visceral crisis: hemodinámica estable + organ function recovered
+  - Hipercalcemia: Ca corrected <11 mg/dL sostenida
+  - CID: bleeding controlled + INR <1.5
+  - SIADH: Na >130 sostenida
+
+  🔬 EVIDENCIA:
+  - **Patchell Lancet 2005;366:643** — SCC cirugía + RT vs RT alone
+  - **Loblaw JCO 2012;30:1271** — SCC management guidelines
+  - **Major NEJM 2016;374:1739** — hipercalcemia maligna management
+  - **NCCN Prostate v5.2026 PROS-X**: oncologic emergencies pathway
+  - **EAU 2026 §11**: emergency oncology integration
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `spinal_cord_compression_suspected/confirmed`: flags SCC
+  - `visceral_crisis_documented`: flag visceral crisis
+  - `calcium_corrected_mg_dl`: Ca corrected serum
+  - `dic_diagnosed`: flag DIC
+  - `inr_value`: INR
+  - `bleeding_active_documented`: flag sangrado activo
+  - `sodium_value`: sodio serum
+  - `oncologic_emergency_active`: clinical flag general
+  - `emergency_resolved_or_stabilized_documented`: override flag
+
+evidence_tag: patchell_lancet_2005_loblaw_jco_2012_oncologic_emergencies_pca
+trial_refs:
+  - "Patchell Lancet 2005;366:643 (SCC surgery + RT)"
+  - "Loblaw JCO 2012;30:1271 (SCC management)"
+  - "Major NEJM 2016;374:1739 (malignant hypercalcemia)"
+  - "NCCN Prostate v5.2026 PROS-X"
+  - "EAU 2026 §11 (oncology emergencies)"

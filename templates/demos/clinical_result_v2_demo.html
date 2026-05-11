@@ -1,0 +1,411 @@
+{# ProstaMed v2 demo — Resultado clínico (CDE output post-intake)
+   Faubot 2026-04-26 LXXVII (#67D demo).
+   Pantalla que muestra el resultado del CDE auditable después de capturar
+   el intake: decisión hoy + rationale + gates + alternatives + trial
+   eligibility + risk scores + acción siguiente + signature step REQUIRED
+   para confirmar y abrir expediente.
+   Ruta: /demos/v2/clinical_result #}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resultado clínico · {{ identity.name }} · ProstaMed v2 demo</title>
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+
+<div class="pm2-result-shell">
+
+    {# Faubot LXXXIII — Sidebar centralizado via macro (resuelve bug "href=# placeholders") #}
+    {% from "components/pm2_sidebar.html" import pm2_sidebar %}
+    {{ pm2_sidebar(
+        active='result',
+        identity_nss=identity.mrn or 'demo-mock-001',
+        faubot_release=decision_today.release or '2026-04-26 LXXXIII',
+        gates_count=85,
+    ) }}
+
+    {# ── Main column ── #}
+    <main id="main-content" class="pm2-main" tabindex="-1">
+
+        {# Identity recap (read-only · capturado en intake) #}
+        <header class="pm2-identity-strip">
+            <div class="pm2-identity-block">
+                <h1 class="pm2-identity-name">{{ identity.name }}</h1>
+                <div class="pm2-identity-meta">
+                    <span>{{ identity.mrn }}</span>
+                    <span>·</span>
+                    <span>{{ identity.age }}a</span>
+                    <span>·</span>
+                    <span>ECOG {{ identity.ecog }}</span>
+                    <span>·</span>
+                    <span class="pm2-stage-pill" data-stage="{{ identity.stage }}">{{ identity.stage_label }}</span>
+                    <span>·</span>
+                    <span class="pm2-state-chip" style="font-size:.66rem">Intake completeness {{ identity.intake_completeness }}%</span>
+                </div>
+                <div style="margin-top:6px;color:var(--pn-text-soft);font-size:.7rem">
+                    Capturado {{ identity.captured_at }} por {{ identity.captured_by }}
+                </div>
+            </div>
+            <div></div>
+            <div class="pm2-identity-actions">
+                <a href="/clinical-hub#pm2OfficialClassifier" class="pm2-btn pm2-btn--ghost">Clasificar otro paciente</a>
+                <a href="#confirm" class="pm2-btn pm2-btn--primary">Ir a firmar →</a>
+            </div>
+        </header>
+
+        {# ── Decisión hoy hero ── #}
+        <section class="pm2-decision-hero" aria-labelledby="decision-title">
+            <div class="pm2-decision-hero-head">
+                <span class="pm2-decision-hero-stamp">DECISIÓN HOY · {{ decision_today.release }}</span>
+                <div class="pm2-decision-hero-actions">
+                    <button class="pm2-btn pm2-btn--ghost" type="button">📄 Imprimir orden</button>
+                    <button class="pm2-btn pm2-btn--ghost" type="button">📥 Audit dossier</button>
+                </div>
+            </div>
+            <h2 id="decision-title" class="pm2-decision-hero-title">{{ decision_today.headline }}</h2>
+            <p class="pm2-decision-hero-rationale">
+                <strong>Rationale:</strong> {{ decision_today.rationale }}
+            </p>
+            <div class="pm2-decision-hero-tags">
+                <span class="pm2-state-chip pm2-state-chip--primary"><span class="pm2-mono">{{ decision_today.regimen_code }}</span></span>
+                <span class="pm2-state-chip pm2-state-chip--success">decision_quality {{ (decision_today.decision_quality_score * 100) | round | int }}% · {{ decision_today.decision_quality_label }}</span>
+                <span class="pm2-state-chip">{{ decision_today.evidence_level }}</span>
+            </div>
+        </section>
+
+        {# ── 3-row main: rationale (gates) + alternatives + risk ── #}
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:var(--space-4);padding:var(--space-5) var(--space-6) 0">
+
+            {# Por qué (gates triggered) #}
+            <article class="pm2-tab-card">
+                <div class="pm2-tab-card-head">
+                    <h3>
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--clinical-warning)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        Por qué · {{ gates_triggered | length }} gates relevantes
+                    </h3>
+                    <span class="pm2-head-meta">severity 3-tier</span>
+                </div>
+                <div class="pm2-tab-card-body" style="display:flex;flex-direction:column;gap:10px">
+                    {% for gate in gates_triggered %}
+                    <div class="pm2-gate-card" data-severity="{{ gate.severity }}">
+                        <div class="pm2-gate-card-head">
+                            <span class="pm2-gate-code">{{ gate.code }}</span>
+                            <span class="pm2-gate-badge" data-severity="{{ gate.severity }}">{{ gate.severity }}</span>
+                            <span style="margin-left:auto;font-size:.62rem;color:var(--pn-text-soft);text-transform:uppercase;letter-spacing:.1em">{{ gate.evidence_tag }}</span>
+                        </div>
+                        <h4>{{ gate.title }}</h4>
+                        <div class="pm2-gate-msg">{{ gate.reason }}</div>
+                        <div class="pm2-gate-foot">
+                            {% for ref in gate.trial_refs %}
+                            <a href="{{ ref.url }}" target="_blank" rel="noopener" class="pm2-evidence-link">
+                                <span class="pm2-evidence-link-type">{{ ref.type }}</span>{{ ref.ref }}
+                            </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </article>
+
+            {# Alternativas #}
+            <article class="pm2-tab-card">
+                <div class="pm2-tab-card-head">
+                    <h3>
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--pn-accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
+                        Alternativas evaluadas · {{ alternatives | length }}
+                    </h3>
+                </div>
+                <div class="pm2-tab-card-body" style="display:flex;flex-direction:column;gap:8px">
+                    {% for alt in alternatives %}
+                    <div style="padding:12px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:10px">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+                            <div>
+                                <div style="color:#f0fbff;font-size:.85rem;font-weight:650">{{ alt.label }}</div>
+                                <code style="color:var(--pn-text-soft);font-size:.66rem;font-family:ui-monospace,monospace">{{ alt.code }}</code>
+                            </div>
+                            <span class="pm2-state-chip" style="font-size:.66rem">Rank #{{ alt.rank }}</span>
+                        </div>
+                        <p style="color:var(--pn-text-muted);font-size:.74rem;line-height:1.45;margin-top:6px">{{ alt.rationale }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </article>
+
+            {# Risk calculators #}
+            <article class="pm2-tab-card">
+                <div class="pm2-tab-card-head">
+                    <h3>
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--clinical-info)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                        Risk calculators · {{ risk_calculators | length }}
+                    </h3>
+                </div>
+                <div class="pm2-tab-card-body" style="display:flex;flex-direction:column;gap:8px">
+                    {% for tool in risk_calculators %}
+                    <div style="padding:10px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:10px">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+                            <div style="flex:1;min-width:0">
+                                <div style="color:#f0fbff;font-size:.82rem;font-weight:650">{{ tool.tool }}</div>
+                                <div style="color:var(--pn-text-muted);font-size:.72rem;margin-top:2px">{{ tool.label }}</div>
+                            </div>
+                            <div style="color:var(--pn-accent);font-size:.95rem;font-weight:700;font-feature-settings:'tnum'">{{ tool.score }}</div>
+                        </div>
+                        <p style="color:var(--pn-text-soft);font-size:.7rem;line-height:1.4;margin-top:6px;font-style:italic">{{ tool.interpretation }}</p>
+                        {% if tool.missing_inputs %}
+                        <div style="margin-top:6px;font-size:.66rem;color:var(--clinical-warning)">Faltantes: {{ tool.missing_inputs | join(", ") }}</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </article>
+        </div>
+
+        {# ── Trial eligibility ── #}
+        <div style="padding:0 var(--space-6)">
+            <div class="pm2-section-h">
+                <h2>Eligibilidad a estudios pivotales</h2>
+                <span class="pm2-sub">{{ trial_eligibility | length }} estudios evaluados con criteria match</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:var(--space-3)">
+                {% for trial in trial_eligibility %}
+                {% set is_eligible = trial.criteria_match == trial.criteria_total %}
+                {% set is_partial = trial.criteria_match >= 3 and not is_eligible %}
+                <article class="pm2-trial-card" data-eligible="{{ 'true' if is_eligible else ('partial' if is_partial else 'no') }}">
+                    <div class="pm2-trial-card-head">
+                        <div style="min-width:0;flex:1">
+                            <div class="pm2-trial-card-title">{{ trial.trial }}</div>
+                            <div class="pm2-trial-card-drug">{{ trial.drug }}</div>
+                        </div>
+                        <div style="text-align:right">
+                            <div style="color:{% if is_eligible %}var(--clinical-success){% elif is_partial %}var(--clinical-warning){% else %}var(--pn-text-muted){% endif %};font-size:.95rem;font-weight:700;font-feature-settings:'tnum'">
+                                {{ trial.criteria_match }}/{{ trial.criteria_total }}
+                            </div>
+                            <div style="font-size:.66rem;color:var(--pn-text-soft);margin-top:2px">{{ trial.status }}</div>
+                        </div>
+                    </div>
+                    <div class="pm2-trial-criteria">
+                        {% for criterion, met in trial.criteria %}
+                        <div class="pm2-trial-criterion" data-met="{{ 'true' if met == True else ('false' if met == False else 'pending') }}">
+                            <span class="pm2-tc-icon">{% if met == True %}✓{% elif met == False %}✗{% else %}?{% endif %}</span>
+                            <span>{{ criterion }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+        </div>
+
+        {# ── Next clinical actions ── #}
+        <div style="padding:0 var(--space-6)">
+            <div class="pm2-section-h">
+                <h2>Próximas acciones clínicas</h2>
+                <span class="pm2-sub">{{ next_actions | length }} pasos post-confirmación · ordenados por prioridad</span>
+            </div>
+            {% for action in next_actions %}
+            <div class="pm2-action-row" data-priority="{{ action.priority }}">
+                <div class="pm2-action-stripe"></div>
+                <div>
+                    <div class="pm2-action-label">{{ action.action }}</div>
+                    <div class="pm2-action-rationale">{{ action.rationale }}</div>
+                </div>
+                <div class="pm2-action-due">{{ action.due }}</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {# ── Confirmation + signature step ── #}
+        <section class="pm2-confirm-box" id="confirm" aria-labelledby="confirm-title">
+            <div class="pm2-confirm-box-head">
+                <h2 id="confirm-title" class="pm2-confirm-box-title">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--clinical-success)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M9 15l2 2 4-4"/></svg>
+                    Firma electrónica para confirmar y abrir expediente
+                </h2>
+                <span class="pm2-confirm-required-tag">Requerido</span>
+            </div>
+
+            <p style="color:var(--pn-text-muted);font-size:.84rem;line-height:1.5;margin-bottom:var(--space-3)">
+                Para confirmar la decisión clínica y abrir el expediente longitudinal, el paciente debe firmar el consentimiento informado <strong style="color:#f0fbff">{{ consent.version_code }}</strong> (vigente desde {{ consent.effective_at }}). El consentimiento queda inmutable con hash SHA-256 + FAUBOT release stamp.
+            </p>
+
+            {# Scopes granulares #}
+            <div>
+                <div style="color:var(--pn-accent);font-size:.7rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin-bottom:8px">
+                    Tipos de uso autorizados (granular · LFPDPPP / GDPR / HIPAA)
+                </div>
+                <div class="pm2-scopes-list">
+                    {% for label, required, default_checked in consent.scopes %}
+                    <label class="pm2-scope-item {% if default_checked %}is-checked{% endif %}">
+                        <input type="checkbox" {% if default_checked %}checked{% endif %} {% if required %}disabled{% endif %} data-scope-toggle>
+                        <div style="flex:1">
+                            <div class="pm2-scope-label">{{ label }}</div>
+                            <div class="pm2-scope-meta">{% if required %}Obligatorio para tx clínica primaria{% else %}Opcional · revocable en cualquier momento (ARCO){% endif %}</div>
+                        </div>
+                        <span class="pm2-state-chip {% if default_checked %}pm2-state-chip--success{% endif %}">{% if default_checked %}✓{% else %}○{% endif %}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            {# Signature pad #}
+            <div style="margin-top:var(--space-4)">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                    <div style="color:var(--pn-accent);font-size:.7rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase">
+                        Firma del paciente
+                    </div>
+                    <button type="button" class="pm2-btn pm2-btn--ghost" style="font-size:.7rem;padding:4px 10px;min-height:30px" onclick="pm2ResultClearSig()">Limpiar trazo</button>
+                </div>
+                <div class="pm2-sig-pad-wrap">
+                    <canvas id="resultSigCanvas" class="pm2-sig-pad" width="800" height="160"></canvas>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+                    <input id="resultSigName" type="text" placeholder="Nombre completo del paciente"
+                           value="{{ identity.name }}"
+                           style="flex:1;padding:8px 12px;border:1px solid var(--border-strong);border-radius:8px;font-size:.82rem;background:var(--surface-1);color:#f0fbff;font-family:inherit">
+                </div>
+            </div>
+
+            {# Physician witness #}
+            <div style="margin-top:var(--space-4);padding:12px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:10px">
+                <div style="color:var(--pn-text-soft);font-size:.66rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin-bottom:6px">Clínico responsable (testigo)</div>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <span class="pm2-user-avatar" style="background:linear-gradient(135deg,var(--pm-blue-primary),var(--pn-accent))">FB</span>
+                    <div style="flex:1;min-width:0">
+                        <div style="color:#f0fbff;font-size:.82rem;font-weight:650">{{ consent.physician_witness.name }}</div>
+                        <div style="color:var(--pn-text-muted);font-size:.7rem">{{ consent.physician_witness.license }} · {{ consent.physician_witness.specialty }}</div>
+                    </div>
+                    <span class="pm2-state-chip pm2-state-chip--success">✓ verificado</span>
+                </div>
+            </div>
+
+            <div class="pm2-confirm-actions">
+                <div class="pm2-confirm-status" id="resultSigStatus">
+                    Estado: <span class="pm2-state-chip pm2-state-chip--warn">○ pendiente firma</span>
+                </div>
+                <div style="display:flex;gap:8px">
+                    <a href="/clinical-hub#pm2OfficialClassifier" class="pm2-btn pm2-btn--ghost">Clasificar otro paciente</a>
+                    <button type="button" class="pm2-btn pm2-btn--primary" onclick="pm2ResultConfirm()" id="resultConfirmBtn">Confirmar y abrir expediente →</button>
+                </div>
+            </div>
+        </section>
+
+        <footer style="padding:1.5rem;text-align:center;color:var(--pn-text-soft);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;border-top:1px solid var(--border-subtle);margin-top:1rem">
+            ProstaMed v2 demo · Resultado clínico · {{ gates_triggered | length }} gates · {{ alternatives | length }} alternativas · {{ trial_eligibility | length }} trials evaluados · firma SHA-256 · audit dossier ready
+        </footer>
+    </main>
+
+    {# ── Right rail: quality gauge + decision audit summary ── #}
+    <aside class="pm2-result-rail" aria-label="Calidad de decisión">
+        <div class="pm2-quality-gauge">
+            <div class="pm2-quality-gauge-value">{{ (decision_today.decision_quality_score * 100) | round | int }}%</div>
+            <div class="pm2-quality-gauge-label">Decision quality</div>
+            <div class="pm2-quality-gauge-sub">{{ decision_today.decision_quality_label }}</div>
+        </div>
+
+        <div>
+            <div style="color:var(--pn-accent);font-size:.65rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;margin-bottom:8px">CDE Audit · 5 dim</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="padding:8px 10px;background:var(--surface-3);border-radius:6px;border-left:2px solid var(--pn-accent)">
+                    <div style="color:#f0fbff;font-size:.72rem;font-weight:700">CÓMO · ★★★★★</div>
+                    <div style="color:var(--pn-text-muted);font-size:.66rem">{{ decision_today.regimen_label }}</div>
+                </div>
+                <div style="padding:8px 10px;background:var(--surface-3);border-radius:6px;border-left:2px solid var(--clinical-warning)">
+                    <div style="color:#f0fbff;font-size:.72rem;font-weight:700">POR QUÉ · ★★★★★</div>
+                    <div style="color:var(--pn-text-muted);font-size:.66rem">{{ gates_triggered | length }} gates · severity 3-tier</div>
+                </div>
+                <div style="padding:8px 10px;background:var(--surface-3);border-radius:6px;border-left:2px solid #23D9C8">
+                    <div style="color:#f0fbff;font-size:.72rem;font-weight:700">DATOS · ★★★★★</div>
+                    <div style="color:var(--pn-text-muted);font-size:.66rem">142 campos · {{ identity.intake_completeness }}% completeness</div>
+                </div>
+                <div style="padding:8px 10px;background:var(--surface-3);border-radius:6px;border-left:2px solid #a855f7">
+                    <div style="color:#f0fbff;font-size:.72rem;font-weight:700">EVIDENCIA · ★★★★★</div>
+                    <div style="color:var(--pn-text-muted);font-size:.66rem">PROfound · NCCN PROS-13 cat 1</div>
+                </div>
+                <div style="padding:8px 10px;background:var(--surface-3);border-radius:6px;border-left:2px solid #22FF57">
+                    <div style="color:#f0fbff;font-size:.72rem;font-weight:700">VERSIÓN · ★★★★★</div>
+                    <div style="color:var(--pn-text-muted);font-size:.66rem">Faubot {{ decision_today.release }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <div style="color:var(--pn-accent);font-size:.65rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;margin-bottom:8px">Resumen ejecutivo</div>
+            <div style="padding:12px;background:linear-gradient(135deg,rgba(6,182,212,0.08),transparent);border:1px solid var(--clinical-info-edge);border-radius:10px;font-size:.74rem;line-height:1.55;color:var(--pn-text-muted)">
+                Paciente <strong style="color:#f0fbff">m1CRPC</strong> con falla a 3 líneas previas. <strong style="color:var(--pn-accent)">BRCA2+ patogénico confirmado</strong> habilita PARP. Recomendación principal: <strong style="color:#f0fbff">olaparib 300mg BID</strong> con re-stage PSMA-PET previo. Confidencia clínica: <strong style="color:var(--clinical-success)">alta</strong>.
+            </div>
+        </div>
+    </aside>
+</div>
+
+<script src="{{ url_for('static', filename='js/clinical_intelligence_v2.js') }}"></script>
+<script>
+/* Signature pad + confirm flow */
+(function() {
+    const canvas = document.getElementById('resultSigCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let drawing = false, hasInk = false;
+    ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#0E2A47';
+
+    function pos(e) {
+        const r = canvas.getBoundingClientRect();
+        const t = e.touches ? e.touches[0] : e;
+        return { x: (t.clientX - r.left) * canvas.width / r.width, y: (t.clientY - r.top) * canvas.height / r.height };
+    }
+    function start(e) { drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+    function move(e) { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); hasInk = true; updateStatus(); }
+    function end() { drawing = false; }
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+    canvas.addEventListener('touchstart', start, { passive: false });
+    canvas.addEventListener('touchmove', move, { passive: false });
+    window.addEventListener('touchend', end);
+
+    function updateStatus() {
+        const status = document.getElementById('resultSigStatus');
+        if (hasInk) {
+            status.innerHTML = 'Estado: <span class="pm2-state-chip pm2-state-chip--success">✓ trazo capturado · listo para confirmar</span>';
+        } else {
+            status.innerHTML = 'Estado: <span class="pm2-state-chip pm2-state-chip--warn">○ pendiente firma</span>';
+        }
+    }
+    window.pm2ResultClearSig = function() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        hasInk = false; updateStatus();
+    };
+    window.pm2ResultConfirm = function() {
+        if (!hasInk) {
+            document.getElementById('resultSigStatus').innerHTML =
+                'Estado: <span class="pm2-state-chip pm2-state-chip--danger">⚠ Debe trazar la firma antes de confirmar</span>';
+            canvas.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
+        }
+        const signerName = document.getElementById('resultSigName').value || 'Anónimo';
+        const dataUrl = canvas.toDataURL('image/png');
+        let hash = 0;
+        for (let i = 0; i < dataUrl.length; i++) hash = ((hash << 5) - hash + dataUrl.charCodeAt(i)) | 0;
+        const fakeSha = ('0000000000000000' + (hash >>> 0).toString(16)).slice(-12) + '…' + Math.random().toString(16).slice(2, 8);
+        const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        document.getElementById('resultSigStatus').innerHTML =
+            `Estado: <span class="pm2-state-chip pm2-state-chip--success">✓ Confirmado ${ts}</span> · hash <span class="pm2-mono">${fakeSha}</span>`;
+        document.getElementById('resultConfirmBtn').textContent = '✓ Expediente abierto · ir al perfil →';
+        document.getElementById('resultConfirmBtn').onclick = () => window.location = '/demos/v2/patient_profile_full';
+    };
+})();
+
+/* Scope toggles */
+document.querySelectorAll('[data-scope-toggle]').forEach(cb => {
+    cb.addEventListener('change', () => {
+        cb.closest('.pm2-scope-item').classList.toggle('is-checked', cb.checked);
+    });
+});
+</script>
+</body>
+</html>

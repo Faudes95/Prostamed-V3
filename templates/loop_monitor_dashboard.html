@@ -1,0 +1,324 @@
+{# Faubot LXCV — Iterative Improvement Loop Monitor Dashboard.
+
+   Visualiza últimos 30 días de iteraciones del bucle de mejora continua.
+   8 vectores monitoreados: clinical_coverage + ui_ergonomy + backend_integrity
+   + clinical_evidence + recommendation_accuracy + fda_samd_compliance
+   + performance_a11y + status_reporting.
+#}
+{% extends "layouts/base_clinical.html" %}
+{% from "components/pm2_sidebar.html" import pm2_sidebar %}
+
+{% block head_extra %}
+{{ super() if super }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
+<style>
+.pm2-loop-shell {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0a0e1a 0%, #0f172a 100%);
+}
+@media (max-width: 768px) {
+  .pm2-loop-shell { grid-template-columns: 1fr; }
+}
+
+.pm2-loop-main {
+  padding: 2rem 2.5rem;
+  overflow: visible;
+  min-width: 0;
+}
+
+.pm2-loop-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.pm2-loop-title {
+  color: #e2e8f0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0;
+  background: linear-gradient(135deg, #67e8f9, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.pm2-loop-subtitle {
+  color: #94a3b8;
+  font-size: 0.875rem;
+  margin: 0.5rem 0 0;
+}
+
+.pm2-loop-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.pm2-loop-vector-card {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(15, 23, 42, 0.5));
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  backdrop-filter: blur(12px);
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+.pm2-loop-vector-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(103, 232, 249, 0.35);
+}
+
+.pm2-loop-vector-icon {
+  font-size: 2rem;
+  line-height: 1;
+  margin-bottom: 0.75rem;
+}
+
+.pm2-loop-vector-label {
+  color: #e2e8f0;
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+.pm2-loop-vector-metric {
+  color: #94a3b8;
+  font-size: 0.75rem;
+  margin: 0 0 1rem;
+  font-style: italic;
+}
+
+.pm2-loop-vector-value {
+  color: #67e8f9;
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1;
+}
+
+.pm2-loop-vector-status {
+  display: inline-block;
+  padding: 0.25rem 0.625rem;
+  border-radius: 1rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+.pm2-loop-vector-status.ok {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.pm2-loop-vector-status.warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+.pm2-loop-vector-status.critical {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+.pm2-loop-vector-status.no-data {
+  background: rgba(100, 116, 139, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(100, 116, 139, 0.25);
+}
+
+.pm2-loop-vector-skill {
+  color: #64748b;
+  font-size: 0.6875rem;
+  margin: 0.5rem 0 0;
+  font-family: ui-monospace, monospace;
+}
+
+/* Iterations table */
+.pm2-loop-iterations {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 1rem;
+  padding: 1.5rem;
+}
+
+.pm2-loop-iterations h2 {
+  color: #e2e8f0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
+.pm2-loop-iter-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.pm2-loop-iter-table th {
+  text-align: left;
+  padding: 0.625rem 0.875rem;
+  color: #67e8f9;
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.pm2-loop-iter-table td {
+  padding: 0.5rem 0.875rem;
+  color: #cbd5e1;
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.08);
+}
+
+.pm2-loop-iter-table tr:last-child td { border-bottom: none; }
+
+.pm2-loop-empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.pm2-skip-link {
+  position: absolute;
+  top: -48px;
+  left: 0;
+  background: #0a0e1a;
+  color: #67e8f9;
+  padding: 0.625rem 1rem;
+  z-index: 100;
+  text-decoration: none;
+  border: 1px solid #67e8f9;
+  border-radius: 0 0 0.5rem 0;
+}
+.pm2-skip-link:focus { top: 0; }
+
+.pm2-loop-shell *:focus-visible {
+  outline: 2px solid #67e8f9;
+  outline-offset: 2px;
+  border-radius: 0.375rem;
+}
+
+.pm2-loop-breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #94a3b8;
+  font-size: 0.8125rem;
+  text-decoration: none;
+  margin-bottom: 0.75rem;
+  transition: color 0.15s ease;
+}
+.pm2-loop-breadcrumb:hover { color: #67e8f9; }
+</style>
+{% endblock %}
+
+{% block content %}
+<a href="#loop-main" class="pm2-skip-link">Saltar al contenido principal</a>
+
+<div class="pm2-loop-shell">
+  {{ pm2_sidebar(
+       active='loop-monitor',
+       identity_nss=None,
+       faubot_release='LXCV',
+       gates_count=89,
+       kpi_total=total_iterations or 0,
+       cohort_count=11,
+       therapy_count=27
+  ) }}
+
+  <div id="loop-main" class="pm2-loop-main" tabindex="-1">
+    <header class="pm2-loop-header">
+      <div>
+        <a href="/clinical-hub" class="pm2-loop-breadcrumb">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+          Centro clínico por estadio
+        </a>
+        <h1 class="pm2-loop-title">Iterative Improvement Loop Monitor</h1>
+        <p class="pm2-loop-subtitle">
+          Vigilancia continua de 8 vectores de mejora · últimos 30 días ·
+          {{ total_iterations }} iteraciones registradas
+        </p>
+      </div>
+    </header>
+
+    <!-- 8 vector cards (bento grid) -->
+    <section aria-label="Vectores monitoreados">
+      <div class="pm2-loop-stats-grid">
+        {% for vec_key, vec_meta in vectors.items() %}
+        {% set vec_summary = summary.get(vec_key, {}) %}
+        <article class="pm2-loop-vector-card">
+          <div class="pm2-loop-vector-icon">{{ vec_meta.icon }}</div>
+          <h3 class="pm2-loop-vector-label">{{ vec_meta.label }}</h3>
+          <p class="pm2-loop-vector-metric">{{ vec_meta.target_metric }}</p>
+
+          {% if vec_summary.get("count", 0) > 0 %}
+          <p class="pm2-loop-vector-value">{{ vec_summary.latest_value or 0 }}</p>
+          <span class="pm2-loop-vector-status {{ 'ok' if vec_summary.ok > vec_summary.critical else 'warning' if vec_summary.warning > 0 else 'critical' }}">
+            {{ vec_summary.count }} iteraciones · {{ vec_summary.ok }}✓ · {{ vec_summary.warning }}⚠ · {{ vec_summary.critical }}✗
+          </span>
+          {% else %}
+          <p class="pm2-loop-vector-value">—</p>
+          <span class="pm2-loop-vector-status no-data">Sin datos en últimos 30d</span>
+          {% endif %}
+
+          <p class="pm2-loop-vector-skill">{{ vec_meta.skill }}</p>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <!-- Recent iterations table -->
+    <section class="pm2-loop-iterations" aria-label="Iteraciones recientes">
+      <h2>Iteraciones recientes (últimos 30 días)</h2>
+      {% if iterations and iterations | length > 0 %}
+      <table class="pm2-loop-iter-table">
+        <thead>
+          <tr>
+            <th>Timestamp UTC</th>
+            <th>Vector</th>
+            <th>Métrica</th>
+            <th>Valor</th>
+            <th>Status</th>
+            <th>Release</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for iter in iterations %}
+          <tr>
+            <td>{{ iter.timestamp }}</td>
+            <td>{{ vectors[iter.vector].icon if iter.vector in vectors else "📋" }} {{ iter.vector }}</td>
+            <td>{{ iter.metric }}</td>
+            <td><strong style="color:#67e8f9;">{{ iter.value }}</strong></td>
+            <td>
+              <span class="pm2-loop-vector-status {{ iter.status }}">{{ iter.status }}</span>
+            </td>
+            <td><code style="color:#94a3b8;">{{ iter.faubot_release or "—" }}</code></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="pm2-loop-empty-state">
+        <p>📊 Aún no hay iteraciones registradas.</p>
+        <p style="margin-top:0.5rem; font-size:0.75rem;">
+          Los cron jobs se ejecutarán automáticamente:
+          <code>faubot_daily_loop.yml</code> (06:00 UTC),
+          <code>evidence_refresh_loop.yml</code> (Domingo 00:00 UTC),
+          <code>scenario_drift_detection.yml</code> (Miércoles 00:00 UTC),
+          <code>ui_performance_loop.yml</code> (Viernes 18:00 UTC).
+        </p>
+      </div>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

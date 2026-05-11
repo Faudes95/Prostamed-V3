@@ -1,0 +1,253 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 48: enzalutamide_hyponatremia_siadh
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LIX) — Auditoría #58 — Gate YAML-NATIVE.
+#
+# 🆕 PRIMER GATE DEL CATÁLOGO PARA ELECTRÓLITOS CRÍTICOS (Na/K).
+# Sienta arquitectura electrólitos preparada para futuros gates
+# (#59 hipokalemia abi, hipocalcemia extendida, hipofosfatemia, etc.)
+#
+# Razón clínica:
+#   Enzalutamida (Xtandi) tiene WARNING regulatorio sobre hyponatremia
+#   immune-mediated por SIADH (Síndrome Inadecuada secreción Antidiurética).
+#   Mecanismo: enzalutamida cruza barrera hematoencefálica + interactúa
+#   con receptor V2 de ADH en hipófisis posterior → liberación inadecuada
+#   ADH → retención hídrica → hyponatremia dilucional con osmolaridad
+#   urinaria inapropiadamente concentrada (criterios SIADH Bartter-Schwartz
+#   1967).
+#
+#   Datos prevalencia (PREVAIL + AFFIRM):
+#     - Hyponatremia ANY GRADE: 5-9% pacientes enzalutamida (vs 2-3% placebo)
+#     - Hyponatremia G≥3 (Na <125 mEq/L): 1.0-1.6%
+#     - Hyponatremia G≥4 (Na <120, life-threatening edema cerebral +
+#       convulsiones): 0.2-0.4%
+#     - **Mortalidad sin reconocimiento: 5-15%** (edema cerebral con herniación)
+#     - Tiempo medio aparición: 8-16 sem (rango 1-52 sem, puede tardío)
+#     - Discontinuación PERMANENTE por hyponatremia G≥3 recurrente: 0.6%
+#
+#   Distintivo de hyponatremia ARSI:
+#     - Apalutamida (TITAN): ~0.5% G≥3 (perfil bajo)
+#     - Darolutamida (ARAMIS): <0.3% G≥3 (perfil mínimo, MENOR penetración SNC)
+#     - **Enzalutamida**: 1.0-1.6% G≥3 (mayor penetración SNC = mayor
+#       interacción con ADH receptor V2 hipofisario)
+#   Por lo tanto gate 48 scope SOLO `REGIMEN_CODES_ENZALUTAMIDE`.
+#
+#   Threshold canónico (CTCAE v5 + Bartter-Schwartz 1967):
+#     - Path A: Na sérico <125 mEq/L (CTCAE v5 G≥3 severo — sintomático
+#       intervención médica indicada)
+#     - Path B: Criterios SIADH Bartter-Schwartz compound (osmolaridad
+#       sérica <270 mOsm/kg + osmolaridad urinaria >100 mOsm/kg +
+#       euvolemia documentada — exclusión causas alternativas)
+#     - Path C: Na sérico <120 mEq/L (CTCAE v5 G≥4 life-threatening —
+#       emergencia neurológica)
+#     - Path D: hyponatremia_siadh_documented_for_enzalutamide flag
+#
+#   Override: hyponatremia_resolved_for_enzalutamide=Sí
+#   (Na recuperado >130 mEq/L documentado en 2 mediciones ≥7d +
+#   restricción hídrica completada + tolvaptán activo si refractaria +
+#   nephrology endorsement + monitoring quincenal × 4 sem post-reintroducción).
+#
+#   Coexistencia con gates ARSI (17+19+20+31+47): mismo paciente puede
+#   tener QTc + hyponatremia + cognitive simultáneamente. Gate 48 hard_block
+#   bloquea enzalutamida; otros ARSI alternativas válidas (apalutamida +
+#   darolutamida bajo perfil hyponatremia).
+#
+#   Bloquea: REGIMEN_CODES_ENZALUTAMIDE específicamente (no toda la clase ARSI).
+# ──────────────────────────────────────────────────────────────────────
+
+code: enzalutamide_hyponatremia_siadh
+title: "Enzalutamida × hyponatremia/SIADH G≥3 (PREVAIL+AFFIRM + Bartter-Schwartz 1967)"
+faubot_added_in: "2026-04-25 LIX"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: Na sérico <125 mEq/L (CTCAE v5 G≥3 severo)
+    - type: numeric_below
+      field: sodium_serum
+      alias_fields:
+        - sodium
+        - na_serum
+        - sodium_meq_l
+        - serum_na
+        - sodio
+      threshold: 125
+    # Path B: Criterios SIADH Bartter-Schwartz compound
+    - type: all_of
+      triggers:
+        - type: numeric_below
+          field: serum_osmolality
+          alias_fields:
+            - serum_osmolarity
+            - osmolaridad_serica
+            - osmolality_serum_mosm_kg
+          threshold: 270
+        - type: numeric_above
+          field: urine_osmolality
+          alias_fields:
+            - urine_osmolarity
+            - osmolaridad_urinaria
+            - osmolality_urine_mosm_kg
+          threshold: 100
+        - type: truthy_flag
+          field: euvolemia_documented_for_siadh
+          alias_fields:
+            - euvolemia_present
+            - patient_euvolemic_for_siadh
+            - normal_volume_status_documented
+    # Path C: Na sérico <120 mEq/L (CTCAE v5 G≥4 emergencia)
+    - type: numeric_below
+      field: sodium_serum
+      alias_fields:
+        - sodium
+        - na_serum
+        - sodium_meq_l
+        - serum_na
+        - sodio
+      threshold: 120
+    # Path D: flag clínico documentado por nefrólogo/endocrinólogo
+    - type: truthy_flag
+      field: hyponatremia_siadh_documented_for_enzalutamide
+      alias_fields:
+        - siadh_for_enzalutamide_documented
+        - immune_siadh_for_enzalutamide
+        - enzalutamide_hyponatremia_documented
+
+# Override: post-resolución completa Na + restricción hídrica + nephrology endorsement
+override:
+  type: truthy_flag
+  field: hyponatremia_resolved_for_enzalutamide
+  alias_fields:
+    - sodium_recovered_for_enzalutamide
+    - siadh_resolved_for_enzalutamide
+    - hyponatremia_normalized_for_enzalutamide
+
+regimen_codes:
+  - REGIMEN_CODES_ENZALUTAMIDE
+
+keywords:
+  - KEYWORDS_ENZALUTAMIDE
+
+message: |
+  Enzalutamida (Xtandi) NO debe continuarse con hyponatremia G≥3
+  (Na <125 mEq/L) o criterios SIADH (Síndrome Inadecuada secreción
+  Antidiurética). Hyponatremia G≥4 (Na <120 mEq/L) es EMERGENCIA
+  NEUROLÓGICA — riesgo edema cerebral + convulsiones + herniación
+  con mortalidad 5-15% sin reconocimiento.
+
+  Mecanismo (per Sznol JCO 2017 + Bartter-Schwartz 1967):
+    - Enzalutamida cruza barrera hematoencefálica (penetración SNC alta
+      vs apa/daro)
+    - Interactúa con receptor V2 ADH en hipófisis posterior →
+      liberación INADECUADA ADH (independiente de osmolaridad sérica)
+    - Retención hídrica → hyponatremia dilucional (Na bajo + agua
+      corporal total elevada)
+    - Osmolaridad urinaria INAPROPIADAMENTE concentrada (>100 mOsm/kg)
+      ante osmolaridad sérica baja (<270 mOsm/kg) — criterios diagnósticos
+      SIADH
+
+  Evidencia clínica (PREVAIL + AFFIRM):
+    - Hyponatremia any grade: 5-9% enzalutamida (vs 2-3% placebo)
+    - Hyponatremia G≥3 (Na <125): 1.0-1.6%
+    - Hyponatremia G≥4 (Na <120, edema cerebral): 0.2-0.4%
+    - Discontinuación PERMANENTE por recurrencia: 0.6%
+    - Tiempo medio aparición: 8-16 sem (rango 1-52 sem)
+
+  Distintivo ARSI:
+    - **Enzalutamida** (Xtandi): 1.0-1.6% G≥3 (mayor penetración SNC =
+      mayor interacción ADH receptor V2)
+    - Apalutamida (Erleada/TITAN): ~0.5% G≥3 (perfil bajo)
+    - Darolutamida (Nubeqa/ARAMIS): <0.3% G≥3 (perfil mínimo —
+      MENOR penetración SNC documentada >10× vs enzalutamida)
+  Por eso gate 48 scope SOLO enzalutamida; apa/daro alternativas
+  válidas con perfil hyponatremia favorable.
+
+  Conducta clínica obligatoria (Bartter-Schwartz + Endocrine Society
+  2014 SIADH guidelines):
+  1. Suspender enzalutamida INMEDIATAMENTE ante Na <125 documentado.
+  2. Workup para confirmar SIADH + descartar causas alternativas:
+     - **Sodium sérico repetido + urinario** (Na sérico bajo + Na
+       urinario alto >40 mEq/L = SIADH)
+     - **Osmolaridad sérica + urinaria** (sérica <270 + urinaria >100
+       mOsm/kg = criterio Bartter-Schwartz)
+     - **Volemia clínica** (euvolemia = SIADH; hipovolemia = depleción;
+       hipervolemia = ICC/sirosis)
+     - **TSH + cortisol AM** (descartar hypothyroidism + insufic adrenal
+       como causas alternativas)
+     - **Función renal + ácido úrico** (hipoosmolaridad SIADH suele
+       cursar con hipouricemia)
+     - **Causas iatrogénicas alternativas**: SSRIs, opioides,
+       carbamazepina, oxcarbazepina (medication review crítico)
+  3. Tratamiento por severidad:
+     - **G2 (Na 125-130, asintomática)**: restricción hídrica 800-1000
+       mL/d + monitoring Na cada 24-48h
+     - **G3 (Na 120-125, sintomática moderada)**: hospitalización +
+       restricción hídrica estricta + furosemida 20-40 mg PO/IV +
+       sal oral 6-9 g/d; considerar tolvaptán 15 mg PO si refractaria
+       (vaptan = antagonista V2 selectivo, indicación específica SIADH)
+     - **G4 (Na <120 + síntomas severos: convulsiones, coma,
+       insufic respiratoria)**: UCI + suero salino hipertónico 3% IV
+       (corregir Na 4-6 mEq/L primeras 6h, NO MÁS DE 8-10 mEq/L/d
+       para evitar mielinolisis pontina central) + manitol si edema
+       cerebral
+  4. ⚠️ DISCONTINUACIÓN PERMANENTE enzalutamida en:
+     - G3 recurrente tras reintroducción (con o sin restricción hídrica)
+     - G4 cualquier evento (ningún paciente debe ser reexpuesto a
+       enzalutamida tras evento G4)
+     - Necesidad de tolvaptán crónico para mantener Na normal
+  5. Override (`hyponatremia_resolved_for_enzalutamide=Sí`)
+     SOLO si:
+     - Na ≥130 mEq/L documentado en 2 mediciones separadas ≥7d
+     - Restricción hídrica documentada (800-1000 mL/d) o tolvaptán
+       activo manteniendo Na normal
+     - Causas alternativas descartadas (TSH normal + cortisol normal +
+       sin SSRI/opioide/anti-epiléptico activo)
+     - Nephrology endorsement explícito en HC
+     - Plan monitoring Na sérico SEMANAL × 4 sem post-reintroducción
+       + quincenal × 8 sem
+  6. Considerar terapia alternativa NO-enzalutamida:
+     - **Apalutamida** (Erleada) — perfil hyponatremia bajo (~0.5% G≥3)
+       (gate 18 LVEF + gate 42 SJS/TEN + gate 19 cognitive monitor)
+     - **Darolutamida** (Nubeqa) — perfil hyponatremia MUY bajo (<0.3%)
+       + menor penetración SNC (preferida si edad >75); gates 19+32
+       monitor
+     - **Abiraterona + ADT** — perfil hyponatremia mínimo (~0.2%); gates
+       3+21+28+39 monitor
+     - **NO docetaxel/cabazitaxel** si quimio-tolerable: perfil
+       hyponatremia alto en taxanos (~3-5%)
+
+  CAMPOS REQUERIDOS:
+    - `sodium_serum`: Na sérico mEq/L (CTCAE v5 grading)
+    - `serum_osmolality` + `urine_osmolality`: criterio Bartter-Schwartz
+    - `euvolemia_documented_for_siadh`: flag clínico volemia normal
+    - `hyponatremia_siadh_documented_for_enzalutamide`: flag dx clínico
+
+evidence_tag: prevail_affirm_xtandi_label_bartter_schwartz_1967_endocrine_society_2014
+trial_refs:
+  - "PREVAIL"
+  - "AFFIRM"
+  - "Beer NEJM 2014"
+  - "Scher NEJM 2012"
+  - "Bartter NEJM 1967"
+  - "Verbalis Endocrine Society 2014"
+  - "Xtandi label §6"
+  - "CTCAE v5"
+
+references:
+  - "Beer TM et al. PREVAIL. NEJM 2014;371:424."
+  - "Scher HI et al. AFFIRM. NEJM 2012;367:1187."
+  - "Bartter FC, Schwartz WB. The syndrome of inappropriate secretion of antidiuretic hormone. Am J Med 1967;42:790."
+  - "Verbalis JG et al. Endocrine Society Clinical Practice Guideline: Diagnosis + Treatment of Hyponatremia. Clin Endocrinol Metab 2014."
+  - "Xtandi (enzalutamide) FDA prescribing information §6 — Adverse Reactions (Hyponatremia)."
+  - "Sznol M et al. Endocrine-related Adverse Events Associated with Cancer Therapies. JCO 2017;35:709."
+  - "Spasovski G et al. ESPEN/ESE/ESICM Clinical Practice Guideline on Hyponatremia. Eur J Endocrinol 2014."
+  - "CTCAE v5.0 — Hyponatremia grading (G1 130-134 → G4 <120 life-threatening)."
+  - "NCCN Guidelines Prostate Cancer v5.2026 — Enzalutamide monitoring."
+
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Enzalutamide hyponatremia monitoring + SIADH evaluation"
+  eau_section: "EAU 2026 §6.5.7 — ARSI safety profile (enzalutamide-specific hyponatremia warnings)"
+  endocrine_society_section: "Verbalis 2014 — Hyponatremia clinical practice guideline"
+  espen_section: "Spasovski 2014 — ESPEN/ESE/ESICM SIADH guideline"

@@ -1,0 +1,62 @@
+name: Status Report Loop (LXCVII)
+
+# Faubot LXCVII — Iterative Improvement Loop · Weekly Friday 22:00 UTC
+# Genera weekly KPI status report consolidando los 8 vectores del loop_monitor
+
+on:
+  schedule:
+    - cron: "0 22 * * 5"  # Weekly Friday 22:00 UTC (post UI perf loop)
+  workflow_dispatch:
+
+jobs:
+  status-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deps
+        run: pip install pyyaml pytest
+
+      - name: Generate weekly KPI status report
+        run: |
+          python -c "
+          from prostanet.presentation.loop_monitor import (
+              get_vector_summary, get_recent_iterations, CORE_VECTORS,
+              record_iteration,
+          )
+          summary = get_vector_summary(days=7)
+
+          print('# Weekly KPI Status Report')
+          print()
+          print('| Vector | Iteraciones 7d | OK | Warning | Critical |')
+          print('|--------|----------------|-----|---------|----------|')
+          for vec_key, vec_meta in CORE_VECTORS.items():
+              s = summary.get(vec_key, {'count': 0, 'ok': 0, 'warning': 0, 'critical': 0})
+              print(f'| {vec_meta[\"icon\"]} {vec_meta[\"label\"]} | {s.get(\"count\", 0)} | {s.get(\"ok\", 0)} | {s.get(\"warning\", 0)} | {s.get(\"critical\", 0)} |')
+
+          # Record this run
+          import datetime
+          record_iteration(
+              iteration_id=f'status-report-{datetime.date.today().isoformat()}',
+              vector='status_reporting',
+              metric='weekly_kpi_report_generated',
+              value=1.0,
+              status='ok',
+              notes=f'Weekly KPI report 7d window with {sum(s.get(\"count\", 0) for s in summary.values())} total iterations',
+          )
+          "
+
+      - name: Upload status report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-status-report-${{ github.run_id }}
+          path: prostanet_loop_monitor.db
+          retention-days: 90

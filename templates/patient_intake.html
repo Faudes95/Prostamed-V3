@@ -1,0 +1,179 @@
+{% extends "layouts/base_clinical.html" %}
+{% from "components/clinical_ui.html" import surface_card %}
+
+{% block content %}
+    <div class="mx-auto max-w-6xl space-y-6">
+        <nav class="grid gap-3 rounded-3xl border border-slate-800 bg-slate-900/70 p-4 shadow-2xl shadow-slate-950/30 sm:grid-cols-2 lg:grid-cols-4" aria-label="Navegación transversal de ingreso clínico">
+            <a href="/clinical-hub#pm2OfficialClassifier" class="pn-btn pn-btn-primary justify-center">Nuevo paciente</a>
+            <a href="/patients" class="pn-btn pn-btn-secondary justify-center">Pacientes</a>
+            <a href="/dashboard" class="pn-btn pn-btn-secondary justify-center">Tablero general</a>
+            <a href="/clinical-hub" class="pn-btn pn-btn-secondary justify-center">Centro clínico</a>
+        </nav>
+
+        {% call surface_card("Compatibilidad", "Ingreso legacy del paciente", "Esta vista ya no mantiene un formulario manual separado. Consume el mismo contexto modular del wizard y solo pide los datos adicionales realmente faltantes.") %}
+            <div class="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(340px,1.1fr)]">
+                <div class="rounded-3xl border border-cyan-500/20 bg-cyan-500/10 p-5">
+                    <p class="text-xs uppercase tracking-[0.22em] text-cyan-300">Borrador clínico importado</p>
+                    <p class="mt-2 text-sm text-slate-200" id="compatibilityScopeDescription">Cargando contexto clínico...</p>
+                    <ul class="mt-4 space-y-2 text-sm text-slate-300" id="compatibilityScopeBullets"></ul>
+                </div>
+                <div class="rounded-3xl border border-slate-800 bg-slate-950/50 p-5">
+                    <p class="text-xs uppercase tracking-[0.22em] text-slate-500">Principio operativo</p>
+                    <ul class="mt-3 space-y-2 text-sm text-slate-300">
+                        <li>Una sola captura visible por concepto clínico.</li>
+                        <li>Las escalas muestran su significado clínico antes de guardarse.</li>
+                        <li>La serie longitudinal de APE se guarda sin romper el basal canónico.</li>
+                        <li>La capa de investigación queda opcional y colapsada.</li>
+                    </ul>
+                </div>
+            </div>
+        {% endcall %}
+
+        {% call surface_card("Evaluación clínica", "Resumen importado", "El tratamiento y la clasificación clínica llegan del centro clínico; aquí solo se completa el longitudinal formal del paciente.") %}
+            <div id="assessmentContext" class="grid gap-4 md:grid-cols-2">
+                <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Módulo clínico</p>
+                    <p id="assessmentModule" class="mt-2 text-sm font-medium text-white"></p>
+                    <p id="assessmentStateLabel" class="mt-2 text-sm text-cyan-200"></p>
+                </div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Recomendación principal NCCN / comparación EAU</p>
+                    <p id="assessmentPrimary" class="mt-2 text-sm text-slate-200"></p>
+                    <p id="assessmentComparison" class="mt-2 text-sm text-slate-400"></p>
+                </div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 md:col-span-2">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Resumen clínico</p>
+                    <p id="assessmentSummary" class="mt-2 text-sm text-slate-300"></p>
+                    <ul id="assessmentHighlights" class="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-300"></ul>
+                </div>
+            </div>
+        {% endcall %}
+
+        <div class="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
+            {% call surface_card("Importado", "Datos clínicos ya capturados", "Lo que ya vino del wizard queda visible como capturado/verificado y no se vuelve a pedir.") %}
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <p class="text-sm text-slate-400">Variables que ya modulan la recomendación actual.</p>
+                    <span class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs text-slate-300" id="importedFieldCount">0 variables importadas</span>
+                </div>
+                <div class="mt-4 grid gap-3 md:grid-cols-2" id="importedClinicalFields"></div>
+            {% endcall %}
+
+            {% call surface_card("Registro longitudinal", "Compatibilidad modular", "Esta vista usa exactamente los mismos fragments, capas y semántica que el wizard oficial del centro clínico.") %}
+                <form id="registrationForm" class="space-y-5">
+                    <input type="hidden" name="assessment_id" id="registrationAssessmentId" value="{{ assessment_id }}">
+                    <input type="hidden" name="assessment_state" id="registrationAssessmentState">
+                    <div id="registrationFragments" class="space-y-5"></div>
+                    <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                        <p class="text-xs uppercase tracking-[0.22em] text-slate-500">Estado del registro</p>
+                        <p class="mt-2 text-sm text-slate-300" id="registrationStatus">Cargando contexto del borrador clínico...</p>
+                    </div>
+                    <div class="flex flex-wrap justify-end gap-3">
+                        <a href="/patients" class="pn-btn pn-btn-secondary">Pacientes</a>
+                        <a href="/dashboard" class="pn-btn pn-btn-secondary">Tablero general</a>
+                        <a href="/clinical-hub#pm2OfficialClassifier" class="pn-btn pn-btn-secondary">Nuevo paciente</a>
+                        <button type="submit" id="registerPatientButton" class="pn-btn pn-btn-primary">Guardar y abrir expediente</button>
+                    </div>
+                </form>
+            {% endcall %}
+        </div>
+    </div>
+
+    {% include "components/consent_modal.html" %}
+{% endblock %}
+
+{% block page_scripts %}
+    <script src="{{ url_for('static', filename='js/longitudinal_capture_helpers.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/registration_context_ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/consent_flow.js') }}"></script>
+    <script>
+        const assessmentId = "{{ assessment_id }}";
+        const importedClinicalFields = document.getElementById("importedClinicalFields");
+        const importedFieldCount = document.getElementById("importedFieldCount");
+        const registrationForm = document.getElementById("registrationForm");
+        const registrationFragments = document.getElementById("registrationFragments");
+        const registrationStatus = document.getElementById("registrationStatus");
+        const registrationAssessmentId = document.getElementById("registrationAssessmentId");
+        const registrationAssessmentState = document.getElementById("registrationAssessmentState");
+        const assessmentModule = document.getElementById("assessmentModule");
+        const assessmentStateLabel = document.getElementById("assessmentStateLabel");
+        const assessmentPrimary = document.getElementById("assessmentPrimary");
+        const assessmentComparison = document.getElementById("assessmentComparison");
+        const assessmentSummary = document.getElementById("assessmentSummary");
+        const assessmentHighlights = document.getElementById("assessmentHighlights");
+        const compatibilityScopeDescription = document.getElementById("compatibilityScopeDescription");
+        const compatibilityScopeBullets = document.getElementById("compatibilityScopeBullets");
+        const registerPatientButton = document.getElementById("registerPatientButton");
+
+        const consentFlow = new window.ProstaNetConsentFlow({
+            onStatus: (message, tone) => {
+                registrationStatus.textContent = message;
+                registrationStatus.className = `mt-2 text-sm ${tone === 'error' ? 'text-rose-300' : tone === 'success' ? 'text-emerald-300' : 'text-slate-300'}`;
+            },
+            onBusy: (isBusy, buttonText) => {
+                registerPatientButton.disabled = isBusy;
+                registerPatientButton.textContent = isBusy ? buttonText : 'Guardar y abrir expediente';
+            },
+        });
+
+        function escapeHtml(value) {
+            return window.ProstaNetRegistrationContextUI.escapeHtml(value);
+        }
+
+        async function loadAssessmentContext() {
+            const response = await fetch(`/api/clinical-assessments/${encodeURIComponent(assessmentId)}`);
+            const data = await response.json();
+            if (!data.success) {
+                registrationStatus.textContent = data.error || "No se pudo cargar la evaluación clínica.";
+                registerPatientButton.disabled = true;
+                return;
+            }
+
+            const assessment = data.assessment || {};
+            const result = assessment.display_result || {};
+            const primary = result.nccn_primary || {};
+            assessmentModule.textContent = assessment.module_label || assessment.module_id || "Sin módulo";
+            assessmentStateLabel.textContent = assessment.state_label || assessment.state || "";
+            assessmentPrimary.textContent = primary.titulo_clinico || primary.label || "Sin recomendación estructurada";
+            assessmentComparison.textContent = result.eau_comparison?.explicacion_breve || result.eau_comparison?.label || "";
+            assessmentSummary.textContent = primary.resumen_del_caso || result.report_sections?.summary || "";
+            assessmentHighlights.innerHTML = (primary.fundamentos_personalizados || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+
+            compatibilityScopeDescription.textContent = data.scope_description || "";
+            compatibilityScopeBullets.innerHTML = (data.scope_bullets || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+            registrationAssessmentId.value = data.assessment?.id || assessmentId;
+            registrationAssessmentState.value = data.assessment?.state || "";
+
+            window.ProstaNetRegistrationContextUI.renderImportedClinicalFields({
+                container: importedClinicalFields,
+                countNode: importedFieldCount,
+                fields: data.imported_clinical_fields || [],
+            });
+            window.ProstaNetRegistrationContextUI.renderRegistrationContext({
+                target: registrationFragments,
+                fragments: data.registration_fragments || [],
+                defaults: data.registration_defaults || {},
+                captureLayers: data.capture_layers || [],
+            });
+            registrationStatus.textContent = "Complete únicamente los datos longitudinales faltantes y firme el consentimiento para abrir el expediente.";
+        }
+
+        registrationForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const payload = window.ProstaNetRegistrationContextUI.buildRegistrationPayload(registrationForm);
+            payload.assessment_id = registrationAssessmentId.value;
+            payload.assessment_state = registrationAssessmentState.value || "";
+            registrationStatus.textContent = "Preparando consentimiento informado y evidencia de firma electrónica.";
+            try {
+                await consentFlow.open({
+                    payload,
+                    sourceContext: "compatibility_intake",
+                    redirectUrl: payload.nss ? `/patient_profile/${encodeURIComponent(payload.nss)}` : "/patients",
+                });
+            } catch (error) {
+                registrationStatus.textContent = error.message || "No se pudo iniciar el consentimiento informado.";
+            }
+        });
+
+        loadAssessmentContext();
+    </script>
+{% endblock %}

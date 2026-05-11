@@ -1,0 +1,160 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 59: turp_brachytherapy_contraindication
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXV) — Auditoría #67A — RP vs RT subspecialty.
+#
+# Razón clínica:
+#   Resección Transuretral de Próstata (TURP) previa contraindica
+#   braquiterapia (LDR/HDR) por:
+#     - Defecto cavidad post-TURP altera dosimetría seed implantation
+#     - Riesgo retención urinaria post-implant ≥40% (vs 10% baseline)
+#     - Fistulización uretra-recto: 2-5% (vs <0.5% baseline)
+#     - Stricture uretral severa late-effect: 15-25%
+#     - Incontinencia urinaria stress: 20-30% (vs 5% baseline)
+#
+#   Threshold AAPM TG-137 + ABS recommendation:
+#     - TURP <5 años + volume resected ≥30cc → contraindicación absoluta
+#     - TURP ≥5 años + cavidad cicatrizada + IPSS bajo → considerable con
+#       precauciones (centro experto)
+#     - TURP cualquier intervalo + retention symptoms → contraindicado
+#
+#   Severity: hard_block para LDR/HDR brachy (preserve EBRT/SBRT como
+#   alternativa RT viable).
+#
+#   Override: brachy_attempt_after_turp_protocol_documented (centro
+#   especializado con plan formal post-TURP brachytherapy).
+#
+#   Coexistencia: gate puede coexistir con gate 56 (anticoag), 57 (IBD),
+#   58 (prior RT), 60 (SVI) — todos contribuyen profile.
+# ──────────────────────────────────────────────────────────────────────
+
+code: turp_brachytherapy_contraindication
+title: "TURP previo → contraindicación braquiterapia LDR/HDR (defecto cavidad)"
+faubot_added_in: "2026-04-25 LXXV"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: TURP <5 años + volume resected ≥30cc (criterio AAPM estricto)
+    - type: all_of
+      triggers:
+        - type: string_match
+          field: history_of_turp
+          alias_fields:
+            - prior_turp
+            - turp_previo
+            - turp_history
+          patterns:
+            - "recent_<2yr"
+            - "recent_2_5yr"
+            - "multiple"
+            - "yes_recent_<5yr"
+            - "yes_recent"
+            - "reciente_menor_5anios"
+        - type: numeric_above
+          field: turp_volume_resected_cc
+          alias_fields:
+            - turp_volume_cc
+            - volumen_resecado_turp_cc
+            - turp_resection_volume
+          threshold: 29  # >=30 = numeric_above 29
+    # Path B: cualquier TURP + retention symptoms post (paciente no
+    # apto para brachy de cualquier modo)
+    - type: all_of
+      triggers:
+        - type: string_contains_any
+          field: history_of_turp
+          alias_fields:
+            - prior_turp
+            - turp_previo
+          patterns:
+            - "yes"
+            - "si"
+            - "recent"
+            - "long_ago"
+            - "multiple"
+        - type: truthy_flag
+          field: post_turp_retention_symptoms
+          alias_fields:
+            - retention_after_turp
+            - retencion_post_turp
+            - urinary_retention_history_post_turp
+    # Path C: clinical flag explicit
+    - type: truthy_flag
+      field: brachytherapy_contraindicated_by_turp
+      alias_fields:
+        - brachy_blocked_turp
+        - braquiterapia_contraindicada_turp
+
+# Override: protocolo brachy post-TURP en centro experto
+override:
+  type: truthy_flag
+  field: brachy_after_turp_expert_protocol_documented
+  alias_fields:
+    - centro_experto_brachy_post_turp
+    - brachytherapy_post_turp_specialized_protocol
+
+regimen_codes:
+  - REGIMEN_CODES_BRACHYTHERAPY
+
+keywords:
+  - braquiterapia
+  - brachytherapy
+  - LDR brachy
+  - HDR brachy
+  - seed implant
+
+message: |
+  ⛔ HARD BLOCK: TURP previo contraindica braquiterapia (LDR/HDR) por
+  defecto cavidad + dosimetría alterada + riesgo elevado complicaciones.
+
+  📊 RIESGOS DOCUMENTADOS BRACHY post-TURP:
+  - Retención urinaria post-implant: ≥40% (vs 10% baseline)
+  - Stricture uretral severa late-effect: 15-25%
+  - Incontinencia stress: 20-30% (vs 5% baseline)
+  - Fistulización uretra-recto: 2-5% (vs <0.5% baseline)
+  - Dosimetría alterada por defecto cavidad → cold spots tumor
+
+  🎯 ALTERNATIVAS RT viables (NO contraindicadas por TURP):
+  1. **EBRT-IMRT** 78-80 Gy / 39-40 fx — opción RT preferida post-TURP
+  2. **SBRT** 35-40 Gy / 5 fx (Hypo-RT-PC 2022) — viable post-TURP
+  3. **Protones** si disponibilidad y indicación oncológica
+  4. **RP** sigue siendo opción si paciente fit + sin otras contras
+
+  ⚠️ EXCEPCIÓN (override):
+  - **Centro especializado brachy post-TURP**: con protocolo formal,
+    >5 años intervalo, cavidad cicatrizada, IPSS bajo, urodinamia ok →
+    usar `brachy_after_turp_expert_protocol_documented` flag
+
+  🔬 EVIDENCIA:
+  - **AAPM TG-137**: "Prior TURP is a contraindication to LDR brachy
+    unless performed in a high-volume center with specialized protocol"
+  - **ABS (American Brachytherapy Society) 2020**: TURP <5 años +
+    volume ≥30cc = absolute contraindication
+  - **NCCN Prostate v5.2026 PROS-4**: lista TURP como pre-brachy
+    contraindication
+  - **Stone IJROBP 2007**: brachytherapy outcomes post-TURP series
+
+  🎯 CONDUCTA CLÍNICA:
+  1. **Documentar TURP**: fecha + volumen resecado + razón (BPH vs
+     incidental cancer detection)
+  2. **Evaluar urodinamia + IPSS** si considerando excepción (centro
+     experto)
+  3. **Si TURP <5yr + ≥30cc**: NO brachy, recomendar EBRT-IMRT/SBRT/RP
+  4. **Si TURP ≥5yr + asintomático**: discutir caso multidisciplinaria
+     antes de override
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `history_of_turp`: none / yes_recent_<5yr / yes_remote_>5yr
+  - `turp_volume_resected_cc`: volumen en cc resecado
+  - `post_turp_retention_symptoms`: flag retention post-TURP
+  - `brachy_after_turp_expert_protocol_documented`: override flag
+
+evidence_tag: aapm_tg137_abs_2020_nccn_v5_turp_brachy_contra
+trial_refs:
+  - "AAPM TG-137 (Brachytherapy guidelines)"
+  - "ABS 2020 LDR Brachytherapy Consensus"
+  - "NCCN Prostate v5.2026 PROS-4"
+  - "Stone IJROBP 2007 (post-TURP brachy outcomes)"

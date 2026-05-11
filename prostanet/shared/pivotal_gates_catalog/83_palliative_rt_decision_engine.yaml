@@ -1,0 +1,300 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 83: palliative_rt_decision_engine
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-26 (LXXIX) — Auditoría #67E — Palliative RT engine.
+#
+# Razón clínica:
+#   **Palliative Radiotherapy** es estrategia esencial para control
+#   síntomas oncológicos, con esquemas estandarizados según indicación:
+#
+#   1. **Bone pain palliation**:
+#      - **8 Gy single fraction** (Hartsell JNCI 2005, Lutz Pract Radiat Oncol 2017):
+#        - Equivalente a 30 Gy/10fx para pain relief
+#        - Más cómodo paciente, menos costo
+#        - Preferred si esperanza vida limitada
+#      - 30 Gy/10 fx alternativa
+#      - 20 Gy/5 fx alternativa
+#
+#   2. **Spinal Cord Compression (SCC)**:
+#      - **30 Gy/10 fx** post-cirugía descompresiva (Patchell Lancet 2005)
+#      - 20 Gy/5 fx si no quirúrgico
+#      - URGENTE <24-48h ventana
+#
+#   3. **Hemostatic** (sangrado tumoral):
+#      - **20-30 Gy/5-10 fx** (hematuria, hemoptisis, sangrado vaginal)
+#      - 8-10 Gy single fraction para sangrado urgente
+#
+#   4. **Brain metastases**:
+#      - WBRT 30 Gy/10 fx (multi-mets)
+#      - SRS si <5 mets + <3 cm cada (Yamamoto Lancet Oncol 2014)
+#
+#   5. **Visceral compression** (lung, liver):
+#      - 30 Gy/10 fx local control
+#
+#   6. **Oligometastatic SBRT**:
+#      - **30-40 Gy/3-5 fx** SBRT (STOMP/ORIOLE/SABR-COMET)
+#      - ≤5 mets metacrónicas, life expectancy >12m
+#      - Survival benefit emerging evidence
+#
+#   Severity: informational — gate alerta opciones palliative RT según
+#   síntoma + recomienda esquema apropiado evidence-based.
+# ──────────────────────────────────────────────────────────────────────
+
+code: palliative_rt_decision_engine
+title: "Palliative RT decision engine → 8Gy bone pain / 30Gy SCC / 20-30Gy hemostatic / SBRT oligo"
+faubot_added_in: "2026-04-26 LXXIX"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: bone pain localized + RT consideration
+    - type: all_of
+      triggers:
+        - type: numeric_above
+          field: bpi_worst_pain_score
+          alias_fields:
+            - bpi_peor_dolor
+          threshold: 3  # ≥4
+        - type: truthy_flag
+          field: bone_metastasis_localized_painful
+          alias_fields:
+            - metastasis_osea_dolorosa_local
+            - localized_bone_pain_focal
+    # Path B: SCC + RT consideration (gate 68 hard_block sets up gate 83)
+    - type: any_of
+      triggers:
+        - type: truthy_flag
+          field: spinal_cord_compression_suspected
+          alias_fields:
+            - scc_suspected
+        - type: truthy_flag
+          field: spinal_cord_compression_confirmed
+          alias_fields:
+            - scc_confirmed
+    # Path C: hemostatic indication (sangrado tumoral)
+    - type: any_of
+      triggers:
+        - type: truthy_flag
+          field: hematuria_persistent_tumoral
+          alias_fields:
+            - hematuria_tumoral_persistente
+        - type: truthy_flag
+          field: hemoptysis_tumoral_documented
+          alias_fields:
+            - hemoptisis_tumoral
+        - type: truthy_flag
+          field: hemostatic_rt_indicated
+          alias_fields:
+            - rt_hemostatica_indicada
+    # Path D: brain mets + WBRT/SRS consideration
+    - type: any_of
+      triggers:
+        - type: truthy_flag
+          field: brain_metastases_documented
+          alias_fields:
+            - metastasis_cerebrales_documentadas
+        - type: truthy_flag
+          field: leptomeningeal_disease_documented
+          alias_fields:
+            - enfermedad_leptomeningea
+    # Path E: oligometastatic + SBRT consideration
+    - type: all_of
+      triggers:
+        - type: numeric_below
+          field: total_metastases_count
+          alias_fields:
+            - count_metastasis_total
+          threshold: 6  # ≤5 mets oligo
+        - type: truthy_flag
+          field: oligometastatic_disease_documented
+          alias_fields:
+            - enfermedad_oligometastasica
+    # Path F: clinical flag explicit
+    - type: truthy_flag
+      field: palliative_rt_consideration_active
+      alias_fields:
+        - consideracion_rt_paliativa
+        - palliative_radiotherapy_planned
+
+regimen_codes: []  # Gate informativo — abre opciones RT paliativa
+
+keywords:
+  - radioterapia paliativa
+  - palliative radiotherapy
+  - 8 Gy single fraction
+  - SBRT
+  - WBRT
+  - oligometástasis
+  - hemostatic radiation
+
+message: |
+  📊 INFORMATIVO: Palliative Radiotherapy DECISION ENGINE → recomendación
+  esquema según indicación + evidence-based dose/fractionation.
+
+  🔬 PALLIATIVE RT ESQUEMAS POR INDICACIÓN:
+
+  ## 1. **BONE PAIN PALLIATION** (Indicación más común):
+
+  **Esquemas evidence-based** (Lutz Pract Radiat Oncol 2017):
+
+  | Esquema | Dose total | Fractions | Indicación |
+  |---------|-----------|-----------|------------|
+  | **8 Gy SF** | 8 Gy | 1 | Pain palliation, esperanza vida limitada |
+  | 20 Gy/5fx | 20 Gy | 5 | Pain + bone strengthening |
+  | 30 Gy/10fx | 30 Gy | 10 | Pain + structural support extended |
+
+  **Hartsell JNCI 2005 (RTOG 9714)**:
+  - 8 Gy SF vs 30 Gy/10fx randomized 898 pts
+  - **Pain response equivalente**: 66% vs 66%
+  - **Re-treatment rate**: 18% (8 Gy) vs 9% (30 Gy)
+  - Costo + comodidad favor 8 Gy SF
+
+  **Indicación 8 Gy SF preferred**:
+  - Esperanza vida ≤6 meses
+  - Comorbidades múltiples
+  - Sitio único focal severo
+  - Outpatient one-shot setting
+
+  **Indicación 30 Gy/10fx preferred**:
+  - Esperanza vida >6 meses
+  - Re-treatment risk concern
+  - Bone weight-bearing critical (femur, vertebra)
+  - Considerar prophylactic stabilization (rod/cement) si fracture risk
+
+  ## 2. **SPINAL CORD COMPRESSION (SCC)** — gate 68 hard_block:
+
+  **Window URGENTE**: 24-48h crítica preservar function
+
+  **Esquemas** (Patchell Lancet 2005; Loblaw JCO 2012):
+  - **Cirugía descompresiva + RT post**: 30 Gy/10fx
+    * Patchell: cirugía + RT > RT alone (función + survival)
+    * Indicación: paciente fit + esperanza vida >3m
+  - **RT alone si no quirúrgico**: 30 Gy/10fx o 20 Gy/5fx
+  - **Re-RT salvage**: 8 Gy SF si recurrencia
+
+  **Acción inmediata**:
+  1. Dexametasona 16 mg IV load → 4 mg q6h
+  2. RM columna full-spine emergency
+  3. MDT decision <48h (neurosurgery + RO + onco)
+  4. RT iniciar dentro de 24h post-MDT
+
+  ## 3. **HEMOSTATIC** (sangrado tumoral):
+
+  **Hematuria tumoral PCa** (gate común):
+  - **20 Gy/5fx** o 30 Gy/10fx pelvis
+  - Evaluar hidronefrosis pre-RT
+  - Considerar embolización si refractary
+
+  **Otros sangrados**:
+  - Hemoptisis lung mets: 20-30 Gy/5-10fx
+  - Sangrado vaginal: 20 Gy/5fx
+  - **8-10 Gy SF urgente** si bleeding masivo
+
+  ## 4. **BRAIN METASTASES** (raro PCa, 1-3% mCRPC):
+
+  **Algorithm decisión**:
+  - **SRS** (Stereotactic Radiosurgery):
+    * ≤5 mets + cada <3 cm + ECOG 0-2
+    * 16-24 Gy SF dependiendo size
+    * Yamamoto Lancet Oncol 2014: SRS hasta 10 mets
+    * Mejor outcome cognitive vs WBRT
+  - **WBRT** (Whole Brain Radiation):
+    * Multi-mets >10 o leptomeningeal
+    * 30 Gy/10fx o 20 Gy/5fx
+    * Riesgo cognitive decline (memantine + hippocampal sparing)
+  - **Symptom palliation only**:
+    * 20 Gy/5fx WBRT si rescue late stage
+
+  ## 5. **OLIGOMETASTATIC SBRT** — emerging standard:
+
+  **Definición oligo**: ≤5 metástasis metacrónicas + life exp >12m
+
+  **Trials clave**:
+  - **STOMP (Ost JCO 2018)**: SBRT vs surveillance 62 pts, mediana ADT-FS 21 vs 13m
+  - **ORIOLE (Phillips JAMA Oncol 2020)**: SBRT vs observation 54 pts, PFS benefit
+  - **SABR-COMET (Palma Lancet 2019)**: SBRT vs SOC multi-cancer 99 pts, OS benefit
+  - **STAMPEDE arm M1 RT (Parker Lancet 2018)**: low-volume mCSPC RT primary
+
+  **Esquemas SBRT oligo**:
+  - **30-40 Gy/3-5 fx** (BED10 ≥100)
+  - Bone: 24 Gy SF o 30 Gy/3 fx
+  - Lymph node: 30-35 Gy/5 fx
+  - Lung: 50 Gy/4-5 fx (peripheral)
+  - Liver: 30-50 Gy/3-5 fx (depende size)
+
+  **Indicaciones SBRT oligo**:
+  - Oligometástasis sincrónicas (≤5 al diagnóstico)
+  - Oligorecurrencias metacrónicas (≤5 nuevas tras tratamiento)
+  - Oligoprogresión (≤3 sitios progressing bajo systemic)
+  - Esperanza vida >12 meses
+  - Sitio accesible SBRT (no SCC adyacente, no organ at risk)
+
+  ## 6. **VISCERAL COMPRESSION**:
+
+  **Lung mets sintomáticas**:
+  - 30 Gy/10 fx local
+  - Considerar bronchoscopy (laser/stent) si obstrucción mayor
+
+  **Liver mets sintomáticas**:
+  - 30 Gy/5fx SBRT si oligometástasis
+  - 20-30 Gy/5-10fx convencional
+
+  **Pelvic compression** (rectum/bladder):
+  - 30 Gy/10 fx pelvis paliativa
+  - Considerar urinary diversion si bladder outlet obstruction
+
+  🎯 ALGORITMO DECISIÓN:
+
+  ```
+  Paciente con síntoma → Gate 83 evalúa:
+
+  1. Bone pain localizado + esperanza vida ≤6m → 8 Gy SF
+  2. Bone pain + structural support critical → 30 Gy/10fx
+  3. SCC suspected/confirmed → 30 Gy/10fx + cirugía si fit (gate 68)
+  4. Hematuria/sangrado tumoral → 20 Gy/5fx pelvis
+  5. Brain mets ≤5 + <3cm → SRS, >10 → WBRT
+  6. Oligo ≤5 mets metacrónicas → SBRT 30-40 Gy/3-5fx
+  7. Visceral compression → 30 Gy/10fx local
+  ```
+
+  🔬 EVIDENCIA:
+  - **Hartsell JNCI 2005;97:798**: 8 Gy SF vs 30 Gy/10fx (RTOG 9714)
+  - **Lutz Pract Radiat Oncol 2017**: ASTRO bone metastases consensus
+  - **Patchell Lancet 2005;366:643**: SCC cirugía + RT
+  - **Loblaw JCO 2012;30:1271**: SCC management
+  - **Yamamoto Lancet Oncol 2014**: SRS hasta 10 mets brain
+  - **STOMP (Ost JCO 2018)**: SBRT oligometastatic prostate
+  - **ORIOLE (Phillips JAMA Oncol 2020)**: SBRT vs observation
+  - **SABR-COMET (Palma Lancet 2019)**: SBRT survival benefit
+  - **STAMPEDE arm M1 RT (Parker Lancet 2018)**: low-volume mCSPC primary RT
+  - **NCCN Prostate v5.2026 PROS-O**: palliative RT pathways
+  - **EAU 2026 §10.4**: palliative radiotherapy
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `bone_metastasis_localized_painful`: flag bone pain focal
+  - `hematuria_persistent_tumoral`: flag hematuria
+  - `hemoptysis_tumoral_documented`: flag hemoptisis
+  - `hemostatic_rt_indicated`: flag RT hemostatic
+  - `brain_metastases_documented`: flag brain mets
+  - `leptomeningeal_disease_documented`: flag leptomeningeal
+  - `total_metastases_count`: count oligo evaluation
+  - `oligometastatic_disease_documented`: flag oligo
+  - `palliative_rt_consideration_active`: flag general RT paliativa
+  - `palliative_rt_dose_fractionation_planned`: text esquema (8Gy/30Gy/etc)
+  - `palliative_rt_target_site`: text sitio RT
+
+evidence_tag: hartsell_2005_lutz_2017_patchell_2005_stomp_oriole_sabr_comet_palliative_rt
+trial_refs:
+  - "Hartsell JNCI 2005;97:798 (RTOG 9714 bone pain)"
+  - "Lutz Pract Radiat Oncol 2017 (ASTRO bone mets)"
+  - "Patchell Lancet 2005;366:643 (SCC surgery+RT)"
+  - "Loblaw JCO 2012;30:1271 (SCC management)"
+  - "Yamamoto Lancet Oncol 2014 (SRS brain mets)"
+  - "STOMP (Ost JCO 2018)"
+  - "ORIOLE (Phillips JAMA Oncol 2020)"
+  - "SABR-COMET (Palma Lancet 2019)"
+  - "STAMPEDE arm M1 RT (Parker Lancet 2018)"
+  - "NCCN Prostate v5.2026 PROS-O"
+  - "EAU 2026 §10.4"

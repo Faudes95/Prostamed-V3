@@ -1,0 +1,143 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 96: ipatasertib_pten_wt_futility_block
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.B) — Tier 2 Contraindication Hard-Blocks.
+#
+# Razón clínica:
+#   Ipatasertib (AKT inhibitor) + abiraterona en mCRPC tiene actividad
+#   restringida a pacientes con PTEN-loss (activated PI3K-AKT pathway):
+#
+#   - **IPATential150 (Sweeney Lancet 2021;398:131)**: ipatasertib + abi
+#     vs placebo + abi en mCRPC primer línea
+#     - **Cohort PTEN-loss (IHC)**: rPFS 18.5m vs 16.5m (HR 0.77, p=0.034)
+#     - **Cohort PTEN-wild-type (intact)**: rPFS NS (HR 0.93)
+#     - **All-comers**: marginal benefit pero driven by PTEN-loss subset
+#
+#   Mecanismo: PTEN normally suppresses PI3K-AKT pathway. PTEN-loss →
+#   constitutive PI3K-AKT activation → ipatasertib (AKT inhibitor)
+#   blocks this pathway. **Si PTEN intact, AKT no es driver, ipatasertib
+#   no tiene target funcional.**
+#
+#   Evidencia adicional:
+#   - PTEN-loss prevalencia ~40-50% mCRPC
+#   - Métodos detección: IHC (gold standard), FISH, NGS
+#   - PTEN-loss correlaciona con peor pronóstico + responde mejor a AKT inhibition
+#
+#   Implicación clínica:
+#   - PTEN-wild-type confirmed → ipatasertib NO recomendado
+#   - PTEN status unknown → require IHC test antes de iniciar
+#   - Pacientes elegibles (PTEN-loss): considerar combination con abi
+#
+#   Override: si IHC pendiente con plan documentado <2 sem.
+# ──────────────────────────────────────────────────────────────────────
+
+code: ipatasertib_pten_wt_futility_block
+title: "Ipatasertib × PTEN-wild-type → futility hard_block (no AKT driver)"
+faubot_added_in: "2026-04-30 LXCVI.B"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: PTEN-wild-type confirmado (IHC retained)
+    - type: truthy_flag
+      field: pten_status_wild_type_or_retained
+      alias_fields:
+        - pten_intact
+        - pten_normal
+        - pten_retained_ihc
+        - pten_no_loss
+    # Path B: PTEN status not tested AND ipatasertib planned
+    - type: all_of
+      triggers:
+        - type: string_match
+          field: pten_status
+          alias_fields:
+            - pten_test_result
+            - pten_ihc_result
+          patterns:
+            - not_tested
+            - unknown
+            - pending
+            - desconocido
+
+regimen_codes:
+  - REGIMEN_CODES_IPATASERTIB
+
+override:
+  type: truthy_flag
+  field: pten_test_pending_with_2week_plan_documented
+  alias_fields:
+    - pten_pending_with_plan
+    - pten_ihc_ordered_within_2weeks
+
+keywords:
+  - ipatasertib
+  - PTEN
+  - AKT inhibitor
+  - PI3K
+  - IPATential150
+  - genomic futility
+
+message: |
+  🚨 HARD BLOCK: Ipatasertib en PTEN-wild-type (intact) → futility por
+  ausencia de AKT driver (IPATential150 evidence).
+
+  🎯 EVIDENCIA IPATential150:
+
+  | Subgroup | Median rPFS Ipa+abi vs Placebo+abi | HR |
+  |----------|--------------------------------------|------|
+  | PTEN-loss (IHC) | 18.5m vs 16.5m | **0.77 (significativo p=0.034)** |
+  | PTEN-wild-type | No diff | **0.93 (NULL)** |
+  | All-comers | Marginal | 0.84 |
+
+  🎯 MECANISMO:
+  - PTEN suprime PI3K-AKT pathway en condiciones normales
+  - PTEN-loss → AKT activación constitutiva → driver de proliferación
+  - Ipatasertib bloquea AKT → effect dependiente de presence AKT activation
+  - **PTEN-intact = no AKT activación = no target = no benefit**
+
+  🎯 PTEN STATUS DETERMINATION:
+  - **IHC (gold standard)**: assess intensidad + extensión expression
+    - Score 0-3 (0=null/loss, 3=intact strong)
+    - Loss: <10% cells positive OR uniformly weak
+  - **FISH**: detecta deleción gene (less common methodology)
+  - **NGS**: identifica mutations + copy number alteration
+    - Deletion homozygous = loss
+    - Hemideletion + truncating mutation = loss
+
+  🎯 PREVALENCIA PTEN-LOSS POR ESTADIO:
+  - Localized: 15-25%
+  - mCRPC: 40-50%
+  - mCRPC visceral mets: 50-60%
+
+  🎯 ALTERNATIVAS PTEN-WILD-TYPE:
+
+  **mCRPC primer línea**:
+  - Abiraterona + prednisona (COU-AA-302)
+  - Enzalutamida (PREVAIL)
+  - ADT + docetaxel si chemo-fit
+  - Add ARPI if newly mCRPC
+
+  **mCRPC + HRR+**:
+  - Olaparib (PROfound)
+  - Combinations PARP + ARPI (PROpel, MAGNITUDE)
+
+  **mCRPC + PSMA+**:
+  - Lu-177-PSMA (VISION)
+
+  ⚠️ OVERRIDE: documentar `pten_test_pending_with_2week_plan_documented`
+  + IHC ordenado dentro de 2 sem permite start while awaiting result.
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `pten_status_wild_type_or_retained`: bool (IHC intact)
+  - `pten_status`: string (loss | wild_type | not_tested | pending)
+  - `pten_test_pending_with_2week_plan_documented`: bool (override)
+
+evidence_tag: ipatasertib_pten_wt_ipatential150_2021
+trial_refs:
+  - "IPATential150 (Sweeney Lancet 2021;398:131)"
+  - "Roche Ipatasertib clinical pharmacology data"
+  - "NCCN Prostate v5.2026 PROS-G (genomic testing)"
+  - "AACR PTEN-PI3K-AKT Pathway Workshop 2024"

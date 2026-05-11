@@ -1,0 +1,193 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 64: comprehensive_hrd_phenotype_high
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-25 (LXXVI) — Auditoría #67B — Genomic Critical Gates.
+#
+# Razón clínica:
+#   Comprehensive HRD (Homologous Recombination Deficiency) phenotype
+#   integra MÚLTIPLES señales genómicas:
+#     1. **Direct HRR alterations**: BRCA1/2/ATM/PALB2/CHEK2/CDK12
+#        biallelic loss
+#     2. **Functional HRD surrogates**:
+#        - PTEN biallelic loss (alternative HR pathway)
+#        - TP53 mutation (loss G2/M checkpoint, synergy con HRR loss)
+#        - HRD scarring score (genomic instability burden)
+#     3. **Composite HRD score** (Tempus, Foundation, Myriad MyChoice):
+#        - Loss of Heterozygosity (LOH)
+#        - Telomeric Allelic Imbalance (TAI)
+#        - Large-scale State Transitions (LST)
+#
+#   HRD-high comprehensive score predice:
+#     - Better PARP inhibitor response (>70% in HRD-high vs 40% standard HRR+)
+#     - Platinum chemotherapy sensitivity (carboplatin in NEPC, dual platinum)
+#     - Worse response to ARPI alone (HRD-high pacientes deteriorate
+#       más rápido en ARPI mono)
+#
+#   Decisiones clínicas:
+#     - HRD-high + mCRPC → PARP intensification (PROpel, MAGNITUDE,
+#       TALAPRO-2 combinations)
+#     - HRD-high + NEPC → considerar carboplatin + etoposide
+#     - HRD-high + heavily pretreated → trial enrollment platinum-based
+#
+#   Severity: informational — gate alerta clínico de fenotipo HRD
+#   comprehensive y abre opciones (no bloquea ni cambia default).
+#
+#   Co-interaction: gate 61 (HRR test required), 62 (AR-V7), 63 (CDK12).
+#   Gate 64 ES MÁS COMPREHENSIVE que solo HRR direct.
+#
+#   Override: ninguno necesario (gate informacional).
+# ──────────────────────────────────────────────────────────────────────
+
+code: comprehensive_hrd_phenotype_high
+title: "HRD comprehensive phenotype high → PARP intensification + platinum eligibility"
+faubot_added_in: "2026-04-25 LXXVI"
+faubot_yaml_native: true
+severity: informational
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: comprehensive HRD score high (≥42 Myriad MyChoice cutoff)
+    - type: numeric_above
+      field: hrd_comprehensive_score
+      alias_fields:
+        - hrd_score_total
+        - score_hrd_comprehensive
+      threshold: 41  # ≥42 = numeric_above 41 (Myriad cutoff)
+    # Path B: HRR + PTEN biallelic loss + TP53 mutation triple
+    - type: all_of
+      triggers:
+        - type: any_of
+          triggers:
+            - type: string_match
+              field: brca1_status
+              alias_fields: [estado_brca1]
+              patterns: [Mutado, mutated, Pathogenic]
+            - type: string_match
+              field: brca2_status
+              alias_fields: [estado_brca2]
+              patterns: [Mutado, mutated, Pathogenic]
+            - type: string_match
+              field: atm_status
+              alias_fields: [estado_atm]
+              patterns: [Mutado, mutated, Pathogenic]
+        - type: truthy_flag
+          field: pten_biallelic_loss_documented
+          alias_fields:
+            - pten_loss_biallelic
+            - perdida_pten_bialelica
+        - type: string_match
+          field: tp53_status
+          alias_fields:
+            - estado_tp53
+            - tp53_mutation_status
+          patterns:
+            - Mutado
+            - mutated
+            - Pathogenic
+    # Path C: clinical flag explicit (post comprehensive panel review)
+    - type: truthy_flag
+      field: hrd_high_phenotype_documented
+      alias_fields:
+        - fenotipo_hrd_alto_documentado
+        - hrd_score_high_clinical
+
+regimen_codes: []  # Gate informacional — abre opciones platino + PARP intensification
+
+keywords:
+  - HRD score
+  - homologous recombination deficiency
+  - genomic instability
+  - LOH
+  - telomeric allelic imbalance
+
+message: |
+  📊 INFORMATIVO: HRD comprehensive phenotype high detectado → opciones
+  terapéuticas avanzadas (PARP intensification + platinum sensitivity).
+
+  🧬 SIGNIFICADO HRD COMPREHENSIVE HIGH:
+  - **Direct HRR**: BRCA1/2/ATM/PALB2/CHEK2/CDK12 alteration confirmada
+  - **HRD score ≥42** (Myriad MyChoice / Tempus genomic instability):
+    - LOH (Loss of Heterozygosity) elevated
+    - TAI (Telomeric Allelic Imbalance) elevated
+    - LST (Large-scale State Transitions) elevated
+  - **Functional HRD surrogates**:
+    - PTEN biallelic loss (alternative HR pathway disruption)
+    - TP53 mutation (loss G2/M checkpoint synergy)
+  - **Predictive value**:
+    - PARP response >70% en HRD-high (vs 40% standard HRR+)
+    - Platinum chemotherapy sensitivity (carboplatin)
+    - ARPI mono response shorter (deteriorate más rápido)
+
+  🎯 OPCIONES TERAPÉUTICAS AMPLIADAS:
+
+  **1. PARP Intensification combinations** (mCRPC):
+     - **Olaparib + abiraterona** (PROpel)
+       → rPFS 24.8m vs 16.6m HRR+ (HR 0.50)
+     - **Talazoparib + enzalutamide** (TALAPRO-2)
+       → rPFS 27.9m vs 20.0m HRR+ (HR 0.45)
+     - **Niraparib + abiraterona** (MAGNITUDE)
+       → rPFS 16.5m vs 13.7m HRR+ (HR 0.73)
+     - HRD-high pacientes: mejor response esperado vs HRR-only
+
+  **2. Platinum-based chemotherapy** (HRD-high sensitivity):
+     - **Carboplatin AUC 5-6** (single agent o combo)
+       → 30-50% PSA response en HRD-high mCRPC (vs 10-20% no-HRD)
+       → Considerar si NEPC histología o post-PARP failure
+     - **Carboplatin + etoposide** (NEPC standard, EP regimen)
+       → Aparicio Eur Urol 2024 — HRD-high responden mejor
+     - **Cisplatin + docetaxel** (rare combination, exploratory)
+
+  **3. Investigational combinations**:
+     - PARP + immune checkpoint inhibitor (KEYNOTE-365 cohort A)
+     - PARP + Wee1 inhibitor (adavosertib, exploratory)
+     - PARP + Lu-177-PSMA (LuPARP trial)
+
+  🔬 EVIDENCIA CIENTÍFICA:
+  - **Cheng JCO 2014;32:3050** — Platinum sensitivity HRR+ mCRPC
+    → Initial validation carboplatin response en BRCA+
+  - **Pomerantz Eur Urol 2017** — HRD score validation prostate cancer
+  - **Aparicio Eur Urol 2024** — HRD score y NEPC platinum response
+  - **Mateo Ann Oncol 2020** — comprehensive HRD assessment beyond
+    direct HRR genes
+  - **NCCN Prostate v5.2026 PROS-2** — emerging composite HRD scoring
+  - **EAU 2026 §6.5.6** — HRD comprehensive testing recommended
+
+  🧪 TESTING DISPONIBLE HRD COMPREHENSIVE:
+  - **Myriad MyChoice CDx HRD** (FDA-approved companion diagnostic)
+    → BRCA1/2 + LOH/TAI/LST score
+    → Cutoff ≥42 = HRD-high
+  - **Foundation Medicine GIS** (Genomic Instability Score)
+    → Similar Myriad pero tissue/blood
+  - **Tempus xT/xR HRD score**:
+    → NGS-based + HRD signature
+  - **Caris MI Tumor Seek HRD**:
+    → HRD pathway gene panel + scoring
+
+  🎯 CONDUCTA CLÍNICA:
+  1. **Solicitar comprehensive HRD test** (no solo HRR direct)
+  2. **Multidisciplinaria** post-resultado (uro-onco + medical onco +
+     molecular pathologist)
+  3. **Si HRD-high**:
+     - Priorizar PARP intensification combinations sobre ARPI mono
+     - Considerar platinum si PARP failure o NEPC component
+     - Trial enrollment (HRD-high enriched studies)
+  4. **Family counseling** si germline pathogenic variants confirmed
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `hrd_comprehensive_score`: 0-100 (Myriad/Tempus/Foundation)
+  - `hrd_test_method`: myriad / tempus / foundation / caris / other
+  - `pten_biallelic_loss_documented`: flag
+  - `tp53_status`: Wild-type / Mutado / VUS / No testado
+  - `hrd_high_phenotype_documented`: clinical flag
+
+evidence_tag: hrd_comprehensive_score_myriad_tempus_foundation_pomerantz_eur_urol_2017
+trial_refs:
+  - "Cheng JCO 2014;32:3050 (platinum HRR+ mCRPC)"
+  - "Pomerantz Eur Urol 2017 (HRD prostate cancer)"
+  - "Aparicio Eur Urol 2024 (HRD NEPC platinum)"
+  - "Mateo Ann Oncol 2020 (comprehensive HRD assessment)"
+  - "PROpel/TALAPRO-2/MAGNITUDE PARP combinations"
+  - "Myriad MyChoice CDx HRD (FDA companion diagnostic)"
+  - "NCCN Prostate v5.2026 PROS-2"
+  - "EAU 2026 §6.5.6"
