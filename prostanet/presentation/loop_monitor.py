@@ -163,6 +163,457 @@ def get_vector_summary(days: int = 30) -> dict[str, dict[str, Any]]:
     return summary
 
 
+def get_autonomous_improvement_snapshot(*, patient_limit: int = 8) -> dict[str, Any]:
+    """Autonomous improvement read model for Loop Monitor.
+
+    Kept lazy and patient-limited so Loop Monitor remains available even if a
+    downstream clinical subsystem raises while the shadow loop is being refined.
+    """
+    try:
+        from prostanet.agentic.autonomous_improvement_os import build_autonomous_improvement_bundle
+
+        return build_autonomous_improvement_bundle(patient_limit=patient_limit)
+    except Exception as exc:
+        return {
+            "available": False,
+            "source": "autonomous_improvement_os",
+            "error": str(exc),
+            "mission_control": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "error": str(exc),
+                "summary": {
+                    "overall_pct": 0,
+                    "status": "blocked",
+                    "mode": "shadow",
+                    "top_gap_title": "Mission control unavailable",
+                },
+                "metrics": [],
+                "safety": {
+                    "source_clinical_facts_mutated": False,
+                    "auto_merge_enabled": False,
+                    "human_review_required": True,
+                },
+            },
+            "development_autodrive": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "development_autodrive_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "selected_id": "",
+                    "selected_reason": "Development Autodrive unavailable.",
+                    "one_change_per_iteration": True,
+                },
+                "selected_iteration": {
+                    "available": False,
+                    "mode": "shadow",
+                    "reason": str(exc),
+                },
+                "selection_guardrails": {
+                    "shadow_mode_only": True,
+                    "clinical_fact_writes_allowed": False,
+                    "auto_merge_allowed": False,
+                },
+            },
+            "shadow_pr_factory": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "shadow_pr_factory_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "ready_for_human_review": False,
+                    "reason": str(exc),
+                },
+            },
+            "safety_gate_runner": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "safety_gate_runner_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "release_gate": "blocked",
+                    "commands_executed": False,
+                    "reason": str(exc),
+                },
+                "gates": [],
+            },
+            "shadow_execution_artifacts": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "shadow_execution_artifacts_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "artifact_status": "blocked",
+                    "commands_executed": False,
+                    "reason": str(exc),
+                },
+                "command_results": [],
+                "visual_results": [],
+            },
+            "human_review_decision_gate": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "human_review_decision_gate_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "decision_state": "blocked",
+                    "release_gate": "blocked",
+                    "reason": str(exc),
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "auto_merge_allowed": False,
+                },
+            },
+            "draft_pr_handoff": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "draft_pr_handoff_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "handoff_status": "blocked",
+                    "reason": str(exc),
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "auto_merge_allowed": False,
+                },
+            },
+            "pr_review_monitor": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "pr_review_monitor_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "monitor_status": "blocked",
+                    "reason": str(exc),
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "merge_performed": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "auto_merge_allowed": False,
+                },
+            },
+            "agent_lane_registry": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "agent_lane_registry_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "registry_status": "blocked",
+                    "reason": str(exc),
+                    "agent_code_execution_allowed": False,
+                    "production_mutation_allowed": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "auto_merge_allowed": False,
+                },
+                "lanes": [],
+            },
+            "agent_proposal_packets": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "agent_proposal_packets_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "packet_status": "blocked",
+                    "reason": str(exc),
+                    "agent_code_execution_allowed": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "auto_merge_allowed": False,
+                },
+                "packets": [],
+            },
+            "agent_consensus_synthesizer": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "agent_consensus_synthesizer_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "consensus_status": "blocked",
+                    "reason": str(exc),
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "merge_performed": False,
+                    "auto_merge_allowed": False,
+                },
+                "agent_positions": [],
+                "conflicts": [],
+                "blocking_conditions": [],
+            },
+            "implementation_brief": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "implementation_brief_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "brief_status": "blocked",
+                    "reason": str(exc),
+                    "commands_executed": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "merge_performed": False,
+                    "auto_merge_allowed": False,
+                },
+                "file_scope": [],
+                "test_plan": [],
+                "blockers": [],
+            },
+            "shadow_patch_blueprint": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "shadow_patch_blueprint_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "blueprint_status": "blocked",
+                    "reason": str(exc),
+                    "commands_executed": False,
+                    "files_modified": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "merge_performed": False,
+                    "auto_merge_allowed": False,
+                },
+                "patch_blueprint": {"file_blueprints": []},
+                "blockers": [],
+            },
+            "human_patch_authorization": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "human_patch_authorization_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "authorization_state": "blocked_until_blueprint_ready",
+                    "authorization_gate": "blocked",
+                    "reason": str(exc),
+                    "commands_executed": False,
+                    "files_modified": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "merge_performed": False,
+                    "auto_merge_allowed": False,
+                },
+                "allowed_decisions": [],
+                "latest_decision": {},
+            },
+            "controlled_patch_application": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "controlled_patch_application_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "application_status": "blocked",
+                    "application_gate": "blocked",
+                    "reason": str(exc),
+                    "commands_executed": False,
+                    "files_modified": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "merge_performed": False,
+                    "auto_merge_allowed": False,
+                },
+                "application_packet": {},
+                "blockers": ["snapshot_unavailable"],
+            },
+            "controlled_pr_implementation": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "controlled_pr_implementation_unavailable",
+                "summary": {
+                    "mode": "controlled_manual",
+                    "implementation_status": "blocked",
+                    "implementation_gate": "blocked",
+                    "reason": str(exc),
+                    "commands_executed": False,
+                    "files_modified": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "merge_performed": False,
+                    "auto_merge_allowed": False,
+                },
+                "implementation_packet": {},
+                "blockers": ["snapshot_unavailable"],
+            },
+            "draft_pr_publication_gate": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "draft_pr_publication_gate_unavailable",
+                "summary": {
+                    "mode": "controlled_manual",
+                    "publication_status": "blocked",
+                    "publication_gate": "blocked",
+                    "reason": str(exc),
+                    "commands_executed": False,
+                    "files_modified": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "merge_performed": False,
+                    "auto_merge_allowed": False,
+                },
+                "publication_packet": {},
+                "blockers": ["snapshot_unavailable"],
+            },
+            "required_safety_gate_contract": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "required_safety_gate_contract_unavailable",
+                "summary": {
+                    "mode": "controlled_manual",
+                    "safety_contract_status": "blocked",
+                    "safety_gate": "blocked",
+                    "reason": str(exc),
+                    "commands_executed": False,
+                    "files_modified": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "merge_performed": False,
+                    "auto_merge_allowed": False,
+                },
+                "required_gates": [],
+                "blockers": ["snapshot_unavailable"],
+            },
+            "evidence_refresh_shadow_loop": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "evidence_refresh_shadow_loop_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "evidence_refresh_status": "blocked",
+                    "evidence_gate": "blocked",
+                    "reason": str(exc),
+                    "evidence_changes_applied": False,
+                    "recommendation_logic_mutated": False,
+                    "trial_logic_mutated": False,
+                    "gate_logic_mutated": False,
+                    "commands_executed": False,
+                    "files_modified": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "merge_performed": False,
+                    "auto_merge_allowed": False,
+                },
+                "source_registry": [],
+                "review_queue": [],
+                "blockers": ["snapshot_unavailable"],
+            },
+            "patient_twin_readiness_loop": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "patient_twin_readiness_loop_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "patient_twin_readiness_status": "blocked",
+                    "patient_twin_gate": "blocked",
+                    "reason": str(exc),
+                    "simulation_release_allowed": False,
+                    "patient_twin_models_trained": False,
+                    "patient_twin_predictions_released": False,
+                    "commands_executed": False,
+                    "files_modified": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "merge_performed": False,
+                    "auto_merge_allowed": False,
+                },
+                "readiness_dimensions": [],
+                "capture_plan": [],
+                "blockers": ["snapshot_unavailable"],
+            },
+            "ai_readiness_dataset_loop": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "ai_readiness_dataset_loop_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "ai_readiness_status": "blocked",
+                    "ai_readiness_gate": "blocked",
+                    "reason": str(exc),
+                    "dataset_export_allowed": False,
+                    "dataset_export_written": False,
+                    "model_training_allowed": False,
+                    "models_trained": False,
+                    "prediction_release_allowed": False,
+                    "predictions_released": False,
+                    "commands_executed": False,
+                    "files_modified": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "merge_performed": False,
+                    "auto_merge_allowed": False,
+                },
+                "dataset_gates": [],
+                "model_readiness_report": {},
+                "capture_plan": [],
+                "blockers": ["snapshot_unavailable"],
+            },
+            "cortana_loop_interface": {
+                "available": False,
+                "source": "autonomous_improvement_os",
+                "version": "cortana_loop_interface_unavailable",
+                "summary": {
+                    "mode": "shadow",
+                    "cortana_loop_status": "blocked",
+                    "cortana_loop_gate": "blocked",
+                    "reason": str(exc),
+                    "voice_write_allowed": False,
+                    "clinical_fact_writes_allowed": False,
+                    "code_mutation_allowed": False,
+                    "model_training_allowed": False,
+                    "prediction_release_allowed": False,
+                    "commands_executed": False,
+                    "files_modified": False,
+                    "source_clinical_facts_mutated": False,
+                    "git_mutated": False,
+                    "branch_created": False,
+                    "pull_request_created": False,
+                    "merge_performed": False,
+                    "auto_merge_allowed": False,
+                },
+                "command_routes": [],
+                "response_cards": [],
+                "resolved_response": {},
+                "blockers": ["snapshot_unavailable"],
+            },
+        }
+
+
+def get_mission_control_snapshot() -> dict[str, Any]:
+    """Autonomous improvement mission-control read model."""
+    bundle = get_autonomous_improvement_snapshot()
+    return dict(bundle.get("mission_control") or {})
+
+
+def get_development_autodrive_snapshot() -> dict[str, Any]:
+    """Shadow-mode Development Autodrive selection for the next safe iteration."""
+    bundle = get_autonomous_improvement_snapshot()
+    return dict(bundle.get("development_autodrive") or {})
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Loop vector registry
 # ──────────────────────────────────────────────────────────────────────
@@ -236,9 +687,54 @@ CORE_VECTORS: dict[str, dict[str, Any]] = {
 def snapshot():
     """Current loop status snapshot (last 30 days)."""
     summary = get_vector_summary(days=30)
+    autonomous_improvement = get_autonomous_improvement_snapshot()
+    mission_control = dict(autonomous_improvement.get("mission_control") or {})
+    development_autodrive = dict(autonomous_improvement.get("development_autodrive") or {})
+    shadow_pr_factory = dict(autonomous_improvement.get("shadow_pr_factory") or {})
+    safety_gate_runner = dict(autonomous_improvement.get("safety_gate_runner") or {})
+    shadow_execution_artifacts = dict(autonomous_improvement.get("shadow_execution_artifacts") or {})
+    human_review_decision_gate = dict(autonomous_improvement.get("human_review_decision_gate") or {})
+    draft_pr_handoff = dict(autonomous_improvement.get("draft_pr_handoff") or {})
+    pr_review_monitor = dict(autonomous_improvement.get("pr_review_monitor") or {})
+    agent_lane_registry = dict(autonomous_improvement.get("agent_lane_registry") or {})
+    agent_proposal_packets = dict(autonomous_improvement.get("agent_proposal_packets") or {})
+    agent_consensus_synthesizer = dict(autonomous_improvement.get("agent_consensus_synthesizer") or {})
+    implementation_brief = dict(autonomous_improvement.get("implementation_brief") or {})
+    shadow_patch_blueprint = dict(autonomous_improvement.get("shadow_patch_blueprint") or {})
+    human_patch_authorization = dict(autonomous_improvement.get("human_patch_authorization") or {})
+    controlled_patch_application = dict(autonomous_improvement.get("controlled_patch_application") or {})
+    controlled_pr_implementation = dict(autonomous_improvement.get("controlled_pr_implementation") or {})
+    draft_pr_publication_gate = dict(autonomous_improvement.get("draft_pr_publication_gate") or {})
+    required_safety_gate_contract = dict(autonomous_improvement.get("required_safety_gate_contract") or {})
+    evidence_refresh_shadow_loop = dict(autonomous_improvement.get("evidence_refresh_shadow_loop") or {})
+    patient_twin_readiness_loop = dict(autonomous_improvement.get("patient_twin_readiness_loop") or {})
+    ai_readiness_dataset_loop = dict(autonomous_improvement.get("ai_readiness_dataset_loop") or {})
+    cortana_loop_interface = dict(autonomous_improvement.get("cortana_loop_interface") or {})
     return jsonify({
         "vectors": CORE_VECTORS,
         "summary_by_vector": summary,
+        "mission_control": mission_control,
+        "development_autodrive": development_autodrive,
+        "shadow_pr_factory": shadow_pr_factory,
+        "safety_gate_runner": safety_gate_runner,
+        "shadow_execution_artifacts": shadow_execution_artifacts,
+        "human_review_decision_gate": human_review_decision_gate,
+        "draft_pr_handoff": draft_pr_handoff,
+        "pr_review_monitor": pr_review_monitor,
+        "agent_lane_registry": agent_lane_registry,
+        "agent_proposal_packets": agent_proposal_packets,
+        "agent_consensus_synthesizer": agent_consensus_synthesizer,
+        "implementation_brief": implementation_brief,
+        "shadow_patch_blueprint": shadow_patch_blueprint,
+        "human_patch_authorization": human_patch_authorization,
+        "controlled_patch_application": controlled_patch_application,
+        "controlled_pr_implementation": controlled_pr_implementation,
+        "draft_pr_publication_gate": draft_pr_publication_gate,
+        "required_safety_gate_contract": required_safety_gate_contract,
+        "evidence_refresh_shadow_loop": evidence_refresh_shadow_loop,
+        "patient_twin_readiness_loop": patient_twin_readiness_loop,
+        "ai_readiness_dataset_loop": ai_readiness_dataset_loop,
+        "cortana_loop_interface": cortana_loop_interface,
         "total_vectors_monitored": len(CORE_VECTORS),
         "total_iterations_30d": sum(s["count"] for s in summary.values()),
     })
@@ -258,6 +754,29 @@ def dashboard():
     """Loop monitor dashboard UI."""
     summary = get_vector_summary(days=30)
     iterations_list = get_recent_iterations(days=30, limit=50)
+    autonomous_improvement = get_autonomous_improvement_snapshot()
+    mission_control = dict(autonomous_improvement.get("mission_control") or {})
+    development_autodrive = dict(autonomous_improvement.get("development_autodrive") or {})
+    shadow_pr_factory = dict(autonomous_improvement.get("shadow_pr_factory") or {})
+    safety_gate_runner = dict(autonomous_improvement.get("safety_gate_runner") or {})
+    shadow_execution_artifacts = dict(autonomous_improvement.get("shadow_execution_artifacts") or {})
+    human_review_decision_gate = dict(autonomous_improvement.get("human_review_decision_gate") or {})
+    draft_pr_handoff = dict(autonomous_improvement.get("draft_pr_handoff") or {})
+    pr_review_monitor = dict(autonomous_improvement.get("pr_review_monitor") or {})
+    agent_lane_registry = dict(autonomous_improvement.get("agent_lane_registry") or {})
+    agent_proposal_packets = dict(autonomous_improvement.get("agent_proposal_packets") or {})
+    agent_consensus_synthesizer = dict(autonomous_improvement.get("agent_consensus_synthesizer") or {})
+    implementation_brief = dict(autonomous_improvement.get("implementation_brief") or {})
+    shadow_patch_blueprint = dict(autonomous_improvement.get("shadow_patch_blueprint") or {})
+    human_patch_authorization = dict(autonomous_improvement.get("human_patch_authorization") or {})
+    controlled_patch_application = dict(autonomous_improvement.get("controlled_patch_application") or {})
+    controlled_pr_implementation = dict(autonomous_improvement.get("controlled_pr_implementation") or {})
+    draft_pr_publication_gate = dict(autonomous_improvement.get("draft_pr_publication_gate") or {})
+    required_safety_gate_contract = dict(autonomous_improvement.get("required_safety_gate_contract") or {})
+    evidence_refresh_shadow_loop = dict(autonomous_improvement.get("evidence_refresh_shadow_loop") or {})
+    patient_twin_readiness_loop = dict(autonomous_improvement.get("patient_twin_readiness_loop") or {})
+    ai_readiness_dataset_loop = dict(autonomous_improvement.get("ai_readiness_dataset_loop") or {})
+    cortana_loop_interface = dict(autonomous_improvement.get("cortana_loop_interface") or {})
     # Build minimal page_chrome required by base_clinical.html layout
     page_chrome = {
         "title": "Loop Monitor — Iterative Improvement",
@@ -271,6 +790,28 @@ def dashboard():
         "loop_monitor_dashboard.html",
         vectors=CORE_VECTORS,
         summary=summary,
+        mission_control=mission_control,
+        development_autodrive=development_autodrive,
+        shadow_pr_factory=shadow_pr_factory,
+        safety_gate_runner=safety_gate_runner,
+        shadow_execution_artifacts=shadow_execution_artifacts,
+        human_review_decision_gate=human_review_decision_gate,
+        draft_pr_handoff=draft_pr_handoff,
+        pr_review_monitor=pr_review_monitor,
+        agent_lane_registry=agent_lane_registry,
+        agent_proposal_packets=agent_proposal_packets,
+        agent_consensus_synthesizer=agent_consensus_synthesizer,
+        implementation_brief=implementation_brief,
+        shadow_patch_blueprint=shadow_patch_blueprint,
+        human_patch_authorization=human_patch_authorization,
+        controlled_patch_application=controlled_patch_application,
+        controlled_pr_implementation=controlled_pr_implementation,
+        draft_pr_publication_gate=draft_pr_publication_gate,
+        required_safety_gate_contract=required_safety_gate_contract,
+        evidence_refresh_shadow_loop=evidence_refresh_shadow_loop,
+        patient_twin_readiness_loop=patient_twin_readiness_loop,
+        ai_readiness_dataset_loop=ai_readiness_dataset_loop,
+        cortana_loop_interface=cortana_loop_interface,
         iterations=iterations_list,
         total_iterations=sum(s["count"] for s in summary.values()),
         page_chrome=page_chrome,

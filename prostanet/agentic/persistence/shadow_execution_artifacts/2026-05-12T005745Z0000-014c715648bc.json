@@ -1,0 +1,116 @@
+{
+  "artifact_controls": {
+    "raw_audio_allowed": false,
+    "raw_phi_allowed": false,
+    "raw_transcript_allowed": false,
+    "retention": "metadata_only_until_human_review",
+    "source_safety_fingerprint": "014c715648bc09724d1c47baa381d7beefa1f98d66b68b7253f197d6eccbfc36",
+    "stdout_sanitized": true
+  },
+  "audit": {
+    "artifact_path": "prostanet/agentic/persistence/shadow_execution_artifacts/2026-05-12T005745Z0000-014c715648bc.json",
+    "deterministic_v1": true,
+    "generated_at": "2026-05-12T00:57:45+00:00",
+    "human_review_required": true,
+    "no_auto_merge": true,
+    "no_external_orders": true,
+    "no_fabricated_psa": true,
+    "no_fabricated_testosterone": true,
+    "no_fabricated_treatments": true,
+    "no_fabricated_trial_eligibility": true,
+    "no_ml_model_trained": true,
+    "persisted": true,
+    "read_model_only": true,
+    "shadow_mode": true,
+    "source_clinical_facts_mutated": false,
+    "source_safety_fingerprint": "014c715648bc09724d1c47baa381d7beefa1f98d66b68b7253f197d6eccbfc36"
+  },
+  "available": true,
+  "blocking_findings": [],
+  "command_results": [
+    {
+      "allowed": true,
+      "artifact_ref": "",
+      "cmd": "python3 -m py_compile prostanet/agentic/autonomous_improvement_os.py",
+      "duration_seconds": 0.081,
+      "exit_code": 0,
+      "output_excerpt": " ",
+      "purpose": "Verify the autonomous improvement package compiles."
+    },
+    {
+      "allowed": true,
+      "artifact_ref": "",
+      "cmd": "pytest -q tests/test_autonomous_improvement_os.py",
+      "duration_seconds": 10.553,
+      "exit_code": 0,
+      "output_excerpt": "...................                                                      [100%] =============================== warnings summary =============================== tests/test_autonomous_improvement_os.py: 14 warnings   /Users/***/Desktop/ProstaNet_Model_Fase6/prostanet/presentation/loop_monitor.py:121: DeprecationWarning: datetime.datetime.utcnow() is deprecate",
+      "purpose": "Required test family for test_safety_gates_block_clinical_proposal_without_tests."
+    },
+    {
+      "allowed": true,
+      "artifact_ref": "",
+      "cmd": "pytest -q tests/test_autonomous_improvement_os.py tests/test_decision_today_fusion_kernel.py tests/test_clinical_autodrive_command_center.py tests/test_clinical_readiness_tower.py tests/test_tumor_board_os.py tests/test_care_pathway_os.py tests/test_clinical_memory_os.py tests/test_clinical_field_router_closure.py tests/test_voice_clinical_os.py",
+      "duration_seconds": 19.362,
+      "exit_code": 0,
+      "output_excerpt": "........................................................................ [ 77%] .....................                                                    [100%] =============================== warnings summary =============================== tests/test_autonomous_improvement_os.py: 14 warnings tests/test_decision_today_fusion_kernel.py: 3 warnings tests/test_",
+      "purpose": "Core clinical regression before human review."
+    }
+  ],
+  "execution_plan": {
+    "allowlist": [
+      "python3 -m py_compile ",
+      "pytest -q tests/"
+    ],
+    "commands": [
+      {
+        "cmd": "python3 -m py_compile prostanet/agentic/autonomous_improvement_os.py",
+        "purpose": "Verify the autonomous improvement package compiles."
+      },
+      {
+        "cmd": "pytest -q tests/test_autonomous_improvement_os.py",
+        "purpose": "Required test family for test_safety_gates_block_clinical_proposal_without_tests."
+      },
+      {
+        "cmd": "pytest -q tests/test_autonomous_improvement_os.py tests/test_decision_today_fusion_kernel.py tests/test_clinical_autodrive_command_center.py tests/test_clinical_readiness_tower.py tests/test_tumor_board_os.py tests/test_care_pathway_os.py tests/test_clinical_memory_os.py tests/test_clinical_field_router_closure.py tests/test_voice_clinical_os.py",
+        "purpose": "Core clinical regression before human review."
+      }
+    ],
+    "visual_routes": [
+      "/loop-monitor"
+    ]
+  },
+  "phase": "3D_shadow_execution_artifacts",
+  "source": "autonomous_improvement_os",
+  "summary": {
+    "artifact_status": "verified_pending_human_review",
+    "auto_merge_allowed": false,
+    "clinical_release_allowed": false,
+    "commands_executed": true,
+    "executed_command_count": 3,
+    "execution_mode": "local_controlled_artifacts",
+    "failed_command_count": 0,
+    "git_mutated": false,
+    "human_review_required": true,
+    "missing_command_count": 0,
+    "mode": "shadow",
+    "next_phase_suggested": "3E_human_review_decision_gate",
+    "passed_command_count": 3,
+    "planned_command_count": 3,
+    "release_gate": "ready_for_human_review",
+    "source_clinical_facts_mutated": false,
+    "validated_visual_count": 1,
+    "visual_route_count": 1
+  },
+  "version": "shadow_execution_artifacts_v1",
+  "visual_results": [
+    {
+      "artifact_ref": "",
+      "console_errors": 0,
+      "notes": "Browser validation after server restart confirmed Shadow Execution Artifacts panel in desktop/mobile; console errors=0.",
+      "overlap_detected": false,
+      "route": "/loop-monitor",
+      "status": "passed",
+      "viewport": "1440x696 + 390x844"
+    }
+  ]
+}

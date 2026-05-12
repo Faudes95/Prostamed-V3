@@ -11,3 +11,5 @@ scikit-learn==1.5.2
 joblib==1.4.2
 requests==2.32.3
 lifelines==0.30.0
+cryptography==43.0.3
+flask-sock==0.7.0

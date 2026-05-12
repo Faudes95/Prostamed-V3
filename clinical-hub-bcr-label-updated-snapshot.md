@@ -1,0 +1,8 @@
+- generic [ref=e135] [box=365,813,758,106]:
+  - generic [ref=e136] [box=365,813,758,20]: Segunda recurrencia bioquímica tras tratamiento local
+  - generic [ref=e137] [box=365,840,758,48]:
+    - combobox [box=365,840,758,48]
+    - combobox "No" [ref=e138] [cursor=pointer] [box=365,840,758,48]:
+      - generic "No" [ref=e139] [box=381,854,698,20]
+      - img [ref=e141] [box=1091,856,16,16]
+  - paragraph [ref=e143] [box=365,896,758,23]: Solo aplica si ya hubo cáncer confirmado, terapia local previa y una primera recurrencia bioquímica documentada.

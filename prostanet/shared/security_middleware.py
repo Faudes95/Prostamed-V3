@@ -56,6 +56,22 @@ def _csp_with_nonce(nonce: str) -> str:
     return csp
 
 
+def _permissions_policy_for_current_route() -> str:
+    try:
+        from flask import request
+
+        path = str(request.path or "")
+    except Exception:
+        path = ""
+    voice_paths = (
+        "/clinical-hub",
+        "/patient_profile/",
+        "/longitudinal-capture/",
+    )
+    microphone = "microphone=(self)" if path == "/clinical-hub" or path.startswith(voice_paths) else "microphone=()"
+    return f"camera=(), {microphone}, geolocation=()"
+
+
 def apply_security_headers(response):
     if not is_security_headers_enabled():
         return response
@@ -68,7 +84,7 @@ def apply_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers["Permissions-Policy"] = _permissions_policy_for_current_route()
     response.headers.setdefault("Content-Security-Policy", _csp_with_nonce(nonce))
     return response
 

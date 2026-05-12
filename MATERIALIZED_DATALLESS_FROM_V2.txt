@@ -1,0 +1,388 @@
+app_restart_codex.log
+.pytest_cache/v/cache/nodeids
+tests/__pycache__/test_gates_coverage_ddi_extension.cpython-312-pytest-9.0.3.pyc
+tests/__pycache__/test_epic3_vision_nepc_pembro_arv7.cpython-312-pytest-9.0.3.pyc
+tests/__pycache__/test_modular_engine.cpython-314-pytest-8.3.2 2.pyc
+tests/__pycache__/test_runtime_publication_builders.cpython-314-pytest-8.3.2.pyc
+tests/__pycache__/test_runtime_publication_builders.cpython-314-pytest-8.3.2 2.pyc
+tests/__pycache__/test_crpc_copilot.cpython-314-pytest-8.3.2 2.pyc
+tests/__pycache__/conftest.cpython-312-pytest-9.0.3.pyc
+tests/__pycache__/test_core_api.cpython-314-pytest-8.3.2 2.pyc
+tests/__pycache__/test_audit63b_canonicalize_treatments_synthesis.cpython-312-pytest-9.0.3.pyc
+tests/__pycache__/test_tier7_g1_security_hardening.cpython-312-pytest-9.0.3.pyc
+tests/__pycache__/test_epic5_as_longitudinal.cpython-312-pytest-9.0.3.pyc
+tests/__pycache__/test_post_radiotherapy_followup.cpython-314-pytest-8.3.2.pyc
+tests/__pycache__/test_audit_pre_cortana_v2_e2e.cpython-312-pytest-9.0.3.pyc
+tests/__pycache__/test_audit56_gate35_arsi_abi_vte_risk.cpython-312-pytest-9.0.3.pyc
+tests/__pycache__/conftest.cpython-312-pytest-9.0.3 2.pyc
+tests/__pycache__/test_vertical_verification.cpython-312-pytest-9.0.3.pyc
+tests/__pycache__/test_crpc_copilot.cpython-314-pytest-8.3.2.pyc
+tests/__pycache__/test_audit44_gates_29_30_olaparib_renal_lutetium_fatigue.cpython-312-pytest-9.0.3.pyc
+output/faubot/20260429-082633-392977-contracts/artifacts/bcr_salvage_window.test2.stderr.log
+output/faubot/20260429-082633-392977-contracts/artifacts/contracts_scan.stderr.log
+output/faubot/20260429-082633-392977-contracts/artifacts/profile_consistency_contract.test1.stdout.log
+output/faubot/20260429-082633-392977-contracts/artifacts/crpc_castration_verification.test1.stdout.log
+output/faubot/20260429-082148-130102-contracts/artifacts/precision_eligibility_parp_psma.test1.stdout.log
+output/faubot/20260429-082148-130102-contracts/artifacts/contracts_scan.stdout.log
+output/faubot/20260429-082148-130102-contracts/artifacts/profile_consistency_contract.test2.stdout.log
+output/faubot/20260429-082148-130102-contracts/artifacts/adt_supportive_monitoring.test1.stderr.log
+output/faubot/20260429-082148-130102-contracts/artifacts/active_surveillance_guardrail.test1.stderr.log
+output/faubot/20260428-225148-994190-contracts/artifacts/crpc_castration_verification.test2.stderr.log
+output/faubot/20260428-225148-994190-contracts/artifacts/adt_supportive_monitoring.test2.stderr.log
+output/faubot/20260408-092142-577673-treatment/artifacts/mhspc_doublet_triplet_fitness.test2.stdout.log
+output/faubot/20260408-092142-577673-treatment/artifacts/bcr_salvage_vs_systemic.test2.stdout.log
+output/faubot/20260408-092142-577673-treatment/artifacts/diagnostic_workup_biopsy_escalation.test2.stdout.log
+output/faubot/20260408-092142-577673-treatment/artifacts/survivorship_supportive_and_palliative.test3.stdout.log
+output/faubot/20260408-092142-577673-treatment/artifacts/localized_active_surveillance_vs_local_therapy.test2.stderr.log
+output/faubot/20260408-092142-577673-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test1.stdout.log
+output/faubot/20260428-232005-785914-evidence/artifacts/evidence_scan.stderr.log
+output/faubot/20260408-150610-553655-treatment/artifacts/adt_progression_and_m0_crpc_arsi_selection.test1.stderr.log
+output/faubot/20260408-150610-553655-treatment/artifacts/bcr_salvage_vs_systemic.test2.stdout.log
+output/faubot/20260408-150610-553655-treatment/artifacts/post_negative_biopsy_reopen.test2.stdout.log
+output/faubot/20260408-150610-553655-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test1.stderr.log
+output/faubot/20260408-150610-553665-contracts/artifacts/crpc_castration_verification.test2.stdout.log
+output/faubot/20260408-150610-553665-contracts/artifacts/adt_supportive_monitoring.test2.stdout.log
+output/faubot/20260408-150610-553665-contracts/artifacts/active_surveillance_guardrail.test2.stderr.log
+output/faubot/20260327-222334/artifacts/phase_one_schedule.stdout.log
+output/faubot/20260408-143713-484561-treatment/artifacts/survivorship_supportive_and_palliative.test3.stdout.log
+output/faubot/20260408-143713-484561-treatment/artifacts/bcr_salvage_vs_systemic.test1.stderr.log
+output/faubot/20260408-143713-484561-treatment/artifacts/diagnostic_workup_biopsy_escalation.test2.stderr.log
+output/faubot/20260408-143713-484561-treatment/artifacts/localized_active_surveillance_vs_local_therapy.test2.stdout.log
+output/faubot/20260402-214846/artifacts/phase_one_schedule.stdout.log
+output/faubot/20260402-214846/artifacts/draft_registration_flow.stderr.log
+output/faubot/20260408-074351-034604-smoke/artifacts/draft_registration_flow.stdout.log
+output/faubot/20260408-074351-034604-smoke/artifacts/stage_specific_missing_inputs.stdout.log
+output/faubot/20260408-075756-149528-contracts/artifacts/crpc_castration_verification.test2.stdout.log
+output/faubot/20260408-075756-149528-contracts/artifacts/contracts_scan.stdout.log
+output/faubot/20260408-143603-009153-smoke/artifacts/stage_specific_missing_inputs.stdout.log
+output/faubot/20260408-143603-009153-smoke/artifacts/draft_registration_flow.stderr.log
+output/faubot/20260408-074145/artifacts/stage_specific_missing_inputs.stderr.log
+output/faubot/20260408-092433-759126-treatment/artifacts/survivorship_supportive_and_palliative.test2.stderr.log
+output/faubot/20260408-092433-759126-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test2.stdout.log
+output/faubot/20260408-092433-759126-treatment/artifacts/diagnostic_workup_biopsy_escalation.test2.stderr.log
+output/faubot/20260408-092433-759126-treatment/artifacts/bcr_salvage_vs_systemic.test3.stdout.log
+output/faubot/20260408-092433-759126-treatment/artifacts/localized_active_surveillance_vs_local_therapy.test2.stdout.log
+output/faubot/20260408-092433-759126-treatment/artifacts/treatment_scan.stderr.log
+output/faubot/20260408-092433-759126-treatment/artifacts/mhspc_doublet_triplet_fitness.test1.stdout.log
+output/faubot/20260408-092433-759126-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test1.stderr.log
+output/faubot/20260408-205759-014642-treatment/artifacts/adt_progression_and_m0_crpc_arsi_selection.test3.stderr.log
+output/faubot/20260408-205759-014642-treatment/artifacts/survivorship_supportive_and_palliative.test3.stdout.log
+output/faubot/20260408-205759-014642-treatment/artifacts/bcr_salvage_vs_systemic.test1.stderr.log
+output/faubot/20260408-205759-014642-treatment/artifacts/treatment_scan.stdout.log
+output/faubot/20260408-205759-014642-treatment/artifacts/bcr_salvage_vs_systemic.test2.stderr.log
+output/faubot/20260408-205759-014642-treatment/artifacts/post_negative_biopsy_reopen.test2.stderr.log
+output/faubot/20260408-205759-014642-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test3.stderr.log
+output/faubot/20260408-205759-014642-treatment/artifacts/post_negative_biopsy_reopen.test1.stdout.log
+output/faubot/20260408-205759-014642-treatment/artifacts/mhspc_doublet_triplet_fitness.test1.stdout.log
+output/faubot/20260408-205759-014642-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test1.stderr.log
+output/faubot/20260405-150910/artifacts/draft_registration_flow.stderr.log
+output/faubot/20260408-115937-679370-full/artifacts/phase_one_schedule.stdout.log
+output/faubot/20260408-115937-679370-full/artifacts/adt_progression_and_m0_crpc_arsi_selection.test1.stderr.log
+output/faubot/20260408-115937-679370-full/artifacts/crpc_castration_verification.test2.stdout.log
+output/faubot/20260408-115937-679370-full/artifacts/precision_eligibility_parp_psma.test1.stdout.log
+output/faubot/20260408-115937-679370-full/artifacts/stage_specific_missing_inputs.stdout.log
+output/faubot/20260408-115937-679370-full/artifacts/post_negative_biopsy_reopen.test2.stdout.log
+output/faubot/20260408-115937-679370-full/artifacts/adt_progression_and_m0_crpc_arsi_selection.test3.stderr.log
+output/faubot/20260408-115937-679370-full/artifacts/crpc_castration_verification.test1.stderr.log
+output/faubot/20260408-115937-679370-full/artifacts/draft_registration_flow.stderr.log
+output/faubot/20260408-115937-679370-full/artifacts/bcr_salvage_window.test2.stdout.log
+output/faubot/20260408-115937-679370-full/artifacts/diagnostic_workup_biopsy_escalation.test2.stderr.log
+output/faubot/20260408-115937-679370-full/artifacts/active_surveillance_guardrail.test2.stdout.log
+output/faubot/20260408-115937-679370-full/artifacts/m1_crpc_precision_and_sequence.test1.stdout.log
+output/faubot/20260408-115937-679370-full/artifacts/adt_supportive_monitoring.test2.stderr.log
+output/faubot/20260408-143624-456563-contracts/artifacts/bcr_salvage_window.test2.stdout.log
+output/faubot/20260419-112851-938332-treatment/artifacts/survivorship_supportive_and_palliative.test1.stdout.log
+output/faubot/20260419-112851-938332-treatment/artifacts/bcr_salvage_vs_systemic.test3.stderr.log
+output/faubot/20260419-112851-938332-treatment/artifacts/adt_progression_and_m0_crpc_arsi_selection.test2.stdout.log
+output/faubot/20260419-112851-938332-treatment/artifacts/adt_progression_and_m0_crpc_arsi_selection.test1.stdout.log
+output/faubot/20260419-112851-938332-treatment/artifacts/mhspc_doublet_triplet_fitness.test2.stderr.log
+output/faubot/20260419-112851-938332-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test3.stderr.log
+output/faubot/20260419-112851-938332-treatment/artifacts/mhspc_doublet_triplet_fitness.test1.stdout.log
+output/faubot/20260408-144251-530226-treatment/artifacts/mhspc_doublet_triplet_fitness.test2.stdout.log
+output/faubot/20260408-144251-530226-treatment/artifacts/diagnostic_workup_biopsy_escalation.test2.stderr.log
+output/faubot/20260408-144251-530226-treatment/artifacts/bcr_salvage_vs_systemic.test3.stdout.log
+output/faubot/20260408-144251-530226-treatment/artifacts/post_negative_biopsy_reopen.test1.stdout.log
+output/faubot/20260408-144251-530226-treatment/artifacts/m1_crpc_precision_and_sequence.test3.stdout.log
+output/faubot/20260408-105303-107450-smoke/artifacts/phase_one_schedule.stderr.log
+output/faubot/20260408-105303-107450-smoke/artifacts/stage_specific_missing_inputs.stderr.log
+output/faubot/20260429-203449-531268-smoke/artifacts/phase_one_schedule.stdout.log
+output/faubot/20260429-203449-531268-smoke/artifacts/stage_specific_missing_inputs.stdout.log
+output/faubot/20260408-205528-478398-smoke/artifacts/draft_registration_flow.stdout.log
+output/faubot/20260408-205528-478398-smoke/artifacts/stage_specific_missing_inputs.stdout.log
+output/faubot/20260408-205528-478398-smoke/artifacts/phase_one_schedule.stderr.log
+output/faubot/20260429-081923-277418-contracts/artifacts/active_surveillance_guardrail.test2.stdout.log
+output/faubot/20260429-081923-277418-contracts/artifacts/adt_supportive_monitoring.test2.stderr.log
+output/faubot/20260429-081923-277418-contracts/artifacts/profile_consistency_contract.test2.stderr.log
+output/faubot/20260408-205759-014621-evidence/artifacts/evidence_scan.stdout.log
+output/faubot/20260328-091850/artifacts/draft_registration_flow.stderr.log
+output/faubot/20260328-091850/artifacts/phase_one_schedule.stderr.log
+output/faubot/20260408-115224-842157-contracts/artifacts/bcr_salvage_window.test2.stderr.log
+output/faubot/20260408-115224-842157-contracts/artifacts/contracts_scan.stdout.log
+output/faubot/20260408-115224-842157-contracts/artifacts/crpc_castration_verification.test2.stderr.log
+output/faubot/20260408-115224-842157-contracts/artifacts/crpc_castration_verification.test1.stdout.log
+output/faubot/20260429-080637-385188-contracts/artifacts/crpc_castration_verification.test2.stdout.log
+output/faubot/20260429-080637-385188-contracts/artifacts/adt_supportive_monitoring.test2.stdout.log
+output/faubot/20260429-080637-385188-contracts/artifacts/crpc_castration_verification.test1.stderr.log
+output/faubot/20260429-080637-385188-contracts/artifacts/contracts_scan.stderr.log
+output/faubot/20260429-080637-385188-contracts/artifacts/bcr_salvage_window.test1.stderr.log
+output/faubot/20260413-180942-668952-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test2.stderr.log
+output/faubot/20260413-180942-668952-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test3.stdout.log
+output/faubot/20260413-180942-668952-treatment/artifacts/survivorship_supportive_and_palliative.test1.stderr.log
+output/faubot/20260413-180942-668952-treatment/artifacts/m1_crpc_precision_and_sequence.test1.stdout.log
+output/faubot/20260413-180942-668952-treatment/artifacts/post_negative_biopsy_reopen.test2.stderr.log
+output/faubot/20260413-180942-668952-treatment/artifacts/localized_active_surveillance_vs_local_therapy.test1.stderr.log
+output/faubot/20260403-132735/artifacts/draft_registration_flow.stdout.log
+output/faubot/20260408-115224-842246-treatment/artifacts/adt_progression_and_m0_crpc_arsi_selection.test1.stderr.log
+output/faubot/20260408-115224-842246-treatment/artifacts/diagnostic_workup_biopsy_escalation.test1.stderr.log
+output/faubot/20260408-115224-842246-treatment/artifacts/adt_progression_and_m0_crpc_arsi_selection.test3.stderr.log
+output/faubot/20260408-115224-842246-treatment/artifacts/m1_crpc_precision_and_sequence.test1.stdout.log
+output/faubot/20260408-115224-842246-treatment/artifacts/mhspc_doublet_triplet_fitness.test1.stdout.log
+output/faubot/20260428-232005-785914-contracts/artifacts/adt_supportive_monitoring.test1.stderr.log
+output/faubot/20260428-232005-785914-contracts/artifacts/bcr_salvage_window.test2.stdout.log
+output/faubot/20260428-232005-785914-contracts/artifacts/active_surveillance_guardrail.test2.stdout.log
+output/faubot/20260428-232005-785914-contracts/artifacts/active_surveillance_guardrail.test1.stderr.log
+output/faubot/20260408-115922-772657-evidence/artifacts/evidence_scan.stdout.log
+output/faubot/20260413-180942-669162-evidence/artifacts/evidence_scan.stdout.log
+output/faubot/20260405-103350/artifacts/stage_specific_missing_inputs.stdout.log
+output/faubot/20260405-103350/artifacts/phase_one_schedule.stderr.log
+output/faubot/20260429-082325-291953-contracts/artifacts/contracts_scan.stdout.log
+output/faubot/20260429-082325-291953-contracts/artifacts/profile_consistency_contract.test2.stdout.log
+output/faubot/20260429-082325-291953-contracts/artifacts/active_surveillance_guardrail.test1.stdout.log
+output/faubot/20260429-082325-291953-contracts/artifacts/adt_supportive_monitoring.test2.stderr.log
+output/faubot/20260429-082325-291953-contracts/artifacts/precision_eligibility_parp_psma.test2.stdout.log
+output/faubot/20260403-131908/artifacts/phase_one_schedule.stderr.log
+output/faubot/20260408-150535-338372-smoke/artifacts/stage_specific_missing_inputs.stdout.log
+output/faubot/20260408-195209-858598-contracts/artifacts/profile_consistency_contract.test2.stdout.log
+output/faubot/20260408-195209-858598-contracts/artifacts/precision_eligibility_parp_psma.test2.stderr.log
+output/faubot/20260408-195209-858598-contracts/artifacts/crpc_castration_verification.test2.stderr.log
+output/faubot/20260408-195209-858598-contracts/artifacts/adt_supportive_monitoring.test2.stderr.log
+output/faubot/20260418-191320-358762-treatment/artifacts/m1_crpc_precision_and_sequence.test2.stdout.log
+output/faubot/20260418-191320-358762-treatment/artifacts/treatment_scan.stderr.log
+output/faubot/20260418-191320-358762-treatment/artifacts/mhspc_doublet_triplet_fitness.test1.stdout.log
+output/faubot/20260428-225149-065176-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test2.stderr.log
+output/faubot/20260428-225149-065176-treatment/artifacts/post_negative_biopsy_reopen.test1.stderr.log
+output/faubot/20260428-225149-065176-treatment/artifacts/adt_progression_and_m0_crpc_arsi_selection.test3.stderr.log
+output/faubot/20260428-225149-065176-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test1.stdout.log
+output/faubot/20260428-225149-065176-treatment/artifacts/m1_crpc_precision_and_sequence.test3.stderr.log
+output/faubot/20260428-225149-065176-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test2.stdout.log
+output/faubot/20260428-225149-065176-treatment/artifacts/bcr_salvage_vs_systemic.test3.stdout.log
+output/faubot/20260428-225149-065176-treatment/artifacts/survivorship_supportive_and_palliative.test3.stderr.log
+output/faubot/20260428-225149-065176-treatment/artifacts/m1_crpc_precision_and_sequence.test3.stdout.log
+output/faubot/20260428-225149-065176-treatment/artifacts/survivorship_supportive_and_palliative.test2.stdout.log
+output/faubot/20260418-191320-358763-evidence/artifacts/evidence_scan.stdout.log
+output/faubot/20260327-222409/artifacts/vertical_verification.stdout.log
+output/faubot/20260328-091937/artifacts/vertical_verification.stdout.log
+output/faubot/20260428-232006-100430-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test2.stderr.log
+output/faubot/20260428-232006-100430-treatment/artifacts/bcr_salvage_vs_systemic.test3.stderr.log
+output/faubot/20260428-232006-100430-treatment/artifacts/bcr_salvage_vs_systemic.test2.stderr.log
+output/faubot/20260428-232006-100430-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test3.stderr.log
+output/faubot/20260428-232006-100430-treatment/artifacts/m1_crpc_precision_and_sequence.test2.stderr.log
+output/faubot/20260408-105506-818434-treatment/artifacts/post_rt_local_salvage_mdt_or_systemic.test2.stderr.log
+output/faubot/20260408-105506-818434-treatment/artifacts/adt_progression_and_m0_crpc_arsi_selection.test1.stdout.log
+output/faubot/20260408-105506-818434-treatment/artifacts/m1_crpc_precision_and_sequence.test1.stdout.log
+output/faubot/20260408-105506-818434-treatment/artifacts/localized_active_surveillance_vs_local_therapy.test1.stderr.log
+output/faubot/20260408-105506-818434-treatment/artifacts/post_negative_biopsy_reopen.test1.stdout.log
+output/faubot/20260408-105506-818434-treatment/artifacts/adt_progression_and_m0_crpc_arsi_selection.test3.stdout.log
+output/faubot/20260408-105506-818434-treatment/artifacts/treatment_scan.stderr.log
+output/faubot/20260408-105506-818434-treatment/artifacts/adt_progression_and_m0_crpc_arsi_selection.test2.stderr.log
+output/faubot/20260408-124012-130829-smoke/artifacts/phase_one_schedule.stdout.log
+output/faubot/20260429-081720-387193-contracts/artifacts/active_surveillance_guardrail.test1.stdout.log
+output/faubot/20260429-081720-387193-contracts/artifacts/profile_consistency_contract.test1.stderr.log
+output/faubot/20260429-081720-387193-contracts/artifacts/precision_eligibility_parp_psma.test2.stdout.log
+.claude/worktrees/relaxed-blackwell-caa0c7/output/survivorship_visual_20260401/patient_profile_239.png
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/patient_tracking/psma_imaging/__pycache__/analytics.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/patient_tracking/psma_imaging/__pycache__/repository.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/patient_tracking/psma_imaging/__pycache__/__init__.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/patient_tracking/__pycache__/copilot_alerts.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/patient_tracking/__pycache__/pro_engine.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/patient_tracking/__pycache__/mhspc_copilot_service.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/patient_tracking/__pycache__/longitudinal_truth_service.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/patient_tracking/__pycache__/__init__.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/patient_tracking/__pycache__/schedule_engine.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/patient_tracking/__pycache__/document_ingestion.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/clinical_assessments/__pycache__/service.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/clinical_assessments/__pycache__/__init__.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/dashboard/__pycache__/dashboard_calibration_service.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/dashboard/__pycache__/dashboard_facade.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/evidence_registry/__pycache__/private_index.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/research_intelligence/__pycache__/quality_indicator_repository.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/research_intelligence/__pycache__/benchmark_repository.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/research_intelligence/__pycache__/quality_indicators.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/research_intelligence/__pycache__/research_exports.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/research_intelligence/__pycache__/__init__.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/mcspc_oligo_metachronous/__pycache__/schemas.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/domains/localized_initial/__pycache__/rules_nccn.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/shared/__pycache__/converters.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/__pycache__/__init__.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/prostanet/ai/inference/__pycache__/model_registry.cpython-312.pyc
+.claude/worktrees/relaxed-blackwell-caa0c7/static/img/prostamed_logo.svg
+.claude/worktrees/relaxed-blackwell-caa0c7/static/img/prostamed_logo_header.png
+.claude/worktrees/relaxed-blackwell-caa0c7/static/img/prostamed_logo_real.png
+.claude/worktrees/relaxed-blackwell-caa0c7/static/img/tnm/tnm_cancer_prostata_real.png
+.claude/worktrees/relaxed-blackwell-caa0c7/scripts/run_validation_playwright.mjs
+.claude/worktrees/thirsty-margulis-9ee153/output/tnm_visual_review/m1c_review.svg
+.claude/worktrees/thirsty-margulis-9ee153/output/tnm_visual_review/m1b_review.svg
+.claude/worktrees/thirsty-margulis-9ee153/.claude/scheduled_tasks 2.lock
+.claude/worktrees/thirsty-margulis-9ee153/model_output/artifacts.pkl
+.claude/worktrees/thirsty-margulis-9ee153/static/img/prostamed_logo.svg
+.claude/worktrees/thirsty-margulis-9ee153/static/img/prostamed_logo_header.png
+.claude/worktrees/thirsty-margulis-9ee153/static/img/prostamed_logo_real.png
+.claude/worktrees/thirsty-margulis-9ee153/static/img/tnm/real_stage/m1_real.png
+prostanet_tracking 2.db-wal
+__pycache__/tracking_db.cpython-312.pyc
+prostanet/domains/patient_tracking/__pycache__/schedule_engine.cpython-314 2.pyc
+prostanet/domains/patient_tracking/__pycache__/runtime_publication_builder.cpython-312.pyc
+prostanet/domains/patient_tracking/__pycache__/radiotherapy_detail.cpython-312 3.pyc
+prostanet/domains/patient_tracking/__pycache__/vertical_runtime.cpython-312 3.pyc
+prostanet/domains/patient_tracking/__pycache__/radiotherapy_detail.cpython-312.pyc
+prostanet/domains/patient_tracking/__pycache__/longitudinal_intelligence.cpython-314 2.pyc
+prostanet/domains/patient_tracking/__pycache__/mhspc_evidence.cpython-312 3.pyc
+prostanet/domains/patient_tracking/__pycache__/vertical_runtime.cpython-314 2.pyc
+prostanet/domains/patient_tracking/__pycache__/natural_history_tracker.cpython-312.pyc
+prostanet/domains/patient_tracking/__pycache__/crpc_copilot_service.cpython-314 2.pyc
+prostanet/domains/patient_tracking/__pycache__/capture_flows.cpython-312 3.pyc
+prostanet/domains/patient_tracking/__pycache__/ctcae_capture_engine.cpython-312.pyc
+prostanet/domains/patient_tracking/__pycache__/followup_reconciliation_service.cpython-312.pyc
+prostanet/domains/patient_tracking/__pycache__/skeletal_events.cpython-314 2.pyc
+prostanet/domains/patient_tracking/__pycache__/primary_rt_eligibility.cpython-312.pyc
+prostanet/domains/patient_tracking/__pycache__/structured_biopsy.cpython-314 2.pyc
+prostanet/domains/patient_tracking/__pycache__/capture_surface.cpython-312 3.pyc
+prostanet/domains/patient_tracking/__pycache__/mhspc_frontline_reference.cpython-312.pyc
+prostanet/domains/patient_tracking/__pycache__/survival_endpoints.cpython-312.pyc
+prostanet/domains/patient_tracking/__pycache__/arpi_benefit_matrix.cpython-314 2.pyc
+prostanet/domains/patient_tracking/__pycache__/prognostic_impact.cpython-312 3.pyc
+prostanet/domains/patient_tracking/__pycache__/mhspc_frontline_reference.cpython-314 2.pyc
+prostanet/domains/patient_tracking/__pycache__/survivorship.cpython-312 3.pyc
+prostanet/domains/patient_tracking/__pycache__/guideline_schedule_engine.cpython-314 2.pyc
+prostanet/domains/patient_tracking/__pycache__/therapy_evidence_currentness_builder.cpython-312 3.pyc
+prostanet/domains/patient_tracking/__pycache__/advanced_followup_builder.cpython-312.pyc
+prostanet/domains/patient_tracking/__pycache__/palliative_longitudinal.cpython-312.pyc
+prostanet/domains/patient_tracking/__pycache__/master_followup_plan.cpython-312 3.pyc
+prostanet/domains/patient_tracking/__pycache__/structured_biopsy.cpython-312.pyc
+prostanet/domains/patient_tracking/__pycache__/psa_line_monitor.cpython-314 2.pyc
+prostanet/domains/patient_tracking/__pycache__/survivorship_longitudinal.cpython-312 3.pyc
+prostanet/domains/adt_progression_verification/__pycache__/schemas.cpython-312.pyc
+prostanet/domains/adt_progression_verification/__pycache__/__init__.cpython-312 3.pyc
+prostanet/domains/adt_progression_verification/__pycache__/rules_eau.cpython-312.pyc
+prostanet/domains/adt_progression_verification/__pycache__/schemas.cpython-312 3.pyc
+prostanet/domains/adt_progression_verification/__pycache__/rules_nccn.cpython-312 3.pyc
+prostanet/domains/mcspc_high_volume/__pycache__/schemas.cpython-314 2.pyc
+prostanet/domains/mcspc_high_volume/__pycache__/rules_nccn.cpython-312 3.pyc
+prostanet/domains/mcspc_high_volume/__pycache__/rules_nccn.cpython-314 2.pyc
+prostanet/domains/post_radiotherapy_followup/__pycache__/rules_eau.cpython-312 3.pyc
+prostanet/domains/state_classifier/__pycache__/service.cpython-314 2.pyc
+prostanet/domains/dashboard/__pycache__/dashboard_summary_service.cpython-314 2.pyc
+prostanet/domains/dashboard/__pycache__/dashboard_cache_repository.cpython-312 3.pyc
+prostanet/domains/dashboard/__pycache__/__init__.cpython-312 3.pyc
+prostanet/domains/dashboard/__pycache__/dashboard_summary_service.cpython-312 3.pyc
+prostanet/domains/mcspc_low_volume_sync_oligo/__pycache__/schemas.cpython-312.pyc
+prostanet/domains/post_negative_biopsy_followup/__pycache__/service.cpython-314 2.pyc
+prostanet/domains/survivorship_and_toxicity_followup/__pycache__/service.cpython-314 2.pyc
+prostanet/domains/survivorship_and_toxicity_followup/__pycache__/rules_nccn.cpython-312 3.pyc
+prostanet/domains/evidence_registry/__pycache__/data.cpython-312 3.pyc
+prostanet/domains/evidence_registry/__pycache__/models.cpython-312.pyc
+prostanet/domains/evidence_registry/__pycache__/__init__.cpython-312.pyc
+prostanet/domains/research_intelligence/__pycache__/comparative_effectiveness.cpython-312 3.pyc
+prostanet/domains/research_intelligence/__pycache__/dynamic_cohorting.cpython-312 3.pyc
+prostanet/domains/research_intelligence/__pycache__/consent_repository.cpython-314 2.pyc
+prostanet/domains/research_intelligence/__pycache__/quality_indicator_repository.cpython-312 3.pyc
+prostanet/domains/post_prostatectomy/__pycache__/service.cpython-312 3.pyc
+prostanet/domains/post_prostatectomy/__pycache__/schemas.cpython-314 2.pyc
+prostanet/domains/recurrence_bcr/__pycache__/service.cpython-312.pyc
+prostanet/domains/recurrence_bcr/__pycache__/__init__.cpython-312 3.pyc
+prostanet/domains/recurrence_bcr/__pycache__/schemas.cpython-314 2.pyc
+prostanet/domains/recurrence_bcr/__pycache__/rules_nccn.cpython-312 3.pyc
+prostanet/domains/guideline_comparison/__pycache__/__init__.cpython-312.pyc
+prostanet/domains/post_radiotherapy_or_local_salvage/__pycache__/logic.cpython-314 2.pyc
+prostanet/domains/post_radiotherapy_or_local_salvage/__pycache__/service.cpython-312 3.pyc
+prostanet/domains/post_radiotherapy_or_local_salvage/__pycache__/logic.cpython-312.pyc
+prostanet/domains/mcspc_oligo_metachronous/__pycache__/__init__.cpython-312 3.pyc
+prostanet/domains/mcspc_oligo_metachronous/__pycache__/service.cpython-314 2.pyc
+prostanet/domains/m0_crpc/__pycache__/schemas.cpython-314 2.pyc
+prostanet/domains/m0_crpc/__pycache__/rules_nccn.cpython-312 3.pyc
+prostanet/domains/focal_therapy/__pycache__/schemas.cpython-312.pyc
+prostanet/domains/focal_therapy/__pycache__/rules_nccn.cpython-312.pyc
+prostanet/domains/clinical_validation/__pycache__/visual_validation_runner.cpython-314 2.pyc
+prostanet/domains/clinical_validation/__pycache__/vertical_verification.cpython-312 3.pyc
+prostanet/domains/clinical_validation/__pycache__/trajectory_seed_service.cpython-314 2.pyc
+prostanet/domains/clinical_validation/__pycache__/repository.cpython-314 2.pyc
+prostanet/domains/localized_initial/__pycache__/rules_nccn.cpython-312.pyc
+prostanet/domains/diagnostic_workup/__pycache__/rules_eau.cpython-312.pyc
+prostanet/domains/diagnostic_workup/__pycache__/service.cpython-314 2.pyc
+prostanet/domains/screening/__pycache__/rules_nccn.cpython-312.pyc
+prostanet/domains/screening/__pycache__/rules_eau.cpython-312 3.pyc
+prostanet/domains/m1_crpc/__pycache__/service.cpython-312 3.pyc
+prostanet/domains/m1_crpc/__pycache__/rules_nccn.cpython-314 2.pyc
+prostanet/agents/__pycache__/event_bus.cpython-314.pyc
+prostanet/agents/__pycache__/__init__.cpython-312 3.pyc
+prostanet/agents/__pycache__/research_intelligence_agent.cpython-314 2.pyc
+prostanet/agents/__pycache__/event_bus.cpython-314 2.pyc
+prostanet/agents/__pycache__/progression_surveillance_agent.cpython-314 2.pyc
+prostanet/agentic/__pycache__/compliance_scorer.cpython-312.pyc
+prostanet/agentic/pillars/__pycache__/pillar_3_lifecycle.cpython-314.pyc
+prostanet/agentic/pillars/__pycache__/__init__.cpython-314.pyc
+prostanet/shared/__pycache__/gates_ddi_cross_check_yaml_loader.cpython-312.pyc
+prostanet/shared/__pycache__/pivotal_gate_delta.cpython-312.pyc
+prostanet/shared/__pycache__/life_expectancy.cpython-312.pyc
+prostanet/shared/__pycache__/security_middleware.cpython-312.pyc
+prostanet/shared/__pycache__/clinical_fact_registry.cpython-314 2.pyc
+prostanet/shared/__pycache__/phase7_decision_bundles.cpython-312 2.pyc
+prostanet/shared/__pycache__/staging_requirements_engine.cpython-312 2.pyc
+prostanet/shared/__pycache__/payload_completeness_warner.cpython-312 2.pyc
+prostanet/shared/__pycache__/ddi_engine.cpython-312.pyc
+prostanet/shared/__pycache__/auth_backends.cpython-314 2.pyc
+prostanet/shared/__pycache__/presentation_text.cpython-312 2.pyc
+prostanet/shared/__pycache__/pivotal_gate_delta.cpython-312 2.pyc
+prostanet/shared/__pycache__/pivotal_contraindication_gates.cpython-314 2.pyc
+prostanet/shared/__pycache__/presentation_text.cpython-312.pyc
+prostanet/shared/__pycache__/auth_db.cpython-312.pyc
+prostanet/shared/__pycache__/ctcae_v5.cpython-312.pyc
+prostanet/shared/__pycache__/gleason_profile.cpython-314 2.pyc
+prostanet/shared/__pycache__/validated_algorithms.cpython-312.pyc
+prostanet/shared/__pycache__/renal_function.cpython-314 2.pyc
+prostanet/shared/__pycache__/decision_audit_builder.cpython-312.pyc
+prostanet/shared/__pycache__/auth_db.cpython-314 2.pyc
+prostanet/shared/__pycache__/pcothercause.cpython-314 2.pyc
+prostanet/shared/__pycache__/ddi_engine.cpython-312 2.pyc
+prostanet/shared/__pycache__/systemic_regimen_scope.cpython-312.pyc
+prostanet/shared/__pycache__/__init__.cpython-312.pyc
+prostanet/shared/__pycache__/medication_list.cpython-312 2.pyc
+prostanet/shared/__pycache__/clinical_provisional_diagnosis_engine.cpython-312 2.pyc
+prostanet/ai/nomograms/__pycache__/capra_s.cpython-312.pyc
+prostanet/ai/inference/__pycache__/runtime_registry.cpython-312.pyc
+prostanet/presentation/__pycache__/api.cpython-312.pyc
+prostanet/presentation/__pycache__/ui_assets.cpython-312 3.pyc
+prostanet/presentation/__pycache__/ui_assets.cpython-314 2.pyc
+prostanet/presentation/__pycache__/progressive_capture_builder.cpython-312.pyc
+prostanet/presentation/__pycache__/v2_demo_data.cpython-312.pyc
+prostanet/presentation/__pycache__/api.cpython-312 3.pyc
+clinical-hub-bcr-label-updated-fullpage.png
+.playwright-cli/console-2026-04-29T20-04-05-626Z.log
+.git/logs/refs/heads/claude/charming-easley-d3ab93
+.git/logs/refs/remotes/origin/codex/save-current-prostanet-state-20260429
+.git/worktrees/kind-wu-91baba/HEAD
+.git/worktrees/admiring-benz-48487c/commondir
+.git/worktrees/ProstaNet_Model_Fase6/commondir
+.git/worktrees/ProstaNet_Model_Fase6/config.worktree
+.git/worktrees/nervous-dubinsky-a350ed/config.worktree
+.git/prostanet-repair-backups/20260429-084545/root/FETCH_HEAD
+.git/prostanet-repair-backups/20260429-084234/refs/heads/claude/dreamy-khayyam-de53f6
+.git/prostanet-repair-backups/20260429-084234/refs/heads/claude/kind-wu-91baba
+.git/prostanet-repair-backups/20260429-084234/refs/heads/main.dataless-backup-20260429-083512
+.git/prostanet-repair-backups/20260429-084234/refs/remotes/origin/main.dataless-backup-20260429-083512
+.git/prostanet-repair-backups/20260429-084335/worktrees/dreamy-khayyam-de53f6/config.worktree
+.git/prostanet-repair-backups/20260429-084335/worktrees/adoring-wilson-a5cf9a/commondir
+.git/prostanet-repair-backups/20260429-084335/worktrees/adoring-wilson-a5cf9a/HEAD
+.git/prostanet-repair-backups/20260429-084335/worktrees/kind-wu-91baba/commondir
+.git/prostanet-repair-backups/20260429-084335/worktrees/kind-wu-91baba/HEAD
+.git/prostanet-repair-backups/20260429-084335/worktrees/recursing-curie-544091/HEAD
+.git/prostanet-repair-backups/20260429-084335/worktrees/recursing-curie-544091/gitdir
+.git/prostanet-repair-backups/20260429-084335/worktrees/recursing-curie-544091/config.worktree
+.git/prostanet-repair-backups/20260429-084335/worktrees/admiring-benz-48487c/commondir
+.git/prostanet-repair-backups/20260429-084335/worktrees/nervous-dubinsky-a350ed/config.worktree
+.git/prostanet-repair-backups/20260429-084335/worktrees/focused-chatelet-750e8f/commondir
+.git/prostanet-repair-backups/20260429-084335/worktrees/focused-chatelet-750e8f/gitdir
+.git/prostanet-repair-backups/20260429-084631/working-tree-placeholders/output/survivorship_visual_20260401/wizard_survivorship.png.dataless-backup-20260429-083811
+.git/prostanet-repair-backups/20260429-084631/working-tree-placeholders/static/img/tnm/m1.svg.dataless-backup-20260429-083811
+.git/prostanet-repair-backups/20260429-084631/working-tree-placeholders/static/img/tnm/t2b.svg.dataless-backup-20260429-083811
+.git/prostanet-repair-backups/20260429-084631/working-tree-placeholders/static/img/tnm/t4.svg.dataless-backup-20260429-083811

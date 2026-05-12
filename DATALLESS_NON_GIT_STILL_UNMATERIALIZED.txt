@@ -1,0 +1,2 @@
+.playwright-cli/console-2026-05-11T02-46-23-916Z.log
+.playwright-cli/console-2026-05-11T02-52-14-201Z.log

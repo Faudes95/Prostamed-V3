@@ -401,6 +401,55 @@
         </section>
         {% endif %}
 
+        <section id="pm2VoiceClinicalOS" class="pm2-voice-os-panel" data-pm2-voice-os data-patient-ref="{{ identity.nss }}" data-surface="patient_profile_v2" aria-label="Cortana clínica">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem;color:var(--pn-accent);font-weight:800;letter-spacing:.16em;text-transform:uppercase;">Cortana clínica</div>
+                    <h3 style="font-family:var(--pm-font-display);font-size:1.15rem;color:#f8fafc;margin:5px 0 0;">Voice Clinical OS · captura con revisión médica</h3>
+                    <p style="margin:6px 0 0;color:var(--pn-text-muted);font-size:.84rem;line-height:1.45;max-width:84ch;">
+                        Local-first: consentimiento verbal, transcript cifrado, extracción estructurada y escritura sólo después de firma clínica.
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+                    <span class="pm2-voice-status" data-voice-status data-tone="idle">sin sesión</span>
+                    <span class="pm2-state-chip">sesión: <span data-voice-session-key>sin sesión</span></span>
+                </div>
+            </div>
+            <div class="pm2-voice-grid">
+                <div class="pm2-voice-box">
+                    <div style="font-size:.68rem;color:#67e8f9;font-weight:800;letter-spacing:.12em;text-transform:uppercase;">1 · consentimiento</div>
+                    <textarea class="pm2-voice-textarea" data-voice-consent-text>Autorizo que ProstaMed capture esta conversación clínica por voz para transcripción local, revisión médica y escritura auditada en mi expediente.</textarea>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="create">Crear sesión</button>
+                        <button type="button" class="pm2-btn pm2-btn--primary" data-voice-action="consent">Registrar consentimiento</button>
+                    </div>
+                    <p style="margin:10px 0 0;color:var(--pn-text-soft);font-size:.72rem;line-height:1.4;">
+                        El audio crudo queda temporal y se marca eliminado al firmar o descartar. El transcript firmado y los campos aceptados conservan provenance.
+                    </p>
+                </div>
+                <div class="pm2-voice-box">
+                    <div style="font-size:.68rem;color:#67e8f9;font-weight:800;letter-spacing:.12em;text-transform:uppercase;">2 · transcript y candidatos</div>
+                    <textarea class="pm2-voice-textarea" data-voice-transcript placeholder="Dictado clínico: APE 2.4 ng/mL el 2026-05-11, testosterona 38 ng/dL, ECOG 1..."></textarea>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="record">
+                            <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path stroke-width="2" stroke-linecap="round" d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></svg>
+                            Grabar
+                        </button>
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="stop">
+                            <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="7" y="7" width="10" height="10" rx="1.5" stroke-width="2"/></svg>
+                            Detener STT
+                        </button>
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="review">Extraer candidatos</button>
+                        <button type="button" class="pm2-btn pm2-btn--primary" data-voice-action="commit">Firmar y escribir aceptados</button>
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="discard">Descartar</button>
+                    </div>
+                    <div data-voice-candidates style="margin-top:10px;">
+                        <div class="pm2-voice-empty">Aún no hay candidatos. La voz nunca escribe sin revisión médica.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         {% set _surface = surface_consistency or {} %}
         {% if _surface.should_show %}
         <section style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.28); border-radius: 12px;" aria-label="Consistencia de superficies">
@@ -884,6 +933,56 @@
                     {% endif %}
                 </div>
             </details>
+        </section>
+
+        {% set _fusion = decision_today_fusion_kernel or profile_view_raw.get('decision_today_fusion_kernel', {}) %}
+        {% set _fusion_decision = _fusion.get('decision_today', {}) if _fusion else {} %}
+        {% set _fusion_action = _fusion.get('next_safe_action', {}) if _fusion else {} %}
+        {% set _fusion_missing = _fusion.get('unified_missing_fields', []) if _fusion else [] %}
+        {% set _autodrive = autodrive or profile_view_raw.get('autodrive', {}) %}
+        {% set _ad_summary = _autodrive.get('summary', {}) if _autodrive else {} %}
+        {% set _ad_queue = _autodrive.get('today_queue', []) if _autodrive else [] %}
+        {% set _ad_top = _ad_queue[0] if _ad_queue else {} %}
+        <section id="pm2AutodriveCommandCenter" data-decision-today-fusion style="margin: var(--space-4) var(--space-6); padding: var(--space-5); background: linear-gradient(135deg, rgba(14,165,233,0.08), rgba(15,23,42,0.58)); border: 1px solid rgba(14,165,233,0.32); border-left: 6px solid var(--clinical-info); border-radius: 14px;">
+            <div style="display:flex;justify-content:space-between;gap:var(--space-3);align-items:flex-start;flex-wrap:wrap;margin-bottom:var(--space-3);">
+                <div style="min-width:220px;flex:1">
+                    <div style="font-size:.7rem;color:var(--clinical-info);font-weight:800;letter-spacing:.18em;text-transform:uppercase;">DECISIÓN HOY · Fusion Kernel</div>
+                    <h3 style="font-family:var(--pm-font-display);font-size:1.2rem;color:#f0fbff;margin:6px 0 4px;letter-spacing:-.02em;">
+                        {{ _fusion_decision.get('title') or _ad_summary.get('top_action_title') or 'Sin decisión clínica accionable hoy' }}
+                    </h3>
+                    <p style="color:var(--pn-text-muted);font-size:.84rem;line-height:1.5;margin:0">
+                        {{ _fusion.get('clinical_rationale') or _ad_summary.get('dominant_blocker') or 'No hay bloqueo dominante documentado.' }}
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+                    <span class="pm2-state-chip {% if _fusion.get('decision_state') in ['urgent_safety','redecision_required'] or _ad_summary.get('priority_status') == 'critical_today' %}pm2-state-chip--warn{% else %}pm2-state-chip--primary{% endif %}">
+                        {{ _fusion.get('decision_state') or _ad_summary.get('priority_status', 'not_actionable') }}
+                    </span>
+                    <span class="pm2-state-chip">{{ _fusion_decision.get('label') or _ad_summary.get('dominant_lane_label', 'sin carril') }}</span>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:var(--space-3);">
+                <div style="padding:10px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:8px;">
+                    <div style="font-size:.66rem;color:var(--pn-text-soft);font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Riesgo evitado</div>
+                    <div style="font-size:.8rem;color:#e0f2fe;margin-top:4px">{{ _fusion_decision.get('risk_avoided') or _fusion_action.get('risk_avoided') or _ad_summary.get('risk_avoided') or _ad_top.get('risk_avoided') or '—' }}</div>
+                </div>
+                <div style="padding:10px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:8px;">
+                    <div style="font-size:.66rem;color:var(--pn-text-soft);font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Dato requerido</div>
+                    <div style="font-size:.8rem;color:#e0f2fe;margin-top:4px">
+                        {% if _fusion_missing %}{% for item in _fusion_missing[:3] %}{{ item.get('label') or item.get('field') }}{% if not loop.last %} · {% endif %}{% endfor %}{% elif _ad_top.get('missing_fields') %}{{ _ad_top.get('missing_fields')[:3] | join(' · ') }}{% else %}—{% endif %}
+                    </div>
+                </div>
+                <div style="padding:10px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:8px;">
+                    <div style="font-size:.66rem;color:var(--pn-text-soft);font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Fecha limite</div>
+                    <div style="font-size:.8rem;color:#e0f2fe;margin-top:4px">{{ _fusion_action.get('due_at') or _ad_top.get('due_at') or 'hoy / segun agenda' }}</div>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:var(--space-3);">
+                {% set _ad_cta = _fusion_action.get('cta', {}) or (_ad_top.get('cta', {}) if _ad_top else _ad_summary.get('top_cta', {})) %}
+                <a href="{{ _ad_cta.get('href', '/patient_profile/' ~ identity.nss ~ '?v=2') }}" class="pm2-btn pm2-btn--primary" style="text-decoration:none">{{ _ad_cta.get('label', 'Abrir acción') }}</a>
+                <a href="/api/patients/{{ identity.nss }}/decision-today" class="pm2-btn pm2-btn--ghost" style="text-decoration:none">Ver Decisión Hoy JSON</a>
+                <a href="/api/patients/{{ identity.nss }}/autodrive" class="pm2-btn pm2-btn--ghost" style="text-decoration:none">Ver JSON auditable</a>
+            </div>
         </section>
 
         {# ── Faubot LXXXVI #67F — Next Best Action ejecutivo (B-fix Fase 4) ── #}
@@ -2304,6 +2403,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/clinical_intelligence_v2.js') }}"></script>
+<script src="{{ url_for('static', filename='js/prostamed_voice_os.js', v='voice_os_20260511') }}"></script>
 <script>
 /* ===== Tabs ===== */
 function pm2ShowTab(name) {

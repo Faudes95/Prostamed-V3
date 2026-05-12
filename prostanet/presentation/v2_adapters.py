@@ -74,6 +74,26 @@ def _decision_today(profile_view: Mapping[str, Any]) -> dict[str, Any]:
     `clinical_compass.why_this_now` para el rationale; si faltan, recurre a
     `decision_audit.audit_dimensions.como.preferred_regimen.label`.
     """
+    fusion = profile_view.get("decision_today_fusion_kernel") or profile_view.get("decision_today_fusion") or {}
+    if isinstance(fusion, Mapping) and fusion.get("source") == "clinical_decision_today_fusion_kernel":
+        decision = dict(fusion.get("decision_today") or {})
+        action = dict(fusion.get("next_safe_action") or {})
+        return {
+            "release": fusion.get("version") or "decision_today_fusion_kernel_v1",
+            "headline": decision.get("title") or action.get("title") or "Sin decisión clínica activa",
+            "rationale": fusion.get("clinical_rationale") or decision.get("rationale") or "—",
+            "regimen_code": decision.get("status") or fusion.get("decision_state") or "not_actionable",
+            "decision_quality_score": 1 if fusion.get("decision_state") == "releaseable" else 0,
+            "decision_quality_label": decision.get("label") or fusion.get("decision_state") or "—",
+            "evidence_level": "Fusion Kernel · Readiness/Tumor Board/Care Pathway/Memory/Autodrive",
+            "available": bool(fusion.get("available")),
+            "fusion": fusion,
+            "decision_state": fusion.get("decision_state") or decision.get("status") or "not_actionable",
+            "risk_avoided": decision.get("risk_avoided") or action.get("risk_avoided") or "",
+            "missing_fields": fusion.get("unified_missing_fields") or [],
+            "next_safe_action": action,
+        }
+
     cc = _safe_get(profile_view, "clinical_compass", default={})
     audit = _safe_get(profile_view, "decision_audit", default={})
     como = _safe_get(audit, "audit_dimensions", "como", default={})
@@ -651,6 +671,8 @@ def dashboard_summary_to_v2(summary: Mapping[str, Any] | None = None) -> dict[st
     ]
 
     research_payload: Mapping[str, Any] = {}
+    autodrive_today: Mapping[str, Any] = {}
+    autonomous_improvement: Mapping[str, Any] = {}
     try:
         import tracking_db
 
@@ -662,6 +684,46 @@ def dashboard_summary_to_v2(summary: Mapping[str, Any] | None = None) -> dict[st
         }
     except Exception:
         research_payload = {}
+    try:
+        from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
+            build_population_autodrive_from_db,
+        )
+
+        autodrive_today = build_population_autodrive_from_db(limit=8) or {}
+    except Exception:
+        autodrive_today = {}
+    try:
+        from prostanet.agentic.autonomous_improvement_os import build_mission_control
+
+        autonomous_improvement = build_mission_control() or {}
+    except Exception:
+        autonomous_improvement = {}
+    ad_summary = autodrive_today.get("summary") or {}
+    if autodrive_today:
+        kpis[1] = {
+            "label": "Autodrive critico",
+            "value": str(ad_summary.get("critical_patient_count") or ad_summary.get("status_counts", {}).get("critical_today") or 0),
+            "trend": "info",
+            "trend_value": "hoy",
+            "spark": [0, 0, ad_summary.get("critical_patient_count") or 0, ad_summary.get("queue_count") or 0, ad_summary.get("ready_decision_count") or 0, ad_summary.get("blocked_count") or 0, ad_summary.get("overdue_count") or 0],
+            "variant": "critical",
+        }
+        kpis[2] = {
+            "label": "Listos para decidir",
+            "value": str(ad_summary.get("ready_decision_count") or 0),
+            "trend": "info",
+            "trend_value": "Tumor Board",
+            "spark": [ad_summary.get("ready_decision_count") or 0] * 7,
+            "variant": "warning",
+        }
+        kpis[3] = {
+            "label": "Bloqueados por datos",
+            "value": str(ad_summary.get("blocked_count") or 0),
+            "trend": "info",
+            "trend_value": "capture",
+            "spark": [ad_summary.get("blocked_count") or 0] * 7,
+            "variant": "success",
+        }
 
     def _copilot_vertical(
         key: str,
@@ -750,6 +812,8 @@ def dashboard_summary_to_v2(summary: Mapping[str, Any] | None = None) -> dict[st
         "research_intelligence": research_intelligence,
         "versioning": versioning,
         "copilot_verticals": copilot_verticals,
+        "autodrive_today": autodrive_today,
+        "autonomous_improvement": autonomous_improvement,
     }
 
 
@@ -1629,6 +1693,36 @@ def patients_list_to_v2(patients_raw: Sequence[Mapping[str, Any]] | None = None)
             "clinical_memory_toxicity_count": memory_toxicity,
         })
 
+    autodrive_by_ref: dict[str, Mapping[str, Any]] = {}
+    try:
+        from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
+            build_population_autodrive_from_db,
+        )
+
+        population_ad = build_population_autodrive_from_db(limit=max(1, min(len(pts), 12)))
+        for row in population_ad.get("patient_priorities") or []:
+            if isinstance(row, Mapping) and row.get("patient_ref"):
+                autodrive_by_ref[str(row.get("patient_ref"))] = row
+    except Exception:
+        autodrive_by_ref = {}
+    for row in pts:
+        ad = dict(autodrive_by_ref.get(str(row.get("nss"))) or {})
+        next_action = dict(ad.get("next_action") or {})
+        decision_today = dict(ad.get("decision_today") or {})
+        decision = dict(decision_today.get("decision_today") or {})
+        row["autodrive_priority_status"] = ad.get("priority_status") or (
+            "critical_today" if row.get("alert_count") else "high_today" if row.get("care_overdue_count") else "watchlist"
+        )
+        row["autodrive_lane"] = ad.get("dominant_lane") or (
+            "overdue_surveillance" if row.get("care_overdue_count") else "blocked_by_data" if row.get("care_blocked_count") else "watchlist"
+        )
+        row["decision_today_state"] = decision_today.get("decision_state") or decision.get("status") or "not_actionable"
+        row["decision_today_label"] = decision.get("title") or next_action.get("title") or ad.get("dominant_blocker") or "Sin decision hoy"
+        row["autodrive_label"] = row["decision_today_label"]
+        row["autodrive_blocker"] = ad.get("dominant_blocker") or next_action.get("reason") or "—"
+        row["autodrive_cta"] = (next_action.get("cta") or {}).get("href") or f"/patient_profile/{row.get('nss')}?v=2#pm2AutodriveCommandCenter"
+        row["autodrive_redecision_required"] = row["autodrive_lane"] == "redecision_required" or row.get("clinical_memory_status") == "requires_redecision"
+
     # Stages filter options con counts
     stage_meta = [
         ("diagnostic", "Diagnóstico"),
@@ -1996,6 +2090,8 @@ def bundle_to_v2_profile_full(profile_view: Mapping[str, Any],
         "tumor_board_os": pv.get("tumor_board_os", {}),
         "care_pathway_os": pv.get("care_pathway_os", {}),
         "clinical_memory_os": pv.get("clinical_memory_os", {}),
+        "autodrive": pv.get("autodrive", {}),
+        "decision_today_fusion_kernel": pv.get("decision_today_fusion_kernel", {}),
         # ── Faubot LXC — Torre vigilancia: APE+Testosterona+Tx integrados ──
         # psa_obs ya existe pero faltaba exponerlo en bundle_to_v2_profile_full
         "psa_obs": _psa_observability(profile_view),
@@ -2041,6 +2137,8 @@ def bundle_to_v2_profile(profile_view: Mapping[str, Any],
         "tumor_board_os": pv.get("tumor_board_os", {}),
         "care_pathway_os": pv.get("care_pathway_os", {}),
         "clinical_memory_os": pv.get("clinical_memory_os", {}),
+        "autodrive": pv.get("autodrive", {}),
+        "decision_today_fusion_kernel": pv.get("decision_today_fusion_kernel", {}),
         # raw passthroughs para tabs avanzadas
         "profile_view_raw": pv,
         "patient_raw": pt,

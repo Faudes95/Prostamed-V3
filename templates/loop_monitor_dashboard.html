@@ -20,6 +20,7 @@
 }
 @media (max-width: 768px) {
   .pm2-loop-shell { grid-template-columns: 1fr; }
+  .pm2-loop-main { padding: 1.25rem 1rem; }
 }
 
 .pm2-loop-main {
@@ -61,6 +62,386 @@
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1.25rem;
   margin-bottom: 2rem;
+}
+
+.pm2-mission-control {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(280px, 1.4fr);
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, rgba(8, 47, 73, 0.72), rgba(15, 23, 42, 0.86));
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  border-left: 5px solid #22d3ee;
+  border-radius: 1rem;
+  box-shadow: 0 16px 48px rgba(8, 47, 73, 0.25);
+}
+@media (max-width: 860px) {
+  .pm2-mission-control { grid-template-columns: 1fr; }
+}
+
+.pm2-mission-kicker {
+  color: #67e8f9;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  margin: 0 0 0.5rem;
+  text-transform: uppercase;
+}
+
+.pm2-mission-title {
+  color: #f8fafc;
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin: 0 0 0.75rem;
+}
+
+.pm2-mission-progress {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.pm2-mission-progress-track {
+  height: 0.65rem;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.pm2-mission-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #22d3ee, #34d399);
+  border-radius: inherit;
+}
+
+.pm2-mission-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.pm2-mission-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.62);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.pm2-mission-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.65rem;
+}
+
+.pm2-mission-metric {
+  min-width: 0;
+  padding: 0.8rem;
+  background: rgba(15, 23, 42, 0.66);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 0.75rem;
+}
+
+.pm2-mission-metric strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 1.2rem;
+  line-height: 1.1;
+}
+
+.pm2-mission-metric span {
+  color: #94a3b8;
+  display: block;
+  font-size: 0.72rem;
+  margin-top: 0.3rem;
+}
+
+.pm2-dev-autodrive {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.2fr) minmax(260px, 0.8fr);
+  gap: 1rem;
+  margin: -0.75rem 0 2rem;
+  padding: 1.25rem;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(52, 211, 153, 0.24);
+  border-radius: 1rem;
+}
+@media (max-width: 860px) {
+  .pm2-dev-autodrive { grid-template-columns: 1fr; margin-top: 0; }
+}
+
+.pm2-dev-autodrive h2 {
+  color: #f8fafc;
+  font-size: 1rem;
+  font-weight: 800;
+  margin: 0 0 0.4rem;
+}
+
+.pm2-dev-autodrive p {
+  color: #94a3b8;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.pm2-dev-autodrive strong {
+  color: #d1fae5;
+}
+
+.pm2-dev-autodrive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.55rem;
+}
+
+.pm2-dev-autodrive-stat {
+  padding: 0.7rem;
+  background: rgba(2, 6, 23, 0.46);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 0.7rem;
+}
+
+.pm2-dev-autodrive-stat b {
+  display: block;
+  color: #67e8f9;
+  font-size: 1.05rem;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.pm2-dev-autodrive-stat span {
+  display: block;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  margin-top: 0.25rem;
+}
+
+.pm2-shadow-pr,
+.pm2-safety-gates,
+.pm2-shadow-execution,
+.pm2-human-review,
+.pm2-draft-handoff,
+.pm2-pr-review,
+.pm2-agent-registry,
+.pm2-agent-packets,
+.pm2-agent-consensus,
+.pm2-implementation-brief,
+.pm2-shadow-patch-blueprint,
+.pm2-human-patch-auth,
+.pm2-controlled-patch-application,
+.pm2-controlled-pr-implementation,
+.pm2-draft-pr-publication-gate,
+.pm2-required-safety-gate-contract,
+.pm2-evidence-refresh-shadow-loop,
+.pm2-patient-twin-readiness-loop,
+.pm2-ai-readiness-dataset-loop,
+.pm2-cortana-loop-interface {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(260px, 0.8fr);
+  gap: 1rem;
+  margin: -1.25rem 0 2rem;
+  padding: 1.1rem 1.25rem;
+  background: rgba(2, 6, 23, 0.66);
+  border: 1px solid rgba(167, 139, 250, 0.24);
+  border-radius: 1rem;
+}
+.pm2-safety-gates {
+  margin-top: -1.25rem;
+  border-color: rgba(34, 211, 238, 0.24);
+  background: rgba(8, 13, 30, 0.72);
+}
+.pm2-shadow-execution {
+  margin-top: -1.25rem;
+  border-color: rgba(45, 212, 191, 0.26);
+  background: rgba(2, 20, 28, 0.7);
+}
+.pm2-human-review {
+  margin-top: -1.25rem;
+  border-color: rgba(251, 191, 36, 0.28);
+  background: rgba(24, 18, 8, 0.68);
+}
+.pm2-draft-handoff {
+  margin-top: -1.25rem;
+  border-color: rgba(56, 189, 248, 0.28);
+  background: rgba(5, 18, 32, 0.7);
+}
+.pm2-pr-review {
+  margin-top: -1.25rem;
+  border-color: rgba(34, 197, 94, 0.26);
+  background: rgba(4, 24, 18, 0.7);
+}
+.pm2-agent-registry {
+  margin-top: -1.25rem;
+  border-color: rgba(244, 114, 182, 0.25);
+  background: rgba(28, 10, 24, 0.68);
+}
+.pm2-agent-packets {
+  margin-top: -1.25rem;
+  border-color: rgba(129, 140, 248, 0.3);
+  background: rgba(14, 16, 38, 0.72);
+}
+.pm2-agent-consensus {
+  margin-top: -1.25rem;
+  border-color: rgba(20, 184, 166, 0.32);
+  background: rgba(6, 30, 28, 0.72);
+}
+.pm2-implementation-brief {
+  margin-top: -1.25rem;
+  border-color: rgba(251, 146, 60, 0.32);
+  background: rgba(33, 18, 8, 0.72);
+}
+.pm2-shadow-patch-blueprint {
+  margin-top: -1.25rem;
+  border-color: rgba(96, 165, 250, 0.34);
+  background: rgba(8, 21, 43, 0.72);
+}
+.pm2-human-patch-auth {
+  margin-top: -1.25rem;
+  border-color: rgba(250, 204, 21, 0.34);
+  background: rgba(32, 26, 6, 0.72);
+}
+.pm2-controlled-patch-application {
+  margin-top: -1.25rem;
+  border-color: rgba(45, 212, 191, 0.34);
+  background: rgba(6, 28, 28, 0.72);
+}
+.pm2-controlled-pr-implementation {
+  margin-top: -1.25rem;
+  border-color: rgba(74, 222, 128, 0.34);
+  background: rgba(7, 30, 18, 0.72);
+}
+.pm2-draft-pr-publication-gate {
+  margin-top: -1.25rem;
+  border-color: rgba(59, 130, 246, 0.36);
+  background: rgba(8, 23, 46, 0.72);
+}
+.pm2-required-safety-gate-contract {
+  margin-top: -1.25rem;
+  border-color: rgba(34, 211, 238, 0.38);
+  background: rgba(4, 28, 38, 0.74);
+}
+.pm2-evidence-refresh-shadow-loop {
+  margin-top: -1.25rem;
+  border-color: rgba(132, 204, 22, 0.36);
+  background: rgba(18, 32, 8, 0.74);
+}
+.pm2-patient-twin-readiness-loop {
+  margin-top: -1.25rem;
+  border-color: rgba(192, 132, 252, 0.34);
+  background: rgba(23, 16, 38, 0.74);
+}
+.pm2-ai-readiness-dataset-loop {
+  margin-top: -1.25rem;
+  border-color: rgba(56, 189, 248, 0.34);
+  background: rgba(7, 24, 42, 0.74);
+}
+.pm2-cortana-loop-interface {
+  margin-top: -1.25rem;
+  border-color: rgba(45, 212, 191, 0.36);
+  background: rgba(5, 30, 28, 0.74);
+}
+@media (max-width: 860px) {
+  .pm2-shadow-pr,
+  .pm2-safety-gates,
+  .pm2-shadow-execution,
+  .pm2-human-review,
+  .pm2-draft-handoff,
+  .pm2-pr-review,
+  .pm2-agent-registry,
+  .pm2-agent-packets,
+  .pm2-agent-consensus,
+  .pm2-implementation-brief,
+  .pm2-shadow-patch-blueprint,
+  .pm2-human-patch-auth,
+  .pm2-controlled-patch-application,
+  .pm2-controlled-pr-implementation,
+  .pm2-draft-pr-publication-gate,
+  .pm2-required-safety-gate-contract,
+  .pm2-evidence-refresh-shadow-loop,
+  .pm2-patient-twin-readiness-loop,
+  .pm2-ai-readiness-dataset-loop,
+  .pm2-cortana-loop-interface { grid-template-columns: 1fr; margin-top: 0; }
+}
+.pm2-shadow-pr code,
+.pm2-safety-gates code,
+.pm2-shadow-execution code,
+.pm2-human-review code,
+.pm2-draft-handoff code,
+.pm2-pr-review code,
+.pm2-agent-registry code,
+.pm2-agent-packets code,
+.pm2-agent-consensus code,
+.pm2-implementation-brief code,
+.pm2-shadow-patch-blueprint code,
+.pm2-human-patch-auth code,
+.pm2-controlled-patch-application code,
+.pm2-controlled-pr-implementation code,
+.pm2-draft-pr-publication-gate code,
+.pm2-required-safety-gate-contract code,
+.pm2-evidence-refresh-shadow-loop code,
+.pm2-patient-twin-readiness-loop code,
+.pm2-ai-readiness-dataset-loop code,
+.pm2-cortana-loop-interface code {
+  color: #c4b5fd;
+  white-space: normal;
+  word-break: break-word;
+}
+.pm2-shadow-pr-list,
+.pm2-safety-gates-list,
+.pm2-shadow-execution-list,
+.pm2-human-review-list,
+.pm2-draft-handoff-list,
+.pm2-pr-review-list,
+.pm2-agent-registry-list,
+.pm2-agent-packets-list,
+.pm2-agent-consensus-list,
+.pm2-implementation-brief-list,
+.pm2-shadow-patch-blueprint-list,
+.pm2-human-patch-auth-list,
+.pm2-controlled-patch-application-list,
+.pm2-controlled-pr-implementation-list,
+.pm2-draft-pr-publication-gate-list,
+.pm2-required-safety-gate-contract-list,
+.pm2-evidence-refresh-shadow-loop-list,
+.pm2-patient-twin-readiness-loop-list,
+.pm2-ai-readiness-dataset-loop-list,
+.pm2-cortana-loop-interface-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1rem;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+.pm2-safety-gates-list strong,
+.pm2-shadow-execution-list strong,
+.pm2-human-review-list strong,
+.pm2-draft-handoff-list strong,
+.pm2-pr-review-list strong,
+.pm2-agent-registry-list strong,
+.pm2-agent-packets-list strong,
+.pm2-agent-consensus-list strong,
+.pm2-implementation-brief-list strong,
+.pm2-shadow-patch-blueprint-list strong,
+.pm2-human-patch-auth-list strong,
+.pm2-controlled-patch-application-list strong,
+.pm2-controlled-pr-implementation-list strong,
+.pm2-draft-pr-publication-gate-list strong,
+.pm2-required-safety-gate-contract-list strong,
+.pm2-evidence-refresh-shadow-loop-list strong,
+.pm2-patient-twin-readiness-loop-list strong,
+.pm2-ai-readiness-dataset-loop-list strong,
+.pm2-cortana-loop-interface-list strong {
+  color: #e2e8f0;
+  font-weight: 700;
 }
 
 .pm2-loop-vector-card {
@@ -146,6 +527,11 @@
   border: 1px solid rgba(148, 163, 184, 0.12);
   border-radius: 1rem;
   padding: 1.5rem;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  width: 100%;
 }
 
 .pm2-loop-iterations h2 {
@@ -157,8 +543,14 @@
 
 .pm2-loop-iter-table {
   width: 100%;
+  min-width: 760px;
   border-collapse: collapse;
   font-size: 0.8125rem;
+}
+
+@media (max-width: 768px) {
+  .pm2-loop-iterations { padding: 1rem; }
+  .pm2-loop-iter-table { display: block; }
 }
 
 .pm2-loop-iter-table th {
@@ -249,6 +641,1171 @@
         </p>
       </div>
     </header>
+
+    {% set mission = mission_control or {} %}
+    {% set mission_summary = mission.get("summary", {}) %}
+    {% set mission_metrics = mission.get("metrics", []) %}
+    {% set progress_diagnostics = mission.get("progress_diagnostics", {}) %}
+    {% set progress = mission_summary.get("overall_pct", 0) %}
+    {% set pipeline_progress = mission_summary.get("pipeline_maturity_pct", 0) %}
+    <section class="pm2-mission-control" aria-label="Progreso hacia ProstaMed OS longitudinal">
+      <div>
+        <p class="pm2-mission-kicker">Automejora clinica continua</p>
+        <h2 class="pm2-mission-title">Progreso hacia ProstaMed OS longitudinal</h2>
+        <p class="pm2-loop-subtitle">
+          Shadow mode · PR/draft · revision humana. Objetivo: Decision Hoy unica, readiness,
+          ejecucion, vigilancia, memoria clinica y aprendizaje sin datos inventados.
+        </p>
+        <div class="pm2-mission-progress" aria-label="Progreso global">
+          <div class="pm2-mission-progress-track">
+            <div class="pm2-mission-progress-fill" style="width: {{ progress if progress <= 100 else 100 }}%;"></div>
+          </div>
+          <div class="pm2-mission-meta">
+            <span class="pm2-mission-pill">{{ progress }}% objetivo clínico global</span>
+            <span class="pm2-mission-pill">{{ pipeline_progress }}% pipeline automejora</span>
+            <span class="pm2-mission-pill">{{ mission_summary.get("status", "shadow") }}</span>
+            <span class="pm2-mission-pill">{{ mission_summary.get("candidate_count", 0) }} candidatos</span>
+            <span class="pm2-mission-pill">auto-merge off</span>
+          </div>
+        </div>
+        <div class="pm2-mission-progress" aria-label="Madurez del pipeline de automejora" style="margin-top:0.75rem;">
+          <div class="pm2-mission-progress-track">
+            <div class="pm2-mission-progress-fill" style="width: {{ pipeline_progress if pipeline_progress <= 100 else 100 }}%; background: linear-gradient(90deg, #4ade80, #2dd4bf);"></div>
+          </div>
+          <div class="pm2-mission-meta">
+            <span class="pm2-mission-pill">
+              {{ mission_summary.get("pipeline_completed_count", 0) }}/{{ mission_summary.get("pipeline_total_count", 0) }} fases técnicas
+            </span>
+            <span class="pm2-mission-pill">el objetivo global no es conteo de fases</span>
+          </div>
+        </div>
+        <p class="pm2-loop-subtitle" style="margin-top:0.9rem;">
+          Brecha prioritaria: {{ mission_summary.get("top_gap_title", "Sin brecha activa") }}
+          {% if progress_diagnostics.get("new_dynamic_metric") %}
+          <br>Métrica nueva: <code>{{ progress_diagnostics.get("new_dynamic_metric") }}</code>
+          {% endif %}
+          {% if progress_diagnostics.get("clinical_goal_is_not_phase_completion") %}
+          <br>{{ progress_diagnostics.get("why_progress_may_not_rise", "") }}
+          {% endif %}
+        </p>
+      </div>
+      <div class="pm2-mission-metrics">
+        {% for metric in mission_metrics[:10] %}
+        <div class="pm2-mission-metric">
+          <strong>{{ metric.get("value", 0) }}%</strong>
+          <span>{{ metric.get("label", metric.get("key", "Metric")) }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    {% set dev_drive = development_autodrive or {} %}
+    {% set dev_summary = dev_drive.get("summary", {}) %}
+    {% set selected = dev_summary.get("selected_improvement", {}) %}
+    {% set selected_iteration = dev_drive.get("selected_iteration", {}) %}
+    <section class="pm2-dev-autodrive" aria-label="Development Autodrive">
+      <div>
+        <p class="pm2-mission-kicker">Development Autodrive · Fase 3A</p>
+        <h2>Siguiente mejora segura</h2>
+        {% if selected %}
+        <p>
+          <strong>{{ selected.get("title", "Sin candidato seleccionado") }}</strong><br>
+          {{ dev_summary.get("selected_reason", "Seleccion automatica en shadow mode.") }}
+        </p>
+        <p style="margin-top:0.55rem;">
+          Cambio minimo: {{ selected_iteration.get("minimal_change", "Pendiente de propuesta") }}
+        </p>
+        {% else %}
+        <p>Sin candidato accionable. El bucle permanece en shadow mode y espera una brecha con evidencia, pruebas y rollback.</p>
+        {% endif %}
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ dev_summary.get("actionable_count", 0) }}</b>
+          <span>accionables</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ dev_summary.get("deferred_count", 0) }}</b>
+          <span>diferidos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ selected.get("priority_score", 0) }}</b>
+          <span>score prioridad</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ dev_summary.get("next_phase_suggested", "3B") }}</b>
+          <span>siguiente fase</span>
+        </div>
+      </div>
+    </section>
+
+    {% set shadow_pr = shadow_pr_factory or {} %}
+    {% set shadow_summary = shadow_pr.get("summary", {}) %}
+    {% set shadow_package = shadow_pr.get("package", {}) %}
+    {% set draft_pr = shadow_package.get("draft_pr", {}) %}
+    {% set validation_plan = shadow_package.get("validation_plan", {}) %}
+    <section class="pm2-shadow-pr" aria-label="Shadow PR Factory">
+      <div>
+        <p class="pm2-mission-kicker">Shadow PR Factory · Fase 3B</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Paquete PR/draft revisable</h2>
+        {% if shadow_pr.get("available") %}
+        <p class="pm2-loop-subtitle">
+          <strong style="color:#f8fafc;">{{ draft_pr.get("title", "Shadow PR package") }}</strong><br>
+          Rama sugerida: <code>{{ shadow_summary.get("branch_name", draft_pr.get("branch_name", "codex/autodrive-*")) }}</code>
+        </p>
+        <ul class="pm2-shadow-pr-list">
+          <li>No crea rama ni PR automaticamente.</li>
+          <li>No muta hechos clinicos ni ejecuta ordenes externas.</li>
+          <li>Requiere revision humana antes de implementacion.</li>
+        </ul>
+        {% else %}
+        <p class="pm2-loop-subtitle">Sin paquete PR disponible; espera un candidato accionable aprobado por Development Autodrive.</p>
+        {% endif %}
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "ready" if shadow_summary.get("ready_for_human_review") else "hold" }}</b>
+          <span>revision humana</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ (shadow_package.get("implementation_plan", {}).get("file_targets", []) | length) }}</b>
+          <span>archivos objetivo</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ (validation_plan.get("test_commands", []) | length) }}</b>
+          <span>comandos test</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ shadow_summary.get("next_phase_suggested", "3C") }}</b>
+          <span>siguiente fase</span>
+        </div>
+      </div>
+    </section>
+
+    {% set safety_runner = safety_gate_runner or {} %}
+    {% set safety_summary = safety_runner.get("summary", {}) %}
+    {% set safety_gates = safety_runner.get("gates", []) %}
+    <section class="pm2-safety-gates" aria-label="Safety Gate Runner">
+      <div>
+        <p class="pm2-mission-kicker">Safety Gate Runner · Fase 3C</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Liberación clínica bajo sombra</h2>
+        {% if safety_runner.get("available") %}
+        <p class="pm2-loop-subtitle">
+          Gate de liberación: <strong style="color:#f8fafc;">{{ safety_summary.get("release_gate", "blocked") }}</strong><br>
+          Ejecutor: <code>{{ safety_summary.get("executor_mode", "plan_only_v1") }}</code>
+        </p>
+        <ul class="pm2-safety-gates-list">
+          <li><strong>No ejecuta comandos:</strong> {{ "sí" if safety_summary.get("commands_executed") else "no" }}</li>
+          <li><strong>No toca git:</strong> {{ "no" if not safety_summary.get("git_mutated") else "sí" }}</li>
+          <li><strong>No muta hechos clínicos:</strong> {{ "no" if not safety_summary.get("source_clinical_facts_mutated") else "sí" }}</li>
+        </ul>
+        {% else %}
+        <p class="pm2-loop-subtitle">Sin paquete 3B disponible; los safety gates permanecen bloqueados hasta que exista una mejora revisable.</p>
+        {% endif %}
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ safety_summary.get("passed", 0) }}</b>
+          <span>gates aprobados</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ safety_summary.get("blocked", 0) }}</b>
+          <span>bloqueantes</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ safety_summary.get("requires_human_review", 0) }}</b>
+          <span>requieren revisión</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ safety_summary.get("next_phase_suggested", "3D") }}</b>
+          <span>siguiente fase</span>
+        </div>
+      </div>
+      {% if safety_gates %}
+      <ul class="pm2-safety-gates-list" style="grid-column:1 / -1;">
+        {% for gate in safety_gates[:6] %}
+        <li><strong>{{ gate.get("status", "blocked") }}</strong> · {{ gate.get("label", gate.get("gate_id", "gate")) }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set shadow_execution = shadow_execution_artifacts or {} %}
+    {% set execution_summary = shadow_execution.get("summary", {}) %}
+    {% set command_results = shadow_execution.get("command_results", []) %}
+    {% set blocking_findings = shadow_execution.get("blocking_findings", []) %}
+    <section class="pm2-shadow-execution" aria-label="Shadow Execution Artifacts">
+      <div>
+        <p class="pm2-mission-kicker">Shadow Execution Artifacts · Fase 3D</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Evidencia ejecutada y archivada</h2>
+        <p class="pm2-loop-subtitle">
+          Estado artifact: <strong style="color:#f8fafc;">{{ execution_summary.get("artifact_status", "pending_execution") }}</strong><br>
+          Modo: <code>{{ execution_summary.get("execution_mode", "local_controlled_artifacts") }}</code>
+        </p>
+        <ul class="pm2-shadow-execution-list">
+          <li><strong>No auto-merge:</strong> {{ "sí" if not execution_summary.get("auto_merge_allowed") else "no" }}</li>
+          <li><strong>No muta hechos clínicos:</strong> {{ "sí" if not execution_summary.get("source_clinical_facts_mutated") else "no" }}</li>
+          <li><strong>Revisión humana:</strong> {{ "requerida" if execution_summary.get("human_review_required", true) else "no requerida" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ execution_summary.get("executed_command_count", 0) }}/{{ execution_summary.get("planned_command_count", 0) }}</b>
+          <span>comandos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ execution_summary.get("passed_command_count", 0) }}</b>
+          <span>tests OK</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ execution_summary.get("failed_command_count", 0) }}</b>
+          <span>tests fallidos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ execution_summary.get("next_phase_suggested", "3E") }}</b>
+          <span>siguiente fase</span>
+        </div>
+      </div>
+      {% if command_results or blocking_findings %}
+      <ul class="pm2-shadow-execution-list" style="grid-column:1 / -1;">
+        {% for result in command_results[:4] %}
+        <li><strong>{{ "passed" if result.get("exit_code") == 0 else "failed" }}</strong> · {{ result.get("cmd", "") }}</li>
+        {% endfor %}
+        {% for finding in blocking_findings[:4] %}
+        <li><strong>{{ finding.get("severity", "pending") }}</strong> · {{ finding.get("message", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set human_review = human_review_decision_gate or {} %}
+    {% set human_summary = human_review.get("summary", {}) %}
+    {% set latest_decision = human_review.get("latest_decision", {}) %}
+    <section class="pm2-human-review" aria-label="Human Review Decision Gate">
+      <div>
+        <p class="pm2-mission-kicker">Human Review Decision Gate · Fase 3E</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Decisión humana trazable</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ human_summary.get("decision_state", "pending_human_review") }}</strong><br>
+          Gate: <code>{{ human_summary.get("release_gate", "human_review_required") }}</code>
+        </p>
+        <ul class="pm2-human-review-list">
+          <li><strong>Artifact verificado:</strong> {{ "sí" if human_summary.get("artifact_verified") else "no" }}</li>
+          <li><strong>PR creado:</strong> {{ "sí" if human_summary.get("pull_request_created") else "no" }}</li>
+          <li><strong>Auto-merge:</strong> {{ "off" if not human_summary.get("auto_merge_allowed") else "on" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ human_summary.get("decision", "hold") }}</b>
+          <span>decisión</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "yes" if human_summary.get("pr_handoff_allowed") else "hold" }}</b>
+          <span>handoff PR</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ latest_decision.get("reviewer", "pendiente") }}</b>
+          <span>revisor</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ human_summary.get("next_phase_suggested", "3E") }}</b>
+          <span>siguiente fase</span>
+        </div>
+      </div>
+      <ul class="pm2-human-review-list" style="grid-column:1 / -1;">
+        {% for decision in human_review.get("allowed_decisions", []) %}
+        <li><strong>{{ "permitido" if decision.get("allowed") else "bloqueado" }}</strong> · {{ decision.get("label", decision.get("decision", "")) }} — {{ decision.get("effect", "") }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    {% set draft_handoff = draft_pr_handoff or {} %}
+    {% set handoff_summary = draft_handoff.get("summary", {}) %}
+    {% set branch_plan = draft_handoff.get("branch_plan", {}) %}
+    {% set pr_plan = draft_handoff.get("pr_plan", {}) %}
+    {% set commands_to_run = draft_handoff.get("commands_to_run", []) %}
+    {% set handoff_blockers = draft_handoff.get("blocking_findings", []) %}
+    <section class="pm2-draft-handoff" aria-label="Draft PR Handoff">
+      <div>
+        <p class="pm2-mission-kicker">Draft PR Handoff · Fase 3F</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Paquete manual para rama y PR</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ handoff_summary.get("handoff_status", "blocked_until_human_approval") }}</strong><br>
+          Rama sugerida: <code>{{ branch_plan.get("branch_name", "codex/autodrive-pending") }}</code>
+        </p>
+        <ul class="pm2-draft-handoff-list">
+          <li><strong>Handoff listo:</strong> {{ "sí" if handoff_summary.get("manual_handoff_ready") else "no" }}</li>
+          <li><strong>PR creado:</strong> {{ "sí" if handoff_summary.get("pull_request_created") else "no" }}</li>
+          <li><strong>Git mutado:</strong> {{ "sí" if handoff_summary.get("git_mutated") else "no" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ handoff_summary.get("files_to_stage_count", 0) }}</b>
+          <span>archivos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ handoff_summary.get("planned_command_count", 0) }}</b>
+          <span>pasos manuales</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "draft" if pr_plan.get("is_draft", true) else "ready" }}</b>
+          <span>tipo PR</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ handoff_summary.get("next_phase_suggested", "3G") }}</b>
+          <span>siguiente fase</span>
+        </div>
+      </div>
+      {% if commands_to_run or handoff_blockers %}
+      <ul class="pm2-draft-handoff-list" style="grid-column:1 / -1;">
+        {% for blocker in handoff_blockers[:3] %}
+        <li><strong>{{ blocker.get("severity", "blocked") }}</strong> · {{ blocker.get("message", "") }}</li>
+        {% endfor %}
+        {% for command in commands_to_run[:4] %}
+        <li><strong>manual</strong> · <code>{{ command.get("cmd", "") }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set pr_monitor = pr_review_monitor or {} %}
+    {% set pr_summary = pr_monitor.get("summary", {}) %}
+    {% set pr_status = pr_monitor.get("pr_status", {}) %}
+    {% set ci_status = pr_monitor.get("ci_status", {}) %}
+    {% set review_status = pr_monitor.get("review_status", {}) %}
+    {% set merge_blockers = pr_monitor.get("merge_blockers", []) %}
+    {% set required_actions = pr_monitor.get("required_actions", []) %}
+    <section class="pm2-pr-review" aria-label="PR Review Monitor">
+      <div>
+        <p class="pm2-mission-kicker">PR Review Monitor · Fase 3G</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Vigilancia de PR draft y CI</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ pr_summary.get("monitor_status", "blocked_until_handoff_ready") }}</strong><br>
+          Rama: <code>{{ pr_status.get("branch_name", "codex/autodrive-pending") }}</code>
+        </p>
+        <ul class="pm2-pr-review-list">
+          <li><strong>PR detectado:</strong> {{ "sí" if pr_summary.get("pull_request_detected") else "no" }}</li>
+          <li><strong>Merge ejecutado:</strong> {{ "sí" if pr_summary.get("merge_performed") else "no" }}</li>
+          <li><strong>Auto-merge:</strong> {{ "off" if not pr_summary.get("auto_merge_allowed") else "on" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ ci_status.get("status", "unknown") }}</b>
+          <span>CI</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ review_status.get("status", "pending") }}</b>
+          <span>review</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ pr_summary.get("merge_blocker_count", 0) }}</b>
+          <span>blockers</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ pr_summary.get("next_phase_suggested", "3G") }}</b>
+          <span>siguiente fase</span>
+        </div>
+      </div>
+      {% if merge_blockers or required_actions %}
+      <ul class="pm2-pr-review-list" style="grid-column:1 / -1;">
+        {% for blocker in merge_blockers[:3] %}
+        <li><strong>{{ blocker.get("severity", "pending") }}</strong> · {{ blocker.get("message", "") }}</li>
+        {% endfor %}
+        {% for action in required_actions[:3] %}
+        <li><strong>acción</strong> · {{ action.get("label", action.get("action", "")) }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set agent_registry = agent_lane_registry or {} %}
+    {% set agent_summary = agent_registry.get("summary", {}) %}
+    {% set agent_lanes = agent_registry.get("lanes", []) %}
+    <section class="pm2-agent-registry" aria-label="Agent Lane Registry">
+      <div>
+        <p class="pm2-mission-kicker">Agent Lane Registry · Fase 4A</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Agentes especializados en shadow mode</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ agent_summary.get("registry_status", "shadow_active") }}</strong><br>
+          Contrato: <code>proposal packets · no producción</code>
+        </p>
+        <ul class="pm2-agent-registry-list">
+          <li><strong>Agentes:</strong> {{ agent_summary.get("agent_count", 0) }}</li>
+          <li><strong>Mutación producción:</strong> {{ "sí" if agent_summary.get("production_mutation_allowed") else "no" }}</li>
+          <li><strong>Auto-merge:</strong> {{ "on" if agent_summary.get("auto_merge_allowed") else "off" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ agent_summary.get("candidate_count", 0) }}</b>
+          <span>candidatos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ agent_summary.get("mutating_agent_count", 0) }}</b>
+          <span>mutantes</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "off" if not agent_summary.get("agent_code_execution_allowed") else "on" }}</b>
+          <span>ejecución agente</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ agent_summary.get("next_phase_suggested", "4B") }}</b>
+          <span>siguiente fase</span>
+        </div>
+      </div>
+      {% if agent_lanes %}
+      <ul class="pm2-agent-registry-list" style="grid-column:1 / -1;">
+        {% for lane in agent_lanes[:6] %}
+        <li><strong>{{ lane.get("label", lane.get("agent_lane", "")) }}</strong> · {{ lane.get("scope", "") }} · candidatos {{ lane.get("candidate_count", 0) }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set agent_packets = agent_proposal_packets or {} %}
+    {% set packet_summary = agent_packets.get("summary", {}) %}
+    {% set packets = agent_packets.get("packets", []) %}
+    <section class="pm2-agent-packets" aria-label="Agent Proposal Packets">
+      <div>
+        <p class="pm2-mission-kicker">Agent Proposal Packets · Fase 4B</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Propuestas especializadas sin mutación</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ packet_summary.get("packet_status", "shadow_packets_ready") }}</strong><br>
+          Siguiente: <code>{{ packet_summary.get("next_phase_suggested", "4C_consensus_synthesizer") }}</code>
+        </p>
+        <ul class="pm2-agent-packets-list">
+          <li><strong>Ejecutan código:</strong> {{ "sí" if packet_summary.get("agent_code_execution_allowed") else "no" }}</li>
+          <li><strong>Mutan expediente:</strong> {{ "sí" if packet_summary.get("source_clinical_facts_mutated") else "no" }}</li>
+          <li><strong>Auto-merge:</strong> {{ "on" if packet_summary.get("auto_merge_allowed") else "off" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ packet_summary.get("packet_count", 0) }}</b>
+          <span>packets</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ packet_summary.get("proposal_ready_count", 0) }}</b>
+          <span>ready</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ packet_summary.get("requires_data_count", 0) }}</b>
+          <span>watchlist</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ packet_summary.get("blocked_count", 0) }}</b>
+          <span>bloqueados</span>
+        </div>
+      </div>
+      {% if packets %}
+      <ul class="pm2-agent-packets-list" style="grid-column:1 / -1;">
+        {% for packet in packets[:6] %}
+        <li><strong>{{ packet.get("agent_label", packet.get("agent_lane", "")) }}</strong> · {{ packet.get("packet_status", "") }} · {{ packet.get("position", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set consensus = agent_consensus_synthesizer or {} %}
+    {% set consensus_summary = consensus.get("summary", {}) %}
+    {% set consensus_decision = consensus.get("consensus_decision", {}) %}
+    {% set agent_positions = consensus.get("agent_positions", []) %}
+    {% set blocking_conditions = consensus.get("blocking_conditions", []) %}
+    <section class="pm2-agent-consensus" aria-label="Agent Consensus Synthesizer">
+      <div>
+        <p class="pm2-mission-kicker">Consensus Synthesizer · Fase 4C</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Una mejora prioritaria por iteración</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ consensus_summary.get("consensus_status", "requires_data") }}</strong><br>
+          Selección: <code>{{ consensus_summary.get("selected_title", "sin paquete seleccionado") }}</code>
+        </p>
+        <ul class="pm2-agent-consensus-list">
+          <li><strong>Recomendación:</strong> {{ consensus_decision.get("recommendation", "Esperando consenso.") }}</li>
+          <li><strong>CTA:</strong> {{ consensus_decision.get("cta", "Completar paquetes de agentes.") }}</li>
+          <li><strong>Mutación:</strong> {{ "sí" if consensus_summary.get("git_mutated") else "no" }} · Auto-merge {{ "on" if consensus_summary.get("auto_merge_allowed") else "off" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ consensus_summary.get("agreement_score", 0) }}%</b>
+          <span>consenso</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ consensus_summary.get("ready_packet_count", 0) }}</b>
+          <span>ready</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ consensus_summary.get("conflict_count", 0) }}</b>
+          <span>disensos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ consensus_summary.get("blocking_condition_count", 0) }}</b>
+          <span>bloqueos</span>
+        </div>
+      </div>
+      {% if agent_positions %}
+      <ul class="pm2-agent-consensus-list" style="grid-column:1 / -1;">
+        {% for position in agent_positions[:6] %}
+        <li><strong>{{ position.get("agent_label", position.get("agent_lane", "")) }}</strong> · {{ position.get("vote", "") }} · {{ position.get("reason", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if blocking_conditions %}
+      <ul class="pm2-agent-consensus-list" style="grid-column:1 / -1;">
+        {% for blocker in blocking_conditions[:3] %}
+        <li><strong>Bloqueo:</strong> {{ blocker.get("reason", blocker.get("type", "")) }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set impl = implementation_brief or {} %}
+    {% set impl_summary = impl.get("summary", {}) %}
+    {% set impl_brief = impl.get("brief", {}) %}
+    {% set file_scope = impl.get("file_scope", []) %}
+    {% set test_plan = impl.get("test_plan", []) %}
+    {% set handoff = impl.get("handoff_packet", {}) %}
+    <section class="pm2-implementation-brief" aria-label="Implementation Brief">
+      <div>
+        <p class="pm2-mission-kicker">Implementation Brief · Fase 4D</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Brief seguro para el siguiente patch</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ impl_summary.get("brief_status", "blocked") }}</strong><br>
+          Brief: <code>{{ impl_summary.get("brief_id", "sin brief") }}</code>
+        </p>
+        <ul class="pm2-implementation-brief-list">
+          <li><strong>Objetivo:</strong> {{ impl_brief.get("title", "Implementation brief pending") }}</li>
+          <li><strong>Cambio mínimo:</strong> {{ impl_brief.get("minimal_change", "Pendiente") }}</li>
+          <li><strong>Rama sugerida:</strong> <code>{{ handoff.get("branch_suggestion", "codex/autodrive-pending") }}</code></li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ impl_summary.get("file_count", 0) }}</b>
+          <span>archivos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ impl_summary.get("test_count", 0) }}</b>
+          <span>tests</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "sí" if impl_summary.get("visual_validation_required") else "no" }}</b>
+          <span>visual</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ impl_summary.get("blocker_count", 0) }}</b>
+          <span>bloqueos</span>
+        </div>
+      </div>
+      {% if file_scope %}
+      <ul class="pm2-implementation-brief-list" style="grid-column:1 / -1;">
+        {% for item in file_scope[:6] %}
+        <li><strong>{{ item.get("path", "") }}</strong> · {{ item.get("reason", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if test_plan %}
+      <ul class="pm2-implementation-brief-list" style="grid-column:1 / -1;">
+        {% for test in test_plan[:3] %}
+        <li><strong>Test:</strong> <code>{{ test.get("command", "") }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set shadow_patch = shadow_patch_blueprint or {} %}
+    {% set patch_summary = shadow_patch.get("summary", {}) %}
+    {% set patch = shadow_patch.get("patch_blueprint", {}) %}
+    {% set file_blueprints = patch.get("file_blueprints", []) %}
+    {% set validation = shadow_patch.get("validation_blueprint", {}) %}
+    {% set review_packet = shadow_patch.get("review_packet", {}) %}
+    <section class="pm2-shadow-patch-blueprint" aria-label="Shadow Patch Blueprint">
+      <div>
+        <p class="pm2-mission-kicker">Shadow Patch Blueprint · Fase 4E</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Diff planificado, aún no aplicado</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ patch_summary.get("blueprint_status", "blocked") }}</strong><br>
+          Blueprint: <code>{{ patch_summary.get("blueprint_id", "sin blueprint") }}</code>
+        </p>
+        <ul class="pm2-shadow-patch-blueprint-list">
+          <li><strong>Objetivo:</strong> {{ patch.get("objective", "Pendiente") }}</li>
+          <li><strong>Cambio mínimo:</strong> {{ patch.get("minimal_change", "Pendiente") }}</li>
+          <li><strong>Revisión humana:</strong> {{ "sí" if review_packet.get("human_review_required", true) else "no" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ patch_summary.get("planned_file_count", 0) }}</b>
+          <span>archivos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ patch_summary.get("planned_hunk_count", 0) }}</b>
+          <span>hunks</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ patch_summary.get("test_count", 0) }}</b>
+          <span>tests</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ patch_summary.get("blocker_count", 0) }}</b>
+          <span>bloqueos</span>
+        </div>
+      </div>
+      {% if file_blueprints %}
+      <ul class="pm2-shadow-patch-blueprint-list" style="grid-column:1 / -1;">
+        {% for item in file_blueprints[:6] %}
+        <li><strong>{{ item.get("path", "") }}</strong> · {{ item.get("planned_hunk_count", 0) }} hunks · riesgo {{ item.get("review_risk", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if validation.get("tests") %}
+      <ul class="pm2-shadow-patch-blueprint-list" style="grid-column:1 / -1;">
+        {% for test in validation.get("tests", [])[:3] %}
+        <li><strong>Test:</strong> <code>{{ test.get("command", "") }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set patch_auth = human_patch_authorization or {} %}
+    {% set auth_summary = patch_auth.get("summary", {}) %}
+    {% set auth_blueprint = patch_auth.get("blueprint", {}) %}
+    {% set auth_latest = patch_auth.get("latest_decision", {}) %}
+    <section id="pm2HumanPatchAuthorization" class="pm2-human-patch-auth" aria-label="Human Patch Authorization">
+      <div>
+        <p class="pm2-mission-kicker">Human Patch Authorization · Fase 4F</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Gate humano antes de tocar archivos</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ auth_summary.get("authorization_state", "pending_human_authorization") }}</strong><br>
+          Gate: <code>{{ auth_summary.get("authorization_gate", "human_authorization_required") }}</code>
+        </p>
+        <ul class="pm2-human-patch-auth-list">
+          <li><strong>Blueprint:</strong> <code>{{ auth_blueprint.get("blueprint_id", "sin blueprint") }}</code></li>
+          <li><strong>Decisión vigente:</strong> {{ auth_latest.get("decision", auth_summary.get("decision", "hold")) }}</li>
+          <li><strong>Aplica patch ahora:</strong> {{ "sí" if auth_summary.get("patch_application_allowed") else "no" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "sí" if auth_summary.get("blueprint_ready") else "no" }}</b>
+          <span>blueprint listo</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ auth_blueprint.get("planned_file_count", 0) }}</b>
+          <span>archivos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ auth_blueprint.get("planned_hunk_count", 0) }}</b>
+          <span>hunks</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ auth_summary.get("next_phase_suggested", "4F") }}</b>
+          <span>siguiente</span>
+        </div>
+      </div>
+      {% if patch_auth.get("allowed_decisions") %}
+      <ul class="pm2-human-patch-auth-list" style="grid-column:1 / -1;">
+        {% for decision in patch_auth.get("allowed_decisions", []) %}
+        <li><strong>{{ decision.get("decision", "") }}</strong> · {{ "permitida" if decision.get("allowed") else "bloqueada" }} · {{ decision.get("effect", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set controlled_patch = controlled_patch_application or {} %}
+    {% set controlled_summary = controlled_patch.get("summary", {}) %}
+    {% set application_packet = controlled_patch.get("application_packet", {}) %}
+    {% set application_files = application_packet.get("files", []) %}
+    {% set application_steps = application_packet.get("execution_steps", []) %}
+    <section id="pm2ControlledPatchApplication" class="pm2-controlled-patch-application" aria-label="Controlled Patch Application">
+      <div>
+        <p class="pm2-mission-kicker">Controlled Patch Application · Fase 4G</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Paquete aplicable, sin ejecución automática</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ controlled_summary.get("application_status", "blocked_until_authorization") }}</strong><br>
+          Gate: <code>{{ controlled_summary.get("application_gate", "blocked") }}</code>
+        </p>
+        <ul class="pm2-controlled-patch-application-list">
+          <li><strong>Rama sugerida:</strong> <code>{{ application_packet.get("branch_name", "pendiente") }}</code></li>
+          <li><strong>Objetivo:</strong> {{ application_packet.get("objective", "Pendiente") }}</li>
+          <li><strong>Autorizado:</strong> {{ "sí" if controlled_summary.get("authorized") else "no" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "sí" if controlled_summary.get("ready_for_phase_5") else "no" }}</b>
+          <span>listo fase 5</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ controlled_summary.get("planned_file_count", 0) }}</b>
+          <span>archivos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ controlled_summary.get("planned_hunk_count", 0) }}</b>
+          <span>hunks</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ controlled_summary.get("next_phase_suggested", "4G") }}</b>
+          <span>siguiente</span>
+        </div>
+      </div>
+      {% if application_files %}
+      <ul class="pm2-controlled-patch-application-list" style="grid-column:1 / -1;">
+        {% for item in application_files[:6] %}
+        <li><strong>{{ item.get("path", "") }}</strong> · {{ item.get("planned_hunk_count", 0) }} hunks · ejecución automática {{ "sí" if item.get("automatic_execution_allowed") else "no" }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if application_steps %}
+      <ul class="pm2-controlled-patch-application-list" style="grid-column:1 / -1;">
+        {% for step in application_steps[:5] %}
+        <li><strong>{{ step.get("label", "") }}</strong> · <code>{{ step.get("command", "") }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if controlled_patch.get("blockers") %}
+      <ul class="pm2-controlled-patch-application-list" style="grid-column:1 / -1;">
+        {% for blocker in controlled_patch.get("blockers", []) %}
+        <li><strong>Bloqueo:</strong> <code>{{ blocker }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set pr_impl = controlled_pr_implementation or {} %}
+    {% set pr_summary = pr_impl.get("summary", {}) %}
+    {% set pr_packet = pr_impl.get("implementation_packet", {}) %}
+    {% set pr_commands = pr_packet.get("manual_commands", []) %}
+    {% set pr_files = pr_packet.get("files", []) %}
+    <section id="pm2ControlledPrImplementation" class="pm2-controlled-pr-implementation" aria-label="Controlled PR Implementation">
+      <div>
+        <p class="pm2-mission-kicker">Controlled PR Implementation · Fase 5A</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Rama, patch y PR draft bajo control humano</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ pr_summary.get("implementation_status", "blocked_until_4g_ready") }}</strong><br>
+          Gate: <code>{{ pr_summary.get("implementation_gate", "blocked") }}</code>
+        </p>
+        <ul class="pm2-controlled-pr-implementation-list">
+          <li><strong>Rama:</strong> <code>{{ pr_summary.get("branch_name", pr_packet.get("branch_name", "pendiente")) }}</code></li>
+          <li><strong>PR title:</strong> {{ pr_packet.get("pr_title", "Pendiente") }}</li>
+          <li><strong>Ejecución manual:</strong> {{ "sí" if pr_summary.get("ready_for_manual_execution") else "no" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "sí" if pr_summary.get("ready_for_manual_execution") else "no" }}</b>
+          <span>manual ready</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ pr_summary.get("planned_file_count", 0) }}</b>
+          <span>archivos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ pr_summary.get("test_count", 0) }}</b>
+          <span>tests</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ pr_summary.get("next_phase_suggested", "5A") }}</b>
+          <span>siguiente</span>
+        </div>
+      </div>
+      {% if pr_files %}
+      <ul class="pm2-controlled-pr-implementation-list" style="grid-column:1 / -1;">
+        {% for item in pr_files[:6] %}
+        <li><strong>{{ item.get("path", "") }}</strong> · {{ item.get("planned_hunk_count", 0) }} hunks · riesgo {{ item.get("review_risk", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if pr_commands %}
+      <ul class="pm2-controlled-pr-implementation-list" style="grid-column:1 / -1;">
+        {% for command in pr_commands[:6] %}
+        <li><strong>{{ command.get("purpose", "") }}</strong> · <code>{{ command.get("cmd", "") }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if pr_impl.get("blockers") %}
+      <ul class="pm2-controlled-pr-implementation-list" style="grid-column:1 / -1;">
+        {% for blocker in pr_impl.get("blockers", []) %}
+        <li><strong>Bloqueo:</strong> <code>{{ blocker }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set pr_pub = draft_pr_publication_gate or {} %}
+    {% set pub_summary = pr_pub.get("summary", {}) %}
+    {% set pub_packet = pr_pub.get("publication_packet", {}) %}
+    {% set pub_sections = pub_packet.get("draft_body_sections", []) %}
+    {% set pub_steps = pub_packet.get("manual_publication_steps", []) %}
+    <section id="pm2DraftPrPublicationGate" class="pm2-draft-pr-publication-gate" aria-label="Draft PR Publication Gate">
+      <div>
+        <p class="pm2-mission-kicker">Draft PR Publication Gate · Fase 5B</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Publicación draft, aún sin crear PR</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ pub_summary.get("publication_status", "blocked_until_5a_ready") }}</strong><br>
+          Gate: <code>{{ pub_summary.get("publication_gate", "blocked") }}</code>
+        </p>
+        <ul class="pm2-draft-pr-publication-gate-list">
+          <li><strong>Rama:</strong> <code>{{ pub_summary.get("branch_name", pub_packet.get("branch_name", "pendiente")) }}</code></li>
+          <li><strong>PR title:</strong> {{ pub_summary.get("pr_title", pub_packet.get("pr_title", "Pendiente")) }}</li>
+          <li><strong>Publicación manual:</strong> {{ "sí" if pub_summary.get("ready_for_manual_publication") else "no" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "sí" if pub_summary.get("ready_for_manual_publication") else "no" }}</b>
+          <span>draft ready</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ pub_summary.get("planned_file_count", 0) }}</b>
+          <span>archivos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ pub_summary.get("test_count", 0) }}</b>
+          <span>tests</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ pub_summary.get("next_phase_suggested", "5B") }}</b>
+          <span>siguiente</span>
+        </div>
+      </div>
+      {% if pub_sections %}
+      <ul class="pm2-draft-pr-publication-gate-list" style="grid-column:1 / -1;">
+        {% for section in pub_sections[:6] %}
+        <li><strong>{{ section.get("title", "") }}:</strong> {{ section.get("content", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if pub_steps %}
+      <ul class="pm2-draft-pr-publication-gate-list" style="grid-column:1 / -1;">
+        {% for step in pub_steps[:4] %}
+        <li><strong>{{ step.get("label", "") }}</strong> · <code>{{ step.get("command", "") }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if pr_pub.get("blockers") %}
+      <ul class="pm2-draft-pr-publication-gate-list" style="grid-column:1 / -1;">
+        {% for blocker in pr_pub.get("blockers", []) %}
+        <li><strong>Bloqueo:</strong> <code>{{ blocker }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set safety_contract = required_safety_gate_contract or {} %}
+    {% set safety_summary = safety_contract.get("summary", {}) %}
+    {% set safety_gates_required = safety_contract.get("required_gates", []) %}
+    {% set safety_contract_body = safety_contract.get("contract", {}) %}
+    <section id="pm2RequiredSafetyGateContract" class="pm2-required-safety-gate-contract" aria-label="Required Safety Gate Contract">
+      <div>
+        <p class="pm2-mission-kicker">Required Safety Gate Contract · Fase 6A</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Gates obligatorios antes de publicar o fusionar</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ safety_summary.get("safety_contract_status", "blocked_until_5b_ready") }}</strong><br>
+          Gate: <code>{{ safety_summary.get("safety_gate", "blocked") }}</code>
+        </p>
+        <ul class="pm2-required-safety-gate-contract-list">
+          <li><strong>Listo para ejecución manual:</strong> {{ "sí" if safety_summary.get("ready_for_safety_execution") else "no" }}</li>
+          <li><strong>Política:</strong> {{ safety_contract_body.get("failure_policy", "any_blocking_gate_failed_blocks_publication_and_merge") }}</li>
+          <li><strong>Auto-merge:</strong> {{ "permitido" if safety_summary.get("auto_merge_allowed") else "bloqueado" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "sí" if safety_summary.get("ready_for_safety_execution") else "no" }}</b>
+          <span>safety ready</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ safety_summary.get("gate_count", 0) }}</b>
+          <span>gates</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ safety_summary.get("blocking_gate_count", 0) }}</b>
+          <span>bloqueantes</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ safety_summary.get("next_phase_suggested", "6A").split("_")[0] }}</b>
+          <span>siguiente fase</span>
+        </div>
+      </div>
+      <ul class="pm2-required-safety-gate-contract-list" style="grid-column:1 / -1;">
+        <li><strong>Siguiente:</strong> <code>{{ safety_summary.get("next_phase_suggested", "7A_evidence_refresh_shadow_loop") }}</code></li>
+      </ul>
+      {% if safety_gates_required %}
+      <ul class="pm2-required-safety-gate-contract-list" style="grid-column:1 / -1;">
+        {% for gate in safety_gates_required[:8] %}
+        <li><strong>{{ gate.get("label", gate.get("gate_id", "")) }}</strong> · <code>{{ gate.get("status", "") }}</code> · {{ gate.get("category", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if safety_contract.get("blockers") %}
+      <ul class="pm2-required-safety-gate-contract-list" style="grid-column:1 / -1;">
+        {% for blocker in safety_contract.get("blockers", []) %}
+        <li><strong>Bloqueo:</strong> <code>{{ blocker }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set evidence_loop = evidence_refresh_shadow_loop or {} %}
+    {% set evidence_summary = evidence_loop.get("summary", {}) %}
+    {% set evidence_sources = evidence_loop.get("source_registry", []) %}
+    {% set evidence_queue = evidence_loop.get("review_queue", []) %}
+    <section id="pm2EvidenceRefreshShadowLoop" class="pm2-evidence-refresh-shadow-loop" aria-label="Evidence Refresh Shadow Loop">
+      <div>
+        <p class="pm2-mission-kicker">Evidence Refresh Shadow Loop · Fase 7A</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Vigilancia de evidencia sin cambio automático</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ evidence_summary.get("evidence_refresh_status", "blocked_until_6a_ready") }}</strong><br>
+          Gate: <code>{{ evidence_summary.get("evidence_gate", "blocked") }}</code>
+        </p>
+        <ul class="pm2-evidence-refresh-shadow-loop-list">
+          <li><strong>Cambios aplicados:</strong> {{ "sí" if evidence_summary.get("evidence_changes_applied") else "no" }}</li>
+          <li><strong>Lógica clínica mutada:</strong> {{ "sí" if evidence_summary.get("recommendation_logic_mutated") else "no" }}</li>
+          <li><strong>Revisión humana:</strong> obligatoria antes de modificar gates, trials o recomendaciones</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "sí" if evidence_summary.get("ready_for_shadow_surveillance") else "no" }}</b>
+          <span>shadow ready</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ evidence_summary.get("source_count", 0) }}</b>
+          <span>fuentes</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ evidence_summary.get("review_candidate_count", 0) }}</b>
+          <span>candidatos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ evidence_summary.get("next_phase_suggested", "7A").split("_")[0] }}</b>
+          <span>siguiente fase</span>
+        </div>
+      </div>
+      <ul class="pm2-evidence-refresh-shadow-loop-list" style="grid-column:1 / -1;">
+        <li><strong>Siguiente:</strong> <code>{{ evidence_summary.get("next_phase_suggested", "8A_patient_twin_readiness_loop") }}</code></li>
+      </ul>
+      {% if evidence_sources %}
+      <ul class="pm2-evidence-refresh-shadow-loop-list" style="grid-column:1 / -1;">
+        {% for source in evidence_sources[:6] %}
+        {% set source_status = source.get("status", "").replace("registered_for_shadow_surveillance", "shadow").replace("blocked_until_6a_ready", "bloqueado") %}
+        <li><strong>{{ source.get("label", source.get("source_id", "")) }}</strong> · <code>{{ source_status }}</code> · {{ source.get("cadence", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if evidence_queue %}
+      <ul class="pm2-evidence-refresh-shadow-loop-list" style="grid-column:1 / -1;">
+        {% for item in evidence_queue[:4] %}
+        {% set item_status = item.get("status", "").replace("watching_shadow", "watching").replace("blocked_until_6a_ready", "bloqueado") %}
+        <li><strong>{{ item.get("title", "") }}</strong> · <code>{{ item_status }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if evidence_loop.get("blockers") %}
+      <ul class="pm2-evidence-refresh-shadow-loop-list" style="grid-column:1 / -1;">
+        {% for blocker in evidence_loop.get("blockers", []) %}
+        <li><strong>Bloqueo:</strong> <code>{{ blocker }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set twin_loop = patient_twin_readiness_loop or {} %}
+    {% set twin_summary = twin_loop.get("summary", {}) %}
+    {% set twin_dimensions = twin_loop.get("readiness_dimensions", []) %}
+    {% set twin_capture_plan = twin_loop.get("capture_plan", []) %}
+    <section id="pm2PatientTwinReadinessLoop" class="pm2-patient-twin-readiness-loop" aria-label="Patient Twin Readiness Loop">
+      <div>
+        <p class="pm2-mission-kicker">Patient Twin Readiness Loop · Fase 8A</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Preparación de gemelo clínico sin simulación liberada</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ twin_summary.get("patient_twin_readiness_status", "blocked_until_7a_ready") }}</strong><br>
+          Gate: <code>{{ twin_summary.get("patient_twin_gate", "blocked") }}</code>
+        </p>
+        <ul class="pm2-patient-twin-readiness-loop-list">
+          <li><strong>Simulación liberada:</strong> {{ "sí" if twin_summary.get("simulation_release_allowed") else "no" }}</li>
+          <li><strong>Modelos entrenados:</strong> {{ "sí" if twin_summary.get("patient_twin_models_trained") else "no" }}</li>
+          <li><strong>Predicciones liberadas:</strong> {{ "sí" if twin_summary.get("patient_twin_predictions_released") else "no" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "sí" if twin_summary.get("ready_for_shadow_scan") else "no" }}</b>
+          <span>shadow ready</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ twin_summary.get("evaluated_patient_count", 0) }}</b>
+          <span>pacientes</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ twin_summary.get("dimension_count", 0) }}</b>
+          <span>dimensiones</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ twin_summary.get("next_phase_suggested", "8A").split("_")[0] }}</b>
+          <span>siguiente fase</span>
+        </div>
+      </div>
+      <ul class="pm2-patient-twin-readiness-loop-list" style="grid-column:1 / -1;">
+        <li><strong>Siguiente:</strong> <code>{{ twin_summary.get("next_phase_suggested", "9A_ai_readiness_dataset_loop") }}</code></li>
+        <li><strong>Dimensión dominante faltante:</strong> <code>{{ twin_summary.get("dominant_missing_dimension", "") or "sin datos" }}</code></li>
+      </ul>
+      {% if twin_dimensions %}
+      <ul class="pm2-patient-twin-readiness-loop-list" style="grid-column:1 / -1;">
+        {% for dimension in twin_dimensions[:6] %}
+        {% set dim_status = dimension.get("status", "").replace("blocked_until_7a_ready", "bloqueado").replace("requires_data", "faltan datos").replace("ready", "listo") %}
+        <li><strong>{{ dimension.get("label", dimension.get("dimension_id", "")) }}</strong> · <code>{{ dim_status }}</code> · {{ dimension.get("consumer", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if twin_capture_plan %}
+      <ul class="pm2-patient-twin-readiness-loop-list" style="grid-column:1 / -1;">
+        {% for item in twin_capture_plan[:4] %}
+        <li><strong>Capturar:</strong> {{ item.get("label", "") }} · <code>{{ item.get("field", "") }}</code> · {{ item.get("capture_surface", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if twin_loop.get("blockers") %}
+      <ul class="pm2-patient-twin-readiness-loop-list" style="grid-column:1 / -1;">
+        {% for blocker in twin_loop.get("blockers", []) %}
+        <li><strong>Bloqueo:</strong> <code>{{ blocker }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set ai_loop = ai_readiness_dataset_loop or {} %}
+    {% set ai_summary = ai_loop.get("summary", {}) %}
+    {% set dataset_gates = ai_loop.get("dataset_gates", []) %}
+    {% set readiness_report = ai_loop.get("model_readiness_report", {}) %}
+    {% set dataset_manifest = ai_loop.get("read_only_dataset_manifest", {}) %}
+    <section id="pm2AiReadinessDatasetLoop" class="pm2-ai-readiness-dataset-loop" aria-label="AI Readiness Dataset Loop">
+      <div>
+        <p class="pm2-mission-kicker">AI Readiness Dataset Loop · Fase 9A</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Dataset entrenable auditado, sin ML liberado</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ ai_summary.get("ai_readiness_status", "blocked_until_8a_ready") }}</strong><br>
+          Gate: <code>{{ ai_summary.get("ai_readiness_gate", "blocked") }}</code>
+        </p>
+        <ul class="pm2-ai-readiness-dataset-loop-list">
+          <li><strong>Dataset exportado:</strong> {{ "sí" if ai_summary.get("dataset_export_written") else "no" }}</li>
+          <li><strong>Modelos entrenados:</strong> {{ "sí" if ai_summary.get("models_trained") else "no" }}</li>
+          <li><strong>Predicciones liberadas:</strong> {{ "sí" if ai_summary.get("predictions_released") else "no" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "sí" if ai_summary.get("ready_for_shadow_audit") else "no" }}</b>
+          <span>shadow audit</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ ai_summary.get("model_readiness_score", 0) }}</b>
+          <span>score readiness</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ ai_summary.get("dataset_gate_count", 0) }}</b>
+          <span>gates dataset</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ ai_summary.get("next_phase_suggested", "9A").split("_")[0] }}</b>
+          <span>siguiente fase</span>
+        </div>
+      </div>
+      <ul class="pm2-ai-readiness-dataset-loop-list" style="grid-column:1 / -1;">
+        <li><strong>Siguiente:</strong> <code>{{ ai_summary.get("next_phase_suggested", "10A_cortana_loop_interface") }}</code></li>
+        <li><strong>Bloqueo dominante dataset:</strong> <code>{{ ai_summary.get("dominant_dataset_blocker", "") or "sin datos" }}</code></li>
+        <li><strong>Estado trainable:</strong> <code>{{ readiness_report.get("overall_status", "not_trainable_shadow_only") }}</code></li>
+      </ul>
+      {% if dataset_manifest %}
+      <ul class="pm2-ai-readiness-dataset-loop-list" style="grid-column:1 / -1;">
+        <li><strong>Manifest:</strong> <code>{{ dataset_manifest.get("dataset_name", "model_readiness_dataset_v1") }}</code> · filas estimadas {{ dataset_manifest.get("rows_estimate", 0) }} · export escrito {{ "sí" if dataset_manifest.get("export_written") else "no" }}</li>
+      </ul>
+      {% endif %}
+      {% if dataset_gates %}
+      <ul class="pm2-ai-readiness-dataset-loop-list" style="grid-column:1 / -1;">
+        {% for gate in dataset_gates[:7] %}
+        {% set gate_status = gate.get("status", "").replace("blocked_until_8a_ready", "bloqueado").replace("requires_data", "faltan datos").replace("shadow_ready", "shadow listo") %}
+        <li><strong>{{ gate.get("label", gate.get("gate_id", "")) }}</strong> · <code>{{ gate_status }}</code> · {{ gate.get("risk_if_missing", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if ai_loop.get("blockers") %}
+      <ul class="pm2-ai-readiness-dataset-loop-list" style="grid-column:1 / -1;">
+        {% for blocker in ai_loop.get("blockers", []) %}
+        <li><strong>Bloqueo:</strong> <code>{{ blocker }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    {% set cortana_loop = cortana_loop_interface or {} %}
+    {% set cortana_summary = cortana_loop.get("summary", {}) %}
+    {% set cortana_commands = cortana_loop.get("command_routes", []) %}
+    {% set cortana_cards = cortana_loop.get("response_cards", []) %}
+    {% set cortana_response = cortana_loop.get("resolved_response", {}) %}
+    <section id="pm2CortanaLoopInterface" class="pm2-cortana-loop-interface" aria-label="Cortana Loop Interface">
+      <div>
+        <p class="pm2-mission-kicker">Cortana Loop Interface · Fase 10A</p>
+        <h2 class="pm2-mission-title" style="font-size:1rem;">Interfaz consultiva del bucle, sin ejecución automática</h2>
+        <p class="pm2-loop-subtitle">
+          Estado: <strong style="color:#f8fafc;">{{ cortana_summary.get("cortana_loop_status", "blocked_until_9a_ready") }}</strong><br>
+          Gate: <code>{{ cortana_summary.get("cortana_loop_gate", "blocked") }}</code>
+        </p>
+        <ul class="pm2-cortana-loop-interface-list">
+          <li><strong>Escritura clínica:</strong> {{ "sí" if cortana_summary.get("clinical_fact_writes_allowed") else "no" }}</li>
+          <li><strong>Mutación de código:</strong> {{ "sí" if cortana_summary.get("code_mutation_allowed") else "no" }}</li>
+          <li><strong>Merge automático:</strong> {{ "sí" if cortana_summary.get("merge_allowed") else "no" }}</li>
+        </ul>
+      </div>
+      <div class="pm2-dev-autodrive-grid">
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ "sí" if cortana_summary.get("ready_for_loop_queries") else "no" }}</b>
+          <span>consultas listas</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ cortana_summary.get("supported_command_count", 0) }}</b>
+          <span>comandos</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ cortana_summary.get("clinical_goal_pct", 0) }}</b>
+          <span>objetivo clínico</span>
+        </div>
+        <div class="pm2-dev-autodrive-stat">
+          <b>{{ cortana_summary.get("next_phase_suggested", "10A").split("_")[0] }}</b>
+          <span>siguiente</span>
+        </div>
+      </div>
+      <ul class="pm2-cortana-loop-interface-list" style="grid-column:1 / -1;">
+        <li><strong>Respuesta por defecto:</strong> {{ cortana_response.get("answer", "Cortana puede consultar el loop, pero no ejecutar cambios.") }}</li>
+        <li><strong>CTA seguro:</strong> <code>{{ cortana_response.get("cta", "/loop-monitor#pm2CortanaLoopInterface") }}</code></li>
+      </ul>
+      {% if cortana_commands %}
+      <ul class="pm2-cortana-loop-interface-list" style="grid-column:1 / -1;">
+        {% for command in cortana_commands[:7] %}
+        {% set command_status = command.get("status", "").replace("blocked_until_9a_ready", "bloqueado").replace("available", "disponible") %}
+        <li><strong>{{ command.get("label", command.get("command_id", "")) }}</strong> · <code>{{ command_status }}</code> · {{ command.get("cta", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if cortana_cards %}
+      <ul class="pm2-cortana-loop-interface-list" style="grid-column:1 / -1;">
+        {% for card in cortana_cards[:4] %}
+        <li><strong>{{ card.get("title", "") }}</strong> · {{ card.get("answer", "") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if cortana_loop.get("blockers") %}
+      <ul class="pm2-cortana-loop-interface-list" style="grid-column:1 / -1;">
+        {% for blocker in cortana_loop.get("blockers", []) %}
+        <li><strong>Bloqueo:</strong> <code>{{ blocker }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
 
     <!-- 8 vector cards (bento grid) -->
     <section aria-label="Vectores monitoreados">

@@ -1,38 +1,20 @@
-# Python/runtime
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.venv/
-venv/
-
-# Local PHI/data/runtime stores
-*.db
-*.db-*
-*.sqlite
-*.sqlite3
-*-wal
-*-shm
-.prostanet_private/
-uploads/
-instance/
-
-# Logs and generated outputs
-*.log
-output/
-test-results/
-tmp/
-.playwright-cli/
-*.swp
 .DS_Store
-._*
-
-# Model artifacts / large generated binaries
-model_output/
-*.pt
-*.pkl
-*.joblib
-
-# Local automation/worktree state
 .claude/
-prostanet/agentic/persistence/
-prostanet/domains/evidence_registry/private_index.py
+.venv-voice311/
+.playwright-cli/
+.prostanet_private/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+*.sqlite
+*.db
+*.db-wal
+*.db-shm
+.fuse_hidden*
+tmp/
+test-results/
+output/faubot/
+debug_output*.txt
+curl_final_output.json

@@ -61,6 +61,81 @@
             {% endfor %}
         </section>
 
+        {% set _autodrive = autodrive_today or {} %}
+        {% set _ad_summary = _autodrive.get('summary', {}) if _autodrive else {} %}
+        {% set _ad_queue = _autodrive.get('today_queue', []) if _autodrive else [] %}
+        <section class="pm2-dashboard-panel" id="pm2AutodriveCommandCenter" style="margin-bottom:1.25rem;border-left:5px solid var(--clinical-info);background:linear-gradient(135deg,rgba(6,182,212,.08),rgba(15,23,42,.62));">
+            <div class="pm2-panel-head">
+                <div>
+                    <div class="pm2-card-eyebrow">DECISIÓN HOY · Fusion Kernel + Autodrive</div>
+                    <h2 class="pm2-panel-title">Qué debo hacer hoy</h2>
+                </div>
+                <div style="display:flex;gap:.5rem;flex-wrap:wrap;justify-content:flex-end">
+                    <span class="pm2-state-chip pm2-state-chip--warn">{{ _ad_summary.get('blocked_count', 0) }} bloqueados</span>
+                    <span class="pm2-state-chip pm2-state-chip--primary">{{ _ad_summary.get('ready_decision_count', 0) }} listos</span>
+                    <span class="pm2-state-chip">{{ _ad_summary.get('overdue_count', 0) }} vencidos</span>
+                </div>
+            </div>
+            {% if _ad_queue %}
+            <div class="pm2-alert-stream" role="list" style="max-height:none">
+                {% for item in _ad_queue[:6] %}
+                {% set _cta = item.get('cta', {}) %}
+                <article class="pm2-alert-stream-row" data-severity="{{ 'critical' if item.priority_status == 'critical_today' else 'warning' }}" role="listitem" tabindex="0" onclick="window.location='{{ _cta.get('href', '/patient_profile/' ~ item.patient_ref ~ '?v=2') }}'">
+                    <div class="pm2-alert-stream-stripe" aria-hidden="true"></div>
+                    <div class="pm2-alert-stream-meta">
+                        <span class="pm2-alert-stream-time">{{ item.lane_label }}</span>
+                        <span class="pm2-alert-stream-patient">{{ item.patient_name }} · {{ item.state_label }}</span>
+                    </div>
+                    <div class="pm2-alert-stream-msg">
+                        <strong style="color:#f8fafc">{{ item.title }}</strong>
+                        <span style="display:block;color:var(--pn-text-muted);font-size:.76rem;margin-top:3px">{{ item.reason }}</span>
+                        {% if item.risk_avoided %}<span style="display:block;color:#bae6fd;font-size:.7rem;margin-top:4px">Riesgo evitado: {{ item.risk_avoided }}</span>{% endif %}
+                    </div>
+                    <a class="pm2-btn pm2-btn--ghost" href="{{ _cta.get('href', '/patient_profile/' ~ item.patient_ref ~ '?v=2') }}" onclick="event.stopPropagation()" style="text-decoration:none;white-space:nowrap">{{ _cta.get('label', 'Abrir') }}</a>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div style="padding:1rem;border:1px dashed var(--border-default);border-radius:10px;color:var(--pn-text-muted);font-size:.85rem">
+                Sin acciones Autodrive para hoy. No hay datos demo ni pacientes inventados.
+            </div>
+            {% endif %}
+        </section>
+
+        {% set _aim = autonomous_improvement or {} %}
+        {% set _aim_summary = _aim.get('summary', {}) if _aim else {} %}
+        {% set _aim_metrics = _aim.get('metrics', []) if _aim else [] %}
+        <section class="pm2-dashboard-panel" id="pm2AutonomousImprovementOS" style="margin-bottom:1.25rem;border-left:5px solid #34d399;background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(15,23,42,.62));">
+            <div class="pm2-panel-head">
+                <div>
+                    <div class="pm2-card-eyebrow">AUTOMEJORA CLÍNICA · shadow mode</div>
+                    <h2 class="pm2-panel-title">Camino al objetivo final</h2>
+                </div>
+                <div style="display:flex;gap:.5rem;flex-wrap:wrap;justify-content:flex-end">
+                    <span class="pm2-state-chip pm2-state-chip--primary">{{ _aim_summary.get('overall_pct', 0) }}%</span>
+                    <span class="pm2-state-chip">{{ _aim_summary.get('status', 'shadow') }}</span>
+                    <a class="pm2-btn pm2-btn--ghost" href="/loop-monitor" style="text-decoration:none">Loop Monitor</a>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:minmax(260px,1fr) minmax(320px,1.5fr);gap:1rem;align-items:start">
+                <div style="color:var(--pn-text-muted);font-size:.84rem;line-height:1.55">
+                    <strong style="color:#f8fafc;display:block;margin-bottom:.35rem">Brecha prioritaria</strong>
+                    {{ _aim_summary.get('top_gap_title', 'Sin brecha activa') }}
+                    <div style="margin-top:.65rem;color:#86efac;font-size:.75rem">
+                        PR/draft + revisión humana · sin auto-merge · sin cambios clínicos automáticos.
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.65rem">
+                    {% for metric in _aim_metrics[:6] %}
+                    <div style="padding:.75rem;border:1px solid rgba(148,163,184,.16);border-radius:10px;background:rgba(15,23,42,.5)">
+                        <strong style="display:block;color:#f8fafc;font-size:1.05rem">{{ metric.get('value', 0) }}%</strong>
+                        <span style="display:block;color:var(--pn-text-muted);font-size:.7rem;margin-top:.25rem">{{ metric.get('label', metric.get('key', 'Métrica')) }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+
         {# ── Row 2: Cohort donut + PSA Heatmap ── #}
         <section class="pm2-dashboard-grid" aria-label="Cohorte y kinetics">
             <article class="pm2-dashboard-panel">

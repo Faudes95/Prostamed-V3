@@ -1,7 +1,8 @@
 name: Evidence Refresh Loop (LXCVII)
 
-# Faubot LXCVII — Iterative Improvement Loop · Weekly Sunday 00:00 UTC
-# Refresca evidence_tag → PMID URLs para 89+ gates (PubMed updates check)
+# Faubot LXCVII — Iterative Improvement Loop · Weekly Sunday 00:00 UTC.
+# Shadow mode only: detecta evidencia candidata y nunca modifica recomendaciones,
+# gates, trials ni lógica clínica sin revisión humana.
 
 on:
   schedule:
@@ -12,6 +13,9 @@ jobs:
   evidence-refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      AGENTIC_AUTO_MERGE: "false"
+      PROSTAMED_EVIDENCE_SHADOW_MODE: "true"
     steps:
       - uses: actions/checkout@v4
 
@@ -23,6 +27,11 @@ jobs:
 
       - name: Install deps
         run: pip install pyyaml pytest
+
+      - name: Verify evidence refresh shadow contract
+        run: |
+          python -m py_compile prostanet/agentic/autonomous_improvement_os.py
+          pytest -q tests/test_autonomous_improvement_os.py::test_phase_7a_evidence_refresh_shadow_loop_requires_6a_and_never_changes_recommendations
 
       - name: Verify trial_refs URL resolution
         run: |

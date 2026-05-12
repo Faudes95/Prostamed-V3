@@ -33,8 +33,8 @@ ALCANCES (sin alucinar):
 """
 from __future__ import annotations
 
-__version__ = "0.1.0"
-__faubot_release__ = "2026-04-26 LXXX"
+__version__ = "0.2.0"
+__faubot_release__ = "2026-05-11 Voice Clinical OS v1"
 
 # Lazy imports — no import side effects al hacer `from prostanet.voice import X`
 # Esto evita ImportError si las dependencias opcionales (faster-whisper, ollama,

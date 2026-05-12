@@ -231,6 +231,7 @@
                             <th class="pm2-num">PSA basal</th>
                             <th>ECOG</th>
                             <th class="pm2-num">Visitas</th>
+                            <th>Decisión hoy <span style="color:var(--pn-text-soft);font-size:.62rem;">Autodrive</span></th>
                             <th>Tumor Board</th>
                             <th>Alertas</th>
                             <th>Vital</th>
@@ -256,6 +257,15 @@
                             <td class="pm2-num">{{ p.baseline_psa }}</td>
                             <td>{{ p.ecog }}</td>
                             <td class="pm2-num">{{ p.visit_count }}</td>
+                            <td>
+                                <div style="max-width:190px;color:#e0f2fe;font-size:.74rem;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.autodrive_label }}</div>
+                                <span class="pm2-state-chip {% if p.autodrive_priority_status == 'critical_today' %}pm2-state-chip--warn{% elif p.autodrive_priority_status in ['high_today','routine_today'] %}pm2-state-chip--primary{% endif %}" style="font-size:.55rem;padding:2px 7px;margin-top:4px">
+                                    {{ p.decision_today_state or p.autodrive_priority_status }} · {{ p.autodrive_lane }}
+                                </span>
+                                {% if p.autodrive_redecision_required %}
+                                <div style="margin-top:5px;color:#fbbf24;font-size:.66rem;font-weight:700;">Nueva decisión requerida</div>
+                                {% endif %}
+                            </td>
                             <td>
                                 <div style="max-width:210px;color:#dbeafe;font-size:.76rem;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.tumor_board_label }}</div>
                                 <span class="pm2-state-chip {% if p.tumor_board_status == 'released' %}pm2-state-chip--success{% elif p.tumor_board_status in ['requires_data','blocked','provisional'] %}pm2-state-chip--warn{% endif %}" style="font-size:.58rem;padding:2px 7px;margin-top:4px">{{ p.tumor_board_status }}</span>
@@ -292,7 +302,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="10">
+                            <td colspan="11">
                                 <div class="pm2-empty-state">
                                     <p style="font-size:1.05rem;color:#f0fbff;margin-bottom:8px">Sin pacientes registrados</p>
                                     <p style="font-size:.85rem">Cohorte vacía · ingresa el primer caso desde

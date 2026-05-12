@@ -1,0 +1,51 @@
+name: Autonomous Improvement Shadow Loop
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "21 9 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  shadow-loop:
+    runs-on: ubuntu-latest
+    env:
+      AGENTIC_AUTO_MERGE: "false"
+      PROSTAMED_AUTONOMOUS_LOOP_DISABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install minimal test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest flask pyyaml
+
+      - name: Build shadow mission-control artifact
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from prostanet.agentic.autonomous_improvement_os import build_autonomous_improvement_bundle
+
+          bundle = build_autonomous_improvement_bundle(patient_limit=10)
+          Path("autonomous_improvement_shadow_report.json").write_text(
+              json.dumps(bundle, indent=2, sort_keys=True),
+              encoding="utf-8",
+          )
+          assert bundle["source_clinical_facts_mutated"] is False
+          assert bundle["summary"]["auto_merge_enabled"] is False
+          PY
+
+      - name: Contract tests
+        run: pytest -q tests/test_autonomous_improvement_os.py tests/test_audit_lxcv_iterative_loop.py tests/test_decision_today_fusion_kernel.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autonomous-improvement-shadow-report
+          path: autonomous_improvement_shadow_report.json

@@ -35,6 +35,10 @@
     debounce: null,
     lastPayload: {},
     lastResult: null,
+    voiceIntake: null,
+    voiceApplying: false,
+    voiceHistory: [],
+    manualTouched: new Set(),
     userTouched: false,
   };
 
@@ -306,7 +310,142 @@
 
   function collectPayload() {
     const data = Object.fromEntries(new FormData(form).entries());
-    return normalizePayload(data);
+    const payload = normalizePayload(data);
+    if (state.voiceIntake) {
+      payload.voice_intake_session = state.voiceIntake.session || {};
+      payload.voice_intake_provenance = state.voiceIntake.provenance || {};
+    }
+    return payload;
+  }
+
+  function fieldWrapper(name) {
+    return root.querySelector(`[data-field-name="${CSS.escape(name)}"]`);
+  }
+
+  function refreshVoiceFieldMarks() {
+    root.querySelectorAll(".pm2-legacy-field.is-voice-applied, .pm2-legacy-field.is-manual-locked").forEach((wrapper) => {
+      wrapper.classList.remove("is-voice-applied", "is-manual-locked");
+    });
+    root.querySelectorAll("[data-voice-managed], [data-voice-locked]").forEach((input) => {
+      if (!input.dataset.voiceLocked) delete input.dataset.voiceManaged;
+    });
+    state.voiceHistory.forEach((entry) => {
+      const wrapper = fieldWrapper(entry.field_name);
+      if (wrapper) wrapper.classList.add("is-voice-applied");
+      const input = form.querySelector(`[name="${CSS.escape(entry.field_name)}"]`);
+      if (input) input.dataset.voiceManaged = "1";
+    });
+    state.manualTouched.forEach((name) => {
+      const input = form.querySelector(`[name="${CSS.escape(name)}"]`);
+      const wrapper = fieldWrapper(name);
+      if (input?.dataset.voiceManaged || input?.dataset.voiceLocked) {
+        input.dataset.voiceLocked = "1";
+        if (wrapper) wrapper.classList.add("is-manual-locked");
+      }
+    });
+  }
+
+  function emitVoiceHistory(applied) {
+    document.dispatchEvent(new CustomEvent("prostanet:voice-intake-applied", {
+      detail: {
+        history: state.voiceHistory.slice(),
+        applied_fields: applied || [],
+      },
+    }));
+  }
+
+  function setFieldValue(name, value, options = {}) {
+    const input = form.querySelector(`[name="${CSS.escape(name)}"]`);
+    if (!input || (input.disabled && !options.force)) return false;
+    if (options.source === "voice" && state.manualTouched.has(name) && !options.force) return false;
+    const normalized = String(value ?? "");
+    const previous = String(input.value ?? "");
+    if (previous === normalized && options.source === "voice") return false;
+    if (input.tagName === "SELECT") {
+      const hasOption = Array.from(input.options || []).some((option) => option.value === normalized);
+      if (!hasOption && normalized) {
+        const option = document.createElement("option");
+        option.value = normalized;
+        option.textContent = normalized;
+        input.appendChild(option);
+      }
+    }
+    state.voiceApplying = options.source === "voice" || options.source === "undo";
+    input.value = normalized;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    state.voiceApplying = false;
+    if (options.source === "voice") {
+      input.dataset.voiceManaged = "1";
+      delete input.dataset.voiceLocked;
+      const wrapper = fieldWrapper(name);
+      if (wrapper) {
+        wrapper.classList.add("is-voice-applied");
+        wrapper.classList.remove("is-manual-locked");
+      }
+      state.voiceHistory.push({
+        field_name: name,
+        previous_value: previous,
+        new_value: normalized,
+        source: options.detail?.source || "voice",
+        session_id: options.detail?.session?.session_id || options.detail?.session?.session_key || "",
+        ts: new Date().toISOString(),
+      });
+    }
+    return true;
+  }
+
+  function applyVoiceIntake(detail) {
+    const fields = detail?.fields || {};
+    const applied = [];
+    updateVisibility();
+    const entries = Object.entries(fields);
+    entries.forEach(([name, value]) => {
+      if (setFieldValue(name, value, { source: "voice", detail })) applied.push(name);
+      updateVisibility();
+    });
+    entries.forEach(([name, value]) => {
+      if (!applied.includes(name) && setFieldValue(name, value, { source: "voice", detail })) applied.push(name);
+      updateVisibility();
+    });
+    refreshVoiceFieldMarks();
+    state.voiceIntake = {
+      session: detail?.session || {},
+      provenance: detail?.provenance || {},
+      applied_fields: applied,
+      conflicts: detail?.conflicts || [],
+    };
+    try {
+      window.sessionStorage.setItem("prostanet:clinical-hub-voice-intake", JSON.stringify(state.voiceIntake));
+    } catch (error) {
+      console.warn("No se pudo persistir provenance de voz temporal.", error);
+    }
+    if (statusEl && applied.length) {
+      statusEl.textContent = `Voz aplicada: ${applied.length} campo${applied.length === 1 ? "" : "s"}`;
+    }
+    emitVoiceHistory(applied);
+    scheduleClassification();
+  }
+
+  function undoLastVoiceChange() {
+    const entry = state.voiceHistory.pop();
+    if (!entry) {
+      if (statusEl) statusEl.textContent = "Sin cambios de voz para deshacer.";
+      emitVoiceHistory([]);
+      return;
+    }
+    setFieldValue(entry.field_name, entry.previous_value, { source: "undo", force: true });
+    state.manualTouched.delete(entry.field_name);
+    const input = form.querySelector(`[name="${CSS.escape(entry.field_name)}"]`);
+    if (input && !state.voiceHistory.some((item) => item.field_name === entry.field_name)) {
+      delete input.dataset.voiceManaged;
+      delete input.dataset.voiceLocked;
+    }
+    updateVisibility();
+    refreshVoiceFieldMarks();
+    if (statusEl) statusEl.textContent = `Cambio por voz deshecho: ${entry.field_name}`;
+    emitVoiceHistory([entry.field_name]);
+    scheduleClassification();
   }
 
   function validationError(payload) {
@@ -389,6 +528,14 @@
     const gate = data.progression_gate_active
       ? `<div class="pm2-legacy-gate">${escapeHtml(data.progression_gate_reason || "Debe verificarse castración y reestadificación convencional.")}</div>`
       : "";
+    const decisionPreview = `
+      <div class="pm2-legacy-gate" data-decision-today-preview>
+        <strong>DECISIÓN HOY preliminar:</strong>
+        ${payload.known_cancer_diagnosis === "1"
+          ? "abrir el wizard del estado clasificado para completar readiness, Tumor Board y datos longitudinales antes de liberar recomendación."
+          : "completar el escenario diagnóstico; no hay recomendación terapéutica liberable sin expediente firmado."}
+      </div>
+    `;
 
     resultEl.hidden = false;
     resultEl.classList.add("is-success");
@@ -398,6 +545,7 @@
       <p>${escapeHtml(data.classification_reason || "El módulo fue seleccionado por el clasificador clínico.")}</p>
       ${derivedMeta}
       ${gate}
+      ${decisionPreview}
       <a class="pm2-btn pm2-btn--primary" href="/wizard/${encodeURIComponent(stateName)}?prefill_source=clinical_hub" data-legacy-wizard-link>
         Abrir asistente correcto
       </a>
@@ -489,6 +637,15 @@
     });
     state.lastPayload = {};
     state.lastResult = null;
+    state.voiceIntake = null;
+    state.voiceHistory = [];
+    state.manualTouched.clear();
+    refreshVoiceFieldMarks();
+    try {
+      window.sessionStorage.removeItem("prostanet:clinical-hub-voice-intake");
+    } catch (_error) {
+      /* ignore session storage cleanup */
+    }
     if (resultEl) {
       resultEl.hidden = false;
       resultEl.classList.remove("is-success");
@@ -496,6 +653,7 @@
         <div class="pm2-legacy-result-eyebrow">Listo para clasificar</div>
         <h3>Defina el escenario real</h3>
         <p>Complete los pasos visibles y el sistema abrirá el asistente correcto.</p>
+        <p><strong>DECISIÓN HOY preliminar:</strong> se activará tras clasificar; no se libera recomendación sin expediente firmado.</p>
       `;
     }
     if (diagnosisEl) {
@@ -510,8 +668,23 @@
   renderSteps();
   resetClassifier();
 
-  form.addEventListener("input", scheduleClassification);
-  form.addEventListener("change", scheduleClassification);
+  function handleFormEdit(event) {
+    const input = event.target;
+    if (!state.voiceApplying && input?.name) {
+      state.manualTouched.add(input.name);
+      if (input.dataset.voiceManaged) {
+        input.dataset.voiceLocked = "1";
+        const wrapper = fieldWrapper(input.name);
+        if (wrapper) wrapper.classList.add("is-manual-locked");
+      }
+    }
+    scheduleClassification();
+  }
+
+  form.addEventListener("input", handleFormEdit);
+  form.addEventListener("change", handleFormEdit);
+  root.addEventListener("prostanet:voice-intake-apply", (event) => applyVoiceIntake(event.detail || {}));
+  root.addEventListener("prostanet:voice-intake-undo", undoLastVoiceChange);
   classifyButton?.addEventListener("click", classifyNow);
   resetButton?.addEventListener("click", resetClassifier);
 

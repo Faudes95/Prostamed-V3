@@ -128,6 +128,27 @@
             </p>
         </div>
 
+        {% if decision_lane_filter or decision_field_filter %}
+        <section style="margin-bottom:var(--space-5);padding:var(--space-3) var(--space-4);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.28);border-radius:14px" aria-label="Decisión Hoy filtro longitudinal">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-3);flex-wrap:wrap">
+                <div>
+                    <div style="color:var(--pn-accent);font-size:.68rem;font-weight:900;letter-spacing:.16em;text-transform:uppercase">DECISIÓN HOY</div>
+                    <p style="margin:5px 0 0;color:#dbeafe;font-size:.82rem;line-height:1.45;max-width:82ch">
+                        Captura dirigida para desbloquear la decisión canónica. Sólo se agregan datos longitudinales reales y revisables.
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+                    {% if decision_lane_filter %}
+                    <span class="pm2-state-chip pm2-state-chip--primary">carril: {{ decision_lane_filter }}</span>
+                    {% endif %}
+                    {% if decision_field_filter %}
+                    <span class="pm2-state-chip">dato: {{ decision_field_filter }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+        {% endif %}
+
         {% set _readiness = clinical_readiness_tower or {} %}
         {% if _readiness %}
         <section style="margin-bottom:var(--space-5);padding:var(--space-4);background:rgba(8,13,26,.72);border:1px solid rgba(34,211,238,.22);border-radius:14px" aria-label="Readiness clínico longitudinal">
@@ -157,6 +178,52 @@
             {% endif %}
         </section>
         {% endif %}
+
+        <section class="pm2-voice-os-panel" data-pm2-voice-os data-patient-ref="{{ identity.nss }}" data-surface="longitudinal_capture_v2" aria-label="Cortana clínica longitudinal" style="margin:0 0 var(--space-5);">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem;color:var(--pn-accent);font-weight:800;letter-spacing:.16em;text-transform:uppercase;">Cortana clínica</div>
+                    <h3 style="font-family:var(--pm-font-display);font-size:1.05rem;color:#f8fafc;margin:5px 0 0;">Dictado longitudinal con revisión</h3>
+                    <p style="margin:6px 0 0;color:var(--pn-text-muted);font-size:.8rem;line-height:1.45;max-width:78ch;">
+                        Capture APE/PSA, testosterona, ECOG, labs, toxicidad o línea terapéutica desde voz. Nada se escribe sin aceptar candidatos.
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+                    <span class="pm2-voice-status" data-voice-status data-tone="idle">sin sesión</span>
+                    <span class="pm2-state-chip">sesión: <span data-voice-session-key>sin sesión</span></span>
+                </div>
+            </div>
+            <div class="pm2-voice-grid">
+                <div class="pm2-voice-box">
+                    <div style="font-size:.68rem;color:#67e8f9;font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Consentimiento verbal</div>
+                    <textarea class="pm2-voice-textarea" data-voice-consent-text>Autorizo que ProstaMed capture esta conversación clínica por voz para transcripción local, revisión médica y escritura auditada en mi expediente.</textarea>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="create">Crear sesión</button>
+                        <button type="button" class="pm2-btn pm2-btn--primary" data-voice-action="consent">Registrar consentimiento</button>
+                    </div>
+                </div>
+                <div class="pm2-voice-box">
+                    <div style="font-size:.68rem;color:#67e8f9;font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Transcript revisable</div>
+                    <textarea class="pm2-voice-textarea" data-voice-transcript placeholder="Ejemplo: PSA 4.2 ng/mL el 2026-05-11, testosterona 42 ng/dL, toxicidad fatiga grado 2..."></textarea>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="record">
+                            <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path stroke-width="2" stroke-linecap="round" d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></svg>
+                            Grabar
+                        </button>
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="stop">
+                            <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="7" y="7" width="10" height="10" rx="1.5" stroke-width="2"/></svg>
+                            Detener STT
+                        </button>
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="review">Extraer candidatos</button>
+                        <button type="button" class="pm2-btn pm2-btn--primary" data-voice-action="commit">Firmar y escribir aceptados</button>
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="discard">Descartar</button>
+                    </div>
+                    <div data-voice-candidates style="margin-top:10px;">
+                        <div class="pm2-voice-empty">Sin candidatos todavía.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
         {# What can capture grid (quick jump) #}
         <div style="margin-bottom:var(--space-5)" data-capture-grid-wrapper>
@@ -894,6 +961,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/clinical_intelligence_v2.js') }}"></script>
+<script src="{{ url_for('static', filename='js/prostamed_voice_os.js', v='voice_os_20260511') }}"></script>
 <script>
 /* ─────────────────────────────────────────────────────────────────────────
  * Faubot LXXXVI #67F — Longitudinal Capture wired al endpoint REAL (Fase 2)

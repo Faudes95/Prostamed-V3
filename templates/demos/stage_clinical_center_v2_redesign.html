@@ -563,6 +563,76 @@
                     </div>
                     <div class="pm2-legacy-status" data-legacy-classifier-status aria-live="polite"></div>
                 </div>
+                <section class="pm2-voice-os-panel pm2-voice-os-panel--intake"
+                         data-pm2-voice-os
+                         data-voice-mode="intake"
+                         data-surface="clinical_hub_classifier"
+                         aria-label="Cortana clínica de ingreso">
+                    <div class="pm2-voice-grid">
+                        <div class="pm2-voice-box">
+                            <div style="font-size:.68rem;color:var(--pn-accent);font-weight:800;letter-spacing:.16em;text-transform:uppercase;">Cortana clínica de ingreso</div>
+                            <h3 style="margin:.35rem 0 .25rem;color:#f8fbff;font-size:1.05rem;">Dictado para prellenar el clasificador</h3>
+                            <p class="pm2-card-subtitle" style="margin:0 0 .75rem;">
+                                Captura voz con consentimiento, extrae candidatos y sólo aplica campos revisados al clasificador oficial. No escribe expediente hasta registrar al paciente.
+                            </p>
+                            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
+                                <span class="pm2-voice-status" data-voice-status>sin sesión</span>
+                                <span class="pm2-voice-status">sesión: <span data-voice-session-key>sin sesión</span></span>
+                            </div>
+                            <textarea class="pm2-voice-textarea"
+                                      data-voice-consent-text
+                                      rows="3">Autorizo que ProstaMed capture esta conversación clínica por voz para transcripción local, revisión médica y prellenado del clasificador oficial.</textarea>
+                            <div class="pm2-voice-actions">
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="create">Crear sesión</button>
+                                <button class="pm2-btn pm2-btn--primary" type="button" data-voice-action="consent">Registrar consentimiento</button>
+                            </div>
+                        </div>
+                        <div class="pm2-voice-box">
+                            <div style="font-size:.68rem;color:var(--pn-accent);font-weight:800;letter-spacing:.16em;text-transform:uppercase;">Transcript revisable</div>
+                            <textarea class="pm2-voice-textarea"
+                                      data-voice-transcript
+                                      rows="4"
+                                      placeholder="Ejemplo: Adenocarcinoma confirmado, PSA basal 12.4, Gleason 4+3, cT2c cN0 M0, sin ADT..."></textarea>
+                            <div class="pm2-voice-actions">
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="record">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path stroke-width="2" stroke-linecap="round" d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></svg>
+                                    Grabar
+                                </button>
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="stop">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="7" y="7" width="10" height="10" rx="1.5" stroke-width="2"/></svg>
+                                    Detener STT
+                                </button>
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="review">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M9 6h11M9 12h11M9 18h11"/><path stroke-width="2" stroke-linecap="round" d="M4 6h.01M4 12h.01M4 18h.01"/></svg>
+                                    Extraer candidatos
+                                </button>
+                                <button class="pm2-btn pm2-btn--primary" type="button" data-voice-action="apply">Aplicar al clasificador</button>
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="toggle-auto">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M10 5v14M14 5v14"/></svg>
+                                    Pausar auto-aplicación
+                                </button>
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="undo">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 14 4 9l5-5"/><path stroke-width="2" stroke-linecap="round" d="M4 9h10a6 6 0 0 1 0 12h-2"/></svg>
+                                    Deshacer último cambio
+                                </button>
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="review-changes">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M8 6h13M8 12h13M8 18h13"/><path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m3 6 1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/></svg>
+                                    Revisar cambios por voz
+                                </button>
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="discard">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"/></svg>
+                                    Descartar
+                                </button>
+                            </div>
+                            <div class="pm2-voice-change-log" data-voice-change-log hidden>
+                                <div class="pm2-voice-empty">Sin cambios aplicados por voz.</div>
+                            </div>
+                            <div class="pm2-voice-candidates" data-voice-candidates>
+                                <div class="pm2-voice-empty">Sin candidatos. Dicte o pegue un transcript clínico para revisar.</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
                 <form data-legacy-classifier-form novalidate>
                     <div class="pm2-legacy-classifier-body">
                         <div class="pm2-legacy-steps" data-legacy-classifier-steps></div>
@@ -571,6 +641,7 @@
                                 <div class="pm2-legacy-result-eyebrow">Listo para clasificar</div>
                                 <h3>Defina el escenario real</h3>
                                 <p>Complete los pasos visibles y el sistema abrirá el asistente correcto.</p>
+                                <p><strong>DECISIÓN HOY preliminar:</strong> se activará tras clasificar; no se libera recomendación sin expediente firmado.</p>
                             </div>
                             <div class="pm2-legacy-diagnosis" data-legacy-diagnosis-preview hidden></div>
                             <div class="pm2-legacy-diagnosis" data-legacy-stage-hint hidden></div>
@@ -787,6 +858,7 @@
 <script id="pm2OfficialClassifierConfig" type="application/json">{{ quick_classifier | tojson }}</script>
 <script src="{{ url_for('static', filename='js/clinical_intelligence_v2.js') }}"></script>
 <script src="{{ url_for('static', filename='js/clinical_hub_quick_classifier.js') }}"></script>
+<script src="{{ url_for('static', filename='js/prostamed_voice_os.js', v='voice_os_20260511') }}"></script>
 
 <script>
 // LXCVIII.B — Trial drill-down trigger (criteria detail)
