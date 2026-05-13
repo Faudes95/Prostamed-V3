@@ -13,6 +13,7 @@ Métrica: `(gates_with_trial_evidence/89)*0.4 + (gates_with_retro_validation/89)
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -142,25 +143,57 @@ def _protocol_authorization_scope() -> str:
         return ""
 
 
-def _shadow_validation_records_count() -> int:
-    """Count shadow validation records from SQLite tracking.
+SHADOW_VALIDATION_RECORDS = CLINICAL_DIR / "shadow_validation_records.jsonl"
 
-    En shadow mode, los pacientes registrados en SQLite tracking_db
-    cuentan como "shadow validated" — el sistema observa decisiones
-    clínicas internas (no enrolment externo) y valida shadow vs ground
-    truth NCCN/EAU. Defensive: si tracking_db no carga, retorna 0.
+
+def _shadow_validation_records_count() -> int:
+    """Count shadow validation oracle pairs from canonical JSONL append-only log.
+
+    EPIC 12a fix: el conteo original usaba `tracking_db.get_stats().total_patients`
+    que es un PROXY débil — cuenta cualquier paciente registrado, no
+    específicamente "decisión clínica validada contra oracle NCCN/EAU".
+    Eso inflaba el score con records sin ground truth defendible.
+
+    Source canónico (EPIC 12a): `shadow_validation_records.jsonl` append-only.
+    Cada record documenta:
+      - record_id (unique)
+      - record_type (`shadow_validation_oracle_pair`)
+      - expected_effective_state (NCCN state classifier oracle)
+      - expected_action_* (NCCN/EAU treatment oracle)
+      - expected_guideline_basis_any (PMID/trial/section references)
+      - epic10_evidence (defensible scientific basis)
+      - ground_truth_oracle ("NCCN v5.2026 + EAU 2026 manual review")
+      - no_invented_psa: True
+      - no_invented_treatment_eligibility: True
+
+    Cleaner, más estricto, más auditable para FDA Pre-Sub. Bootstrap inicial:
+    10 oracle pairs derived from EPIC 10A real-world test scenarios.
     """
-    try:
-        import tracking_db
-        # Use the canonical patient count function; fallback to 0 if missing.
-        if hasattr(tracking_db, "get_total_patient_count"):
-            return int(tracking_db.get_total_patient_count() or 0)
-        if hasattr(tracking_db, "get_stats"):
-            stats = tracking_db.get_stats() or {}
-            return int(stats.get("total_patients", 0) or 0)
-    except Exception:
+    if not SHADOW_VALIDATION_RECORDS.exists():
         return 0
-    return 0
+    try:
+        count = 0
+        with SHADOW_VALIDATION_RECORDS.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except (ValueError, TypeError):
+                    continue
+                if not isinstance(rec, dict):
+                    continue
+                # Strict count: only records that declare full oracle pair
+                # contract and have non-empty expected_effective_state.
+                if rec.get("record_type") != "shadow_validation_oracle_pair":
+                    continue
+                if not (rec.get("expected_effective_state") or "").strip():
+                    continue
+                count += 1
+        return count
+    except OSError:
+        return 0
 
 
 def _prospective_data_collected_score() -> float:

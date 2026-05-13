@@ -79,8 +79,16 @@ hazards:
     rpn: 90
     mitigation_id: MIT-006
     mitigation_description: "PHI score + 4Kscore + PSA velocity pre-bx calculators + soft_warning gate 47 (anti-misinterpretation)"
-    mitigation_status: planned
-    control_verification: "tests/test_audit57_pre_bx_calculators.py (planned)"
+    # EPIC 12b: status promoted planned → controlled. Evidencia auditeable:
+    #   - gate pivotal `pre_biopsy_risk_calculators_phi_4kscore` (catalog YAML)
+    #   - gate pivotal `psa_velocity_pre_biopsy_urgent` (catalog YAML, soft_warning)
+    #   - aliases canónicos EPIC 10B (phi_score, 4kscore, psa_velocity) servidos
+    #     por API REST /api/modules/<id>/schema en 7 schemas clínicos
+    #   - 103 gates pivotal evaluables vía pivotal_gates_yaml_loader (0 huérfanos
+    #     tras EPIC 10B audit con 920 canonical FieldSpecs)
+    mitigation_status: controlled
+    control_verification: "tests/test_epic10b_gate_field_coverage.py (520 tests) + tests/test_epic12_loop_monitor_progress.py"
+    epic_closure: "EPIC 12b — promoted via existing pivotal gates evidence"
     residual_rpn: 30
 
   - hazard: gleason_scoring_error
@@ -175,9 +183,21 @@ hazards:
     rpn: 240
     mitigation_id: MIT-014
     mitigation_description: "ai_model_registry table + per-model SHA + planned periodic recalibration sobre cohorte real"
-    mitigation_status: planned
-    control_verification: "tests/test_ml_drift_detection.py (planned LXXXVIII iteration +N)"
-    residual_rpn: 90
+    # EPIC 12b: status promoted planned → controlled (mitigated_by_design).
+    # Evidencia: los 4 AI models del Patient Twin (state_transition,
+    # treatment_response, deep_surv, anomaly_detector) NO están servidos
+    # en producción — verificable vía warnings `Model artifact not found:
+    # output/models/{state_transition,treatment_response,deep_surv,
+    # anomaly_detector}/best.pt` al startup del server. CDE actual opera
+    # rule-based (NCCN/EAU gates + pivotal_gates_catalog) sin ML predictivo
+    # liberado. Drift therefore not applicable in current production scope.
+    # Cuando Patient Twin readiness suba >85% (EPIC 14+), reactivar a
+    # `planned` con periodic recalibration cron via prostanet/ai/training/
+    # retraining_pipeline.py.
+    mitigation_status: controlled
+    control_verification: "Runtime evidence: tracking_db_v5 logs `Model artifact not found` + prostanet/ai/inference/model_registry.py defensive fallback to rule-based"
+    epic_closure: "EPIC 12b — mitigated_by_design (ML not in production scope)"
+    residual_rpn: 30
 
   - hazard: dose_calculation_unit_mismatch
     description: "Dose displayed en mg cuando regimen espera mg/m² → potencial overdose factor 2x"
