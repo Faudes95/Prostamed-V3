@@ -6,9 +6,10 @@
     "lr": 0.0001,
     "seed": 42,
     "output_dir": "output/models",
-    "skip_state": true,
+    "skip_state": false,
     "skip_treatment": false,
-    "skip_surv": false
+    "skip_surv": false,
+    "skip_anomaly": false
   },
   "generation": {
     "patients": 1000,
@@ -24,20 +25,116 @@
       "m0_crpc": 54
     }
   },
+  "state_transition": {
+    "model_path": "output/models/state_transition/best.pt",
+    "epochs": 10,
+    "samples": 1000,
+    "best_val_loss": 0.88,
+    "final_accuracy": 0.645,
+    "history": [
+      {
+        "epoch": 1,
+        "train_loss": 37.2408,
+        "val_loss": 1.8879,
+        "val_accuracy": 0.24
+      },
+      {
+        "epoch": 2,
+        "train_loss": 4.0932,
+        "val_loss": 1.8448,
+        "val_accuracy": 0.275
+      },
+      {
+        "epoch": 3,
+        "train_loss": 4.0426,
+        "val_loss": 1.8311,
+        "val_accuracy": 0.285
+      },
+      {
+        "epoch": 4,
+        "train_loss": 3.8762,
+        "val_loss": 1.5411,
+        "val_accuracy": 0.435
+      },
+      {
+        "epoch": 5,
+        "train_loss": 3.6082,
+        "val_loss": 1.3612,
+        "val_accuracy": 0.475
+      },
+      {
+        "epoch": 6,
+        "train_loss": 3.3886,
+        "val_loss": 1.1302,
+        "val_accuracy": 0.6
+      },
+      {
+        "epoch": 7,
+        "train_loss": 3.0902,
+        "val_loss": 0.9599,
+        "val_accuracy": 0.64
+      },
+      {
+        "epoch": 8,
+        "train_loss": 2.9247,
+        "val_loss": 0.9223,
+        "val_accuracy": 0.64
+      },
+      {
+        "epoch": 9,
+        "train_loss": 2.8549,
+        "val_loss": 0.8874,
+        "val_accuracy": 0.645
+      },
+      {
+        "epoch": 10,
+        "train_loss": 2.8343,
+        "val_loss": 0.88,
+        "val_accuracy": 0.645
+      }
+    ],
+    "training_time_seconds": 1031.3
+  },
   "treatment_response": {
     "model_path": "output/models/treatment_response/best.pt",
     "epochs": 10,
     "samples": 1202,
-    "best_val_loss": 0.6885,
-    "training_time_seconds": 1.6
+    "best_val_loss": 0.6869,
+    "training_time_seconds": 1.5
   },
   "deep_surv_os": {
     "model_path": "output/models/deep_surv_OS/best.pt",
     "endpoint": "OS",
     "epochs": 10,
     "samples": 1000,
-    "best_loss": 83.3978,
-    "training_time_seconds": 0.3
+    "best_loss": 81.1676,
+    "training_time_seconds": 0.4
   },
-  "total_time_seconds": 2.1
+  "anomaly_detector": {
+    "model_path": "output/models/anomaly_detector/best.pt",
+    "normalization_stats_path": "output/models/anomaly_detector/normalization_stats.pt",
+    "epochs": 10,
+    "samples": 1000,
+    "best_val_loss": 0.1428,
+    "threshold_per_feature": {
+      "psa": 0.024,
+      "testosterone": 0.0085,
+      "alp": 0.0066,
+      "ldh": 0.0062,
+      "albumin": 0.0188,
+      "hemoglobin": 1.6772,
+      "creatinine": 0.0081,
+      "ecog": 1.4996,
+      "pain_score": 0.0039
+    },
+    "train_losses": [
+      0.3416,
+      0.3212,
+      0.3049,
+      0.2902,
+      0.2799
+    ],
+    "training_time_seconds": 2.0
+  },
+  "total_time_seconds": 1035.3
 }

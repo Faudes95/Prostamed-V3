@@ -68,6 +68,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-state", action="store_true", help="Skip state transition model")
     parser.add_argument("--skip-treatment", action="store_true", help="Skip treatment response model")
     parser.add_argument("--skip-surv", action="store_true", help="Skip survival model")
+    parser.add_argument("--skip-anomaly", action="store_true", help="Skip anomaly detector VAE")
     return parser.parse_args()
 
 
@@ -202,7 +203,40 @@ def main() -> None:
 
         results["deep_surv_os"] = {**surv_result, "training_time_seconds": round(surv_time, 1)}
 
-    # ── Step 5: Register trained models in DB ──
+    # ── Step 5: Train Anomaly Detector VAE (EPIC 17) ──
+    if not args.skip_anomaly:
+        logger.info("\n" + "=" * 60)
+        logger.info("Training Anomaly Detector VAE (EPIC 17)...")
+        logger.info("=" * 60)
+
+        from prostanet.ai.training.trainers import train_anomaly_detector
+
+        t0 = time.perf_counter()
+        anomaly_result = train_anomaly_detector(
+            records=patients,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            lr=args.lr,
+            output_dir=output_dir,
+        )
+        anomaly_time = time.perf_counter() - t0
+
+        if "error" in anomaly_result:
+            logger.warning(
+                f"Anomaly detector training: {anomaly_result['error']} "
+                f"(need ≥10 patients with longitudinal lab sequences)"
+            )
+        else:
+            logger.info(
+                f"Anomaly detector trained: {anomaly_result['samples']} sequences, "
+                f"best_val_loss={anomaly_result.get('best_val_loss', '?')}, "
+                f"time={anomaly_time:.1f}s"
+            )
+            logger.info(f"Model saved: {anomaly_result.get('model_path', '?')}")
+
+        results["anomaly_detector"] = {**anomaly_result, "training_time_seconds": round(anomaly_time, 1)}
+
+    # ── Step 6: Register trained models in DB ──
     _register_models_in_db(output_dir, results)
 
     # ── Summary ──
@@ -237,6 +271,7 @@ def _register_models_in_db(output_dir: Path, results: dict) -> None:
             "state_transition": ("state_transition", "StateTransitionTransformer"),
             "treatment_response": ("treatment_response", "TreatmentResponsePredictor"),
             "deep_surv": ("deep_surv_os", "DeepSurvNet"),
+            "anomaly_detector": ("anomaly_detector", "ClinicalSequenceVAE"),
         }
 
         for model_id, (result_key, model_type) in model_map.items():

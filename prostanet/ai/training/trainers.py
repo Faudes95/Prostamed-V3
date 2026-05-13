@@ -291,7 +291,13 @@ def train_deep_surv(
             loss = cox_ph_loss(log_hr, time, event)
             if torch.isnan(loss):
                 continue
+            # EPIC 17 defense-in-depth: skip si loss no participa en autograd
+            # (puede ocurrir si batch tiene 0 events y cox_ph_loss devolvió
+            # un cero sin grad_fn pese al fix de deep_surv.py).
+            if loss.grad_fn is None and not loss.requires_grad:
+                continue
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             epoch_loss += loss.item()
 

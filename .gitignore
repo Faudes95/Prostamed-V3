@@ -20,7 +20,8 @@ output/faubot/
 debug_output*.txt
 curl_final_output.json
 
-# EPIC 16 — AI model artifacts (regenerable)
+# EPIC 16/17 — AI model artifacts (regenerable)
 output/models/**/best.pt
 output/models/**/last.pt
 output/models/**/*.ckpt
+output/models/**/normalization_stats.pt

@@ -250,5 +250,9 @@ def cox_ph_loss(
     # Negative mean
     n_events = sorted_events.sum()
     if n_events == 0:
-        return torch.tensor(0.0, device=log_hazard_ratios.device)
+        # EPIC 17 bugfix: return grad-aware zero, NOT torch.tensor(0.0).
+        # Fresh tensor lacks grad_fn → loss.backward() crashes con
+        # "element 0 of tensors does not require grad and does not have
+        # a grad_fn". Multiply log_hazard_ratios * 0 preserves graph.
+        return (log_hazard_ratios * 0.0).sum()
     return -pll.sum() / n_events
