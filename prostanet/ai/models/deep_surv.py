@@ -22,6 +22,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F  # EPIC 17a: softplus(baseline_cum_hazard) usa F.softplus
 
 from prostanet.ai.config import DeepSurvConfig, get_ai_config
 from prostanet.ai.models.base import ProstaNetModel, PredictionResult

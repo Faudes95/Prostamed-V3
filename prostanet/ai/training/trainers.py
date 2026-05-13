@@ -287,7 +287,14 @@ def train_deep_surv(
             event = batch["event"].to(device)
 
             optimizer.zero_grad(set_to_none=True)
-            log_hr = model.risk_network(features).squeeze(-1)
+            # EPIC 17a bugfix: risk_network es la representación compartida
+            # (size hidden_dim=32), NO el log-hazard escalar. Sin pasar por
+            # endpoint_heads, la "log_hr" era un embedding 32-dim. cox_ph_loss
+            # broadcasts mal cuando batch_size==32 (mismo dim accidental) y
+            # produce loss = ~80 sin gradiente útil hacia la cabeza endpoint.
+            # Fix: usar model.forward() que aplica endpoint_heads.
+            output = model(features, endpoint=endpoint)
+            log_hr = output["log_hazard_ratio"].squeeze(-1)
             loss = cox_ph_loss(log_hr, time, event)
             if torch.isnan(loss):
                 continue

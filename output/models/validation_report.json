@@ -84,5 +84,10 @@
     },
     "evaluated": 500,
     "errors": 0
+  },
+  "deep_surv_os": {
+    "c_index": 0.5223,
+    "evaluated": 500,
+    "events_observed": 97
   }
 }

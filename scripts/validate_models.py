@@ -109,12 +109,19 @@ def main() -> None:
             try:
                 features = TreatmentResponsePredictor._extract_patient_features(p)
                 feat_tensor = torch.tensor([features], dtype=torch.float32)
-                log_hr = surv_model.risk_network(feat_tensor).item()
+                # EPIC 17a bugfix: risk_network es el embedding (hidden_dim),
+                # NO el log-hazard escalar. Pasar por forward() que aplica
+                # endpoint_heads["OS"] para obtener log_hr [1,1] → .item().
+                with torch.no_grad():
+                    output = surv_model(feat_tensor, endpoint="OS")
+                log_hr = output["log_hazard_ratio"].squeeze().item()
                 risks.append(log_hr)
                 times.append(float(time_val))
                 events.append(int(event))
-            except Exception:
-                pass
+            except Exception as exc:
+                # EPIC 17a: log para diagnosticar futuras regresiones en lugar
+                # de tragar silenciosamente.
+                logger.debug("DeepSurv risk extraction failed: %s", exc)
 
         if risks:
             c_idx = concordance_index(risks, times, events)

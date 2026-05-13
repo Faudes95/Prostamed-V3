@@ -183,11 +183,15 @@ def main() -> None:
         from prostanet.ai.training.trainers import train_deep_surv
 
         t0 = time.perf_counter()
+        # EPIC 17a: Cox PH partial likelihood usa el batch como risk set;
+        # batch_size grande mejora la estimación. lr=1e-2 también acelera
+        # convergencia del log-hazard escalar (post EPIC 17a fix).
         surv_result = train_deep_surv(
             records=patients,
             endpoint="OS",
             epochs=args.epochs,
-            batch_size=args.batch_size,
+            batch_size=max(args.batch_size, 64),
+            lr=1e-2,
             output_dir=output_dir,
         )
         surv_time = time.perf_counter() - t0
