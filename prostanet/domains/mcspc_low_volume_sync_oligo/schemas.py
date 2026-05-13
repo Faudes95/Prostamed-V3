@@ -3,6 +3,8 @@ from __future__ import annotations
 from prostanet.shared.contracts import FieldSpec, module_schema
 from prostanet.shared.advanced_support_fields import (
     advanced_adt_timeline_fields,
+    advanced_bone_turnover_fields,
+    advanced_cardio_fields,
     advanced_chemotherapy_fitness_fields,
     advanced_cognitive_fields,
     advanced_ddi_fields,
@@ -158,5 +160,11 @@ MCSPC_LOW_VOLUME_SCHEMA = module_schema(
         *pivotal_contraindication_fields(role="decision_refiner", group_order=80),
         # ── Soportes pivotal gates 56-70 (Faubot LXXV/LXXVI/LXXVII #67A/B/C) ──
         *pivotal_gate_supporting_fields(role="decision_refiner", group_order=81),
+        # ── EPIC 10B fix — Cardio-cognitivo + mineral óseo ──
+        # Replica del fix EPIC 10B (ver m1_crpc/schemas.py). Cubre triggers
+        # huérfanos de NYHA/LVEF/QTc/MMSE/MOCA/ionized_calcium aplicables
+        # en mHSPC bajo volumen oligo donde se inicia ARPI/ADT frontline.
+        *advanced_cardio_fields(group="Cardio-cognitivo basal y dinámica", group_order=82),
+        *advanced_bone_turnover_fields(group="Soporte óseo y mineral", group_order=83),
     ],
 )

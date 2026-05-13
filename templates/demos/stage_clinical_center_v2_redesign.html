@@ -542,6 +542,10 @@
         {# Main canvas (center) #}
         <main id="main-content" class="pm2-main" tabindex="-1">
 
+            {# EPIC 10C+ accessibility — H1 landmark único requerido por WCAG 2.4.6.
+               Las 7 stage headers degradadas a <h2> para preservar jerarquía. #}
+            <h1 class="sr-only">Centro Clínico · ProstaMed (multi-etapa NCCN/EAU)</h1>
+
             {# Cohort filter bar (cross-stage) — LXCVIII.B addition #}
             <div class="pm2-cohort-filter-bar" style="padding: 0.75rem 1.5rem 0;">
                 <span class="pm2-cohort-filter-label">Filtrar cohorte:</span>
@@ -679,7 +683,11 @@
                             <span class="pm2-guideline-badge pm2-guideline-badge--eau">EAU {{ stage_meta.eau }} · 2026</span>
                             {% endif %}
                         </div>
-                        <h1 class="pm2-stage-header-title">{{ canvas.title }}</h1>
+                        {# EPIC 10C+ accessibility — stage header degradada a H2.
+                           El H1 único global vive al inicio del <main>. Esto
+                           preserva el visual styling (CSS class no cambia) y
+                           cumple WCAG 2.4.6 (exactamente 1 H1 por página). #}
+                        <h2 class="pm2-stage-header-title">{{ canvas.title }}</h2>
                         <p class="pm2-stage-header-sub">{{ canvas.subtitle }}</p>
                     </div>
                     <div class="pm2-quick-actions">

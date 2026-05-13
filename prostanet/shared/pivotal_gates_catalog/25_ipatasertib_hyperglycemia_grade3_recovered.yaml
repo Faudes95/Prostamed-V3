@@ -23,3 +23,8 @@ message: |
 evidence_tag: ipatential150_hyperglycemia
 trial_refs:
   - IPATential150
+
+# EPIC 10G — Alignment regulatorio explícito (FDA Pre-Sub structured)
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Investigational AKT/PI3K pathway (PTEN-loss subgroup)"
+  eau_section: "EAU 2026 §6.5.6 — PTEN pathway targeted therapy"

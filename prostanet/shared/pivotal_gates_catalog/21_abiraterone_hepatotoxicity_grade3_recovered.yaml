@@ -25,3 +25,8 @@ trial_refs:
   - LATITUDE
   - COU-AA-301
   - COU-AA-302
+
+# EPIC 10G — Alignment regulatorio explícito (FDA Pre-Sub structured)
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Abiraterone safety hepatic monitoring"
+  eau_section: "EAU 2026 §6.6.4 — Abiraterone hepatotoxicity grade 3 management"

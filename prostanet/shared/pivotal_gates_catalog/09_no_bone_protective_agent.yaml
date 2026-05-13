@@ -80,3 +80,8 @@ references:
   - Smith MR et al. ERA-223 trial. Lancet Oncol 2019;20:408.
   - Tombal B et al. PEACE-3 trial. ESMO 2024.
   - Xofigo (Ra-223) FDA prescribing information. Bayer 2024.
+
+# EPIC 10G — Alignment regulatorio explícito (FDA Pre-Sub structured)
+nccn_eau_alignment:
+  nccn_section: "PROS-N v5.2026 — Bone-targeted therapy prerequisites"
+  eau_section: "EAU 2026 §6.5.5 — Bone health management"

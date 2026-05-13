@@ -41,6 +41,9 @@
             </div>
         </header>
 
+        {# ── EPIC 10C accessibility fix — H1 landmark requerido por WCAG 2.4.6 ── #}
+        <h1 class="sr-only">Tablero clínico ejecutivo · ProstaMed</h1>
+
         {# ── Hero KPIs row ── #}
         <section class="pm2-kpi-row" aria-label="KPIs ejecutivos">
             {% for kpi in kpis %}

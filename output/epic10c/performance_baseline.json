@@ -1,0 +1,143 @@
+{
+  "html": [
+    {
+      "ok": true,
+      "path": "/clinical-hub",
+      "samples": 20,
+      "status_codes_unique": [
+        200
+      ],
+      "size_bytes_median": 125931,
+      "p50_ms": 38.27,
+      "p95_ms": 40.52,
+      "p99_ms": 41.51,
+      "min_ms": 37.22,
+      "max_ms": 41.75,
+      "mean_ms": 38.64,
+      "label": "Centro cl\u00ednico",
+      "endpoint_class": "html"
+    },
+    {
+      "ok": true,
+      "path": "/patient_intake",
+      "samples": 20,
+      "status_codes_unique": [
+        302
+      ],
+      "size_bytes_median": 257,
+      "p50_ms": 0.19,
+      "p95_ms": 0.22,
+      "p99_ms": 0.24,
+      "min_ms": 0.19,
+      "max_ms": 0.24,
+      "mean_ms": 0.2,
+      "label": "Intake progresivo",
+      "endpoint_class": "html"
+    },
+    {
+      "ok": true,
+      "path": "/dashboard",
+      "samples": 20,
+      "status_codes_unique": [
+        200
+      ],
+      "size_bytes_median": 52015,
+      "p50_ms": 22486.14,
+      "p95_ms": 25297.83,
+      "p99_ms": 26150.44,
+      "min_ms": 21246.3,
+      "max_ms": 26363.59,
+      "mean_ms": 22972.88,
+      "label": "Dashboard ejecutivo (deuda EPIC 10D)",
+      "endpoint_class": "html"
+    }
+  ],
+  "api": [
+    {
+      "ok": true,
+      "path": "/api/stats",
+      "samples": 20,
+      "status_codes_unique": [
+        200
+      ],
+      "size_bytes_median": 146,
+      "p50_ms": 2.73,
+      "p95_ms": 3.12,
+      "p99_ms": 3.42,
+      "min_ms": 2.44,
+      "max_ms": 3.5,
+      "mean_ms": 2.79,
+      "label": "Estad\u00edsticas agregadas",
+      "endpoint_class": "api"
+    },
+    {
+      "ok": true,
+      "path": "/api/decision-audit/algorithm-version",
+      "samples": 20,
+      "status_codes_unique": [
+        200
+      ],
+      "size_bytes_median": 13161,
+      "p50_ms": 2.02,
+      "p95_ms": 2.22,
+      "p99_ms": 2.27,
+      "min_ms": 1.95,
+      "max_ms": 2.28,
+      "mean_ms": 2.05,
+      "label": "FAUBOT release + SHAs",
+      "endpoint_class": "api"
+    },
+    {
+      "ok": true,
+      "path": "/api/modules/m1_crpc/schema",
+      "samples": 20,
+      "status_codes_unique": [
+        200
+      ],
+      "size_bytes_median": 817657,
+      "p50_ms": 365.49,
+      "p95_ms": 385.89,
+      "p99_ms": 400.34,
+      "min_ms": 363.41,
+      "max_ms": 403.95,
+      "mean_ms": 370.18,
+      "label": "Schema m1CRPC",
+      "endpoint_class": "api"
+    },
+    {
+      "ok": true,
+      "path": "/api/modules/m0_crpc/schema",
+      "samples": 20,
+      "status_codes_unique": [
+        200
+      ],
+      "size_bytes_median": 744874,
+      "p50_ms": 337.13,
+      "p95_ms": 349.51,
+      "p99_ms": 368.03,
+      "min_ms": 333.26,
+      "max_ms": 372.66,
+      "mean_ms": 340.03,
+      "label": "Schema m0CRPC",
+      "endpoint_class": "api"
+    },
+    {
+      "ok": true,
+      "path": "/api/modules/post_prostatectomy/schema",
+      "samples": 20,
+      "status_codes_unique": [
+        200
+      ],
+      "size_bytes_median": 718445,
+      "p50_ms": 315.5,
+      "p95_ms": 323.47,
+      "p99_ms": 337.17,
+      "min_ms": 314.73,
+      "max_ms": 340.59,
+      "mean_ms": 318.05,
+      "label": "Schema post-prostatectomy",
+      "endpoint_class": "api"
+    }
+  ],
+  "samples_per_endpoint": 20
+}

@@ -3,6 +3,8 @@ from __future__ import annotations
 from prostanet.shared.contracts import FieldSpec, module_schema
 from prostanet.shared.advanced_support_fields import (
     advanced_adt_timeline_fields,
+    advanced_bone_turnover_fields,
+    advanced_cardio_fields,
     advanced_cognitive_fields,
     advanced_ddi_fields,
     advanced_hepatic_fields,
@@ -92,5 +94,12 @@ M0_CRPC_SCHEMA = module_schema(
         # Captura UI de fields para gates de RP-vs-RT subspecialty, genomic
         # critical (HRR/AR-V7/CDK12/HRD/MSI), pre-dx atypical (NEPC/emergency).
         *pivotal_gate_supporting_fields(role="decision_refiner", group_order=81),
+        # ── EPIC 10B fix — Cardio-cognitivo + mineral óseo ──
+        # Replica del fix EPIC 10B (ver m1_crpc/schemas.py). m0CRPC es
+        # entry point de ARPI frontline (SPARTAN/PROSPER/ARAMIS) — captura
+        # baseline NYHA/LVEF/QTc/MMSE/MOCA es esencial para detectar
+        # contraindicaciones cardio-cognitivas antes de iniciar terapia.
+        *advanced_cardio_fields(group="Cardio-cognitivo basal y dinámica", group_order=82),
+        *advanced_bone_turnover_fields(group="Soporte óseo y mineral", group_order=83),
     ],
 )

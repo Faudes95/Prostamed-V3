@@ -25,3 +25,8 @@ message: |
 evidence_tag: magnitude_niraparib_thrombocytopenia
 trial_refs:
   - MAGNITUDE
+
+# EPIC 10G — Alignment regulatorio explícito (FDA Pre-Sub structured)
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — PARP inhibitor safety (niraparib hematologic toxicity)"
+  eau_section: "EAU 2026 §6.5.6 — HRR targeted therapy thrombocytopenia monitoring"

@@ -3,6 +3,8 @@ from __future__ import annotations
 from prostanet.shared.contracts import FieldSpec, module_schema
 from prostanet.shared.advanced_support_fields import (
     advanced_adt_timeline_fields,
+    advanced_bone_turnover_fields,
+    advanced_cardio_fields,
     advanced_chemotherapy_fitness_fields,
     advanced_cognitive_fields,
     advanced_ddi_fields,
@@ -212,6 +214,15 @@ def _build_schema(module_id: str, title: str, description: str) -> dict:
             # Captura UI de fields para gates RP-vs-RT subspecialty, genomic
             # critical (HRR/AR-V7/CDK12/HRD/MSI), pre-dx atypical (NEPC/emergency).
             *pivotal_gate_supporting_fields(role="decision_refiner", group_order=81),
+            # ── EPIC 10B fix — Cableado cardio-cognitivo y mineral óseo ──
+            # Replica del fix EPIC 10B aplicado a m1_crpc/schemas.py. Estos
+            # helpers están definidos pero no se invocaban en mhspc, dejando
+            # huérfanos los triggers de NYHA III-IV (abiraterona/enzalutamida),
+            # LVEF<40% (apalutamida), QTc ms basal+dynamic (enzalutamida),
+            # MMSE/MOCA cognición (ARSIs), e ionized_calcium (Ra-223). Crítico
+            # en mHSPC porque aquí es donde se inicia ARPI/quimio frontline.
+            *advanced_cardio_fields(group="Cardio-cognitivo basal y dinámica", group_order=82),
+            *advanced_bone_turnover_fields(group="Soporte óseo y mineral", group_order=83),
         ],
     )
 

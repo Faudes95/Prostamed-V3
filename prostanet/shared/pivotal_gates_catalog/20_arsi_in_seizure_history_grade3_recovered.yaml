@@ -28,3 +28,8 @@ evidence_tag: arsi_seizure_label_warning
 trial_refs:
   - PROSPER
   - SPARTAN
+
+# EPIC 10G — Alignment regulatorio explícito (FDA Pre-Sub structured)
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — ARPI safety profile (enzalutamide/apalutamide seizure risk)"
+  eau_section: "EAU 2026 §6.6.3 — ARPI sequencing neurologic precautions"

@@ -71,3 +71,8 @@ references:
   - Chi KN et al. MAGNITUDE. NEJM 2023.
   - Agarwal N et al. TALAPRO-2. Lancet 2023;402:291.
   - Fizazi K et al. TRITON-3. NEJM 2023;388:719.
+
+# EPIC 10G — Alignment regulatorio explícito (FDA Pre-Sub structured)
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — HRR genomic pathway PARPi safety"
+  eau_section: "EAU 2026 §6.5.6 — HRR targeted therapy hematologic monitoring"

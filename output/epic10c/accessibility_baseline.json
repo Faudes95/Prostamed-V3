@@ -1,0 +1,77 @@
+{
+  "pages": [
+    {
+      "path": "/clinical-hub",
+      "label": "Centro cl\u00ednico",
+      "ok": true,
+      "status_code": 200,
+      "violations": [
+        "WCAG_2_4_6: la p\u00e1gina tiene 7 <h1>. Recomendado: exactamente 1."
+      ],
+      "summary": {
+        "html_lang": "es",
+        "title": "Centro Cl\u00ednico \u00b7 ProstaMed v2 (LXCVIII.B redesign)",
+        "title_length": 50,
+        "images_total": 1,
+        "images_missing_alt": 0,
+        "inputs_total": 0,
+        "inputs_unlabeled": 0,
+        "headings_total": 32,
+        "h1_count": 7,
+        "links_total": 35,
+        "links_empty": 0,
+        "buttons_total": 28,
+        "buttons_empty": 0,
+        "skip_link_present": true
+      }
+    },
+    {
+      "path": "/patient_intake",
+      "label": "Intake progresivo",
+      "ok": true,
+      "status_code": 200,
+      "violations": [
+        "WCAG_2_4_6: la p\u00e1gina tiene 7 <h1>. Recomendado: exactamente 1."
+      ],
+      "summary": {
+        "html_lang": "es",
+        "title": "Centro Cl\u00ednico \u00b7 ProstaMed v2 (LXCVIII.B redesign)",
+        "title_length": 50,
+        "images_total": 1,
+        "images_missing_alt": 0,
+        "inputs_total": 0,
+        "inputs_unlabeled": 0,
+        "headings_total": 32,
+        "h1_count": 7,
+        "links_total": 35,
+        "links_empty": 0,
+        "buttons_total": 28,
+        "buttons_empty": 0,
+        "skip_link_present": true
+      }
+    },
+    {
+      "path": "/dashboard",
+      "label": "Dashboard ejecutivo",
+      "ok": true,
+      "status_code": 200,
+      "violations": [],
+      "summary": {
+        "html_lang": "es",
+        "title": "Tablero Cl\u00ednico \u00b7 ProstaMed v2 demo",
+        "title_length": 35,
+        "images_total": 1,
+        "images_missing_alt": 0,
+        "inputs_total": 0,
+        "inputs_unlabeled": 0,
+        "headings_total": 17,
+        "h1_count": 1,
+        "links_total": 12,
+        "links_empty": 0,
+        "buttons_total": 7,
+        "buttons_empty": 0,
+        "skip_link_present": true
+      }
+    }
+  ]
+}

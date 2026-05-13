@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from prostanet.shared.contracts import FieldSpec, module_schema
 from prostanet.shared.advanced_support_fields import (
+    advanced_bone_turnover_fields,
+    advanced_cardio_fields,
     advanced_io_safety_fields,
     oncologic_emergency_fields,
     pivotal_gate_supporting_fields,
@@ -147,5 +149,11 @@ POST_PROSTATECTOMY_SCHEMA = module_schema(
         # Captura UI: BCR aggressive (gates 53-55), salvage RT (gate 70),
         # atypical histology post-RP (gate 67 IDC/cribriform), trial enrollment.
         *pivotal_gate_supporting_fields(role="decision_refiner", group_order=81),
+        # ── EPIC 10B fix — Cardio-cognitivo + mineral óseo ──
+        # Replica del fix EPIC 10B (ver m1_crpc/schemas.py). Aplica en
+        # post-RP cuando hay BCR y se evalúa salvage ADT/ARPI (EMBARK,
+        # GETUG-AFU 16) — necesita baseline NYHA/LVEF/QTc/MMSE/MOCA.
+        *advanced_cardio_fields(group="Cardio-cognitivo basal y dinámica", group_order=82),
+        *advanced_bone_turnover_fields(group="Soporte óseo y mineral", group_order=83),
     ],
 )

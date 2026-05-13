@@ -18,3 +18,8 @@ message: |
 evidence_tag: saad_lancet_oncol_2024_aranote
 trial_refs:
   - ARANOTE
+
+# EPIC 10G — Alignment regulatorio explícito (FDA Pre-Sub structured)
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — mHSPC ARPI sequencing"
+  eau_section: "EAU 2026 §6.6.4 — mHSPC intensification"

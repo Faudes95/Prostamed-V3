@@ -47,3 +47,8 @@ references:
 nccn_eau_alignment:
   nccn_section: "PROS-G v5.2026 — ARPI sequencing"
   eau_section: "EAU 2026 §6.6.4 — mHSPC intensification"
+
+# EPIC 10G — Alignment regulatorio explícito (FDA Pre-Sub structured)
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — mHSPC ARPI sequencing"
+  eau_section: "EAU 2026 §6.6.4 — mHSPC intensification"

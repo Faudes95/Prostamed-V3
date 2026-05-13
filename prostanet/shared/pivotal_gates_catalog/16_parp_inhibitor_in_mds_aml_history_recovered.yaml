@@ -31,3 +31,8 @@ trial_refs:
   - PROfound
   - MAGNITUDE
   - TALAPRO-2
+
+# EPIC 10G — Alignment regulatorio explícito (FDA Pre-Sub structured)
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — HRR genomic pathway PARPi contraindications"
+  eau_section: "EAU 2026 §6.5.6 — HRR targeted therapy myeloid neoplasm warning"

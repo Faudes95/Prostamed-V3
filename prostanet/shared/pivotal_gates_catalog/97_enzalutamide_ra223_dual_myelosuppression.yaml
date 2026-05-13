@@ -132,3 +132,8 @@ trial_refs:
   - "ERA-223 (Smith Lancet Oncol 2019;20:408 - terminated early)"
   - "Xofigo + ARPI safety FDA communication 2024"
   - "EAU 2026 §6.5 Theranostics combinations"
+
+# EPIC 10G — Alignment regulatorio explícito (FDA Pre-Sub structured)
+nccn_eau_alignment:
+  nccn_section: "PROS-N v5.2026 — Bone-targeted + ARPI combination safety (ERA-223 myelosuppression)"
+  eau_section: "EAU 2026 §6.5.5 — Theranostic combinations bone marrow toxicity"

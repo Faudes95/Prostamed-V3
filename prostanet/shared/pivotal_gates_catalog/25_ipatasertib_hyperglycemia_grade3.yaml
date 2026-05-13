@@ -156,3 +156,8 @@ nccn_eau_alignment:
   nccn_section: "PROS-G v5.2026 — AKT inhibitors + glycemic monitoring"
   eau_section: "EAU 2026 §6.5.10 — PI3K/AKT pathway inhibitors safety"
   ada_section: "ADA Standards 2024 — Drug-induced hyperglycemia management"
+
+# EPIC 10G — Alignment regulatorio explícito (FDA Pre-Sub structured)
+nccn_eau_alignment:
+  nccn_section: "PROS-G v5.2026 — Investigational AKT/PI3K pathway (PTEN-loss subgroup)"
+  eau_section: "EAU 2026 §6.5.6 — PTEN pathway targeted therapy"

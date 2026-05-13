@@ -3,6 +3,8 @@ from __future__ import annotations
 from prostanet.shared.contracts import FieldSpec, module_schema
 from prostanet.shared.advanced_support_fields import (
     advanced_adt_timeline_fields,
+    advanced_bone_turnover_fields,
+    advanced_cardio_fields,
     advanced_chemotherapy_fitness_fields,
     advanced_cognitive_fields,
     advanced_ddi_fields,
@@ -17,6 +19,9 @@ from prostanet.shared.advanced_support_fields import (
     oncologic_emergency_fields,
     pivotal_contraindication_fields,
     pivotal_gate_supporting_fields,
+)
+from prostanet.shared.pivotal_gate_manual_override_fields import (
+    pivotal_gate_manual_override_fields,
 )
 
 
@@ -206,5 +211,34 @@ M1_CRPC_SCHEMA = module_schema(
         # Captura UI de fields para gates de RP-vs-RT subspecialty, genomic
         # critical (HRR/AR-V7/CDK12/HRD/MSI), pre-dx atypical (NEPC/emergency).
         *pivotal_gate_supporting_fields(role="decision_refiner", group_order=81),
+        # ── EPIC 10B fix — Cableado cardio-cognitivo y minerales óseos ──
+        # advanced_cardio_fields y advanced_bone_turnover_fields contienen
+        # los FieldSpecs canónicos (`nyha_class`, `lvef_percent`,
+        # `qtc_change_ms`, `mmse_baseline/current`, `moca_baseline/current`,
+        # `ionized_calcium`, etc.) pero no estaban siendo invocados en
+        # ningún schema, dejando 7 hard-blocks pivotales con triggers
+        # huérfanos (NUNCA disparaban con datos reales). Detectado por
+        # `tests/test_epic10b_gate_field_coverage.py`.
+        *advanced_cardio_fields(group="Cardio-cognitivo basal y dinámica", group_order=82),
+        *advanced_bone_turnover_fields(group="Soporte óseo y mineral", group_order=83),
+        # ── EPIC 10B fix — Aliases canónicos para gates pivotales ──
+        # Resuelve el naming drift detectado entre el catálogo YAML
+        # (`hemoglobin`, `mds_history`, `aml_history`, `clinical_t_stage`)
+        # y los helpers canónicos (`hemoglobin_g_dl`, `prior_mds`,
+        # `prior_aml`, `clinical_tstage`). Declaramos los aliases como
+        # FieldSpecs explícitos para que el audit los reconozca y el
+        # runtime pueda recibir cualquier naming.
+        FieldSpec("hemoglobin", "Hemoglobina (g/dL) — alias EPIC 10B", "number", default="", group="Aliases canónicos EPIC 10B", group_order=84, clinical_role="decision_refiner", unit="g/dL", evidence_tags=["epic10b_alias", "halabi"], help_text="Alias de hemoglobin_g_dl. Aceptado por gates pivotales (cabazitaxel/lutetium Hb drop). Captura idéntica."),
+        FieldSpec("mds_history", "Historia de SMD — alias EPIC 10B", "select", options=["0", "1", "Desconocido"], default="Desconocido", group="Aliases canónicos EPIC 10B", group_order=84, clinical_role="decision_refiner", evidence_tags=["epic10b_alias", "parp_safety"], help_text="Alias de prior_mds/mds_aml_history. Contraindica PARPi."),
+        FieldSpec("aml_history", "Historia de LMA — alias EPIC 10B", "select", options=["0", "1", "Desconocido"], default="Desconocido", group="Aliases canónicos EPIC 10B", group_order=84, clinical_role="decision_refiner", evidence_tags=["epic10b_alias", "parp_safety"], help_text="Alias de prior_aml/mds_aml_history. Contraindica PARPi."),
+        FieldSpec("clinical_t_stage", "Estadio clínico T (cT) — alias EPIC 10B", "select", options=["", "T1a", "T1b", "T1c", "T2a", "T2b", "T2c", "T3a", "T3b", "T4"], default="", group="Aliases canónicos EPIC 10B", group_order=84, clinical_role="decision_refiner", evidence_tags=["epic10b_alias", "ajcc_8"], help_text="Alias de clinical_tstage. Captura TNM cT directamente con prefix clínico."),
+        # ── EPIC 10F — Manual override flags para gates pivotales ──
+        # 59 FieldSpecs flag (select 0/1) que declaran procedimientos
+        # explícitos del clínico (consultas, planes, monitoreo) que activan
+        # override de hard-blocks pivotales. Cierra los 20 gates huérfanos
+        # restantes del audit EPIC 10B detectados como "override strings
+        # narrativos no capturables". Cada flag traza al gate específico
+        # vía evidence_tags. Ver prostanet/shared/pivotal_gate_manual_override_fields.py.
+        *pivotal_gate_manual_override_fields(group_order=85),
     ],
 )
