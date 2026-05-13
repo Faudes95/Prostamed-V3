@@ -942,6 +942,8 @@ def build_gap_intelligence(*, patient_limit: int = 35) -> dict[str, Any]:
     candidates.extend(_compliance_candidates(context))
     candidates.extend(_loop_monitor_candidates(context))
     candidates.extend(_security_candidates(context))
+    # EPIC 18: surface external evidence deltas detected by weekly refresh.
+    candidates.extend(_evidence_delta_candidates(context))
     candidates = _dedupe_candidates(candidates)
     candidates = rank_candidates(candidates)
     reviews = load_proposal_reviews()
@@ -7745,6 +7747,72 @@ def _security_candidates(context: Mapping[str, Any]) -> list[dict[str, Any]]:
             rollback="Set AGENTIC_AUTO_MERGE=false.",
         )))
     return out
+
+
+def _evidence_delta_candidates(context: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """EPIC 18: Surface evidence deltas detected by external delta check.
+
+    Reads the latest `output/regulatory/evidence_delta_*.md` and creates a
+    Loop Monitor candidate if the report contains ≥1 delta. The candidate
+    is `pending_human_review` and recommends clinical team triage before
+    re-marking manifest records as `fresh`.
+    """
+    delta_dir = PROJECT_ROOT / "output" / "regulatory"
+    if not delta_dir.exists():
+        return []
+    delta_reports = sorted(delta_dir.glob("evidence_delta_*.md"))
+    if not delta_reports:
+        return []
+    latest = delta_reports[-1]
+    try:
+        content = latest.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    # Parse "**Total deltas detected:** N" line
+    delta_count = 0
+    for line in content.splitlines():
+        if "Total deltas detected:" in line:
+            try:
+                delta_count = int(line.split(":")[-1].strip().replace("**", "").strip())
+            except (ValueError, IndexError):
+                pass
+            break
+    if delta_count == 0:
+        return []
+    # Detect high-impact trials in deltas (clinical priority boost)
+    high_impact_trials = {
+        "CHAARTED", "ARASENS", "ARCHES", "ENZAMET", "LATITUDE", "STAMPEDE",
+        "PEACE-1", "TITAN", "EMBARK", "VISION", "TheraP", "PROfound", "PROpel",
+        "MAGNITUDE", "TALAPRO-2", "ARAMIS", "SPARTAN", "PROSPER",
+    }
+    impacted_high = [t for t in high_impact_trials if t in content]
+    priority_boost = 2 if impacted_high else 0
+    return [_candidate(
+        lane="evidence_gap",
+        title=f"EPIC 18: {delta_count} evidence source(s) updated externally — clinical review required",
+        description=(
+            f"Weekly external delta check detected {delta_count} update(s) from "
+            f"ClinicalTrials.gov and/or PubMed. Records remain "
+            f"`pending_human_review=True` until clinical team triages the delta "
+            f"report. Affected high-impact trials: {sorted(impacted_high) if impacted_high else 'none'}"
+        ),
+        clinical_impact=7 + priority_boost,
+        severity=6 + priority_boost,
+        effort_h=1.5,
+        risk_avoided=(
+            "Avoids citing stale clinical evidence in shared decision making and FDA "
+            "Pre-Sub Q-Sub submissions when external sources (long-term follow-ups, "
+            "label updates, retractions) have moved."
+        ),
+        source="epic15_evidence_refresh.external_delta_check",
+        evidence=[str(latest)],
+        tests_required=[
+            "test_epic18_loop_monitor_surfaces_evidence_delta_candidate",
+        ],
+        surfaces=["evidence_freshness_manifest", "loop_monitor", "pillar_5_clinical"],
+        agent_lane="evidence_curator",
+        rollback="No code change required — delta report is informational only.",
+    )]
 
 
 def _candidate(**kwargs: Any) -> dict[str, Any]:

@@ -5,12 +5,20 @@ epic: EPIC 15 — evidence currentness manifest
 review_policy:
   fresh_threshold_days: 90
   stale_threshold_days: 365
-  weekly_refresh_target: Scheduled via /schedule weekly cron (skill pubmed-database)
+  weekly_refresh_target: Scheduled via mcp__scheduled-tasks weekly cron (EPIC 18)
   review_scope: Scan pivotal_gates_catalog trial_refs + NCCN/EAU section versions
+  # EPIC 18: external delta check via ClinicalTrials.gov v2 + PubMed E-utilities
+  external_delta_check_enabled: true
+  external_delta_sources:
+    - clinicaltrials.gov v2 (NCT-mapped trials only)
+    - PubMed E-utilities esearch (acronym/title)
+  honest_update_policy: Records with external delta detected stay pending_human_review=True;
+    last_reviewed is NOT auto-overwritten until clinical team triages delta.
 declarations:
   no_invented_pmids: true
   no_claim_pubmed_api_realtime: true
-  scheduled_review_only: true
+  scheduled_review_only: false  # EPIC 18: external_validated_review now possible
+  external_delta_check_active: true  # EPIC 18
   scope: internal_shadow_observational_validation
 totals:
   unique_trials_or_sources: 322
