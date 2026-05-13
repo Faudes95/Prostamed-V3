@@ -20,6 +20,12 @@ ADT_PROGRESSION_VERIFICATION_SCHEMA = module_schema(
             clinical_role="required",
             evidence_tags=["adt_verification"],
         ),
+        # EPIC 14a smart-form: last_adt_date solo aplica cuando hay ADT activa
+        # (medical o intermittent). Si current_adt_context == "orchiectomy" o
+        # "none", el campo de fecha no es clínicamente significativo (orchiectomy
+        # es permanente; "none" no tiene historial reciente).
+        # Beneficio clínico: reduce form fatigue + evita captura de fechas
+        # irrelevantes que después confunden el motor de progresión bajo ADT.
         FieldSpec(
             "last_adt_date",
             "Fecha de la última administración de ADT",
@@ -28,6 +34,7 @@ ADT_PROGRESSION_VERIFICATION_SCHEMA = module_schema(
             group_order=1,
             clinical_role="monitoring",
             evidence_tags=["adt_verification"],
+            conditional_visibility={"current_adt_context": ["medical_adt_continuous", "intermittent_adt"]},
         ),
         FieldSpec(
             "orchiectomy_status",
@@ -85,6 +92,11 @@ ADT_PROGRESSION_VERIFICATION_SCHEMA = module_schema(
             unit="ng/mL",
             evidence_tags=["psa_kinetics"],
         ),
+        # EPIC 14a smart-form: psadt_months solo es clínicamente determinante
+        # cuando el patrón es biochemical_only o mixed. En progresión
+        # radiográfica/clínica pura, PSADT es secundario al hallazgo objetivo.
+        # Beneficio clínico: enfoca la captura en el predictor primario para
+        # cada patrón (nmCRPC PROSPER/SPARTAN/ARAMIS triggers vs RECIST/PCWG3).
         FieldSpec(
             "psadt_months",
             "Tiempo de duplicación del PSA",
@@ -95,6 +107,7 @@ ADT_PROGRESSION_VERIFICATION_SCHEMA = module_schema(
             clinical_role="decision_refiner",
             unit="meses",
             evidence_tags=["psa_kinetics"],
+            conditional_visibility={"progression_pattern": ["biochemical_only", "mixed"]},
         ),
         FieldSpec(
             "conventional_imaging_status",

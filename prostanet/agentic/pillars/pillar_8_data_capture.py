@@ -222,21 +222,46 @@ def _auto_derive_visible() -> tuple[float, list[Gap]]:
     return score, gaps
 
 
+# EPIC 14a: stages que comparten archivo schemas.py con otro stage canónico
+# (inherited via _build_schema() pattern, e.g., mcspc_high_volume produce 3
+# SCHEMAS via factory function). El scorer original reportaba estos como
+# "schema_missing" falso negativo. Mapping: stage_id → archivo schemas.py
+# canónico donde vive la lógica (puede ser otro stage_id).
+_INHERITED_SCHEMA_FILES = {
+    "mcspc_high_volume_sync": "mcspc_high_volume",
+    "mcspc_high_volume_metachronous": "mcspc_high_volume",
+}
+
+
 def _stages_with_complete_capture() -> tuple[float, list[Gap]]:
-    """% of 18 stages where the schema has 'capture_complete' flag flagged."""
-    # Heuristic: schema that has at least 1 conditional_visibility AND
-    # references the longitudinal kinds in service.py or has a stage_form template
+    """% of 18 canonical stages with smart-form coverage (conditional_visibility).
+
+    EPIC 14a fix: el scorer original buscaba `prostanet/domains/<stage>/schemas.py`
+    asumiendo 1 stage = 1 archivo. Pero algunos stages canónicos heredan el
+    schema de otro stage via `_build_schema()` factory (e.g.,
+    mcspc_high_volume_sync y mcspc_high_volume_metachronous heredan de
+    mcspc_high_volume/schemas.py). Ahora el scorer:
+      1. Mira `_INHERITED_SCHEMA_FILES` para encontrar el archivo canónico
+         del stage si difiere de su propio nombre.
+      2. Verifica `conditional_visibility` en ese archivo.
+    """
     complete = 0
+    missing_stages: list[str] = []
     for stage in CANONICAL_STAGES:
-        schema_path = DOMAINS_DIR / stage / "schemas.py"
+        # Resolve which file actually contains the schema logic for this stage.
+        file_stage = _INHERITED_SCHEMA_FILES.get(stage, stage)
+        schema_path = DOMAINS_DIR / file_stage / "schemas.py"
         if not schema_path.exists():
+            missing_stages.append(f"{stage} (schema_missing)")
             continue
         try:
             content = schema_path.read_text(errors="replace")
             if "conditional_visibility" in content:
                 complete += 1
+            else:
+                missing_stages.append(f"{stage} (no_conditional_visibility)")
         except OSError:
-            continue
+            missing_stages.append(f"{stage} (read_error)")
 
     score = complete / len(CANONICAL_STAGES)
     gaps = []
@@ -244,9 +269,12 @@ def _stages_with_complete_capture() -> tuple[float, list[Gap]]:
         gaps.append(Gap(
             pillar_id=8,
             kind="stage_capture_incomplete",
-            description=(f"Stages with conditional_visibility coverage: "
-                          f"{complete}/{len(CANONICAL_STAGES)}. "
-                          f"Stages without smart-form logic produce form fatigue + bad capture."),
+            description=(
+                f"Stages with conditional_visibility coverage: "
+                f"{complete}/{len(CANONICAL_STAGES)}. "
+                f"Stages without smart-form logic produce form fatigue + bad capture. "
+                f"Missing: {missing_stages[:5]}{'...' if len(missing_stages) > 5 else ''}"
+            ),
             severity=7, effort_h=1.5 * (len(CANONICAL_STAGES) - complete),
         ))
     return score, gaps

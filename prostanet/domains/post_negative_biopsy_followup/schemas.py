@@ -14,12 +14,19 @@ POST_NEGATIVE_BIOPSY_SCHEMA = module_schema(
         FieldSpec("psa_history_interval_months", "Intervalo de la serie de PSA", "number", default=12, group="Sospecha actual", group_order=1, clinical_role="monitoring", unit="meses", evidence_tags=["psa_kinetics"]),
         FieldSpec("pirads_score", "Resultado de resonancia magnética multiparamétrica", "select", options=["0", "2", "3", "4", "5"], default="0", group="Imagen actual", group_order=2, clinical_role="decision_refiner", evidence_tags=["mpmri"]),
         FieldSpec("post_biopsy_mri", "Resonancia magnética posterior a biopsia", "select", options=["0", "1"], default="0", group="Imagen actual", group_order=2, clinical_role="decision_refiner", evidence_tags=["mpmri"]),
-        FieldSpec("persistent_lesion_signal", "Persistencia de lesión sospechosa", "select", options=["0", "1"], default="0", group="Imagen actual", group_order=2, clinical_role="decision_refiner", evidence_tags=["mpmri"]),
+        # EPIC 14a smart-form: persistent_lesion_signal solo aplica cuando hay
+        # MRI con PIRADS sospechoso (3-5). Antes always-visible producía form
+        # fatigue + captura incorrecta (clínicos marcaban "0" sin haber visto
+        # MRI). Beneficio clínico: pregunta se muestra solo cuando es relevante.
+        FieldSpec("persistent_lesion_signal", "Persistencia de lesión sospechosa", "select", options=["0", "1"], default="0", group="Imagen actual", group_order=2, clinical_role="decision_refiner", evidence_tags=["mpmri"], conditional_visibility={"pirads_score": ["3", "4", "5"]}),
         FieldSpec("dre_suspicious", "Tacto rectal sospechoso", "select", options=["0", "1"], default="0", group="Exploración clínica", group_order=3, clinical_role="required", evidence_tags=["nccn_primary"]),
         FieldSpec("years_since_negative_biopsy", "Años desde la biopsia benigna", "number", default=1, group="Biopsia previa", group_order=4, clinical_role="required", unit="años", evidence_tags=["negative_biopsy_followup"]),
         FieldSpec("prior_biopsy_date", "Fecha de la biopsia previa", "date", group="Biopsia previa", group_order=4, clinical_role="decision_refiner", evidence_tags=["negative_biopsy_followup"]),
         FieldSpec("prior_biopsy_type", "Tipo de biopsia previa", "select", options=["Sistemática", "Dirigida", "Fusión", "Desconocida"], default="Sistemática", group="Biopsia previa", group_order=4, clinical_role="decision_refiner", evidence_tags=["negative_biopsy_followup"]),
-        FieldSpec("prior_biopsy_mri_targeted", "Biopsia previa guiada por MRI", "select", options=["0", "1"], default="0", group="Biopsia previa", group_order=4, clinical_role="decision_refiner", evidence_tags=["negative_biopsy_followup"]),
+        # EPIC 14a smart-form: prior_biopsy_mri_targeted solo aplica cuando la
+        # biopsia previa fue Fusión o Dirigida (sistemática no usa MRI guidance).
+        # Beneficio clínico: evita asumption errors cuando biopsia fue sistemática.
+        FieldSpec("prior_biopsy_mri_targeted", "Biopsia previa guiada por MRI", "select", options=["0", "1"], default="0", group="Biopsia previa", group_order=4, clinical_role="decision_refiner", evidence_tags=["negative_biopsy_followup"], conditional_visibility={"prior_biopsy_type": ["Fusión", "Dirigida"]}),
         FieldSpec("prior_biopsy_count", "Número de biopsias previas", "number", default=1, group="Biopsia previa", group_order=4, clinical_role="decision_refiner", unit="biopsias", evidence_tags=["negative_biopsy_followup"]),
         FieldSpec("repeat_biopsy_trigger", "Motivo de rebiopsia", "select", options=["PSA/PSAD", "MRI persistente", "Tacto rectal", "Historia familiar", "Sin criterio"], default="PSA/PSAD", group="Motivo de reactivación", group_order=5, clinical_role="decision_refiner", evidence_tags=["negative_biopsy_followup"]),
         FieldSpec("family_history_positive", "Historia familiar relevante", "select", options=["0", "1"], default="0", group="Motivo de reactivación", group_order=5, clinical_role="decision_refiner", evidence_tags=["family_history"]),
