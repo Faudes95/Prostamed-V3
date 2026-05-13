@@ -104,6 +104,38 @@ TRIAL_NCT_REGISTRY: dict[str, str] = {
     "VISION": "NCT03511664",
 }
 
+# EPIC 18b: curated mapping trial → drug(s) para OpenFDA drug/label queries.
+# Solo trials con drug específico identificable. Multi-arm trials (STAMPEDE)
+# se mapean al drug primary del current pivotal arm. Combinations agregan
+# todos los componentes.
+TRIAL_DRUG_REGISTRY: dict[str, list[str]] = {
+    "AFFIRM": ["enzalutamide"],
+    "ALSYMPCA": ["radium ra 223 dichloride"],
+    "ARAMIS": ["darolutamide"],
+    "ARASENS": ["darolutamide", "docetaxel"],
+    "ARCHES": ["enzalutamide"],
+    "CARD": ["cabazitaxel"],
+    "CHAARTED": ["docetaxel"],
+    "EMBARK": ["enzalutamide", "leuprolide"],
+    "ENZAMET": ["enzalutamide"],
+    "FIRSTANA": ["cabazitaxel", "docetaxel"],
+    "KEYNOTE-365": ["pembrolizumab"],
+    "LATITUDE": ["abiraterone"],
+    "MAGNITUDE": ["niraparib", "abiraterone"],
+    "PEACE-1": ["abiraterone"],
+    "PREVAIL": ["enzalutamide"],
+    "PROpel": ["olaparib", "abiraterone"],
+    "PROSPER": ["enzalutamide"],
+    "PROfound": ["olaparib"],
+    "SPARTAN": ["apalutamide"],
+    "STAMPEDE": ["abiraterone"],  # current pivotal arm; multi-arm trial
+    "TALAPRO-2": ["talazoparib", "enzalutamide"],
+    "TheraP": ["lutetium lu 177 vipivotide tetraxetan"],
+    "TITAN": ["apalutamide"],
+    "TROPIC": ["cabazitaxel"],
+    "VISION": ["lutetium lu 177 vipivotide tetraxetan"],
+}
+
 
 # ─────────────────── Manifest I/O (EPIC 15 baseline) ───────────────────
 
@@ -246,6 +278,60 @@ def query_clinicaltrials_v2(nct_id: str) -> dict | None:
     }
 
 
+def query_openfda_drug_label(drug_name: str) -> dict | None:
+    """EPIC 18b: OpenFDA drug/label API — get most recent label revision.
+
+    Returns dict with: effective_time (YYYYMMDD), brand_names, boxed_warning,
+    contraindications, indications_and_usage, or None on error.
+
+    API público sin key; rate limit 240 req/min (más generoso que PubMed).
+    Search por generic_name (preferred) or brand_name. Si múltiples results,
+    retorna el más reciente by effective_time.
+    """
+    # Use generic_name search (lowercase, exact phrase)
+    search_term = f'openfda.generic_name:"{drug_name.lower()}"'
+    encoded = urllib_parse.quote(search_term, safe=":()\"")
+    url = f"https://api.fda.gov/drug/label.json?search={encoded}&limit=1&sort=effective_time:desc"
+    data = _http_get_json(url)
+    if not data:
+        return None
+    results = data.get("results") or []
+    if not results:
+        return None
+    label = results[0]
+    openfda = label.get("openfda") or {}
+    return {
+        "drug_name": drug_name,
+        "effective_time": label.get("effective_time"),
+        "brand_names": list(openfda.get("brand_name") or []),
+        "generic_names": list(openfda.get("generic_name") or []),
+        "boxed_warning": _truncate_section(label.get("boxed_warning")),
+        "warnings": _truncate_section(label.get("warnings_and_cautions") or label.get("warnings")),
+        "contraindications": _truncate_section(label.get("contraindications")),
+        "manufacturer_name": list(openfda.get("manufacturer_name") or []),
+        "spl_id": (openfda.get("spl_id") or [None])[0],
+    }
+
+
+def _truncate_section(section: Any, max_chars: int = 400) -> str | None:
+    """Reduce verbose FDA label sections (often arrays of long strings) for delta detection."""
+    if not section:
+        return None
+    if isinstance(section, list):
+        section = " ".join(str(s) for s in section)
+    text = str(section).strip()
+    if len(text) > max_chars:
+        text = text[:max_chars].rstrip() + "..."
+    return text
+
+
+def _openfda_date_to_iso(yyyymmdd: str | None) -> str | None:
+    """OpenFDA effective_time is YYYYMMDD → convert to YYYY-MM-DD for comparison."""
+    if not yyyymmdd or not isinstance(yyyymmdd, str) or len(yyyymmdd) < 8:
+        return None
+    return f"{yyyymmdd[:4]}-{yyyymmdd[4:6]}-{yyyymmdd[6:8]}"
+
+
 def query_pubmed_esearch(
     term: str, mindate: str | None = None, maxdate: str | None = None, retmax: int = 5
 ) -> list[str]:
@@ -334,6 +420,29 @@ def external_delta_check(
                     "pmids": pmids,
                     "mindate": last_reviewed,
                     "url": f"https://pubmed.ncbi.nlm.nih.gov/?term={urllib_parse.quote(trial_name)}",
+                })
+
+        # 3. EPIC 18b: OpenFDA drug labels (when trial maps to drug)
+        drugs = TRIAL_DRUG_REGISTRY.get(trial_name) or []
+        for drug_name in drugs:
+            label = query_openfda_drug_label(drug_name)
+            time.sleep(sleep_sec)
+            if not label:
+                continue
+            effective_iso = _openfda_date_to_iso(label.get("effective_time"))
+            if not effective_iso:
+                continue
+            if last_reviewed and effective_iso > last_reviewed:
+                deltas.append({
+                    "record_id": trial_name,
+                    "source": "openfda",
+                    "delta_type": "drug_label_update",
+                    "drug_name": drug_name,
+                    "effective_time": effective_iso,
+                    "brand_names": label.get("brand_names"),
+                    "has_boxed_warning": bool(label.get("boxed_warning")),
+                    "spl_id": label.get("spl_id"),
+                    "url": f"https://api.fda.gov/drug/label.json?search=openfda.generic_name:\"{drug_name}\"",
                 })
 
         if (idx + 1) % 25 == 0:

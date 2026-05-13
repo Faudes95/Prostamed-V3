@@ -7786,15 +7786,22 @@ def _evidence_delta_candidates(context: Mapping[str, Any]) -> list[dict[str, Any
         "MAGNITUDE", "TALAPRO-2", "ARAMIS", "SPARTAN", "PROSPER",
     }
     impacted_high = [t for t in high_impact_trials if t in content]
+    # EPIC 18b: detectar FDA boxed warning deltas (safety signal crítico)
+    has_fda_boxed_warning = "has_boxed_warning: True" in content or "boxed_warning" in content.lower()
+    has_openfda_source = "openfda" in content.lower()
     priority_boost = 2 if impacted_high else 0
+    if has_fda_boxed_warning:
+        priority_boost = max(priority_boost, 3)  # boxed warning = max priority
     return [_candidate(
         lane="evidence_gap",
         title=f"EPIC 18: {delta_count} evidence source(s) updated externally — clinical review required",
         description=(
             f"Weekly external delta check detected {delta_count} update(s) from "
-            f"ClinicalTrials.gov and/or PubMed. Records remain "
+            f"ClinicalTrials.gov, PubMed and/or OpenFDA drug labels. Records remain "
             f"`pending_human_review=True` until clinical team triages the delta "
-            f"report. Affected high-impact trials: {sorted(impacted_high) if impacted_high else 'none'}"
+            f"report. Affected high-impact trials: {sorted(impacted_high) if impacted_high else 'none'}. "
+            f"FDA label updates detected: {has_openfda_source}. "
+            f"Boxed warning signal: {has_fda_boxed_warning}"
         ),
         clinical_impact=7 + priority_boost,
         severity=6 + priority_boost,

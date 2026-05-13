@@ -128,6 +128,188 @@ def test_epic18_pubmed_esearch_empty_response_returns_empty_list():
     assert pmids == []
 
 
+# ─────────────────── EPIC 18b — OpenFDA drug labels ───────────────────
+
+
+def test_epic18b_drug_registry_covers_pivotal_trials():
+    """TRIAL_DRUG_REGISTRY debe cubrir trials con drug primary identificable."""
+    import epic15_evidence_refresh as mod
+    must_cover = {"CHAARTED", "VISION", "ARASENS", "AFFIRM", "TITAN", "PROfound"}
+    missing = must_cover - set(mod.TRIAL_DRUG_REGISTRY.keys())
+    assert not missing, f"Drug registry missing pivotal trials: {missing}"
+    # CHAARTED debe mapear a docetaxel
+    assert "docetaxel" in mod.TRIAL_DRUG_REGISTRY["CHAARTED"]
+    # VISION debe mapear a lutetium
+    assert any("lutetium" in d.lower() for d in mod.TRIAL_DRUG_REGISTRY["VISION"])
+
+
+def test_epic18b_openfda_drug_label_parses_effective_time():
+    """query_openfda_drug_label debe extraer effective_time + boxed_warning."""
+    import epic15_evidence_refresh as mod
+
+    fake_payload = {
+        "results": [
+            {
+                "effective_time": "20230815",
+                "boxed_warning": ["WARNING: SEVERE CUTANEOUS ADVERSE REACTIONS"],
+                "warnings_and_cautions": ["Long warning text here..."],
+                "contraindications": ["Hypersensitivity to apalutamide"],
+                "openfda": {
+                    "generic_name": ["apalutamide"],
+                    "brand_name": ["Erleada"],
+                    "manufacturer_name": ["Janssen"],
+                    "spl_id": ["abc-123-def"],
+                },
+            }
+        ]
+    }
+    with patch("urllib.request.urlopen", return_value=_mock_response(fake_payload)):
+        result = mod.query_openfda_drug_label("apalutamide")
+    assert result is not None
+    assert result["effective_time"] == "20230815"
+    assert result["boxed_warning"] is not None
+    assert "SEVERE CUTANEOUS" in result["boxed_warning"]
+    assert result["brand_names"] == ["Erleada"]
+    assert result["spl_id"] == "abc-123-def"
+
+
+def test_epic18b_openfda_returns_none_when_no_results():
+    """OpenFDA sin results → None (graceful, no exception)."""
+    import epic15_evidence_refresh as mod
+    fake_payload = {"results": []}
+    with patch("urllib.request.urlopen", return_value=_mock_response(fake_payload)):
+        result = mod.query_openfda_drug_label("nonexistent_drug")
+    assert result is None
+
+
+def test_epic18b_openfda_date_conversion_yyyymmdd_to_iso():
+    """_openfda_date_to_iso debe convertir YYYYMMDD a YYYY-MM-DD."""
+    import epic15_evidence_refresh as mod
+    assert mod._openfda_date_to_iso("20230815") == "2023-08-15"
+    assert mod._openfda_date_to_iso("20260101") == "2026-01-01"
+    assert mod._openfda_date_to_iso(None) is None
+    assert mod._openfda_date_to_iso("invalid") is None
+    assert mod._openfda_date_to_iso("2023") is None  # Too short
+
+
+def test_epic18b_external_delta_check_detects_fda_label_update():
+    """Si OpenFDA reporta effective_time > last_reviewed → delta drug_label_update."""
+    import epic15_evidence_refresh as mod
+
+    # CHAARTED maps to docetaxel — should trigger OpenFDA query
+    manifest = {
+        "records": [
+            {"trial_or_source": "CHAARTED", "last_reviewed": "2022-01-01"},
+        ]
+    }
+    ct_payload = {"protocolSection": {"statusModule": {}}}  # No CT update
+    pm_payload = {"esearchresult": {"idlist": []}}  # No new PubMed
+    fda_payload = {
+        "results": [{
+            "effective_time": "20230815",  # POST 2022-01-01
+            "boxed_warning": None,
+            "warnings_and_cautions": ["Common AEs..."],
+            "openfda": {
+                "generic_name": ["docetaxel"],
+                "brand_name": ["Taxotere"],
+                "spl_id": ["spl-456"],
+            },
+        }]
+    }
+
+    def fake_urlopen(req, timeout=10):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        if "clinicaltrials.gov" in url:
+            return _mock_response(ct_payload)
+        if "eutils.ncbi.nlm.nih.gov" in url:
+            return _mock_response(pm_payload)
+        if "api.fda.gov" in url:
+            return _mock_response(fda_payload)
+        return _mock_response({})
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+         patch("time.sleep", return_value=None):
+        deltas = mod.external_delta_check(manifest, max_records=1, sleep_sec=0)
+
+    fda_deltas = [d for d in deltas if d["source"] == "openfda"]
+    assert len(fda_deltas) == 1, f"Expected 1 OpenFDA delta, got {fda_deltas}"
+    delta = fda_deltas[0]
+    assert delta["drug_name"] == "docetaxel"
+    assert delta["effective_time"] == "2023-08-15"
+    assert delta["record_id"] == "CHAARTED"
+    assert delta["has_boxed_warning"] is False
+
+
+def test_epic18b_external_delta_check_flags_boxed_warning():
+    """Si OpenFDA tiene boxed_warning, delta debe registrar has_boxed_warning=True."""
+    import epic15_evidence_refresh as mod
+
+    manifest = {
+        "records": [
+            {"trial_or_source": "TITAN", "last_reviewed": "2022-01-01"},
+        ]
+    }
+    fda_payload = {
+        "results": [{
+            "effective_time": "20230815",
+            "boxed_warning": ["WARNING: SCAR REACTIONS — apalutamide may cause severe cutaneous adverse reactions including DRESS and SJS"],
+            "openfda": {
+                "generic_name": ["apalutamide"],
+                "brand_name": ["Erleada"],
+                "spl_id": ["abc-789"],
+            },
+        }]
+    }
+
+    def fake_urlopen(req, timeout=10):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        if "api.fda.gov" in url:
+            return _mock_response(fda_payload)
+        if "clinicaltrials.gov" in url:
+            return _mock_response({"protocolSection": {"statusModule": {}}})
+        return _mock_response({"esearchresult": {"idlist": []}})
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+         patch("time.sleep", return_value=None):
+        deltas = mod.external_delta_check(manifest, max_records=1, sleep_sec=0)
+
+    fda_deltas = [d for d in deltas if d["source"] == "openfda"]
+    assert len(fda_deltas) >= 1
+    boxed_delta = next((d for d in fda_deltas if d.get("has_boxed_warning")), None)
+    assert boxed_delta is not None, "Boxed warning should be flagged in delta"
+
+
+def test_epic18b_external_delta_check_skips_when_fda_predates_review():
+    """Si effective_time ≤ last_reviewed → NO delta OpenFDA."""
+    import epic15_evidence_refresh as mod
+
+    manifest = {
+        "records": [
+            {"trial_or_source": "AFFIRM", "last_reviewed": "2026-05-01"},
+        ]
+    }
+    fda_payload = {
+        "results": [{
+            "effective_time": "20240301",  # PRE 2026-05-01
+            "openfda": {"generic_name": ["enzalutamide"]},
+        }]
+    }
+
+    def fake_urlopen(req, timeout=10):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        if "api.fda.gov" in url:
+            return _mock_response(fda_payload)
+        if "clinicaltrials.gov" in url:
+            return _mock_response({"protocolSection": {"statusModule": {}}})
+        return _mock_response({"esearchresult": {"idlist": []}})
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+         patch("time.sleep", return_value=None):
+        deltas = mod.external_delta_check(manifest, max_records=1, sleep_sec=0)
+    fda_deltas = [d for d in deltas if d["source"] == "openfda"]
+    assert fda_deltas == [], "Must not flag FDA delta when label predates last_reviewed"
+
+
 # ─────────────────── External delta check integration ───────────────────
 
 
