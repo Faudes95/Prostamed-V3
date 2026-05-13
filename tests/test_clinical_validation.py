@@ -5,15 +5,18 @@ from prostanet.domains.clinical_validation import build_trajectory_catalog
 from prostanet.domains.m0_crpc.schemas import M0_CRPC_SCHEMA
 
 
-def test_clinical_validation_catalog_has_72_trajectories_with_expected_family_distribution():
+def test_clinical_validation_catalog_has_82_trajectories_with_expected_family_distribution():
     # EPIC 1 (Phoenix enforcement): +2 trayectorias en `recurrence_bcr`
     # (bcr_pre_phoenix_deferral y bcr_post_phoenix_salvage) para bloquear
     # salvage prematuro post-RT cuando PSA aún no cumple nadir + 2 ng/mL.
     # EPIC 9 (hardening + schema-governance): +18 trayectorias
     # `scenario_family="epic9_hardening"` cubriendo GAP-1..GAP-17 + GAP-A.
+    # EPIC 10 (real-world patient validation): +10 trayectorias
+    # `scenario_family="epic10_real_world"` cubriendo 10 casos representativos
+    # de la práctica oncológica distribuidos sobre los 18 estadios NCCN.
     trajectories = build_trajectory_catalog()
 
-    assert len(trajectories) == 72
+    assert len(trajectories) == 82
 
     family_counts = Counter(item["scenario_family"] for item in trajectories)
     assert family_counts == {
@@ -29,6 +32,7 @@ def test_clinical_validation_catalog_has_72_trajectories_with_expected_family_di
         "mHSPC": 4,
         "m1_crpc": 5,
         "epic9_hardening": 18,
+        "epic10_real_world": 10,
     }
 
     scenario_ids = [item["scenario_id"] for item in trajectories]
@@ -69,8 +73,8 @@ def test_validation_trajectories_endpoint_exposes_catalog_and_family_counts(app_
 
     payload = response.get_json()
     assert payload["success"] is True
-    assert payload["total_trajectories"] == 72
-    assert len(payload["trajectories"]) == 72
+    assert payload["total_trajectories"] == 82
+    assert len(payload["trajectories"]) == 82
     assert payload["family_counts"]["m1_crpc"] == 5
     assert payload["family_counts"]["post_prostatectomy"] == 5
     assert payload["family_counts"]["adt_progression_verification"] == 5
@@ -79,9 +83,15 @@ def test_validation_trajectories_endpoint_exposes_catalog_and_family_counts(app_
     # EPIC 9 hardening: 18 trayectorias (GAP-1..GAP-17 + GAP-A) bajo
     # scenario_family="epic9_hardening".
     assert payload["family_counts"]["epic9_hardening"] == 18
+    # EPIC 10 real-world: 10 trayectorias representativas distribuidas
+    # sobre 18 estadios NCCN, ground truth defendible por trial + guideline.
+    assert payload["family_counts"]["epic10_real_world"] == 10
     assert any(item["scenario_id"] == "post_prostatectomy_persistent_psa" for item in payload["trajectories"])
     assert any(item["scenario_id"] == "m1_crpc_abiraterone_hepatic_safety" for item in payload["trajectories"])
     assert any(item["scenario_id"] == "high_volume_progression_on_adt_unclosed_castration" for item in payload["trajectories"])
+    # EPIC 10 cases reachable through the endpoint contract.
+    assert any(item["scenario_id"] == "epic10_very_low_active_surveillance" for item in payload["trajectories"])
+    assert any(item["scenario_id"] == "epic10_m1crpc_brca2_olaparib_or_lu177" for item in payload["trajectories"])
 
 
 def test_post_prostatectomy_persistent_psa_keeps_family_but_updates_clinical_oracle():

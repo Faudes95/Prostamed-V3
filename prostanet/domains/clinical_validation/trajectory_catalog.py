@@ -1639,6 +1639,9 @@ def _epic9_hardening_cases() -> list[dict[str, Any]]:
 
 
 def build_trajectory_catalog() -> list[dict[str, Any]]:
+    # Import diferido para evitar ciclo (epic10_cases importa _trajectory/_visit).
+    from prostanet.domains.clinical_validation.epic10_cases import _epic10_real_world_cases
+
     trajectories = (
         _diagnostic_workup_cases()
         + _post_negative_biopsy_cases()
@@ -1652,6 +1655,7 @@ def build_trajectory_catalog() -> list[dict[str, Any]]:
         + _mhspc_cases()
         + _m1_crpc_cases()
         + _epic9_hardening_cases()
+        + _epic10_real_world_cases()
     )
     return trajectories
 
