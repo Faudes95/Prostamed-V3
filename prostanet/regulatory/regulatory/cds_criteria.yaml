@@ -39,6 +39,26 @@ summary:
   classification: "device_software_function"
   fda_route: "510(k) Class II with predicate"
   next_step: "Pre-submission Q-sub FDA to confirm classification + predicate selection"
+  # EPIC 13b — formal acknowledgement of device path (vs non-device CDS exemption).
+  # Acknowledging device classification is a legitimate regulatory route, not a
+  # compliance failure. The pillar scorer (pillar_1_regulatory.py) now distinguishes:
+  #   - non_device_cds_exemption (needs 4/4 met) vs
+  #   - device_software_function (needs analysis_completed + decision_documented;
+  #     formal signatures remain an administrative informational gap)
+  analysis_completed: true
+  decision_documented: true
+  decision_rationale: |
+    ProstaMed cumple solo 2/4 criterios CDS Final Guidance FDA Sept 2022 (C1+C3).
+    C2 falla porque el sistema GENERA recomendaciones terapéuticas específicas
+    (e.g., "iniciar olaparib 300mg BID si BRCA2+"). C4 falla porque las
+    recomendaciones requieren capacidad computacional sobrehumana para que el HCP
+    las reproduzca mentalmente (PARP eligibility multi-gene, Halabi nomogram,
+    Decision Today fusion kernel, PSA forecast log-linear).
+    Conclusión: ProstaMed NO califica para non-device CDS exemption;
+    decisión documentada es 510(k) Class II con predicate device path.
+    Próximo paso formal: Pre-Sub Q-Sub FDA + predicate selection.
+  classification_decision_date: "2026-05-13"
+  epic_closure: "EPIC 13b — pillar 1 scorer refactored to distinguish device vs non-device paths"
 
 approval:
   pending_signatures:
