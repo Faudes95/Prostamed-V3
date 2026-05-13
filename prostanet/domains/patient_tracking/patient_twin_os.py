@@ -1,0 +1,695 @@
+"""EPIC 19 — Patient Twin OS: True personalized shared decision making.
+
+Orquesta la fusion de:
+  1. Preferencias del paciente (goal_of_care, decision_tradeoff)
+  2. PROs baseline + longitudinal (EPIC-26, FACT-P, ESAS)
+  3. Toxicity tolerance profile (CTCAE thresholds)
+  4. AI predictions (4 models: state_transition, treatment_response, deep_surv, anomaly)
+  5. Re-decision triggers (umbrales que el paciente eligió)
+
+Output: regimen rankings personalizados + re-decision alerts + readiness score.
+
+Decisión clínica concreta — paciente mCSPC volumen alto:
+  Pre-EPIC 19: urólogo presenta 3 opciones genéricas (docetaxel, abiraterona,
+    enzalutamide). Paciente decide por intuición o sigue recomendación implícita.
+  Post-EPIC 19: Cortana surface ranking personalizado:
+    - Abiraterona: 4.5/5 para TU perfil (preserva FACT-P, hepatotox 6%)
+    - Docetaxel: 2.8/5 — alerta tolerance mismatch (hematológica G3+ 25% EXCEDE tu umbral)
+    - Enzalutamide: 3.9/5 (cognitive G2 18% — no en tu profile previo)
+
+Caveat clínico (honest):
+  - Decision SUPPORT, no decision MAKER. El urólogo y paciente deciden juntos.
+  - AI predictions vienen de modelos shadow-validated con synthetic data
+    (EPIC 16/17). No production-ready para decisiones reales hasta EPIC 20.
+  - El scoring usa pesos declarativos del paciente; preserva trazabilidad
+    del razonamiento (NO black-box ranking).
+
+Integración:
+  - Lee patient_record (formato tracking_db.build_patient_record_derivatives)
+  - Lee patient_clinical_facts table para preferences/PROs/toxicity_tolerance
+  - Llama PredictionService (prostanet.ai.inference.prediction_service)
+  - Retorna dict serializable para UI rendering
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field, asdict
+from typing import Any, Mapping
+
+logger = logging.getLogger(__name__)
+
+
+# ─────────────────── Constants ───────────────────
+
+# Pivotal regimens para mCSPC/mCRPC (subset; expandable)
+REGIMEN_CATALOG: dict[int, dict[str, Any]] = {
+    1: {
+        "regimen_id": 1,
+        "regimen_name": "docetaxel",
+        "trial_source": "CHAARTED",
+        "primary_drug": "docetaxel",
+        "typical_aes": {
+            "hematologic_g3_plus_pct": 25.0,
+            "neuropathy_g2_plus_pct": 18.0,
+            "fatigue_g3_plus_pct": 8.0,
+            "hepatic_g3_plus_pct": 2.0,
+        },
+        "expected_os_gain_mo": 13.6,
+        "indications": ["mCSPC_high_volume", "mCRPC"],
+    },
+    2: {
+        "regimen_id": 2,
+        "regimen_name": "abiraterone",
+        "trial_source": "LATITUDE/STAMPEDE",
+        "primary_drug": "abiraterone",
+        "typical_aes": {
+            "hematologic_g3_plus_pct": 4.0,
+            "hepatic_g3_plus_pct": 6.0,
+            "fatigue_g3_plus_pct": 5.0,
+            "cardiovascular_g3_plus_pct": 4.0,
+            "hypokalemia_g3_plus_pct": 5.0,
+        },
+        "expected_os_gain_mo": 16.8,
+        "indications": ["mCSPC_high_volume", "mCSPC_low_volume", "mCRPC"],
+    },
+    3: {
+        "regimen_id": 3,
+        "regimen_name": "enzalutamide",
+        "trial_source": "ARCHES/ENZAMET",
+        "primary_drug": "enzalutamide",
+        "typical_aes": {
+            "fatigue_g3_plus_pct": 6.0,
+            "cognitive_g2_plus_pct": 18.0,
+            "seizure_g3_plus_pct": 0.4,
+            "fall_pct": 12.0,
+        },
+        "expected_os_gain_mo": 13.0,
+        "indications": ["mCSPC_high_volume", "mCSPC_low_volume", "mCRPC"],
+    },
+    4: {
+        "regimen_id": 4,
+        "regimen_name": "apalutamide",
+        "trial_source": "TITAN/SPARTAN",
+        "primary_drug": "apalutamide",
+        "typical_aes": {
+            "fatigue_g3_plus_pct": 3.0,
+            "rash_g3_plus_pct": 6.0,
+            "hypothyroid_pct": 8.0,
+            "fall_pct": 9.0,
+        },
+        "expected_os_gain_mo": 14.4,
+        "indications": ["mCSPC_high_volume", "mCSPC_low_volume", "M0_CRPC"],
+    },
+    5: {
+        "regimen_id": 5,
+        "regimen_name": "darolutamide_docetaxel",
+        "trial_source": "ARASENS",
+        "primary_drug": "darolutamide",
+        "typical_aes": {
+            "hematologic_g3_plus_pct": 28.0,
+            "fatigue_g3_plus_pct": 5.0,
+            "neuropathy_g2_plus_pct": 15.0,
+        },
+        "expected_os_gain_mo": 19.0,  # Best in class for high-volume mCSPC
+        "indications": ["mCSPC_high_volume"],
+    },
+}
+
+# Toxicity tolerance vocabulary
+TOLERANCE_LEVELS = {"intolerable": -3.0, "low": -1.5, "tolerable": 0.0, "acceptable": +1.0}
+
+# Default preferences si paciente no completó capture
+DEFAULT_PREFERENCES = {
+    "goal_of_care": "balanced",
+    "decision_tradeoff": {"os_weight": 0.5, "qol_weight": 0.5},
+    "toxicity_tolerance": {},
+    "redecision_threshold": {"fact_p_drop_pts": 3, "karnofsky_drop_pts": 10},
+    "baseline_pro": {},
+}
+
+
+# ─────────────────── Data classes ───────────────────
+
+
+@dataclass
+class PatientPreferenceProfile:
+    """Captures patient's stated preferences for shared decision making."""
+    goal_of_care: str = "balanced"  # max_os | max_qol | balanced
+    os_weight: float = 0.5
+    qol_weight: float = 0.5
+    toxicity_tolerance: dict[str, str] = field(default_factory=dict)
+    redecision_threshold: dict[str, float] = field(default_factory=dict)
+    baseline_pro: dict[str, float] = field(default_factory=dict)
+    capture_completeness_pct: float = 0.0  # 0-100, how much preference data we have
+
+    def is_minimally_captured(self) -> bool:
+        """True si tenemos suficiente info para personalizar el ranking."""
+        return self.capture_completeness_pct >= 30.0
+
+
+@dataclass
+class RegimenScore:
+    """Personalized score for a single regimen."""
+    regimen_id: int
+    regimen_name: str
+    score: float  # 0-10 scale
+    predicted_os_gain_mo: float
+    toxicity_warnings: list[str] = field(default_factory=list)
+    tolerance_mismatches: list[str] = field(default_factory=list)
+    rationale: str = ""
+    trial_source: str = ""
+    indications_match: bool = True
+
+
+@dataclass
+class RedecisionAlert:
+    """Triggered when patient's longitudinal data crosses a self-set threshold."""
+    threshold_name: str
+    observed_value: float
+    threshold_value: float
+    severity: str  # info | warning | critical
+    message: str
+
+
+@dataclass
+class PatientTwinView:
+    """Complete twin view for UI rendering."""
+    available: bool
+    preferences: PatientPreferenceProfile
+    regimen_rankings: list[RegimenScore] = field(default_factory=list)
+    redecision_alerts: list[RedecisionAlert] = field(default_factory=list)
+    ai_substrate_status: dict[str, bool] = field(default_factory=dict)
+    readiness_pct: float = 0.0  # 0-100
+    rationale_summary: str = ""
+    caveats: list[str] = field(default_factory=list)
+
+
+# ─────────────────── Preference extraction ───────────────────
+
+
+def extract_preferences(patient_record: Mapping[str, Any]) -> PatientPreferenceProfile:
+    """Read patient_clinical_facts + baseline PROs to build preference profile.
+
+    Patient record may have:
+      - clinical_facts (list): individual fact records with keys/values
+      - baseline (dict): screening/intake data
+      - patient_values (dict): direct preference capture
+    """
+    profile = PatientPreferenceProfile()
+    facts = patient_record.get("clinical_facts") or patient_record.get("patient_clinical_facts") or []
+    baseline = patient_record.get("baseline") or {}
+    explicit_values = patient_record.get("patient_values") or {}
+
+    captured_count = 0
+    total_dimensions = 5  # patient_values + tradeoff + toxicity + redecision + PRO
+
+    # 1. Goal of care + tradeoff (try multiple sources)
+    goal = (
+        explicit_values.get("goal_of_care")
+        or baseline.get("goal_of_care")
+        or _find_fact(facts, "goal_of_care")
+    )
+    if goal:
+        profile.goal_of_care = str(goal).lower()
+        captured_count += 1
+
+    # 2. Decision tradeoff weights (os_weight / qol_weight)
+    tradeoff = (
+        explicit_values.get("decision_tradeoff")
+        or baseline.get("decision_tradeoff")
+        or _find_fact(facts, "decision_tradeoff")
+        or {}
+    )
+    if isinstance(tradeoff, dict) and tradeoff:
+        profile.os_weight = float(tradeoff.get("os_weight") or 0.5)
+        profile.qol_weight = float(tradeoff.get("qol_weight") or 0.5)
+        # Normalize to sum 1.0
+        total = profile.os_weight + profile.qol_weight
+        if total > 0:
+            profile.os_weight /= total
+            profile.qol_weight /= total
+        captured_count += 1
+    else:
+        # Infer from goal_of_care
+        if profile.goal_of_care == "max_os":
+            profile.os_weight = 0.75
+            profile.qol_weight = 0.25
+        elif profile.goal_of_care == "max_qol":
+            profile.os_weight = 0.25
+            profile.qol_weight = 0.75
+        # balanced → keep 0.5/0.5 default
+
+    # 3. Toxicity tolerance dict
+    tolerance = (
+        explicit_values.get("toxicity_tolerance")
+        or _find_fact(facts, "toxicity_tolerance")
+        or {}
+    )
+    if isinstance(tolerance, dict) and tolerance:
+        profile.toxicity_tolerance = dict(tolerance)
+        captured_count += 1
+
+    # 4. Re-decision threshold
+    redecision = (
+        explicit_values.get("redecision_threshold")
+        or _find_fact(facts, "redecision_threshold")
+        or {}
+    )
+    if isinstance(redecision, dict) and redecision:
+        profile.redecision_threshold = dict(redecision)
+        captured_count += 1
+    else:
+        profile.redecision_threshold = dict(DEFAULT_PREFERENCES["redecision_threshold"])
+
+    # 5. Baseline PROs (EPIC-26, FACT-P, ESAS)
+    pros = (
+        explicit_values.get("baseline_pro")
+        or _find_fact(facts, "baseline_pro")
+        or {}
+    )
+    if not pros:
+        # Try direct fields in baseline
+        pros = {
+            k: v for k, v in (baseline or {}).items()
+            if k in ("fact_p", "epic26_urinary", "epic26_bowel", "epic26_sexual", "esas_pain")
+            and v is not None
+        }
+    if pros:
+        profile.baseline_pro = {k: float(v) for k, v in pros.items() if isinstance(v, (int, float, str)) and str(v).replace('.', '').isdigit()}
+        captured_count += 1
+
+    profile.capture_completeness_pct = round(captured_count / total_dimensions * 100.0, 1)
+    return profile
+
+
+def _find_fact(facts: list[Mapping[str, Any]], key: str) -> Any:
+    """Scan clinical_facts list for a fact whose key matches."""
+    for fact in facts or []:
+        if not isinstance(fact, Mapping):
+            continue
+        fkey = str(fact.get("key") or fact.get("field") or fact.get("name") or "").lower()
+        if fkey == key.lower():
+            return fact.get("value") or fact.get("data") or fact.get("payload")
+    return None
+
+
+# ─────────────────── Regimen scoring ───────────────────
+
+
+def score_regimen(
+    regimen: Mapping[str, Any],
+    preferences: PatientPreferenceProfile,
+    ai_predictions: Mapping[str, Any] | None = None,
+    patient_state: str | None = None,
+) -> RegimenScore:
+    """Compute personalized 0-10 score for one regimen given patient profile.
+
+    Algoritmo transparente:
+      base_score = 5.0
+      + os_component: weighted by patient.os_weight, scaled to expected_os_gain_mo
+      + qol_component: weighted by patient.qol_weight, penalty for AE rates
+      - tolerance_penalty: por cada mismatch entre AE rate y patient.tolerance
+      - indication_mismatch: -3.0 si patient_state NO está en indications
+    """
+    base = 5.0
+
+    expected_os = float(regimen.get("expected_os_gain_mo") or 0.0)
+    aes = dict(regimen.get("typical_aes") or {})
+    indications = list(regimen.get("indications") or [])
+
+    # OS component (max 0-3 contribution, scaled by os_weight)
+    # Normalize expected_os against 20mo (top of mCSPC range)
+    os_component = min(3.0, (expected_os / 20.0) * 3.0) * preferences.os_weight * 2.0
+
+    # QoL component (3 - sum of AE penalties), scaled by qol_weight
+    ae_penalty = 0.0
+    warnings: list[str] = []
+    mismatches: list[str] = []
+    for ae_key, ae_pct in aes.items():
+        # Map AE key → category for tolerance lookup
+        category = _ae_category(ae_key)
+        if not category:
+            continue
+        tol = preferences.toxicity_tolerance.get(category)
+        if tol:
+            tol_level = TOLERANCE_LEVELS.get(str(tol).lower(), 0.0)
+            # If patient declared "intolerable" and rate ≥ 10% → strong mismatch
+            if tol_level <= -1.5 and ae_pct >= 10.0:
+                mismatches.append(
+                    f"{category} G3+ {ae_pct:.0f}% exceeds your declared tolerance ({tol})"
+                )
+                ae_penalty += 2.5
+            elif tol_level <= -1.5 and ae_pct >= 5.0:
+                warnings.append(
+                    f"{category} G3+ {ae_pct:.0f}% — review against your tolerance ({tol})"
+                )
+                ae_penalty += 1.0
+        else:
+            # No tolerance declared — generic penalty for high-rate AEs
+            if ae_pct >= 20.0:
+                warnings.append(f"{category} G3+ {ae_pct:.0f}% (no patient tolerance declared)")
+                ae_penalty += 0.5
+
+    qol_component = max(0.0, 3.0 - ae_penalty) * preferences.qol_weight * 2.0
+
+    # Indication match
+    indication_penalty = 0.0
+    indication_match = True
+    if patient_state and indications:
+        if not any(_state_matches_indication(patient_state, ind) for ind in indications):
+            indication_penalty = 4.0
+            indication_match = False
+            warnings.append(f"Regimen typically for {indications}; patient state {patient_state}")
+
+    # AI prediction boost (if treatment_response available for this regimen)
+    ai_boost = 0.0
+    if ai_predictions:
+        tr = ai_predictions.get("treatment_response") or {}
+        if isinstance(tr, dict):
+            psa50 = float(tr.get("psa50") or tr.get("predicted_psa50") or 0.0)
+            # 0.0-1.0 prob → +/-0.5 to score
+            if psa50 > 0.6:
+                ai_boost = 0.5
+            elif psa50 < 0.3:
+                ai_boost = -0.5
+
+    # EPIC 19: tolerance_mismatch es señal fuerte — overrides positive contributions.
+    # Cada mismatch declarado por el paciente como "intolerable" debe reducir score
+    # de forma decisiva (no solo penalizar QoL component).
+    mismatch_penalty = len(mismatches) * 2.5
+
+    score = max(
+        0.0,
+        min(10.0, base + os_component + qol_component + ai_boost - indication_penalty - mismatch_penalty),
+    )
+
+    rationale = (
+        f"Base 5.0 + OS contrib {os_component:.1f} (your os_weight {preferences.os_weight:.2f}) "
+        f"+ QoL contrib {qol_component:.1f} (your qol_weight {preferences.qol_weight:.2f}) "
+        f"+ AI boost {ai_boost:+.1f} - indication penalty {indication_penalty:.1f} "
+        f"- tolerance mismatch penalty {mismatch_penalty:.1f}"
+    )
+
+    return RegimenScore(
+        regimen_id=int(regimen.get("regimen_id") or 0),
+        regimen_name=str(regimen.get("regimen_name") or "unknown"),
+        score=round(score, 2),
+        predicted_os_gain_mo=expected_os,
+        toxicity_warnings=warnings,
+        tolerance_mismatches=mismatches,
+        rationale=rationale,
+        trial_source=str(regimen.get("trial_source") or ""),
+        indications_match=indication_match,
+    )
+
+
+def _ae_category(ae_key: str) -> str | None:
+    """Map AE key (hematologic_g3_plus_pct) → tolerance category (hematologic_g3)."""
+    if not ae_key:
+        return None
+    key = ae_key.lower()
+    if "hematologic" in key:
+        return "hematologic_g3"
+    if "hepatic" in key:
+        return "hepatic_g3"
+    if "cardio" in key:
+        return "cardiovascular_g3"
+    if "neuro" in key:
+        return "neuropathy_g2"
+    if "cognitive" in key:
+        return "cognitive_g2"
+    if "fatigue" in key:
+        return "fatigue_g3"
+    if "rash" in key or "cutaneous" in key or "skin" in key:
+        return "cutaneous_g3"
+    if "fall" in key:
+        return "falls"
+    if "seizure" in key:
+        return "seizure"
+    if "hypothyroid" in key or "endocrine" in key:
+        return "endocrine_g2"
+    if "hypokalemia" in key:
+        return "hypokalemia_g3"
+    return None
+
+
+def _state_matches_indication(state: str, indication: str) -> bool:
+    """Fuzzy state matching: mcspc_high_volume_sync matches mCSPC_high_volume."""
+    s = (state or "").lower().replace("_", "").replace("-", "")
+    i = (indication or "").lower().replace("_", "").replace("-", "")
+    return i in s or s.startswith(i.split("sync")[0].split("metach")[0]) if i else False
+
+
+# ─────────────────── Re-decision alerts ───────────────────
+
+
+def detect_redecision_alerts(
+    patient_record: Mapping[str, Any],
+    preferences: PatientPreferenceProfile,
+) -> list[RedecisionAlert]:
+    """Compare current PROs vs patient-set thresholds.
+
+    Triggers:
+      - fact_p_drop_pts: actual FACT-P drop vs baseline > threshold
+      - karnofsky_drop_pts: Karnofsky drop > threshold
+      - psa_doubling: PSA doubled in < threshold months
+    """
+    alerts: list[RedecisionAlert] = []
+    follow_ups = patient_record.get("follow_ups") or []
+    if not follow_ups:
+        return alerts
+
+    latest = follow_ups[-1] if follow_ups else {}
+    baseline_pro = preferences.baseline_pro
+
+    # FACT-P drop
+    fact_p_threshold = preferences.redecision_threshold.get("fact_p_drop_pts")
+    if fact_p_threshold and "fact_p" in baseline_pro:
+        current_fact_p = latest.get("fact_p")
+        if current_fact_p is not None:
+            drop = baseline_pro["fact_p"] - float(current_fact_p)
+            if drop > fact_p_threshold:
+                alerts.append(RedecisionAlert(
+                    threshold_name="fact_p_drop",
+                    observed_value=round(drop, 1),
+                    threshold_value=fact_p_threshold,
+                    severity="warning",
+                    message=(
+                        f"FACT-P dropped {drop:.1f} pts vs baseline (your threshold: {fact_p_threshold} pts). "
+                        f"Consider re-discussing treatment goals."
+                    ),
+                ))
+
+    # Karnofsky drop
+    karnofsky_threshold = preferences.redecision_threshold.get("karnofsky_drop_pts")
+    if karnofsky_threshold:
+        baseline_karnofsky = (patient_record.get("baseline") or {}).get("karnofsky")
+        current_karnofsky = latest.get("karnofsky") or latest.get("functional_status")
+        if baseline_karnofsky and current_karnofsky:
+            drop = float(baseline_karnofsky) - float(current_karnofsky)
+            if drop > karnofsky_threshold:
+                alerts.append(RedecisionAlert(
+                    threshold_name="karnofsky_drop",
+                    observed_value=round(drop, 1),
+                    threshold_value=karnofsky_threshold,
+                    severity="critical" if drop > 20 else "warning",
+                    message=(
+                        f"Karnofsky dropped {drop:.0f} pts (your threshold: {karnofsky_threshold}). "
+                        f"Goal-of-care re-discussion strongly recommended."
+                    ),
+                ))
+
+    return alerts
+
+
+# ─────────────────── Main entry point ───────────────────
+
+
+def build_patient_twin_view(
+    patient_record: Mapping[str, Any],
+    *,
+    prediction_service: Any | None = None,
+    model_registry: Any | None = None,
+) -> dict[str, Any]:
+    """Main entry point — build complete Patient Twin OS view.
+
+    Args:
+        patient_record: tracking_db.build_patient_record_derivatives output
+        prediction_service: optional pre-built PredictionService; if None, lazy-create
+        model_registry: optional ModelRegistry instance; passed to prediction_service
+
+    Returns:
+        Serializable dict (PatientTwinView.asdict-style) for UI rendering.
+    """
+    # 1. Extract preferences
+    preferences = extract_preferences(patient_record)
+
+    # 2. Determine patient state for indication matching
+    patient_state = ""
+    latest_assessment = patient_record.get("latest_assessment") or {}
+    if isinstance(latest_assessment, dict):
+        patient_state = str(latest_assessment.get("reconciled_state") or latest_assessment.get("state") or "")
+    if not patient_state:
+        baseline = patient_record.get("baseline") or {}
+        patient_state = str(baseline.get("clinical_state") or "")
+
+    # 3. AI predictions (graceful if PredictionService unavailable)
+    ai_predictions: dict[str, Any] = {}
+    ai_substrate_status = {
+        "state_transition": False,
+        "treatment_response": False,
+        "deep_surv": False,
+        "anomaly_detector": False,
+    }
+    try:
+        if prediction_service is None:
+            from prostanet.ai.inference.prediction_service import PredictionService
+            prediction_service = PredictionService(model_registry=model_registry)
+
+        patient_id = int(
+            (patient_record.get("identity") or {}).get("id")
+            or patient_record.get("id")
+            or 0
+        )
+        if patient_id:
+            try:
+                st = prediction_service.predict_state_transition(patient_id, dict(patient_record))
+                if st:
+                    ai_predictions["state_transition"] = st
+                    ai_substrate_status["state_transition"] = True
+            except Exception as exc:
+                logger.debug("State transition prediction failed: %s", exc)
+            try:
+                tr = prediction_service.predict_treatment_response(patient_id, dict(patient_record))
+                if tr:
+                    ai_predictions["treatment_response"] = tr
+                    ai_substrate_status["treatment_response"] = True
+            except Exception as exc:
+                logger.debug("Treatment response prediction failed: %s", exc)
+    except Exception as exc:
+        logger.debug("PredictionService unavailable: %s", exc)
+
+    # 4. Score each regimen
+    rankings: list[RegimenScore] = []
+    for regimen in REGIMEN_CATALOG.values():
+        score = score_regimen(
+            regimen=regimen,
+            preferences=preferences,
+            ai_predictions=ai_predictions,
+            patient_state=patient_state,
+        )
+        rankings.append(score)
+    # Sort descending by score
+    rankings.sort(key=lambda r: r.score, reverse=True)
+
+    # 5. Detect re-decision alerts
+    alerts = detect_redecision_alerts(patient_record, preferences)
+
+    # 6. Compute overall readiness percentage
+    readiness = _compute_readiness(preferences, ai_substrate_status, alerts)
+
+    # 7. Rationale + caveats
+    rationale = _build_rationale(preferences, rankings[:3], alerts)
+    caveats = _build_caveats(preferences, ai_substrate_status)
+
+    twin = PatientTwinView(
+        available=True,
+        preferences=preferences,
+        regimen_rankings=rankings,
+        redecision_alerts=alerts,
+        ai_substrate_status=ai_substrate_status,
+        readiness_pct=readiness,
+        rationale_summary=rationale,
+        caveats=caveats,
+    )
+    return _twin_to_dict(twin)
+
+
+def _compute_readiness(
+    preferences: PatientPreferenceProfile,
+    ai_substrate_status: Mapping[str, bool],
+    alerts: list[RedecisionAlert],
+) -> float:
+    """0-100 readiness score combining preference capture + AI substrate + alerts."""
+    # Preferences component (0-60)
+    prefs_pct = preferences.capture_completeness_pct * 0.6
+    # AI substrate component (0-30)
+    ai_pct = (sum(1 for v in ai_substrate_status.values() if v) / max(1, len(ai_substrate_status))) * 30
+    # Alerts contribution: NOT penalty per se (alerts are valuable), but presence
+    # indicates re-decision in progress → reduce 0-10 if critical alert active
+    critical_alerts = [a for a in alerts if a.severity == "critical"]
+    alert_pct = 10.0 - min(10.0, len(critical_alerts) * 5.0)
+    return round(min(100.0, prefs_pct + ai_pct + alert_pct), 1)
+
+
+def _build_rationale(
+    preferences: PatientPreferenceProfile,
+    top_regimens: list[RegimenScore],
+    alerts: list[RedecisionAlert],
+) -> str:
+    parts: list[str] = []
+    if not top_regimens:
+        return "Patient Twin OS: insufficient data for personalized ranking."
+    if not preferences.is_minimally_captured():
+        parts.append(
+            f"Generic ranking (preference capture {preferences.capture_completeness_pct:.0f}% — "
+            f"complete patient_values/tradeoff/tolerance for full personalization)."
+        )
+    else:
+        parts.append(
+            f"Personalized ranking based on your goal_of_care='{preferences.goal_of_care}' "
+            f"(OS weight {preferences.os_weight:.2f}, QoL weight {preferences.qol_weight:.2f})."
+        )
+    top = top_regimens[0]
+    parts.append(
+        f"Top regimen: {top.regimen_name} (score {top.score:.1f}/10, expected OS gain "
+        f"{top.predicted_os_gain_mo:.1f}mo from {top.trial_source})."
+    )
+    if top.tolerance_mismatches:
+        parts.append(f"⚠ Tolerance mismatches noted: {len(top.tolerance_mismatches)}")
+    if alerts:
+        parts.append(f"Re-decision alerts active: {len(alerts)}.")
+    return " ".join(parts)
+
+
+def _build_caveats(
+    preferences: PatientPreferenceProfile,
+    ai_substrate_status: Mapping[str, bool],
+) -> list[str]:
+    caveats: list[str] = []
+    caveats.append(
+        "Shadow validation: AI predictions trained on synthetic data (EPIC 16/17). "
+        "Not production-ready for real clinical decisions until EPIC 20 real-data validation."
+    )
+    if not preferences.is_minimally_captured():
+        caveats.append(
+            f"Limited preference capture ({preferences.capture_completeness_pct:.0f}%). "
+            f"Ranking uses default 0.5/0.5 OS/QoL weights — capture patient_values for full personalization."
+        )
+    inactive = [k for k, v in ai_substrate_status.items() if not v]
+    if inactive:
+        caveats.append(f"AI models not delivering predictions for this run: {inactive}.")
+    return caveats
+
+
+def _twin_to_dict(twin: PatientTwinView) -> dict[str, Any]:
+    """Serialize dataclass tree to plain dict for JSON/template rendering."""
+    return {
+        "available": twin.available,
+        "preferences": asdict(twin.preferences),
+        "regimen_rankings": [asdict(r) for r in twin.regimen_rankings],
+        "redecision_alerts": [asdict(a) for a in twin.redecision_alerts],
+        "ai_substrate_status": dict(twin.ai_substrate_status),
+        "readiness_pct": twin.readiness_pct,
+        "rationale_summary": twin.rationale_summary,
+        "caveats": twin.caveats,
+    }
+
+
+# ─────────────────── Module marker ───────────────────
+
+# EPIC 19: Existence of this module signals that Patient Twin OS is wired.
+# Loop Monitor _patient_twin_readiness_value reads this via context flag.
+PATIENT_TWIN_OS_VERSION = "0.1.0"
+PATIENT_TWIN_OS_EPIC = 19

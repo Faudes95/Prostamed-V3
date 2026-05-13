@@ -1198,6 +1198,123 @@
             </div>
         </section>
 
+        {# EPIC 19 — Patient Twin OS: True personalized SDM card (regimen rankings + redecision alerts) #}
+        {% if patient_twin and patient_twin.available %}
+        <section id="profile-patient-twin-os" class="pn-surface border border-purple-700/40 bg-purple-950/10 pm-section-anchor" data-testid="patient-twin-os-card">
+            <div class="flex items-start justify-between mb-3">
+                <div>
+                    <h2 class="text-lg font-bold text-white">Patient Twin OS — Decisión compartida personalizada</h2>
+                    <p class="text-xs text-slate-400 mt-1">EPIC 19 · Ranking de regímenes basado en TUS preferencias + AI predictions</p>
+                </div>
+                <div class="text-right">
+                    <div class="text-xs uppercase tracking-wider text-slate-500">Readiness</div>
+                    <div class="text-2xl font-semibold text-purple-300" data-testid="patient-twin-readiness-pct">{{ '%.0f' % patient_twin.readiness_pct }}%</div>
+                </div>
+            </div>
+
+            {% if patient_twin.preferences and patient_twin.preferences.capture_completeness_pct < 30 %}
+            <div class="rounded-lg border border-amber-700/40 bg-amber-950/20 p-3 mb-3" data-testid="patient-twin-low-capture">
+                <div class="text-amber-300 text-sm font-semibold">⚠ Captura de preferencias incompleta ({{ '%.0f' % patient_twin.preferences.capture_completeness_pct }}%)</div>
+                <p class="text-xs text-slate-400 mt-1">El ranking usa pesos default (0.5 OS / 0.5 QoL). Completa <a href="/longitudinal-capture/{{ patient.identity.nss }}?decision_lane=patient_twin_readiness" class="text-cyan-400 underline">patient_values + tradeoff + tolerance</a> para personalización completa.</p>
+            </div>
+            {% endif %}
+
+            <div class="rounded-lg border border-slate-700 bg-slate-900/50 p-3 mb-3">
+                <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Preferencias del paciente</div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div>
+                        <div class="text-slate-500">Goal of care</div>
+                        <div class="text-white font-semibold" data-testid="twin-goal-of-care">{{ patient_twin.preferences.goal_of_care or 'balanced' }}</div>
+                    </div>
+                    <div>
+                        <div class="text-slate-500">OS weight</div>
+                        <div class="text-white font-semibold">{{ '%.2f' % (patient_twin.preferences.os_weight or 0.5) }}</div>
+                    </div>
+                    <div>
+                        <div class="text-slate-500">QoL weight</div>
+                        <div class="text-white font-semibold">{{ '%.2f' % (patient_twin.preferences.qol_weight or 0.5) }}</div>
+                    </div>
+                    <div>
+                        <div class="text-slate-500">Tolerances declared</div>
+                        <div class="text-white font-semibold">{{ (patient_twin.preferences.toxicity_tolerance or {})|length }}</div>
+                    </div>
+                </div>
+            </div>
+
+            {% if patient_twin.regimen_rankings %}
+            <div class="space-y-2 mb-3">
+                <div class="text-xs uppercase tracking-wider text-slate-500">Ranking personalizado de regímenes</div>
+                {% for regimen in patient_twin.regimen_rankings[:5] %}
+                <div class="rounded-lg border {% if loop.index == 1 %}border-emerald-700/40 bg-emerald-950/10{% elif regimen.tolerance_mismatches %}border-rose-700/40 bg-rose-950/10{% else %}border-slate-700 bg-slate-900/50{% endif %} p-3" data-testid="twin-regimen-{{ regimen.regimen_id }}">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="flex-1">
+                            <div class="flex items-baseline gap-2">
+                                <span class="text-base font-bold text-white">#{{ loop.index }} {{ regimen.regimen_name }}</span>
+                                <span class="text-xs text-slate-500">({{ regimen.trial_source }})</span>
+                            </div>
+                            <div class="text-xs text-slate-400 mt-1">
+                                OS gain esperada: <span class="text-white">{{ '%.1f' % regimen.predicted_os_gain_mo }}mo</span>
+                            </div>
+                            {% if regimen.tolerance_mismatches %}
+                            <ul class="mt-2 space-y-1 text-xs text-rose-300">
+                                {% for warn in regimen.tolerance_mismatches %}
+                                <li>⚠ {{ warn }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                            {% if regimen.toxicity_warnings and not regimen.tolerance_mismatches %}
+                            <ul class="mt-2 space-y-1 text-xs text-amber-300">
+                                {% for warn in regimen.toxicity_warnings %}
+                                <li>· {{ warn }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                        </div>
+                        <div class="text-right">
+                            <div class="text-2xl font-bold {% if regimen.score >= 7 %}text-emerald-400{% elif regimen.score >= 5 %}text-cyan-400{% elif regimen.score >= 3 %}text-amber-400{% else %}text-rose-400{% endif %}">
+                                {{ '%.1f' % regimen.score }}
+                            </div>
+                            <div class="text-xs text-slate-500">/ 10</div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if patient_twin.redecision_alerts %}
+            <div class="rounded-lg border border-rose-700/40 bg-rose-950/20 p-3 mb-3" data-testid="twin-redecision-alerts">
+                <div class="text-xs uppercase tracking-wider text-rose-400 mb-2">Re-decision triggers activos</div>
+                <ul class="space-y-1 text-sm text-slate-200">
+                    {% for alert in patient_twin.redecision_alerts %}
+                    <li class="{% if alert.severity == 'critical' %}text-rose-300 font-semibold{% else %}text-amber-300{% endif %}">
+                        {{ alert.message }}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% if patient_twin.rationale_summary %}
+            <div class="rounded-lg border border-slate-700 bg-slate-900/30 p-3 mb-3">
+                <div class="text-xs uppercase tracking-wider text-slate-500 mb-1">Razonamiento</div>
+                <p class="text-sm text-slate-300">{{ patient_twin.rationale_summary }}</p>
+            </div>
+            {% endif %}
+
+            {% if patient_twin.caveats %}
+            <div class="rounded-lg border border-slate-700 bg-slate-900/30 p-3">
+                <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Caveats clínicos (transparencia)</div>
+                <ul class="space-y-1 text-xs text-slate-400 list-disc pl-5">
+                    {% for caveat in patient_twin.caveats %}
+                    <li>{{ caveat }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
         {% if clinical_copy_bundle.next_best_action_display.headline or next_best_action.title or transition_proposals or clinical_signals.critical_missing or clinical_signals.active_safety %}
         <section id="profile-next-best-action" class="pn-surface border border-cyan-700/30 bg-cyan-950/10">
             <div class="grid grid-cols-1 xl:grid-cols-4 gap-4">

@@ -1187,7 +1187,22 @@ def patient_profile(nss):
             patient_for_v2["treatments"] = data.get("treatments") or []
             patient_for_v2["biomarker_longitudinal"] = data.get("biomarker_longitudinal") or []
             v2_ctx = bundle_to_v2_profile_full(profile_view, patient_for_v2)
+            # EPIC 19: Patient Twin OS — also expose to v2 template
+            try:
+                from prostanet.domains.patient_tracking.patient_twin_os import build_patient_twin_view as _build_twin_v2
+                v2_ctx["patient_twin"] = _build_twin_v2(data)
+            except Exception as e:
+                logger.warning(f"EPIC 19 v2 twin build failed: {e}")
+                v2_ctx["patient_twin"] = {"available": False}
             return render_template("patient_profile_v2.html", **v2_ctx, page_chrome=page_chrome)
+
+        # EPIC 19: Patient Twin OS — personalized regimen rankings + AI predictions
+        patient_twin_view: dict = {"available": False}
+        try:
+            from prostanet.domains.patient_tracking.patient_twin_os import build_patient_twin_view
+            patient_twin_view = build_patient_twin_view(data)
+        except Exception as e:
+            logger.warning(f"EPIC 19 Patient Twin view build failed: {e}")
 
         return render_template(
             'patient_profile.html',
@@ -1197,6 +1212,7 @@ def patient_profile(nss):
             state_timeline=state_timeline,
             care_overlays=care_overlays,
             profile_view=profile_view,
+            patient_twin=patient_twin_view,
             agenda_board=profile_view.get("agenda_board", {}) if isinstance(profile_view, dict) else {},
             visit_schema=profile_view.get("visit_schema", {}) if isinstance(profile_view, dict) else {},
             agenda_item_form_context=profile_view.get("agenda_item_form_context", {}) if isinstance(profile_view, dict) else {},

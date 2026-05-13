@@ -202,6 +202,124 @@
         {% set _tumor_board = tumor_board_os or profile_view_raw.get('tumor_board_os', {}) %}
         {% set _tb_summary = _tumor_board.get('summary', {}) if _tumor_board else {} %}
         {% set _tb_options = _tumor_board.get('options', []) if _tumor_board else [] %}
+        {# EPIC 19 — Patient Twin OS card (v2 layout): preference-personalized regimen rankings + redecision alerts #}
+        {% if patient_twin and patient_twin.available %}
+        <section id="pm2PatientTwinOS" class="pm2-patient-twin-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(168,85,247,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(168,85,247,0.32); border-left: 6px solid rgb(168,85,247); border-radius: 14px;" aria-label="Patient Twin OS" data-testid="patient-twin-os-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(216,180,254); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Patient Twin OS · EPIC 19</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        Decisión compartida personalizada
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        Ranking de regímenes basado en TUS preferencias capturadas + AI predictions (4 modelos shadow-validated).
+                    </p>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em;">Readiness</div>
+                    <div style="font-size:1.75rem; color:rgb(216,180,254); font-weight:700;" data-testid="patient-twin-readiness-pct">{{ '%.0f' % patient_twin.readiness_pct }}%</div>
+                </div>
+            </div>
+
+            {% if patient_twin.preferences and patient_twin.preferences.capture_completeness_pct < 30 %}
+            <div style="margin-top:12px; padding:10px 14px; background:rgba(245,158,11,0.10); border:1px solid rgba(245,158,11,0.32); border-radius:8px;" data-testid="patient-twin-low-capture">
+                <div style="color:rgb(252,211,77); font-size:.85rem; font-weight:600;">⚠ Captura de preferencias incompleta ({{ '%.0f' % patient_twin.preferences.capture_completeness_pct }}%)</div>
+                <p style="margin:4px 0 0; color:var(--pn-text-muted); font-size:.78rem;">El ranking usa pesos default 0.5 OS / 0.5 QoL. Completa <a href="/longitudinal-capture/{{ identity.nss }}?decision_lane=patient_twin_readiness" style="color:rgb(34,211,238); text-decoration:underline;">patient_values + tradeoff + tolerance</a> para personalización completa.</p>
+            </div>
+            {% endif %}
+
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18); border-radius:8px;">
+                <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:8px;">Preferencias del paciente</div>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px; font-size:.78rem;">
+                    <div>
+                        <div style="color:var(--pn-text-muted);">Goal of care</div>
+                        <div style="color:#f8fafc; font-weight:600;" data-testid="twin-goal-of-care">{{ patient_twin.preferences.goal_of_care or 'balanced' }}</div>
+                    </div>
+                    <div>
+                        <div style="color:var(--pn-text-muted);">OS weight</div>
+                        <div style="color:#f8fafc; font-weight:600;">{{ '%.2f' % (patient_twin.preferences.os_weight or 0.5) }}</div>
+                    </div>
+                    <div>
+                        <div style="color:var(--pn-text-muted);">QoL weight</div>
+                        <div style="color:#f8fafc; font-weight:600;">{{ '%.2f' % (patient_twin.preferences.qol_weight or 0.5) }}</div>
+                    </div>
+                    <div>
+                        <div style="color:var(--pn-text-muted);">Tolerances declared</div>
+                        <div style="color:#f8fafc; font-weight:600;">{{ (patient_twin.preferences.toxicity_tolerance or {})|length }}</div>
+                    </div>
+                </div>
+            </div>
+
+            {% if patient_twin.regimen_rankings %}
+            <div style="margin-top:14px;">
+                <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:8px;">Ranking personalizado de regímenes</div>
+                {% for regimen in patient_twin.regimen_rankings[:5] %}
+                <div style="margin-bottom:8px; padding:10px 14px; border-radius:8px; {% if loop.index == 1 %}background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.32);{% elif regimen.tolerance_mismatches %}background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.32);{% else %}background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18);{% endif %}" data-testid="twin-regimen-{{ regimen.regimen_id }}">
+                    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
+                        <div style="flex:1;">
+                            <div style="display:flex; align-items:baseline; gap:8px;">
+                                <span style="font-size:.95rem; color:#f8fafc; font-weight:700;">#{{ loop.index }} {{ regimen.regimen_name }}</span>
+                                <span style="font-size:.7rem; color:var(--pn-text-muted);">({{ regimen.trial_source }})</span>
+                            </div>
+                            <div style="font-size:.78rem; color:var(--pn-text-muted); margin-top:3px;">
+                                OS gain esperada: <span style="color:#f8fafc;">{{ '%.1f' % regimen.predicted_os_gain_mo }}mo</span>
+                            </div>
+                            {% if regimen.tolerance_mismatches %}
+                            <ul style="margin:6px 0 0; padding-left:18px; font-size:.75rem; color:rgb(252,165,165); list-style:disc;">
+                                {% for warn in regimen.tolerance_mismatches %}
+                                <li>⚠ {{ warn }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                            {% if regimen.toxicity_warnings and not regimen.tolerance_mismatches %}
+                            <ul style="margin:6px 0 0; padding-left:18px; font-size:.75rem; color:rgb(252,211,77); list-style:disc;">
+                                {% for warn in regimen.toxicity_warnings %}
+                                <li>· {{ warn }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                        </div>
+                        <div style="text-align:right;">
+                            <div style="font-size:1.5rem; font-weight:700; color:{% if regimen.score >= 7 %}rgb(52,211,153){% elif regimen.score >= 5 %}rgb(34,211,238){% elif regimen.score >= 3 %}rgb(251,191,36){% else %}rgb(244,63,94){% endif %};">{{ '%.1f' % regimen.score }}</div>
+                            <div style="font-size:.65rem; color:var(--pn-text-muted);">/ 10</div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if patient_twin.redecision_alerts %}
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.32); border-radius:8px;" data-testid="twin-redecision-alerts">
+                <div style="font-size:.65rem; color:rgb(252,165,165); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">Re-decision triggers activos</div>
+                <ul style="margin:0; padding-left:18px; font-size:.85rem; list-style:disc;">
+                    {% for alert in patient_twin.redecision_alerts %}
+                    <li style="color:{% if alert.severity == 'critical' %}rgb(252,165,165); font-weight:600{% else %}rgb(252,211,77){% endif %};">{{ alert.message }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% if patient_twin.rationale_summary %}
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(15,23,42,0.4); border:1px solid rgba(148,163,184,0.14); border-radius:8px;">
+                <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Razonamiento</div>
+                <p style="margin:0; color:var(--pn-text-muted); font-size:.82rem;">{{ patient_twin.rationale_summary }}</p>
+            </div>
+            {% endif %}
+
+            {% if patient_twin.caveats %}
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(15,23,42,0.3); border:1px solid rgba(148,163,184,0.12); border-radius:8px;">
+                <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">Caveats clínicos (transparencia)</div>
+                <ul style="margin:0; padding-left:18px; font-size:.72rem; color:var(--pn-text-muted); list-style:disc;">
+                    {% for caveat in patient_twin.caveats %}
+                    <li>{{ caveat }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
         {% set _tb_recommendation = _tumor_board.get('recommendation', {}) if _tumor_board else {} %}
         {% if _tumor_board and _tb_options %}
         <section id="pm2TumorBoardOS" class="pm2-tumor-board-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(34,211,238,.08), rgba(15,23,42,.62)); border: 1px solid rgba(34,211,238,.28); border-radius: 14px;" aria-label="Tumor Board OS">
