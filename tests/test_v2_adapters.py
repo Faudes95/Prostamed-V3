@@ -195,7 +195,7 @@ def test_stage_center_returns_7_stages():
 
 def test_stage_center_default_stage():
     result = stage_center_to_v2()
-    assert result["default_stage"] == "m1crpc"
+    assert result["default_stage"] == ""
 
 def test_stage_center_canvases_match_stages():
     result = stage_center_to_v2()

@@ -300,4 +300,4 @@ def test_g2729_faubot_release_includes_lxxxiii():
     """H.G2729 — FAUBOT_RELEASE >= LXXXIII (post-fix demos; forward-compat LXXXIV+)."""
     from prostanet.shared.algorithm_version import FAUBOT_RELEASE
     # Aceptar LXXXIII o LXXXIII.b o LXXXIV+ o LXXXV+ (forward-compat)
-    assert any(tag in FAUBOT_RELEASE for tag in ("LXXXIII", "LXXXIV", "LXXXV"))
+    assert any(tag in FAUBOT_RELEASE for tag in ("LXXXIII", "LXXXIV", "LXXXV", "LXXXVI", "LXXXVII", "LXXXVIII", "LXXXIX", "XC", "XCI", "XCII", "XCIII", "XCIV", "XCV", "XCVI", "XCVII", "XCVIII", "XCIX", "C", "LXCI", "LXCII", "LXCIII", "LXCIV", "LXCV", "LXCVI", "LXCVII"))

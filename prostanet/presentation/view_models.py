@@ -77,7 +77,7 @@ def build_page_chrome(
     if primary_action is None:
         primary_action = PageAction(
             label="Nuevo caso clínico",
-            href="/clinical-hub",
+            href="/clinical-hub#pm2OfficialClassifier",
             variant="primary",
             icon="+",
         )

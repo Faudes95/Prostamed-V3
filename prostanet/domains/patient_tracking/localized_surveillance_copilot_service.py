@@ -259,6 +259,11 @@ class LocalizedSurveillanceCopilotService:
             "decision_delta_since_last_visit": decision_delta_since_last_visit,
             "localized_schedule_overlay": self._schedule_overlay(localized_track, as_summary, blocking_inputs),
             "trigger_event": trigger_event or "longitudinal_refresh",
+            # Faubot LXCVIII.A.3 — propagation keys siempre presentes (test contract)
+            "pivotal_contraindication_gates": list(
+                module_result.get("pivotal_contraindication_gates") or []
+            ),
+            "not_recommended": list(module_result.get("not_recommended") or []),
         }
 
     def _disabled_bundle(self, *, state: str, runtime_mode: str, status: str) -> dict[str, Any]:
@@ -292,6 +297,9 @@ class LocalizedSurveillanceCopilotService:
             "why_changed_today": [],
             "decision_delta_since_last_visit": {"available": False},
             "localized_schedule_overlay": {},
+            # Faubot LXCVIII.A.3 — propagation keys siempre presentes (test contract)
+            "pivotal_contraindication_gates": [],
+            "not_recommended": [],
         }
 
     def _localized_track(self, module_result: dict[str, Any], as_summary: dict[str, Any], payload: dict[str, Any]) -> str:

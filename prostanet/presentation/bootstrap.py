@@ -23,3 +23,15 @@ def register_modular_blueprints(app: Flask) -> None:
             f"trial_eligibility_bp registration failed (continuing): "
             f"{type(exc).__name__}: {exc}"
         )
+
+    # Faubot LXCV — Iterative Improvement Loop Monitor
+    try:
+        from prostanet.presentation.loop_monitor import loop_monitor_bp
+        if "loop_monitor" not in app.blueprints:
+            app.register_blueprint(loop_monitor_bp)
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            f"loop_monitor_bp registration failed (continuing): "
+            f"{type(exc).__name__}: {exc}"
+        )

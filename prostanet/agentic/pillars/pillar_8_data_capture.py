@@ -146,14 +146,34 @@ def _structured_imaging_forms() -> tuple[float, list[Gap]]:
                          description="longitudinal_capture_v2_demo.html missing",
                          severity=8, effort_h=0.0)]
     content = longitudinal_demo.read_text(errors="replace")
+    normalized = content.lower()
     structured = []
-    if "psma_suvmax" in content or "psma-pet-form" in content.lower():
+    if (
+        "psma_pet_structured" in normalized
+        or "psma_suvmax" in normalized
+        or "psma-pet-form" in normalized
+        or 'data-append-form="psma_pet"' in normalized
+    ):
         structured.append("psma_pet_structured")
-    if "bone_site_entries" in content or "bone-scan-form" in content.lower():
+    if (
+        "bone_scan_structured" in normalized
+        or "bone_site_entries" in normalized
+        or "bone-scan-form" in normalized
+        or 'data-append-form="bone_scan"' in normalized
+    ):
         structured.append("bone_scan_structured")
-    if "pirads_score" in content.lower() or "pi-rads" in content.lower():
+    if (
+        "mri_pirads_structured" in normalized
+        or "pirads_score" in normalized
+        or "pi-rads" in normalized
+        or 'data-append-form="mri_pirads"' in normalized
+    ):
         structured.append("mri_pirads_structured")
-    if "recist_target" in content.lower() or "recist" in content.lower():
+    if (
+        "ct_recist_structured" in normalized
+        or "recist_target" in normalized
+        or 'data-append-form="ct_recist"' in normalized
+    ):
         structured.append("ct_recist_structured")
 
     score = len(structured) / len(REQUIRED_IMAGING_MODALITIES)

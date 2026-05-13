@@ -204,7 +204,7 @@ def test_g2953_psma_pet_kind_endpoint(client):
     r = client.post("/api/longitudinal/97000000001/append", json={
         "kind": "psma_pet", "payload": {"date": "2026-04-18",
                                           "tracer": "Ga68_PSMA_11",
-                                          "suvmax": 8.5, "lesion_count": 12,
+                                          "psma_suvmax": 8.5, "lesion_count": 12,
                                           "distribution": "bone"},
     })
     assert r.status_code in (200, 409)
@@ -226,6 +226,28 @@ def test_g2955_visceral_mets_kind_endpoint(client):
         "kind": "visceral_mets", "payload": {"date": "2026-04-20",
                                                 "liver_metastasis": "1",
                                                 "lung_metastasis": "0"},
+    })
+    assert r.status_code in (200, 409)
+
+
+def test_p8_mri_pirads_kind_endpoint(client):
+    """P8 — MRI/PI-RADS structured capture is accepted by append-only endpoint."""
+    r = client.post("/api/longitudinal/97000000001/append", json={
+        "kind": "mri_pirads", "payload": {"date": "2026-04-23",
+                                           "mri_modality": "mpmri_prostate",
+                                           "pirads_score": "4",
+                                           "mri_lesion_size_mm": "14"},
+    })
+    assert r.status_code in (200, 409)
+
+
+def test_p8_ct_recist_kind_endpoint(client):
+    """P8 — CT/RECIST structured capture is accepted by append-only endpoint."""
+    r = client.post("/api/longitudinal/97000000001/append", json={
+        "kind": "ct_recist", "payload": {"date": "2026-04-24",
+                                          "ct_region": "chest_abdomen_pelvis",
+                                          "recist_target_lesion_count": "2",
+                                          "recist_target_sum_mm": "38.5"},
     })
     assert r.status_code in (200, 409)
 
@@ -286,6 +308,8 @@ def test_g2961_longitudinal_template_has_validation_rules(client):
     assert "ECOG debe ser 0-4" in body
     assert "PHQ-9 debe ser 0-27" in body
     assert "SUVmax > 100 improbable" in body
+    assert "PI-RADS debe ser 1-5" in body
+    assert "Lesiones diana RECIST debe ser" in body
 
 
 def test_g2962_longitudinal_template_has_new_kinds(client):
@@ -293,8 +317,32 @@ def test_g2962_longitudinal_template_has_new_kinds(client):
     r = client.get("/longitudinal-capture/97000000001")
     body = r.data.decode("utf-8", errors="replace")
     for kind in ["ecog", "bpi", "esas", "phq9", "ctcae", "psma_pet",
-                  "bone_scan", "visceral_mets", "hrr_germinal", "hrr_somatic"]:
+                  "bone_scan", "mri_pirads", "ct_recist", "visceral_mets",
+                  "hrr_germinal", "hrr_somatic"]:
         assert f"data-append-form=\"{kind}\"" in body, f"Missing kind: {kind}"
+
+
+def test_p8_structured_imaging_forms_close_gap(client):
+    """P8 — Structured imaging forms cover all required modalities."""
+    from prostanet.agentic.pillars.pillar_8_data_capture import PILLAR
+
+    r = client.get("/longitudinal-capture/97000000001")
+    body = r.data.decode("utf-8", errors="replace")
+    for marker in [
+        'data-structured-imaging="psma_pet_structured"',
+        'data-structured-imaging="bone_scan_structured"',
+        'data-structured-imaging="mri_pirads_structured"',
+        'data-structured-imaging="ct_recist_structured"',
+        'name="psma_suvmax"',
+        'name="bone_site_entries"',
+        'name="pirads_score"',
+        'name="recist_target_lesion_count"',
+    ]:
+        assert marker in body
+
+    ps = PILLAR.score()
+    assert ps.details["structured_imaging_pct"] == 100.0
+    assert "structured_form_missing" not in {gap.kind for gap in ps.gaps}
 
 
 def test_g2963_patient_profile_has_auto_derive_panel(client):

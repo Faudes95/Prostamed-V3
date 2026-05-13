@@ -6,7 +6,7 @@ Métrica: `(gates_with_trial_evidence/89)*0.4 + (gates_with_retro_validation/89)
 - gates_with_trial_evidence: gates YAML con `trial_refs` non-empty
 - gates_with_retro_validation: filas en retro_validation_results.{xlsx,yaml}
   con AUC/PPV/NPV per gate sobre cohorte SQLite
-- prospective_protocol_signed: presence de signed_protocol.md flag
+- prospective_protocol_signed: protocol + local QMS authorization flag
 - prospective_data_collected: presence de cohort enrollment ≥50 pts (placeholder)
 
 **Cap automatizado: 85%** (15% requiere protocolo prospectivo human-firmado).
@@ -61,12 +61,63 @@ def _count_gates_with_retro_validation() -> int:
         return 0
 
 
+def _protocol_front_matter(text: str) -> dict:
+    """Return YAML front matter if the protocol has one."""
+    if not text.startswith("---"):
+        return {}
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return {}
+    try:
+        data = yaml.safe_load(parts[1]) or {}
+        return data if isinstance(data, dict) else {}
+    except yaml.YAMLError:
+        return {}
+
+
 def _is_prospective_protocol_signed() -> bool:
-    if not PROTOCOL_SIGNED_FLAG.exists():
+    """Validate the human-gated internal prospective protocol contract.
+
+    A bare marker file is not enough: the protocol and authorization record must
+    agree on ID/version/status and explicitly avoid false IRB/enrollment claims.
+    """
+    if not PROTOCOL_SIGNED_FLAG.exists() or not PROTOCOL_PATH.exists():
         return False
-    if not PROTOCOL_PATH.exists():
+    try:
+        protocol_text = PROTOCOL_PATH.read_text(encoding="utf-8", errors="replace")
+        flag_data = yaml.safe_load(PROTOCOL_SIGNED_FLAG.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
         return False
-    return PROTOCOL_PATH.stat().st_size > 1000
+    if not isinstance(flag_data, dict) or PROTOCOL_PATH.stat().st_size <= 1000:
+        return False
+
+    protocol_meta = _protocol_front_matter(protocol_text)
+    expected_status = "authorized_internal_shadow_validation"
+    required_false = [
+        "irb_approval_claimed",
+        "external_patient_enrollment_allowed",
+        "clinical_fact_mutation_allowed_by_protocol",
+        "orders_or_prescribing_allowed",
+    ]
+    required_true = ["human_authorization"]
+    normalized_protocol_text = protocol_text.replace("*", "")
+    safety_text = [
+        "does not claim IRB approval",
+        "does not enroll external",
+        "does not prescribe",
+        "No predictive ML model is trained",
+        "Human review is required",
+    ]
+
+    return all([
+        flag_data.get("protocol_id") == protocol_meta.get("protocol_id") == "PM-CLIN-VAL-001",
+        str(flag_data.get("version")) == str(protocol_meta.get("version")) == "1.0",
+        flag_data.get("status") == protocol_meta.get("status") == expected_status,
+        flag_data.get("authorization_scope") == protocol_meta.get("authorization_scope"),
+        all(flag_data.get(k) is False and protocol_meta.get(k) is False for k in required_false),
+        all(flag_data.get(k) is True for k in required_true),
+        all(snippet in normalized_protocol_text for snippet in safety_text),
+    ])
 
 
 def _prospective_data_collected_score() -> float:
@@ -95,12 +146,23 @@ class Pillar5Clinical:
         gates_evidence_pct = gates_with_evidence / EXPECTED_GATES_TOTAL
         gates_retro_pct = gates_with_retro / EXPECTED_GATES_TOTAL
 
+        # LXCIX.6: clamp gates_evidence_pct + gates_retro_pct a [0, 1] para
+        # evitar overflow cuando catalog crece (113 > 89). Sin clamp, la
+        # contribución retro+evidence sola excede el cap automatizado 85%.
+        gates_evidence_pct = min(gates_evidence_pct, 1.0)
+        gates_retro_pct = min(gates_retro_pct, 1.0)
+
         score_pct = (
             gates_evidence_pct * 0.4
             + gates_retro_pct * 0.3
             + (1.0 if prosp_signed else 0.0) * 0.15
             + prosp_data * 0.15
         ) * 100.0
+
+        # LXCIX.6: hard cap a 85% si protocolo prospectivo NO firmado.
+        # Garantiza que el último 15% requiere validación humana out-of-loop.
+        if not prosp_signed:
+            score_pct = min(score_pct, 85.0)
 
         gaps: list[Gap] = []
         # Trial evidence gaps (top 5 missing)

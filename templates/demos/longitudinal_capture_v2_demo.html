@@ -16,9 +16,77 @@
     <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
+    {% if readiness_lane_filter %}
+    <style>
+        .pm2-readiness-filter-active [data-capture-grid-wrapper] { display: none; }
+        .pm2-readiness-filter-active .pm2-capture-grid { display: none; }
+        .pm2-readiness-filter-active .pm2-append-section { display: none; }
+        .pm2-readiness-lane-diagnostic_biopsy_readiness #section-psa_new,
+        .pm2-readiness-lane-diagnostic_biopsy_readiness #section-imaging,
+        .pm2-readiness-lane-diagnostic_biopsy_readiness #section-mri_pirads,
+        .pm2-readiness-lane-active_surveillance_readiness #section-psa_new,
+        .pm2-readiness-lane-active_surveillance_readiness #section-imaging,
+        .pm2-readiness-lane-active_surveillance_readiness #section-mri_pirads,
+        .pm2-readiness-lane-localized_treatment_readiness #section-psa_new,
+        .pm2-readiness-lane-localized_treatment_readiness #section-imaging,
+        .pm2-readiness-lane-localized_treatment_readiness #section-mri_pirads,
+        .pm2-readiness-lane-bcr_salvage_readiness #section-psa_new,
+        .pm2-readiness-lane-bcr_salvage_readiness #section-imaging,
+        .pm2-readiness-lane-bcr_salvage_readiness #section-psma_pet,
+        .pm2-readiness-lane-bcr_salvage_readiness #section-event,
+        .pm2-readiness-lane-mhspc_precision_readiness #section-psa_new,
+        .pm2-readiness-lane-mhspc_precision_readiness #section-lab_panel,
+        .pm2-readiness-lane-mhspc_precision_readiness #section-imaging,
+        .pm2-readiness-lane-mhspc_precision_readiness #section-treatment,
+        .pm2-readiness-lane-mhspc_precision_readiness #section-psma_pet,
+        .pm2-readiness-lane-mhspc_precision_readiness #section-bone_scan,
+        .pm2-readiness-lane-mhspc_precision_readiness #section-visceral_mets,
+        .pm2-readiness-lane-crpc_confirmation_readiness #section-psa_new,
+        .pm2-readiness-lane-crpc_confirmation_readiness #section-testosterone_history,
+        .pm2-readiness-lane-crpc_confirmation_readiness #section-imaging,
+        .pm2-readiness-lane-m0crpc_arpi_readiness #section-psa_new,
+        .pm2-readiness-lane-m0crpc_arpi_readiness #section-testosterone_history,
+        .pm2-readiness-lane-m0crpc_arpi_readiness #section-imaging,
+        .pm2-readiness-lane-m0crpc_arpi_readiness #section-lab_panel,
+        .pm2-readiness-lane-m0crpc_arpi_readiness #section-ctcae,
+        .pm2-readiness-lane-m1crpc_sequence_readiness #section-psa_new,
+        .pm2-readiness-lane-m1crpc_sequence_readiness #section-testosterone_history,
+        .pm2-readiness-lane-m1crpc_sequence_readiness #section-lab_panel,
+        .pm2-readiness-lane-m1crpc_sequence_readiness #section-imaging,
+        .pm2-readiness-lane-m1crpc_sequence_readiness #section-treatment,
+        .pm2-readiness-lane-m1crpc_sequence_readiness #section-psma_pet,
+        .pm2-readiness-lane-m1crpc_sequence_readiness #section-bone_scan,
+        .pm2-readiness-lane-m1crpc_sequence_readiness #section-visceral_mets,
+        .pm2-readiness-lane-m1crpc_sequence_readiness #section-ct_recist,
+        .pm2-readiness-lane-m1crpc_sequence_readiness #section-event,
+        .pm2-readiness-lane-parp_hrr_readiness #section-lab_panel,
+        .pm2-readiness-lane-parp_hrr_readiness #section-treatment,
+        .pm2-readiness-lane-parp_hrr_readiness #section-hrr_germinal,
+        .pm2-readiness-lane-parp_hrr_readiness #section-hrr_somatic,
+        .pm2-readiness-lane-psma_rlt_readiness #section-lab_panel,
+        .pm2-readiness-lane-psma_rlt_readiness #section-imaging,
+        .pm2-readiness-lane-psma_rlt_readiness #section-treatment,
+        .pm2-readiness-lane-psma_rlt_readiness #section-psma_pet,
+        .pm2-readiness-lane-psma_rlt_readiness #section-ct_recist,
+        .pm2-readiness-lane-adt_arpi_safety_readiness #section-testosterone_history,
+        .pm2-readiness-lane-adt_arpi_safety_readiness #section-lab_panel,
+        .pm2-readiness-lane-adt_arpi_safety_readiness #section-treatment,
+        .pm2-readiness-lane-adt_arpi_safety_readiness #section-ecog,
+        .pm2-readiness-lane-adt_arpi_safety_readiness #section-ctcae,
+        .pm2-readiness-lane-supportive_palliative_readiness #section-event,
+        .pm2-readiness-lane-supportive_palliative_readiness #section-pro,
+        .pm2-readiness-lane-supportive_palliative_readiness #section-ecog,
+        .pm2-readiness-lane-supportive_palliative_readiness #section-bpi,
+        .pm2-readiness-lane-supportive_palliative_readiness #section-esas,
+        .pm2-readiness-lane-supportive_palliative_readiness #section-phq9,
+        .pm2-readiness-lane-supportive_palliative_readiness #section-ctcae {
+            display: block;
+        }
+    </style>
+    {% endif %}
 </head>
-<body class="bg-slate-950 text-slate-100 antialiased">
+<body class="bg-slate-950 text-slate-100 antialiased {% if readiness_lane_filter %}pm2-readiness-filter-active pm2-readiness-lane-{{ readiness_lane_filter }}{% endif %}">
 <a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
 
 <div class="pm2-longitudinal-shell">
@@ -72,8 +140,105 @@
             </p>
         </div>
 
+        {% if decision_lane_filter or decision_field_filter %}
+        <section style="margin-bottom:var(--space-5);padding:var(--space-3) var(--space-4);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.28);border-radius:14px" aria-label="Decisión Hoy filtro longitudinal">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-3);flex-wrap:wrap">
+                <div>
+                    <div style="color:var(--pn-accent);font-size:.68rem;font-weight:900;letter-spacing:.16em;text-transform:uppercase">DECISIÓN HOY</div>
+                    <p style="margin:5px 0 0;color:#dbeafe;font-size:.82rem;line-height:1.45;max-width:82ch">
+                        Captura dirigida para desbloquear la decisión canónica. Sólo se agregan datos longitudinales reales y revisables.
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+                    {% if decision_lane_filter %}
+                    <span class="pm2-state-chip pm2-state-chip--primary">carril: {{ decision_lane_filter }}</span>
+                    {% endif %}
+                    {% if decision_field_filter %}
+                    <span class="pm2-state-chip">dato: {{ decision_field_filter }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+        {% endif %}
+
+        {% set _readiness = clinical_readiness_tower or {} %}
+        {% if _readiness %}
+        <section style="margin-bottom:var(--space-5);padding:var(--space-4);background:rgba(8,13,26,.72);border:1px solid rgba(34,211,238,.22);border-radius:14px" aria-label="Readiness clínico longitudinal">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-3);flex-wrap:wrap">
+                <div>
+                    <div style="color:var(--pn-accent);font-size:.7rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase">Readiness clínico</div>
+                    <h3 style="font-family:var(--pm-font-display);font-size:1.05rem;font-weight:800;color:#f8fbff;margin:5px 0 0">
+                        {% if readiness_lane_detail %}{{ readiness_lane_detail.label }}{% else %}{{ _readiness.summary.priority_lane_label or 'Torre longitudinal' }}{% endif %}
+                    </h3>
+                    <p style="color:var(--pn-text-muted);font-size:.8rem;line-height:1.45;margin:6px 0 0;max-width:78ch">
+                        {% if readiness_lane_detail %}{{ readiness_lane_detail.reason }}{% else %}{{ _readiness.summary.dominant_blocker or 'Sin bloqueo dominante.' }}{% endif %}
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <span class="pm2-state-chip">{{ _readiness.summary.active_lane_count or 0 }} carriles activos</span>
+                    {% if readiness_lane_filter %}
+                    <span class="pm2-state-chip pm2-state-chip--primary">filtro: {{ readiness_lane_filter }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% if readiness_lane_detail and readiness_lane_detail.display_missing_fields %}
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
+                {% for field in readiness_lane_detail.display_missing_fields[:8] %}
+                <span style="display:inline-flex;max-width:100%;border:1px solid rgba(245,158,11,.18);background:rgba(245,158,11,.08);color:#fde68a;border-radius:8px;padding:4px 7px;font-size:.7rem;overflow-wrap:anywhere">{{ field }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        <section class="pm2-voice-os-panel" data-pm2-voice-os data-patient-ref="{{ identity.nss }}" data-surface="longitudinal_capture_v2" aria-label="Cortana clínica longitudinal" style="margin:0 0 var(--space-5);">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem;color:var(--pn-accent);font-weight:800;letter-spacing:.16em;text-transform:uppercase;">Cortana clínica</div>
+                    <h3 style="font-family:var(--pm-font-display);font-size:1.05rem;color:#f8fafc;margin:5px 0 0;">Dictado longitudinal con revisión</h3>
+                    <p style="margin:6px 0 0;color:var(--pn-text-muted);font-size:.8rem;line-height:1.45;max-width:78ch;">
+                        Capture APE/PSA, testosterona, ECOG, labs, toxicidad o línea terapéutica desde voz. Nada se escribe sin aceptar candidatos.
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+                    <span class="pm2-voice-status" data-voice-status data-tone="idle">sin sesión</span>
+                    <span class="pm2-state-chip">sesión: <span data-voice-session-key>sin sesión</span></span>
+                </div>
+            </div>
+            <div class="pm2-voice-grid">
+                <div class="pm2-voice-box">
+                    <div style="font-size:.68rem;color:#67e8f9;font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Consentimiento verbal</div>
+                    <textarea class="pm2-voice-textarea" data-voice-consent-text>Autorizo que ProstaMed capture esta conversación clínica por voz para transcripción local, revisión médica y escritura auditada en mi expediente.</textarea>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="create">Crear sesión</button>
+                        <button type="button" class="pm2-btn pm2-btn--primary" data-voice-action="consent">Registrar consentimiento</button>
+                    </div>
+                </div>
+                <div class="pm2-voice-box">
+                    <div style="font-size:.68rem;color:#67e8f9;font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Transcript revisable</div>
+                    <textarea class="pm2-voice-textarea" data-voice-transcript placeholder="Ejemplo: PSA 4.2 ng/mL el 2026-05-11, testosterona 42 ng/dL, toxicidad fatiga grado 2..."></textarea>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="record">
+                            <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path stroke-width="2" stroke-linecap="round" d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></svg>
+                            Grabar
+                        </button>
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="stop">
+                            <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="7" y="7" width="10" height="10" rx="1.5" stroke-width="2"/></svg>
+                            Detener STT
+                        </button>
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="review">Extraer candidatos</button>
+                        <button type="button" class="pm2-btn pm2-btn--primary" data-voice-action="commit">Firmar y escribir aceptados</button>
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="discard">Descartar</button>
+                    </div>
+                    <div data-voice-candidates style="margin-top:10px;">
+                        <div class="pm2-voice-empty">Sin candidatos todavía.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         {# What can capture grid (quick jump) #}
-        <div style="margin-bottom:var(--space-5)">
+        <div style="margin-bottom:var(--space-5)" data-capture-grid-wrapper>
             <div style="color:var(--pn-accent);font-size:.7rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin-bottom:8px">
                 Qué capturar hoy · {{ what_can_capture | length }} categorías
             </div>
@@ -89,6 +254,42 @@
                 {% endfor %}
             </div>
         </div>
+
+        {% if longitudinal_field_router %}
+        <section style="margin-bottom:var(--space-5);padding:var(--space-4);background:rgba(8,13,26,.72);border:1px solid rgba(34,211,238,.22);border-radius:14px" data-clinical-field-router data-state="{{ longitudinal_field_router.state }}" data-phase="{{ longitudinal_field_router.phase }}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-3);flex-wrap:wrap;margin-bottom:10px">
+                <div>
+                    <div style="color:var(--pn-accent);font-size:.7rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase">Campos sugeridos por seguimiento</div>
+                    <div style="color:var(--pn-text-muted);font-size:.78rem;margin-top:4px">
+                        {{ longitudinal_field_router.stage_label }} · {{ longitudinal_field_router.summary.total_fields }} campos activos
+                        {% if longitudinal_field_router.summary.readiness_filter_active %}· filtrado por readiness{% endif %}
+                    </div>
+                </div>
+                <span class="pm2-state-chip" style="font-size:.66rem;padding:3px 8px">router clinico</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px">
+                {% for group in longitudinal_field_router.get('group_order', []) %}
+                {% set fields = group.get('fields', []) %}
+                {% if fields and group.key in ['required', 'monitoring', 'decision_refiners'] %}
+                <div style="border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.5);border-radius:12px;padding:10px;min-width:0">
+                    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;color:#d9ecff;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em">
+                        <span>{{ group.label }}</span>
+                        <span class="pm2-mono" style="color:var(--pn-accent)">{{ group.field_count }}</span>
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">
+                        {% for field in fields[:7] %}
+                        <span style="display:inline-flex;max-width:100%;border:1px solid rgba(103,232,249,.16);background:rgba(8,145,178,.1);color:#d8efff;border-radius:8px;padding:4px 7px;font-size:.7rem;line-height:1.2;overflow-wrap:anywhere">{{ field.label }}</span>
+                        {% endfor %}
+                        {% if group.field_count > 7 %}
+                        <span style="display:inline-flex;border:1px solid rgba(103,232,249,.16);background:rgba(8,145,178,.1);color:#d8efff;border-radius:8px;padding:4px 7px;font-size:.7rem">+{{ group.field_count - 7 }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
 
         {# ── PSA section ── #}
         <section id="section-psa_new" class="pm2-append-section">
@@ -432,7 +633,7 @@
         </section>
 
         {# ── LXC — Captura ECOG longitudinal (gate 73 ECOG decline) ── #}
-        <section class="pm2-append-section">
+        <section id="section-ecog" class="pm2-append-section">
             <header>
                 <h3>📊 ECOG performance status (longitudinal · gate 73)</h3>
                 <p class="pm2-append-section-meta">Captura per-visita · sin esto, gate 73 (ECOG decline) NO dispara</p>
@@ -457,7 +658,7 @@
         </section>
 
         {# ── LXC — BPI 11-item Pain (gate 74 BPI escalation) ── #}
-        <section class="pm2-append-section">
+        <section id="section-bpi" class="pm2-append-section">
             <header>
                 <h3>🩹 BPI Brief Pain Inventory (11-item · gate 74)</h3>
                 <p class="pm2-append-section-meta">Worst/Least/Average/Now + interferencia 7-item · sin esto, gate 74 + palliative RT eligibility no dispara</p>
@@ -474,7 +675,7 @@
         </section>
 
         {# ── LXC — ESAS 9-item (palliative pathway) ── #}
-        <section class="pm2-append-section">
+        <section id="section-esas" class="pm2-append-section">
             <header>
                 <h3>💊 ESAS Edmonton Symptom Assessment (9-item)</h3>
                 <p class="pm2-append-section-meta">Cada síntoma 0-10 (sum 0-90) · gates 75-77 palliative pathway</p>
@@ -495,7 +696,7 @@
         </section>
 
         {# ── LXC — PHQ-9 Depression Screening ── #}
-        <section class="pm2-append-section">
+        <section id="section-phq9" class="pm2-append-section">
             <header>
                 <h3>🧠 PHQ-9 Depression (NCCN cada 3 visitas)</h3>
                 <p class="pm2-append-section-meta">Score 0-27 · ≥10 = moderate depression → psicooncología referral</p>
@@ -516,7 +717,7 @@
         </section>
 
         {# ── LXC — CTCAE Toxicity Tracking ── #}
-        <section class="pm2-append-section">
+        <section id="section-ctcae" class="pm2-append-section">
             <header>
                 <h3>⚠ CTCAE v5.0 toxicity (per-visita)</h3>
                 <p class="pm2-append-section-meta">Sistema + término + grado · IEC 62304 §7 risk management</p>
@@ -548,8 +749,58 @@
             </div>
         </section>
 
-        {# ── LXC — PSMA-PET structured (gate 71 PSMA progression auto-trigger) ── #}
-        <section class="pm2-append-section">
+        {# ── P8 — MRI/PI-RADS structured diagnostic truth minimum ── #}
+        <section id="section-mri_pirads" class="pm2-append-section mri-pirads-form" data-structured-imaging="mri_pirads_structured">
+            <header>
+                <h3>MRI/PI-RADS estructurado</h3>
+                <p class="pm2-append-section-meta">PI-RADS, localización, tamaño y extensión local · desbloquea diagnóstico, vigilancia activa y decisión localizada</p>
+            </header>
+            <div class="pm2-append-form" data-append-form="mri_pirads">
+                <input type="date" class="pm2-append-form-input" name="date" required>
+                <select class="pm2-append-form-input" name="mri_modality" required>
+                    <option value="">Modalidad…</option>
+                    <option value="mpmri_prostate">mpMRI próstata</option>
+                    <option value="mri_prostate_protocol">MRI protocolo próstata</option>
+                    <option value="mri_whole_body">MRI cuerpo completo</option>
+                </select>
+                <select class="pm2-append-form-input" name="pirads_score" required>
+                    <option value="">PI-RADS…</option>
+                    <option value="1">PI-RADS 1</option>
+                    <option value="2">PI-RADS 2</option>
+                    <option value="3">PI-RADS 3</option>
+                    <option value="4">PI-RADS 4</option>
+                    <option value="5">PI-RADS 5</option>
+                </select>
+                <select class="pm2-append-form-input" name="mri_lesion_location">
+                    <option value="">Localización lesión…</option>
+                    <option value="peripheral_zone">Zona periférica</option>
+                    <option value="transition_zone">Zona transicional</option>
+                    <option value="anterior">Anterior</option>
+                    <option value="apex">Ápex</option>
+                    <option value="base">Base</option>
+                    <option value="multifocal">Multifocal</option>
+                </select>
+                <input type="number" min="0" step="1" class="pm2-append-form-input" placeholder="Tamaño lesión dominante (mm)" name="mri_lesion_size_mm">
+                <select class="pm2-append-form-input" name="extracapsular_extension_suspicion">
+                    <option value="">Extensión extracapsular…</option>
+                    <option value="unknown">Desconocida</option>
+                    <option value="no">No sospechada</option>
+                    <option value="suspected">Sospechada</option>
+                    <option value="definite">Definida</option>
+                </select>
+                <select class="pm2-append-form-input" name="seminal_vesicle_invasion_suspicion">
+                    <option value="">Vesículas seminales…</option>
+                    <option value="unknown">Desconocida</option>
+                    <option value="no">No sospechada</option>
+                    <option value="suspected">Sospechada</option>
+                    <option value="definite">Definida</option>
+                </select>
+                <button type="button" class="pm2-btn pm2-btn--primary" onclick="pm2AppendRow(this, 'mri_pirads')">+ Añadir MRI/PI-RADS</button>
+            </div>
+        </section>
+
+        {# ── LXC/P8 — PSMA-PET structured (gate 71 PSMA progression auto-trigger) ── #}
+        <section id="section-psma_pet" class="pm2-append-section psma-pet-form" data-structured-imaging="psma_pet_structured">
             <header>
                 <h3>🎯 PSMA-PET structured (gate 71 + VISION/PSMAfore)</h3>
                 <p class="pm2-append-section-meta">SUVmax + tracer + lesion count · sin esto, gate 71 NO dispara y VISION eligibility no se evalúa</p>
@@ -562,7 +813,7 @@
                     <option value="F18_DCFPyL">F-18 DCFPyL (Pylarify)</option>
                     <option value="F18_PSMA_1007">F-18 PSMA-1007</option>
                 </select>
-                <input type="number" step="0.1" min="0" class="pm2-append-form-input" placeholder="SUVmax dominant lesion" name="suvmax" required>
+                <input type="number" step="0.1" min="0" class="pm2-append-form-input" placeholder="SUVmax dominant lesion" name="psma_suvmax" required>
                 <input type="number" min="0" class="pm2-append-form-input" placeholder="Total lesion count" name="lesion_count">
                 <input type="number" step="0.1" min="0" class="pm2-append-form-input" placeholder="PSMA score (miPSMA 0-3)" name="mi_psma_score">
                 <select class="pm2-append-form-input" name="distribution">
@@ -578,13 +829,14 @@
             </div>
         </section>
 
-        {# ── LXC — Bone scan structured CHAARTED HV/LV ── #}
-        <section class="pm2-append-section">
+        {# ── LXC/P8 — Bone scan structured CHAARTED HV/LV ── #}
+        <section id="section-bone_scan" class="pm2-append-section bone-scan-form" data-structured-imaging="bone_scan_structured">
             <header>
                 <h3>🦴 Bone scan structured (CHAARTED HV/LV criterio)</h3>
                 <p class="pm2-append-section-meta">Lesion count per-site · ≥4 con ≥1 extra-axial = HV → triplet eligibility</p>
             </header>
             <div class="pm2-append-form" data-append-form="bone_scan">
+                <input type="hidden" name="bone_site_entries" value="[]">
                 <input type="date" class="pm2-append-form-input" name="date" required>
                 <input type="number" min="0" class="pm2-append-form-input" placeholder="Pelvis" name="pelvis_count">
                 <input type="number" min="0" class="pm2-append-form-input" placeholder="Spine" name="spine_count">
@@ -601,7 +853,7 @@
         </section>
 
         {# ── LXC — Visceral mets desglose (Halabi nomogram) ── #}
-        <section class="pm2-append-section">
+        <section id="section-visceral_mets" class="pm2-append-section">
             <header>
                 <h3>🫁 Visceral mets desglose (Halabi nomogram)</h3>
                 <p class="pm2-append-section-meta">Hepatic vs lung diferente pronóstico (peso x2 hepatic en Halabi)</p>
@@ -629,8 +881,43 @@
             </div>
         </section>
 
+        {# ── P8 — CT/RECIST structured progression and tumor burden ── #}
+        <section id="section-ct_recist" class="pm2-append-section ct-recist-form" data-structured-imaging="ct_recist_structured">
+            <header>
+                <h3>CT / RECIST estructurado</h3>
+                <p class="pm2-append-section-meta">Lesiones diana, suma de diámetros y progresión · evita interpretar CT oncológico como texto libre</p>
+            </header>
+            <div class="pm2-append-form" data-append-form="ct_recist">
+                <input type="date" class="pm2-append-form-input" name="date" required>
+                <select class="pm2-append-form-input" name="ct_region" required>
+                    <option value="">Región…</option>
+                    <option value="chest_abdomen_pelvis">Tórax/abdomen/pelvis</option>
+                    <option value="abdomen_pelvis">Abdomen/pelvis</option>
+                    <option value="chest">Tórax</option>
+                    <option value="whole_body_ct">CT cuerpo completo</option>
+                </select>
+                <input type="number" min="0" step="1" class="pm2-append-form-input" placeholder="Número de lesiones diana" name="recist_target_lesion_count" required>
+                <input type="number" min="0" step="0.1" class="pm2-append-form-input" placeholder="Suma diámetros diana (mm)" name="recist_target_sum_mm">
+                <select class="pm2-append-form-input" name="recist_response">
+                    <option value="">Respuesta RECIST…</option>
+                    <option value="cr">CR</option>
+                    <option value="pr">PR</option>
+                    <option value="sd">SD</option>
+                    <option value="pd">PD</option>
+                    <option value="not_evaluable">No evaluable</option>
+                </select>
+                <select class="pm2-append-form-input" name="new_lesions_present">
+                    <option value="">Lesiones nuevas…</option>
+                    <option value="0">No</option>
+                    <option value="1">Sí</option>
+                    <option value="unknown">Desconocido</option>
+                </select>
+                <button type="button" class="pm2-btn pm2-btn--primary" onclick="pm2AppendRow(this, 'ct_recist')">+ Añadir CT/RECIST</button>
+            </div>
+        </section>
+
         {# ── LXC — HRR germinal vs somatic separados (gate 61 HARD_BLOCK + PROfound elig) ── #}
-        <section class="pm2-append-section">
+        <section id="section-hrr_germinal" class="pm2-append-section">
             <header>
                 <h3>🧬 HRR genomic — germinal (germline test)</h3>
                 <p class="pm2-append-section-meta">Test germinal vs somatic son criterios distintos para PARP. PROfound permite ambos · ARASENS solo germinal · NCCN PROS-H obligatorio en metastásico</p>
@@ -661,7 +948,7 @@
             </div>
         </section>
 
-        <section class="pm2-append-section">
+        <section id="section-hrr_somatic" class="pm2-append-section">
             <header>
                 <h3>🧬 HRR genomic — somatic (tumor tissue or ctDNA)</h3>
                 <p class="pm2-append-section-meta">Somatic testing amplía candidatos PARPi aunque germinal sea negativo · biomarker_source crítico</p>
@@ -772,6 +1059,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/clinical_intelligence_v2.js') }}"></script>
+<script src="{{ url_for('static', filename='js/prostamed_voice_os.js', v='voice_os_20260511') }}"></script>
 <script>
 /* ─────────────────────────────────────────────────────────────────────────
  * Faubot LXXXVI #67F — Longitudinal Capture wired al endpoint REAL (Fase 2)
@@ -935,9 +1223,29 @@ function pm2ValidateForm(form, kind) {
         if (end && end < start) { window.pm2Toast('warn', 'La fecha de fin no puede ser anterior al inicio'); return false; }
     }
     if (kind === 'psma_pet') {
-        const suv = parseFloat(form.querySelector('[name="suvmax"]')?.value);
+        const suv = parseFloat(form.querySelector('[name="psma_suvmax"]')?.value || form.querySelector('[name="suvmax"]')?.value);
         if (isNaN(suv) || suv < 0) { window.pm2Toast('warn', 'SUVmax debe ser ≥ 0'); return false; }
         if (suv > 100) { window.pm2Toast('warn', 'SUVmax > 100 improbable, verificar'); return false; }
+        const mi = parseFloat(form.querySelector('[name="mi_psma_score"]')?.value);
+        if (!isNaN(mi) && (mi < 0 || mi > 3)) { window.pm2Toast('warn', 'miPSMA debe estar entre 0 y 3'); return false; }
+    }
+    if (kind === 'bone_scan') {
+        const sites = ['pelvis_count', 'spine_count', 'femur_count', 'humerus_count', 'skull_ribs_count'];
+        const total = sites.reduce((acc, name) => acc + (parseInt(form.querySelector(`[name="${name}"]`)?.value || '0') || 0), 0);
+        if (total > 200) { window.pm2Toast('warn', 'Conteo óseo > 200 improbable, verificar informe'); return false; }
+    }
+    if (kind === 'mri_pirads') {
+        const pirads = parseInt(form.querySelector('[name="pirads_score"]')?.value);
+        if (![1, 2, 3, 4, 5].includes(pirads)) { window.pm2Toast('warn', 'PI-RADS debe ser 1-5'); return false; }
+        const size = parseFloat(form.querySelector('[name="mri_lesion_size_mm"]')?.value);
+        if (!isNaN(size) && size > 100) { window.pm2Toast('warn', 'Lesión MRI > 100 mm improbable, verificar'); return false; }
+    }
+    if (kind === 'ct_recist') {
+        const count = parseInt(form.querySelector('[name="recist_target_lesion_count"]')?.value);
+        if (!Number.isInteger(count) || count < 0) { window.pm2Toast('warn', 'Lesiones diana RECIST debe ser ≥ 0'); return false; }
+        if (count > 20) { window.pm2Toast('warn', 'RECIST suele documentar hasta 5 lesiones diana totales; verificar conteo'); return false; }
+        const sum = parseFloat(form.querySelector('[name="recist_target_sum_mm"]')?.value);
+        if (!isNaN(sum) && sum > 1000) { window.pm2Toast('warn', 'Suma RECIST > 1000 mm improbable, verificar'); return false; }
     }
     return true;
 }

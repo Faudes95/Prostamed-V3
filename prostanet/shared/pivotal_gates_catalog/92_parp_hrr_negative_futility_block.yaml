@@ -1,0 +1,148 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 92: parp_hrr_negative_futility_block
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.B) — Tier 2 Contraindication Hard-Blocks.
+#
+# Razón clínica:
+#   PARP inhibitors (olaparib + niraparib + talazoparib + rucaparib)
+#   tienen actividad clínica proporcional a HRR mutation status:
+#
+#   - **PROfound (de Bono NEJM 2020;382:2091)**: olaparib en mCRPC
+#     - Cohort A (BRCA1/2/ATM): rPFS HR 0.34 (highly active)
+#     - Cohort B (12 HRR genes): rPFS HR 0.49 (active)
+#     - HRR-negative cohort: NO trial — implícito futile
+#
+#   - **MAGNITUDE (Chi JCO 2023;41:3339)**: niraparib + abiraterona
+#     - HRR+ cohort: rPFS HR 0.73 (significant)
+#     - **HRR-negative cohort: rPFS HR 0.99 (NULL effect)** — futility analysis
+#       descontinuó el cohort prematuramente porque no había beneficio
+#     - **Definitive evidence: PARP inhibitors NO funcionan en HRR-negative**
+#
+#   - **TALAPRO-2 (Agarwal Lancet 2023;402:291)**: talazoparib + enz
+#     - All-comers rPFS HR 0.63 (significant overall)
+#     - HRR+ subgroup HR 0.46 (driver of effect)
+#     - HRR-negative: marginal HR 0.79, mostly subclinical
+#
+#   - **PROpel (Saad Lancet Oncol 2023;24:1094)**: olaparib + abi
+#     - All-comers rPFS HR 0.67 (significant)
+#     - HRR-: HR 0.73 (some benefit, controversial)
+#     - HRR+: HR 0.50 (clear benefit)
+#
+#   Implicación clínica:
+#   - **MAGNITUDE-style** (genomically-selected niraparib trials):
+#     HRR-negative = absolute contraindication (futility)
+#   - **PROpel/TALAPRO-2-style** (all-comers + ARPI partner): HRR-negative
+#     puede tener marginal benefit pero NO justifica costo-toxicidad
+#   - **Single-agent PARP**: HRR mandatory
+#
+#   Override: si HRR test pendiente con plan documentado (gate 61 logic)
+#   o si paciente bajo trial all-comers (PROpel, TALAPRO-2) con rationale
+#   documentado.
+# ──────────────────────────────────────────────────────────────────────
+
+code: parp_hrr_negative_futility_block
+title: "PARP inhibitor × HRR-negative → futility hard_block (MAGNITUDE evidence)"
+faubot_added_in: "2026-04-30 LXCVI.B"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: all_of
+  triggers:
+    # Path: HRR-negative confirmado (no pendiente)
+    - type: string_match
+      field: hrr_status
+      alias_fields:
+        - homologous_recombination_repair_status
+        - hrr_test_result
+      patterns:
+        - hrr_negative
+        - negative
+        - wild_type
+        - no_mutation_detected
+
+regimen_codes:
+  - REGIMEN_CODES_PARP_INHIBITORS
+
+override:
+  type: any_of
+  triggers:
+    # Override 1: HRR test pendiente con plan documentado (gate 61)
+    - type: truthy_flag
+      field: hrr_test_pending_with_2week_plan_documented
+      alias_fields:
+        - hrr_pending_with_plan
+    # Override 2: paciente en trial all-comers con rationale documentado
+    - type: truthy_flag
+      field: parp_in_all_comers_trial_with_rationale
+      alias_fields:
+        - propel_or_talapro2_setting_documented
+
+keywords:
+  - PARP
+  - HRR
+  - homologous recombination
+  - olaparib
+  - niraparib
+  - MAGNITUDE
+  - PROfound
+  - futility
+
+message: |
+  🚨 HARD BLOCK: HRR-negative confirmado contraindica PARP inhibitor
+  (excepto en trials all-comers documentados).
+
+  🎯 EVIDENCIA FUTILITY POR TRIAL:
+
+  | Trial | Régimen | HRR+ rPFS HR | HRR- rPFS HR |
+  |-------|---------|--------------|--------------|
+  | PROfound A | Olaparib BRCA/ATM | 0.34 | NA (excluded) |
+  | PROfound B | Olaparib 12 HRR | 0.49 | NA (excluded) |
+  | **MAGNITUDE** | **Niraparib + abi** | **0.73** | **0.99 (NULL)** |
+  | TALAPRO-2 | Talazoparib + enz | 0.46 | 0.79 (marginal) |
+  | PROpel | Olaparib + abi | 0.50 | 0.73 (controversial) |
+
+  🎯 IMPLICACIÓN CLÍNICA:
+
+  **MAGNITUDE-style** (niraparib genomically-selected):
+  - HRR-negative = NULL benefit + toxicity sin gain
+  - Discontinuar PARP indication
+  - Considerar alternativas: docetaxel, cabazitaxel, Ra-223, sipuleucel
+
+  **PROpel/TALAPRO-2-style** (all-comers + ARPI):
+  - HRR-negative: marginal benefit posible pero NO costo-efectivo
+  - Considerar ARPI monoterapia (abiraterona, enzalutamida)
+  - Reservar PARP combo para HRR+
+
+  🎯 ALTERNATIVAS HRR-NEGATIVE:
+
+  **mCRPC pre-chemo**:
+  - Enzalutamida monoterapia (PREVAIL data)
+  - Abiraterona + prednisona (COU-AA-302)
+  - Sipuleucel-T (IMPACT)
+  - Radium-223 si bone-only
+
+  **mCRPC post-chemo**:
+  - Cabazitaxel (TROPIC)
+  - Lu-177-PSMA si PSMA+ (VISION)
+  - Re-challenge ARPI (limited evidence)
+
+  ⚠️ OVERRIDE 1: si HRR test pendiente con plan documentado <2 sem
+  (gate 61 mecanismo) → permitir start mientras esperan resultado.
+
+  ⚠️ OVERRIDE 2: si paciente en trial all-comers (PROpel, TALAPRO-2)
+  con rationale documentado por MDT → permitir.
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `hrr_status`: string (hrr_positive | hrr_negative | not_tested | pending)
+  - `hrr_test_pending_with_2week_plan_documented`: bool (override)
+  - `parp_in_all_comers_trial_with_rationale`: bool (override)
+
+evidence_tag: parp_hrr_negative_magnitude_profound_propel_talapro2_2020_2023
+trial_refs:
+  - "PROfound (de Bono NEJM 2020;382:2091)"
+  - "MAGNITUDE (Chi JCO 2023;41:3339)"
+  - "TALAPRO-2 (Agarwal Lancet 2023;402:291)"
+  - "PROpel (Saad Lancet Oncol 2023;24:1094)"
+  - "TRITON-3 (Fizazi NEJM 2023;388:719)"
+  - "NCCN Prostate v5.2026 PROS-G (genomic testing)"

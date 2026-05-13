@@ -68,6 +68,12 @@
     --space-8: 2rem;
     --space-10: 2.5rem;
     --space-12: 3rem;
+
+    /* Brand logo sizing — one source of truth for v2 surfaces */
+    --pm2-logo-sidebar-width: min(100%, 232px);
+    --pm2-logo-stage-width: min(100%, 232px);
+    --pm2-logo-filter-width: min(42vw, 240px);
+    --pm2-logo-demo-intake-width: min(100%, 220px);
 }
 
 /* ─────────────────────────────── Layout shell ─────────────────────────────── */
@@ -112,16 +118,115 @@
     gap: var(--space-4);
 }
 
+.pm2-mobile-brand {
+    display: none;
+}
+
+.pm2-mobile-brand-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.pm2-mobile-brand-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2rem;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid rgba(103, 232, 249, 0.22);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.62);
+    color: #dbeafe;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.pm2-mobile-brand-link:hover {
+    border-color: var(--clinical-info-edge);
+    background: rgba(6, 182, 212, 0.12);
+    color: #f0fbff;
+}
+
 @media (max-width: 1023px) {
     .pm2-sidebar { display: none; }
+    .pm2-mobile-brand {
+        display: flex;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 90;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
+        padding: var(--space-2) var(--space-4);
+        border-bottom: 1px solid var(--border-default);
+        background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.96));
+        box-shadow: 0 16px 32px rgba(2, 6, 23, 0.42);
+    }
+    .pm2-mobile-brand .pm-logo {
+        width: min(54vw, 190px);
+        height: auto;
+        max-height: none;
+        object-fit: contain;
+        object-position: center;
+        filter: drop-shadow(0 8px 20px rgba(23, 169, 255, 0.18));
+    }
+    .pm2-app-shell,
+    .pm2-result-shell,
+    .pm2-longitudinal-shell,
+    .pm2-wizard-shell {
+        padding-top: 128px;
+    }
+    .pm2-wizard-shell {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+    .pm2-app-shell > .pm2-mobile-brand,
+    .pm2-result-shell > .pm2-mobile-brand,
+    .pm2-longitudinal-shell > .pm2-mobile-brand,
+    .pm2-wizard-shell > .pm2-mobile-brand {
+        grid-column: 1;
+        grid-row: 1;
+    }
+    .pm2-app-shell > .pm2-app-header {
+        grid-column: 1;
+        grid-row: 2;
+    }
+    .pm2-app-shell > .pm2-app-main {
+        grid-column: 1;
+        grid-row: 3;
+    }
+    .pm2-result-shell > .pm2-main,
+    .pm2-longitudinal-shell > .pm2-longitudinal-main,
+    .pm2-wizard-shell > .pm2-wizard-main {
+        grid-column: 1;
+        grid-row: 2;
+    }
+}
+
+@media (max-width: 640px) {
+    .pm2-mobile-brand {
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+    }
+    .pm2-mobile-brand-actions {
+        width: 100%;
+        justify-content: center;
+    }
 }
 
 .pm2-sidebar-brand {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     padding: var(--space-2) 0 var(--space-4);
     border-bottom: 1px solid var(--border-subtle);
+    text-align: center;
 }
 
 /* LXCI Fase 5 — Logo card flotante (preserve color/design, just bigger + better placement) */
@@ -135,11 +240,11 @@
 }
 
 .pm2-sidebar-brand .pm-logo {
-    width: 240px;            /* LXCI: was 200px → +20% */
+    width: var(--pm2-logo-sidebar-width);
     height: auto;
-    max-height: 80px;        /* LXCI: was 64px → +25% */
+    max-height: none;
     object-fit: contain;
-    object-position: left center;
+    object-position: center;
     filter: drop-shadow(0 8px 20px rgba(23, 169, 255, 0.20));  /* LXCI: enhanced shadow */
 }
 
@@ -454,6 +559,12 @@
     transition: all var(--dur-fast) var(--ease-clinical);
     min-height: 36px;
     text-decoration: none;
+}
+
+.pm2-btn-icon {
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 auto;
 }
 
 .pm2-btn--primary {
@@ -1114,18 +1225,35 @@
 }
 
 .pm2-stage-rail-brand {
-    padding: 0 var(--space-2) var(--space-4);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--space-2) var(--space-2) var(--space-5);
     border-bottom: 1px solid var(--border-subtle);
     margin-bottom: var(--space-3);
+    text-align: center;
 }
 
 .pm2-stage-rail-brand .pm-logo {
-    width: 180px;
+    width: var(--pm2-logo-stage-width);
     height: auto;
-    max-height: 56px;
+    max-height: none;
     object-fit: contain;
-    object-position: left center;
-    filter: drop-shadow(0 6px 12px rgba(23, 169, 255, 0.16));
+    object-position: center;
+    filter: drop-shadow(0 10px 22px rgba(23, 169, 255, 0.22));
+}
+
+.pm2-stage-platform-nav {
+    display: grid;
+    gap: var(--space-2);
+    padding-bottom: var(--space-3);
+    margin-bottom: var(--space-2);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.pm2-stage-platform-nav .pm2-sidebar-section-label {
+    padding: 0 var(--space-3);
+    margin-top: 0;
 }
 
 .pm2-stage-rail-tagline {
@@ -1134,7 +1262,7 @@
     font-weight: 600;
     letter-spacing: 0.28em;
     text-transform: uppercase;
-    margin-top: var(--space-2);
+    margin-top: var(--space-3);
 }
 
 .pm2-stage-rail-pill {
@@ -1562,10 +1690,20 @@
 }
 
 .pm2-filter-bar-brand .pm-logo {
-    width: 220px;
-    max-height: 56px;
+    width: var(--pm2-logo-filter-width);
+    height: auto;
+    max-height: none;
     object-fit: contain;
-    object-position: left center;
+    object-position: center;
+}
+
+.pm2-demo-intake-logo {
+    width: var(--pm2-logo-demo-intake-width);
+    height: auto;
+    max-height: none;
+    object-fit: contain;
+    object-position: center;
+    filter: drop-shadow(0 8px 18px rgba(23, 169, 255, 0.18));
 }
 
 /* ─────────────────────────────── Heatmap canvas ─────────────────────────────── */
@@ -3001,6 +3139,225 @@
 .pm2-scorecard .pm2-sc-val { color: #f0fbff; font-weight: 700; font-size: 0.85rem; margin-top: 2px; font-family: ui-monospace, monospace; }
 .pm2-scorecard .pm2-sc-stars { color: #fbbf24; font-size: 1.05rem; letter-spacing: 2px; }
 
+.pm2-tumor-board-panel,
+.pm2-care-pathway-panel,
+.pm2-clinical-memory-panel,
+.pm2-voice-os-panel {
+    scroll-margin-top: 92px;
+}
+
+.pm2-voice-os-panel {
+    margin: var(--space-4) var(--space-6);
+    padding: var(--space-4);
+    background: linear-gradient(135deg, rgba(6, 182, 212, .1), rgba(15, 23, 42, .72));
+    border: 1px solid rgba(34, 211, 238, .3);
+    border-radius: 14px;
+}
+
+.pm2-voice-os-panel--intake {
+    margin: var(--space-4) 0 0;
+}
+
+.pm2-voice-grid {
+    display: grid;
+    grid-template-columns: minmax(260px, .9fr) minmax(280px, 1.1fr);
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.pm2-voice-box {
+    background: rgba(15, 23, 42, .62);
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 12px;
+    padding: 12px;
+    min-width: 0;
+}
+
+.pm2-voice-textarea {
+    width: 100%;
+    min-height: 112px;
+    resize: vertical;
+    background: rgba(2, 6, 23, .72);
+    border: 1px solid rgba(148, 163, 184, .28);
+    border-radius: 10px;
+    color: #e2f5ff;
+    padding: 10px;
+    font-size: .82rem;
+    line-height: 1.45;
+}
+
+.pm2-voice-textarea:focus {
+    outline: 2px solid rgba(34, 211, 238, .36);
+    border-color: rgba(34, 211, 238, .56);
+}
+
+.pm2-voice-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.pm2-voice-status {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(148, 163, 184, .24);
+    border-radius: 999px;
+    padding: 4px 8px;
+    font-size: .68rem;
+    color: #cbd5e1;
+    background: rgba(15, 23, 42, .62);
+}
+
+.pm2-voice-status[data-tone="ok"] { color: #bbf7d0; border-color: rgba(34, 197, 94, .32); background: rgba(34, 197, 94, .1); }
+.pm2-voice-status[data-tone="warn"] { color: #fde68a; border-color: rgba(245, 158, 11, .32); background: rgba(245, 158, 11, .1); }
+.pm2-voice-status[data-tone="busy"] { color: #a5f3fc; border-color: rgba(34, 211, 238, .32); background: rgba(34, 211, 238, .1); }
+.pm2-voice-status[data-tone="error"] { color: #fecaca; border-color: rgba(248, 113, 113, .36); background: rgba(248, 113, 113, .1); }
+
+.pm2-voice-candidate {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    gap: 9px;
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 10px;
+    background: rgba(8, 13, 26, .54);
+    margin-top: 8px;
+}
+
+.pm2-voice-candidate strong,
+.pm2-voice-candidate em,
+.pm2-voice-candidate small {
+    display: block;
+}
+
+.pm2-voice-candidate strong {
+    color: #f0fbff;
+    font-size: .82rem;
+}
+
+.pm2-voice-candidate em {
+    color: #67e8f9;
+    font-style: normal;
+    font-size: .68rem;
+    margin-top: 2px;
+}
+
+.pm2-voice-candidate small {
+    color: var(--pn-text-muted);
+    font-size: .7rem;
+    line-height: 1.35;
+    margin-top: 6px;
+}
+
+.pm2-voice-empty {
+    color: var(--pn-text-muted);
+    font-size: .78rem;
+    padding: 14px;
+    border: 1px dashed rgba(148, 163, 184, .22);
+    border-radius: 10px;
+}
+
+.pm2-voice-change-log {
+    margin-top: 10px;
+    border: 1px solid rgba(34, 211, 238, .18);
+    border-radius: 10px;
+    background: rgba(8, 13, 26, .58);
+    padding: 8px;
+    max-height: 178px;
+    overflow: auto;
+}
+
+.pm2-voice-change {
+    display: grid;
+    grid-template-columns: minmax(120px, .8fr) 1fr;
+    gap: 10px;
+    align-items: start;
+    border-bottom: 1px solid rgba(148, 163, 184, .12);
+    padding: 7px 4px;
+    font-size: .74rem;
+}
+
+.pm2-voice-change:last-child {
+    border-bottom: 0;
+}
+
+.pm2-voice-change strong {
+    color: #67e8f9;
+    font-size: .7rem;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+}
+
+.pm2-voice-change span {
+    color: #e2e8f0;
+    overflow-wrap: anywhere;
+}
+
+.pm2-legacy-field.is-voice-applied {
+    border-color: rgba(34, 211, 238, .38);
+    background: linear-gradient(180deg, rgba(34, 211, 238, .08), rgba(15, 23, 42, .34));
+    box-shadow: inset 3px 0 0 rgba(34, 211, 238, .72);
+}
+
+.pm2-legacy-field.is-voice-applied .pm2-legacy-field-label::after {
+    content: "voz";
+    display: inline-flex;
+    margin-left: 7px;
+    border: 1px solid rgba(34, 211, 238, .36);
+    border-radius: 999px;
+    padding: 1px 6px;
+    color: #a5f3fc;
+    font-size: .58rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.pm2-legacy-field.is-manual-locked {
+    border-color: rgba(245, 158, 11, .38);
+    box-shadow: inset 3px 0 0 rgba(245, 158, 11, .66);
+}
+
+.pm2-legacy-field.is-manual-locked .pm2-legacy-field-label::after {
+    content: "manual";
+    border-color: rgba(245, 158, 11, .36);
+    color: #fde68a;
+}
+
+@media (max-width: 1023px) {
+    .pm2-tumor-board-panel,
+    .pm2-care-pathway-panel,
+    .pm2-clinical-memory-panel,
+    .pm2-voice-os-panel {
+        scroll-margin-top: 164px;
+    }
+
+    .pm2-voice-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .pm2-scorecard {
+        position: static;
+        margin: 16px;
+        width: auto;
+        max-width: none;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+        box-shadow: none;
+    }
+}
+
+@media (max-width: 640px) {
+    .pm2-tumor-board-panel,
+    .pm2-care-pathway-panel,
+    .pm2-clinical-memory-panel,
+    .pm2-voice-os-panel {
+        scroll-margin-top: 212px;
+    }
+}
+
 /* Drill panel (specifc kv styles for Profile FULL) */
 .pm2-drilldown h4 {
     font-family: var(--pm-font-display);
@@ -3198,12 +3555,13 @@
 @media (max-width: 1023px) {
     .pm2-app-shell {
         grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: 64px 1fr;
-        grid-template-areas: "header" "main";
+        grid-template-rows: auto 64px 1fr;
+        grid-template-areas: "mobile-brand" "header" "main";
     }
     .pm2-app-shell .pm2-sidebar { display: none; }
 }
 
+.pm2-app-shell .pm2-mobile-brand { grid-area: mobile-brand; }
 .pm2-app-shell .pm2-sidebar { grid-area: sidebar; }
 .pm2-app-shell .pm2-app-header { grid-area: header; }
 .pm2-app-shell .pm2-app-main { grid-area: main; min-width: 0; }

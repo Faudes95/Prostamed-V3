@@ -37,6 +37,16 @@
     cohort_count=11,
     therapy_count='37+'
 ) -%}
+<div class="pm2-mobile-brand" aria-label="Marca y navegación móvil">
+    <img src="{{ url_for('static', filename='img/prostamed_logo_official.png') }}"
+         alt="PROSTAMED" class="pm-logo">
+    <nav class="pm2-mobile-brand-actions" aria-label="Navegación transversal móvil">
+        <a href="/clinical-hub#pm2OfficialClassifier" class="pm2-mobile-brand-link">Nuevo</a>
+        <a href="/patients" class="pm2-mobile-brand-link">Pacientes</a>
+        <a href="/dashboard" class="pm2-mobile-brand-link">Tablero</a>
+        <a href="/clinical-hub" class="pm2-mobile-brand-link">Centro</a>
+    </nav>
+</div>
 <aside class="pm2-sidebar" aria-label="Navegación principal">
     <div class="pm2-sidebar-brand">
         <img src="{{ url_for('static', filename='img/prostamed_logo_official.png') }}"
@@ -46,7 +56,7 @@
 
     {# LXCI Fase 4 — Action rail prominente: 3 accesos primarios arriba del fold #}
     <div class="pm2-sidebar-action-rail" aria-label="Acciones primarias">
-        <a href="/intake-wizard" class="pm2-sidebar-action pm2-sidebar-action--primary" title="Registrar nuevo paciente con clasificación NCCN">
+        <a href="/clinical-hub#pm2OfficialClassifier" class="pm2-sidebar-action pm2-sidebar-action--primary" title="Clasificar nuevo paciente desde la puerta oficial">
             <svg class="pm2-sidebar-action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
             Nuevo paciente
         </a>
@@ -87,16 +97,6 @@
         Resultado CDE
     </a>
     {% endif %}
-    <a href="/patient_intake" class="pm2-sidebar-link {% if active == 'intake' %}is-active{% endif %}">
-        <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-4M9 11V7a3 3 0 0 1 6 0v4"/></svg>
-        Wizard intake
-    </a>
-    {# Faubot LXXXVI #67F — Stage-Aware Progressive Intake (Fase 3) — nuevo flujo NCCN-correcto #}
-    <a href="/intake-wizard" class="pm2-sidebar-link {% if active == 'stage_aware_intake' %}is-active{% endif %}">
-        <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-        Stage-Aware intake
-        <span style="margin-left:auto;background:var(--clinical-info,#06b6d4);color:#0b1325;font-size:.55rem;padding:1px 5px;border-radius:3px;font-weight:700;letter-spacing:.05em;">NUEVO</span>
-    </a>
     {# Faubot LXXXVIII — FDA SaMD Compliance Closure Loop dashboard #}
     <a href="/fda-samd-compliance" class="pm2-sidebar-link {% if active == 'fda_compliance' %}is-active{% endif %}">
         <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/></svg>

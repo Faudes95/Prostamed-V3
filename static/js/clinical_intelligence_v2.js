@@ -18,7 +18,7 @@
         state: {
             activeDrawer: null,
             activeDrillDown: null,
-            activeStage: "m1crpc",
+            activeStage: null,
             charts: new Map(),
             focusReturnTo: null,
         },
@@ -201,9 +201,12 @@
         if (!rail) return;
         const pills = rail.querySelectorAll(".pm2-stage-rail-pill");
         const canvases = document.querySelectorAll("[data-stage-canvas]");
+        const placeholder = document.querySelector("[data-stage-placeholder]");
 
         const activate = (stage) => {
+            if (placeholder) placeholder.hidden = true;
             pills.forEach((p) => p.classList.toggle("is-active", p.dataset.stage === stage));
+            pills.forEach((p) => p.setAttribute("aria-selected", p.dataset.stage === stage ? "true" : "false"));
             canvases.forEach((c) => {
                 if (c.dataset.stageCanvas === stage) {
                     c.style.display = "";
@@ -246,6 +249,15 @@
         const initial = window.location.hash?.slice(1);
         if (initial && rail.querySelector(`[data-stage="${initial}"]`)) {
             activate(initial);
+        } else {
+            pills.forEach((p) => {
+                p.classList.remove("is-active");
+                p.setAttribute("aria-selected", "false");
+            });
+            canvases.forEach((c) => {
+                c.style.display = "none";
+            });
+            if (placeholder) placeholder.hidden = false;
         }
     };
 

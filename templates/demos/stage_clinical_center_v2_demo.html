@@ -11,7 +11,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
 </head>
 <body class="bg-slate-950 text-slate-100 antialiased">
 <a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
@@ -25,6 +25,26 @@
                  alt="PROSTAMED" class="pm-logo">
             <div class="pm2-stage-rail-tagline">Centro · por estadio</div>
         </div>
+
+        <nav class="pm2-stage-platform-nav" aria-label="Navegación transversal de plataforma">
+            <div class="pm2-sidebar-section-label">Plataforma</div>
+            <a href="/clinical-hub#pm2OfficialClassifier" class="pm2-sidebar-link">
+                <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+                Nuevo paciente
+            </a>
+            <a href="/patients" class="pm2-sidebar-link">
+                <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg>
+                Pacientes
+            </a>
+            <a href="/dashboard" class="pm2-sidebar-link">
+                <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z"/></svg>
+                Tablero
+            </a>
+            <a href="/clinical-hub" class="pm2-sidebar-link">
+                <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>
+                Centro clínico
+            </a>
+        </nav>
 
         {% for stage in stages %}
         <a href="#{{ stage.key }}"
@@ -78,10 +98,10 @@
                     <p class="pm2-stage-header-sub">{{ canvas.subtitle }}</p>
                 </div>
                 <div class="pm2-quick-actions">
-                    <button class="pm2-btn pm2-btn--ghost" type="button">
+                    <a class="pm2-btn pm2-btn--ghost" href="/clinical-hub#pm2OfficialClassifier" style="text-decoration:none">
                         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                         Nuevo paciente
-                    </button>
+                    </a>
                     <button class="pm2-btn pm2-btn--ghost" type="button">
                         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                         Re-evaluar

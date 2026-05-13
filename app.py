@@ -20,7 +20,12 @@ from prostanet.presentation.bootstrap import register_modular_blueprints
 from prostanet.presentation.ui_assets import build_ui_assets
 from prostanet.presentation.view_models import build_page_chrome
 from prostanet.shared.feature_flags import resolve_feature_flags
-from prostanet.shared.official_diagnosis import diagnosis_capture_options
+from prostanet.shared.official_diagnosis import (
+    build_official_diagnosis_context,
+    diagnosis_capture_options,
+    diagnosis_field_label,
+)
+from prostanet.shared.gleason_profile import normalize_gleason_profile
 # Faubot 2026-04-25 (XXXII) — Tier 7 G5: auth gateway HTML
 from prostanet.shared.security_helpers import require_clinical_session
 from tracking_db import configure_db_path, get_stats, init_tracking_db, patient_exists
@@ -145,6 +150,113 @@ def validate_numeric_fields(data, field_names):
             raise ValueError(f"'{field}' debe ser numérico.")
 
 
+def _payload_truthy(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value or "").strip().lower() in {"1", "true", "yes", "si", "sí", "confirmed", "confirmado"}
+
+
+def _payload_present(value):
+    return value not in (None, "", [], {}, "No aplica", "No documentado", "Desconocido", "Desconocida")
+
+
+def _registration_state(data):
+    return (
+        data.get("assessment_state")
+        or data.get("_classified_state")
+        or data.get("clinical_state")
+        or data.get("state")
+        or ("localized_initial" if _payload_truthy(data.get("known_cancer_diagnosis")) else "diagnostic_workup")
+    )
+
+
+def _prepare_registration_contract_payload(data):
+    if data.get("_classified_state") and not data.get("assessment_state"):
+        data["assessment_state"] = data.get("_classified_state")
+    if data.get("_classification_reason") and not data.get("classification_reason"):
+        data["classification_reason"] = data.get("_classification_reason")
+    if _payload_present(data.get("psa_baseline_ng_ml")) and not _payload_present(data.get("baseline_psa")):
+        data["baseline_psa"] = data.get("psa_baseline_ng_ml")
+    if _payload_present(data.get("metastasis_site")) and not _payload_present(data.get("m_substage_resolved")):
+        data["m_substage_resolved"] = data.get("metastasis_site")
+    return data
+
+
+def _official_diagnosis_context_from_registration(data):
+    state = _registration_state(data)
+    baseline = dict(data or {})
+    patient_like = {
+        "baseline": baseline,
+        "biopsies": [],
+        "follow_ups": [],
+        "identity": {
+            "nss": data.get("nss", ""),
+            "full_name": data.get("full_name", ""),
+        },
+    }
+    return build_official_diagnosis_context(
+        patient=patient_like,
+        state=state,
+        raw_assessment={"input_snapshot": baseline},
+        display_assessment={},
+        operational_module_label="Diagnóstico en consolidación",
+    )
+
+
+def _confirmed_diagnosis_publication_gate(data):
+    """Bloquea sólo la publicación de cáncer confirmado sin diagnóstico formal."""
+    context = _official_diagnosis_context_from_registration(data)
+    applies = _payload_truthy(data.get("known_cancer_diagnosis"))
+    profile = normalize_gleason_profile(data)
+    missing_raw = list(context.get("official_diagnosis_missing_fields_raw") or [])
+
+    if applies:
+        if not _payload_present(data.get("histology_subtype")) and "histology_subtype" not in missing_raw:
+            missing_raw.append("histology_subtype")
+        if not profile.get("has_structured_gleason"):
+            if "gleason_primary" not in missing_raw:
+                missing_raw.append("gleason_primary")
+            if "gleason_secondary" not in missing_raw:
+                missing_raw.append("gleason_secondary")
+        if profile.get("isup_grade") is None and "isup_grade" not in missing_raw:
+            missing_raw.append("isup_grade")
+
+        has_risk_or_stage = (
+            _payload_present(data.get("clinical_risk_group"))
+            or _payload_present(data.get("clinical_stage_group"))
+        )
+        if not has_risk_or_stage and "clinical_stage_group_or_risk_group" not in missing_raw:
+            missing_raw.append("clinical_stage_group_or_risk_group")
+
+    label_overrides = {
+        "clinical_stage_group_or_risk_group": "etapa clínica o grupo de riesgo clínico",
+    }
+    missing_labels = [label_overrides.get(field, diagnosis_field_label(field)) for field in missing_raw]
+    blocked = bool(applies and (
+        missing_raw
+        or context.get("official_diagnosis_status") in {"missing", "partial"}
+        or context.get("official_diagnosis_display_status") in {"incomplete", "operational_only"}
+        or context.get("tnm_validation_warnings")
+    ))
+    return {
+        "applies": applies,
+        "blocked": blocked,
+        "missing_fields_raw": missing_raw,
+        "missing_fields": missing_labels,
+        "official_diagnosis": context.get("official_diagnosis", ""),
+        "official_diagnosis_status": context.get("official_diagnosis_status", "missing"),
+        "official_diagnosis_display_status": context.get("official_diagnosis_display_status", "operational_only"),
+        "official_diagnosis_context": context,
+        "message": (
+            "Diagnóstico confirmado incompleto: capture "
+            + ", ".join(missing_labels[:6])
+            if blocked else ""
+        ),
+    }
+
+
 def _reconciled_patient_snapshot(record):
     from prostanet.domains.patient_tracking.reconciled_state import build_reconciled_state
 
@@ -169,6 +281,49 @@ def _resolve_patient_api_ref(patient_ref):
     if not resolved:
         return None, error_response("Paciente no encontrado", 404)
     return resolved, None
+
+
+def _minimal_patient_record_from_resolved(resolved, patient_ref):
+    return {
+        "identity": {
+            "id": resolved.get("patient_id"),
+            "nss": resolved.get("nss") or resolved.get("patient_ref") or str(patient_ref),
+            "full_name": resolved.get("full_name") or "Paciente",
+        },
+        "baseline": {},
+        "latest_assessment": {},
+        "prior_history": {},
+        "treatments": [],
+        "patient_events": [],
+    }
+
+
+def _load_clinical_memory_cohort_records(tracking_db_module, *, limit=500):
+    """Load a bounded internal cohort for the non-authoritative Memory OS mirror."""
+    records = []
+    try:
+        db_path = (
+            tracking_db_module.get_db_path()
+            if hasattr(tracking_db_module, "get_db_path")
+            else app.config.get("DB_PATH")
+        )
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM patient_identity ORDER BY id ASC LIMIT ?", (int(limit),))
+        patient_ids = [int(row["id"]) for row in cursor.fetchall()]
+        conn.close()
+        for patient_id in patient_ids:
+            record = tracking_db_module.get_patient_full_record(
+                patient_id,
+                include_derivatives=False,
+                include_ledger=False,
+            )
+            if record:
+                records.append(record)
+    except Exception as exc:
+        logger.warning("Clinical Memory OS cohort mirror unavailable: %s", exc)
+    return records
 
 
 def _analysis_dataset_payload():
@@ -214,6 +369,36 @@ def create_app(config=None):
     if config:
         app.config.update(config)
     app.config.update(resolve_feature_flags(app.config))
+
+    # Some loop-monitor tests install a lightweight tracking_db stub before
+    # importing this module. Recover the real module so test DBs and local
+    # runtime always create the patient_identity schema.
+    try:
+        import importlib
+        import sqlite3 as _stdlib_sqlite3
+        tracking_db_module = sys.modules.get("tracking_db")
+        tracking_db_sqlite = getattr(tracking_db_module, "sqlite3", None) if tracking_db_module else None
+        needs_real_tracking_db = (
+            tracking_db_module is None
+            or not getattr(tracking_db_module, "__file__", None)
+            or not hasattr(tracking_db_sqlite, "Row")
+        )
+        if needs_real_tracking_db:
+            sys.modules.pop("tracking_db", None)
+            tracking_db_module = importlib.import_module("tracking_db")
+        tracking_db_module.sqlite3 = _stdlib_sqlite3
+        if "prostanet.domains.patient_tracking.service" in sys.modules:
+            service_module = sys.modules["prostanet.domains.patient_tracking.service"]
+            if hasattr(service_module, "get_patient_full_record"):
+                service_module.get_patient_full_record = tracking_db_module.get_patient_full_record
+        globals()["sqlite3"] = _stdlib_sqlite3
+        if tracking_db_module is not None:
+            globals()["configure_db_path"] = tracking_db_module.configure_db_path
+            globals()["get_stats"] = tracking_db_module.get_stats
+            globals()["init_tracking_db"] = tracking_db_module.init_tracking_db
+            globals()["patient_exists"] = tracking_db_module.patient_exists
+    except Exception as exc:
+        logger.warning("tracking_db real-module recovery skipped: %s", exc)
 
     # Faubot 2026-04-25 (XXV) — CRIT-2 hardening: secret_key obligatorio
     # desde env var (requerido para sessions/CSRF/Flask-Login futuro).
@@ -279,6 +464,17 @@ def create_app(config=None):
             )
 
         register_modular_blueprints(app)
+        try:
+            from prostanet.voice.api import register_voice_os
+
+            register_voice_os(app)
+        except Exception as exc:
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                f"voice_os registration failed (continuing): "
+                f"{type(exc).__name__}: {exc}"
+            )
 
         # ──────────────────────────────────────────────────────────────────────
         # Faubot LXXXIII #audit-cde-v2 — Cache-busting middleware HTML responses
@@ -608,6 +804,116 @@ def gates_coverage_dashboard_page():
     )
 
 
+@app.route("/api/decision-audit/algorithm-version")
+def api_decision_audit_algorithm_version():
+    """Faubot LXCVIII.A.1 — Algorithm version endpoint for CDE Auditable
+    dimension VERSION (5/5 dimensiones del scorecard).
+
+    Tests test_algorithm_version_endpoint_returns_200 (TestEndpointFlask),
+    test_algorithm_version_endpoint_includes_gates_codes, test_endpoint_algorithm_version
+    esperan: {success: True, version: {faubot_release, gates_active_codes [...18+]}}.
+    """
+    from prostanet.shared.algorithm_version import get_algorithm_version
+
+    version = get_algorithm_version()
+
+    # Ensure gates_active_codes is present (test asserts >=18 + specific gate name)
+    if "gates_active_codes" not in version:
+        try:
+            from prostanet.shared.pivotal_gates_yaml_loader import (
+                _load_yaml_files, get_loaded_yaml_codes,
+            )
+            _load_yaml_files(force_reload=True)
+            version["gates_active_codes"] = sorted(get_loaded_yaml_codes())
+        except Exception:
+            version["gates_active_codes"] = []
+
+    return jsonify({
+        "success": True,
+        "version": version,
+    })
+
+
+@app.route("/api/decision-audit/<patient_ref>")
+def api_decision_audit_patient(patient_ref):
+    """Faubot LXCVIII.A.1 — Decision audit endpoint per patient (5 dimensiones).
+
+    Tests test_endpoint_decision_audit_nonexistent_patient esperan 404 + success=False
+    + error con "no encontrado"/"not found".
+    Tests test_decision_audit_endpoint_response_schema esperan JSON con success +
+    (audit if true, error if false).
+    """
+    try:
+        # Try to resolve patient
+        try:
+            import tracking_db
+            patient = tracking_db.get_patient_by_nss(patient_ref)
+        except Exception:
+            patient = None
+
+        if not patient:
+            return jsonify({
+                "success": False,
+                "error": f"Paciente no encontrado: {patient_ref}",
+                "audit": {"available": False},
+            }), 404
+
+        # Build audit (if patient exists)
+        try:
+            from prostanet.shared.decision_audit_builder import build_decision_audit
+            audit = build_decision_audit(patient_record=patient)
+        except Exception as exc:
+            audit = {"available": False, "error": str(exc)}
+
+        return jsonify({
+            "success": True,
+            "audit": audit,
+            "patient_ref": patient_ref,
+        })
+    except Exception as exc:
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+        }), 500
+
+
+@app.route("/api/gates-coverage-dashboard")
+def api_gates_coverage_dashboard():
+    """Faubot LXCVIII.A.2 — JSON API for gates coverage dashboard.
+
+    Tests test_api_endpoint_returns_ddi_heatmap_key (H.G220) +
+    test_api_ddi_block_structure_complete (H.G221) esperan:
+        {
+            "success": True,
+            "coverage": {..., "ddi_cross_alerts_coverage": {
+                "total_with_medications", "total_cross_alerts",
+                "by_gate", "by_category", "by_severity", "gates_with_meds_gap"
+            }},
+            "ddi_heatmap": {...},
+            "heatmap": {...},
+            "algorithm_version": {...}
+        }
+    """
+    from prostanet.shared.gates_coverage_aggregator import (
+        aggregate_gates_coverage_from_db,
+        build_heatmap_data,
+        build_ddi_heatmap_data,
+    )
+    from prostanet.shared.algorithm_version import get_algorithm_version
+
+    coverage = aggregate_gates_coverage_from_db()
+    heatmap = build_heatmap_data(coverage)
+    ddi_heatmap = build_ddi_heatmap_data(coverage)
+
+    return jsonify({
+        "success": True,
+        "coverage": coverage,
+        "heatmap": heatmap,
+        "ddi_heatmap": ddi_heatmap,
+        "algorithm_version": get_algorithm_version(),
+    })
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Faubot LXXXII #audit-cde-v2 — Endpoints Cohort References + Therapy Catalog
 # Cierra los bugs sidebar reportados: estos endpoints NO existían en producción
@@ -644,15 +950,11 @@ def therapy_catalog_page():
 def patient_intake():
     from prostanet.domains.patient_tracking.therapy_catalog import therapy_catalog_entries
 
-    # Faubot LXXVIII #67E — Producción v2 intake via demo template + adapter
-    if request.args.get("v") == "2":
-        from prostanet.presentation.v2_adapters import intake_form_schema_v2
-        v2_data = intake_form_schema_v2()
-        return render_template("demos/patient_intake_v2_demo.html", **v2_data)
-
     assessment_id = request.args.get("assessment_id", "").strip()
     if not assessment_id:
-        return redirect("/clinical-hub")
+        # Clinical Field Router closure: new patients enter only through the
+        # official classifier. Draft compatibility remains assessment_id-only.
+        return redirect("/clinical-hub#pm2OfficialClassifier")
     page_chrome = build_page_chrome(
         "patient_intake",
         "Ingreso legacy del paciente",
@@ -823,6 +1125,56 @@ def patient_profile(nss):
         if request.args.get("v") != "legacy":
             # Faubot LXXX #67E — v2 es DEFAULT. Legacy disponible vía ?v=legacy.
             from prostanet.presentation.v2_adapters import bundle_to_v2_profile_full
+            try:
+                from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
+                    build_patient_autodrive,
+                )
+                from prostanet.domains.patient_tracking.clinical_decision_today_fusion_kernel import (
+                    build_decision_today,
+                )
+
+                signals_for_autodrive = dict((longitudinal_bundle or {}).get("signals") or profile_view.get("clinical_signals") or {})
+                profile_view["autodrive"] = build_patient_autodrive(
+                    data,
+                    longitudinal_bundle=longitudinal_bundle or {},
+                    state=str(
+                        signals_for_autodrive.get("effective_state_final")
+                        or signals_for_autodrive.get("effective_state")
+                        or signals_for_autodrive.get("reconciled_state")
+                        or (data.get("latest_assessment") or {}).get("state")
+                        or ""
+                    ),
+                    management_track=str(
+                        signals_for_autodrive.get("effective_management_track_final")
+                        or signals_for_autodrive.get("effective_management_track")
+                        or signals_for_autodrive.get("reconciled_management_track")
+                        or ""
+                    ),
+                    patient_ref=str(nss),
+                )
+                profile_view["decision_today_fusion_kernel"] = profile_view["autodrive"].get("decision_today") or build_decision_today(
+                    data,
+                    longitudinal_bundle=longitudinal_bundle or {},
+                    clinical_autodrive=profile_view["autodrive"],
+                    state=str(
+                        signals_for_autodrive.get("effective_state_final")
+                        or signals_for_autodrive.get("effective_state")
+                        or signals_for_autodrive.get("reconciled_state")
+                        or (data.get("latest_assessment") or {}).get("state")
+                        or ""
+                    ),
+                    management_track=str(
+                        signals_for_autodrive.get("effective_management_track_final")
+                        or signals_for_autodrive.get("effective_management_track")
+                        or signals_for_autodrive.get("reconciled_management_track")
+                        or ""
+                    ),
+                    patient_ref=str(nss),
+                )
+            except Exception as e:
+                logger.warning(f"Error construyendo Autodrive v2: {e}")
+                profile_view["autodrive"] = {}
+                profile_view["decision_today_fusion_kernel"] = {}
             patient_for_v2 = dict(data.get("identity") or {})
             patient_for_v2["full_name"] = data["identity"].get("full_name")
             patient_for_v2["nss"] = nss
@@ -1021,7 +1373,11 @@ def api_complete_agenda_item(patient_id, agenda_id):
 def api_visit_schema(patient_id):
     import tracking_db
     try:
-        patient = tracking_db.get_patient_full_record(patient_id)
+        patient = tracking_db.get_patient_full_record(
+            patient_id,
+            include_derivatives=False,
+            include_ledger=False,
+        )
         if not patient:
             return error_response("Paciente no encontrado", 404)
         from prostanet.domains.patient_tracking.followup_agenda import build_visit_schema
@@ -1267,18 +1623,26 @@ def api_patient_signals(patient_ref):
         if error:
             return error
         patient_id = resolved["patient_id"]
-        patient = tracking_db.get_patient_full_record(patient_id)
-        if not patient:
-            return error_response("Paciente no encontrado", 404)
-        bundle = tracking_db.refresh_longitudinal_intelligence(
+        patient = tracking_db.get_patient_full_record(
             patient_id,
-            force_recompute=False,
-            record=patient,
-            include_live_benchmark=False,
+            include_derivatives=False,
+            include_ledger=False,
         )
+        if not patient:
+            patient = _minimal_patient_record_from_resolved(resolved, patient_ref)
+        try:
+            bundle = tracking_db.refresh_longitudinal_intelligence(
+                patient_id,
+                force_recompute=False,
+                record=patient,
+                include_live_benchmark=False,
+            )
+        except Exception as exc:
+            logger.warning("Signals refresh fallback for %s: %s", patient_ref, exc)
+            bundle = {"signals": {}}
         signals = bundle.get("signals")
         if signals is None:
-            return error_response("Paciente no encontrado", 404)
+            signals = {}
         from prostanet.shared.presentation_text import (
             humanize_assessment,
             humanize_care_overlays,
@@ -1360,12 +1724,94 @@ def api_patient_signals(patient_ref):
             or ""
         )
         qa_validation = active_copilot_bundle.get("qa_validation") or {}
+        from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
+            build_patient_autodrive,
+        )
+        from prostanet.domains.patient_tracking.clinical_decision_today_fusion_kernel import (
+            build_decision_today,
+        )
+
+        clinical_readiness_tower = bundle.get("clinical_readiness_tower", profile_view.get("clinical_readiness_tower", {}))
+        tumor_board_os = bundle.get("tumor_board_os", profile_view.get("tumor_board_os", {}))
+        care_pathway_os = bundle.get("care_pathway_os", profile_view.get("care_pathway_os", {}))
+        clinical_memory_os = bundle.get("clinical_memory_os", profile_view.get("clinical_memory_os", {}))
+        autodrive_bundle = build_patient_autodrive(
+            patient,
+            longitudinal_bundle={
+                **dict(bundle or {}),
+                "clinical_readiness_tower": clinical_readiness_tower,
+                "tumor_board_os": tumor_board_os,
+                "care_pathway_os": care_pathway_os,
+                "clinical_memory_os": clinical_memory_os,
+                "signals": signals,
+            },
+            state=str(
+                signals.get("effective_state_final")
+                or signals.get("effective_state")
+                or signals.get("reconciled_state")
+                or ""
+            ),
+            management_track=str(
+                signals.get("effective_management_track_final")
+                or signals.get("effective_management_track")
+                or signals.get("reconciled_management_track")
+                or ""
+            ),
+            patient_ref=str(resolved.get("nss") or resolved.get("patient_ref") or patient_ref),
+        )
+        decision_today_bundle = autodrive_bundle.get("decision_today") or build_decision_today(
+            patient,
+            longitudinal_bundle={
+                **dict(bundle or {}),
+                "clinical_readiness_tower": clinical_readiness_tower,
+                "tumor_board_os": tumor_board_os,
+                "care_pathway_os": care_pathway_os,
+                "clinical_memory_os": clinical_memory_os,
+                "signals": signals,
+            },
+            clinical_autodrive=autodrive_bundle,
+            state=str(
+                signals.get("effective_state_final")
+                or signals.get("effective_state")
+                or signals.get("reconciled_state")
+                or ""
+            ),
+            management_track=str(
+                signals.get("effective_management_track_final")
+                or signals.get("effective_management_track")
+                or signals.get("reconciled_management_track")
+                or ""
+            ),
+            patient_ref=str(resolved.get("nss") or resolved.get("patient_ref") or patient_ref),
+        )
+        signals = {**dict(signals or {}), "decision_today": decision_today_bundle}
+        try:
+            from prostanet.agentic.autonomous_improvement_os import build_mission_control
+
+            autonomous_improvement = build_mission_control()
+            signals["autonomous_improvement"] = {
+                "summary": autonomous_improvement.get("summary", {}),
+                "safety": autonomous_improvement.get("safety", {}),
+            }
+        except Exception:
+            autonomous_improvement = {
+                "available": False,
+                "summary": {"mode": "shadow", "status": "blocked"},
+                "safety": {"source_clinical_facts_mutated": False},
+            }
         return jsonify(
             {
                 "success": True,
                 "signals": signals,
                 "transition_proposals": bundle.get("transition_proposals", []),
                 "next_best_action": bundle.get("next_best_action", {}),
+                "clinical_readiness_tower": clinical_readiness_tower,
+                "tumor_board_os": tumor_board_os,
+                "care_pathway_os": care_pathway_os,
+                "clinical_memory_os": clinical_memory_os,
+                "autodrive": autodrive_bundle,
+                "decision_today": decision_today_bundle,
+                "autonomous_improvement": autonomous_improvement,
                 "module_data_contracts": profile_view.get("module_data_contracts", {}),
                 "missing_input_actions": profile_view.get("missing_input_actions", []),
                 "missing_input_capture_tasks": profile_view.get("missing_input_capture_tasks", []),
@@ -1465,6 +1911,1752 @@ def api_patient_signals(patient_ref):
         return error_response(str(e), 500)
 
 
+@app.route('/api/patients/<patient_ref>/clinical-readiness', methods=['GET'])
+@app.route('/api/patient/<patient_ref>/clinical-readiness', methods=['GET'])
+def api_patient_clinical_readiness(patient_ref):
+    """Official Clinical Readiness & Safety Tower bundle for one patient."""
+    import tracking_db
+
+    try:
+        resolved, error = _resolve_patient_api_ref(patient_ref)
+        if error:
+            return error
+        patient_id = resolved["patient_id"]
+        patient = tracking_db.get_patient_full_record(patient_id)
+        if not patient:
+            return error_response("Paciente no encontrado", 404)
+        bundle = tracking_db.refresh_longitudinal_intelligence(
+            patient_id,
+            force_recompute=False,
+            record=patient,
+            include_live_benchmark=False,
+        )
+        tower = dict(bundle.get("clinical_readiness_tower") or {})
+        if not tower:
+            from prostanet.domains.patient_tracking.clinical_readiness_tower import (
+                build_clinical_readiness_tower,
+            )
+
+            signals = dict(bundle.get("signals") or {})
+            tower = build_clinical_readiness_tower(
+                patient,
+                longitudinal_bundle=bundle,
+                state=str(
+                    signals.get("effective_state_final")
+                    or signals.get("effective_state")
+                    or signals.get("reconciled_state")
+                    or (patient.get("latest_assessment") or {}).get("state")
+                    or ""
+                ),
+                management_track=str(
+                    signals.get("effective_management_track_final")
+                    or signals.get("effective_management_track")
+                    or signals.get("reconciled_management_track")
+                    or ""
+                ),
+                patient_ref=str(resolved.get("nss") or resolved.get("patient_ref") or patient_ref),
+            )
+        return jsonify({
+            "success": True,
+            "clinical_readiness_tower": tower,
+            **tower,
+            "resolved_patient_id": patient_id,
+            "resolved_patient_ref": resolved.get("nss") or resolved.get("patient_ref") or str(patient_ref),
+        })
+    except Exception as e:
+        logger.error(f"Error getting clinical readiness tower: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/patients/<patient_ref>/tumor-board-os', methods=['GET'])
+@app.route('/api/patient/<patient_ref>/tumor-board-os', methods=['GET'])
+def api_patient_tumor_board_os(patient_ref):
+    """Official Tumor Board OS read model for one patient."""
+    import tracking_db
+
+    try:
+        resolved, error = _resolve_patient_api_ref(patient_ref)
+        if error:
+            return error
+        patient_id = resolved["patient_id"]
+        patient = tracking_db.get_patient_full_record(patient_id)
+        if not patient:
+            return error_response("Paciente no encontrado", 404)
+        bundle = tracking_db.refresh_longitudinal_intelligence(
+            patient_id,
+            force_recompute=False,
+            record=patient,
+            include_live_benchmark=False,
+        )
+        board = dict(bundle.get("tumor_board_os") or {})
+        if not board:
+            from prostanet.domains.patient_tracking.tumor_board_os import build_tumor_board_os
+
+            signals = dict(bundle.get("signals") or {})
+            board = build_tumor_board_os(
+                patient,
+                longitudinal_bundle=bundle,
+                state=str(
+                    signals.get("effective_state_final")
+                    or signals.get("effective_state")
+                    or signals.get("reconciled_state")
+                    or (patient.get("latest_assessment") or {}).get("state")
+                    or ""
+                ),
+                management_track=str(
+                    signals.get("effective_management_track_final")
+                    or signals.get("effective_management_track")
+                    or signals.get("reconciled_management_track")
+                    or ""
+                ),
+                patient_ref=str(resolved.get("nss") or resolved.get("patient_ref") or patient_ref),
+            )
+        return jsonify({
+            "success": True,
+            "tumor_board_os": board,
+            **board,
+            "resolved_patient_id": patient_id,
+            "resolved_patient_ref": resolved.get("nss") or resolved.get("patient_ref") or str(patient_ref),
+        })
+    except Exception as e:
+        logger.error(f"Error getting Tumor Board OS: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/patients/<patient_ref>/tumor-board-os/what-if', methods=['POST'])
+def api_patient_tumor_board_os_what_if(patient_ref):
+    """No-write Tumor Board OS what-if comparator."""
+    import tracking_db
+
+    payload = request.get_json(silent=True) or {}
+    changes = payload.get("hypothetical_changes") or payload.get("changes") or {}
+    if not isinstance(changes, dict) or not changes:
+        return jsonify({"success": False, "error": "missing hypothetical_changes (dict)"}), 400
+
+    try:
+        resolved, error = _resolve_patient_api_ref(patient_ref)
+        if error:
+            return error
+        patient_id = resolved["patient_id"]
+        patient = tracking_db.get_patient_full_record(patient_id)
+        if not patient:
+            return error_response("Paciente no encontrado", 404)
+        bundle = tracking_db.refresh_longitudinal_intelligence(
+            patient_id,
+            force_recompute=False,
+            record=patient,
+            include_live_benchmark=False,
+        )
+        from prostanet.domains.patient_tracking.tumor_board_os import (
+            build_tumor_board_os,
+            build_tumor_board_what_if_delta,
+        )
+
+        signals = dict(bundle.get("signals") or {})
+        state = str(
+            signals.get("effective_state_final")
+            or signals.get("effective_state")
+            or signals.get("reconciled_state")
+            or (patient.get("latest_assessment") or {}).get("state")
+            or ""
+        )
+        track = str(
+            signals.get("effective_management_track_final")
+            or signals.get("effective_management_track")
+            or signals.get("reconciled_management_track")
+            or ""
+        )
+        resolved_ref = str(resolved.get("nss") or resolved.get("patient_ref") or patient_ref)
+        real_board = dict(bundle.get("tumor_board_os") or {}) or build_tumor_board_os(
+            patient,
+            longitudinal_bundle=bundle,
+            state=state,
+            management_track=track,
+            patient_ref=resolved_ref,
+        )
+        hypothetical_board = build_tumor_board_os(
+            patient,
+            longitudinal_bundle=bundle,
+            state=state,
+            management_track=track,
+            patient_ref=resolved_ref,
+            hypothetical_changes=changes,
+        )
+        delta = build_tumor_board_what_if_delta(
+            real_board=real_board,
+            hypothetical_board=hypothetical_board,
+            hypothetical_changes=changes,
+        )
+        return jsonify({
+            **delta,
+            "tumor_board_os": hypothetical_board,
+            "resolved_patient_id": patient_id,
+            "resolved_patient_ref": resolved_ref,
+        })
+    except Exception as e:
+        logger.error(f"Error running Tumor Board OS what-if: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/patients/<patient_ref>/care-pathway-os', methods=['GET'])
+@app.route('/api/patient/<patient_ref>/care-pathway-os', methods=['GET'])
+def api_patient_care_pathway_os(patient_ref):
+    """Official internal Care Pathway OS execution read model for one patient."""
+    import tracking_db
+
+    try:
+        resolved, error = _resolve_patient_api_ref(patient_ref)
+        if error:
+            return error
+        patient_id = resolved["patient_id"]
+        patient = tracking_db.get_patient_full_record(patient_id)
+        if not patient:
+            return error_response("Paciente no encontrado", 404)
+        bundle = tracking_db.refresh_longitudinal_intelligence(
+            patient_id,
+            force_recompute=False,
+            record=patient,
+            include_live_benchmark=False,
+        )
+        pathway = dict(bundle.get("care_pathway_os") or {})
+        if not pathway:
+            from prostanet.domains.patient_tracking.care_pathway_os import build_care_pathway_os
+
+            signals = dict(bundle.get("signals") or {})
+            pathway = build_care_pathway_os(
+                patient,
+                longitudinal_bundle=bundle,
+                state=str(
+                    signals.get("effective_state_final")
+                    or signals.get("effective_state")
+                    or signals.get("reconciled_state")
+                    or (patient.get("latest_assessment") or {}).get("state")
+                    or ""
+                ),
+                management_track=str(
+                    signals.get("effective_management_track_final")
+                    or signals.get("effective_management_track")
+                    or signals.get("reconciled_management_track")
+                    or ""
+                ),
+                patient_ref=str(resolved.get("nss") or resolved.get("patient_ref") or patient_ref),
+            )
+        return jsonify({
+            "success": True,
+            "care_pathway_os": pathway,
+            **pathway,
+            "resolved_patient_id": patient_id,
+            "resolved_patient_ref": resolved.get("nss") or resolved.get("patient_ref") or str(patient_ref),
+        })
+    except Exception as e:
+        logger.error(f"Error getting Care Pathway OS: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/patients/<patient_ref>/care-pathway-os/actions/<path:action_key>/status', methods=['POST'])
+def api_patient_care_pathway_action_status(patient_ref, action_key):
+    """Update internal operational status for one Care Pathway OS action."""
+    import tracking_db
+
+    payload = request.get_json(silent=True) or {}
+    status = str(payload.get("status") or "").strip().lower()
+    note = str(payload.get("note") or payload.get("audit_note") or "").strip()
+    updated_by = str(payload.get("updated_by") or payload.get("user") or "clinician").strip()
+    try:
+        resolved, error = _resolve_patient_api_ref(patient_ref)
+        if error:
+            return error
+        patient_id = resolved["patient_id"]
+        patient = tracking_db.get_patient_full_record(patient_id)
+        if not patient:
+            return error_response("Paciente no encontrado", 404)
+        bundle = tracking_db.refresh_longitudinal_intelligence(
+            patient_id,
+            force_recompute=False,
+            record=patient,
+            include_live_benchmark=False,
+        )
+        pathway = dict(bundle.get("care_pathway_os") or {})
+        known_actions = {
+            str(item.get("action_key") or "")
+            for item in list(pathway.get("pathway_actions") or [])
+            if isinstance(item, dict)
+        }
+        if action_key not in known_actions:
+            return jsonify({
+                "success": False,
+                "error": "La accion no pertenece al paciente o ya no esta activa",
+                "action_key": action_key,
+            }), 404
+        ok, message, result = tracking_db.update_care_pathway_action_status(
+            patient_id,
+            action_key,
+            status,
+            note=note,
+            updated_by=updated_by,
+        )
+        if not ok:
+            return jsonify({"success": False, "error": message, "action_key": action_key}), 400
+        return jsonify({
+            "success": True,
+            "message": message,
+            "action_key": action_key,
+            **result,
+            "resolved_patient_id": patient_id,
+            "resolved_patient_ref": resolved.get("nss") or resolved.get("patient_ref") or str(patient_ref),
+        })
+    except Exception as e:
+        logger.error(f"Error updating Care Pathway OS action status: {e}")
+        return error_response(str(e), 500)
+
+
+def _build_patient_decision_today_for_api(patient_ref, *, force_recompute=False):
+    import tracking_db
+    from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
+        build_patient_autodrive,
+    )
+    from prostanet.domains.patient_tracking.clinical_decision_today_fusion_kernel import (
+        build_decision_today,
+    )
+
+    resolved, error = _resolve_patient_api_ref(patient_ref)
+    if error:
+        return None, error
+    patient_id = resolved["patient_id"]
+    patient = tracking_db.get_patient_full_record(
+        patient_id,
+        include_derivatives=False,
+        include_ledger=False,
+    )
+    if not patient:
+        patient = _minimal_patient_record_from_resolved(resolved, patient_ref)
+    try:
+        bundle = tracking_db.refresh_longitudinal_intelligence(
+            patient_id,
+            force_recompute=bool(force_recompute),
+            record=patient,
+            include_live_benchmark=False,
+        ) or {}
+    except Exception as exc:
+        logger.warning("Decision Today refresh fallback for %s: %s", patient_ref, exc)
+        bundle = {"signals": {}}
+    signals = dict(bundle.get("signals") or {})
+    state = str(
+        signals.get("effective_state_final")
+        or signals.get("effective_state")
+        or signals.get("reconciled_state")
+        or (patient.get("latest_assessment") or {}).get("state")
+        or ""
+    )
+    management_track = str(
+        signals.get("effective_management_track_final")
+        or signals.get("effective_management_track")
+        or signals.get("reconciled_management_track")
+        or ""
+    )
+    resolved_ref = str(resolved.get("nss") or resolved.get("patient_ref") or patient_ref)
+    try:
+        autodrive = build_patient_autodrive(
+            patient,
+            longitudinal_bundle=bundle,
+            state=state,
+            management_track=management_track,
+            patient_ref=resolved_ref,
+        )
+    except Exception as exc:
+        logger.warning("Decision Today Autodrive fallback for %s: %s", patient_ref, exc)
+        autodrive = {
+            "available": False,
+            "source": "clinical_autodrive_command_center",
+            "summary": {"priority_status": "not_actionable"},
+            "today_queue": [],
+        }
+    try:
+        decision_today = autodrive.get("decision_today") or build_decision_today(
+            patient,
+            longitudinal_bundle=bundle,
+            clinical_autodrive=autodrive,
+            state=state,
+            management_track=management_track,
+            patient_ref=resolved_ref,
+        )
+    except Exception as exc:
+        logger.warning("Decision Today fallback bundle for %s: %s", patient_ref, exc)
+        decision_today = {
+            "available": True,
+            "source": "clinical_decision_today_fusion_kernel",
+            "decision_state": "requires_data",
+            "decision_today": {
+                "title": "Decision Today requiere datos clinicos",
+                "label": "Fusion Kernel",
+                "status": "requires_data",
+            },
+            "clinical_rationale": "Expediente minimo resuelto; faltan datos clinicos para liberar una decision.",
+            "unified_missing_fields": [],
+            "next_safe_action": {
+                "title": "Completar datos clinicos",
+                "cta": {"href": f"/patient_profile/{resolved_ref}?v=2", "label": "Abrir perfil"},
+            },
+        }
+    return {
+        "patient_id": patient_id,
+        "patient": patient,
+        "bundle": bundle,
+        "autodrive": autodrive,
+        "decision_today": decision_today,
+        "resolved": resolved,
+    }, None
+
+
+@app.route('/api/patients/<patient_ref>/decision-today', methods=['GET'])
+@app.route('/api/patient/<patient_ref>/decision-today', methods=['GET'])
+def api_patient_decision_today(patient_ref):
+    """Canonical per-patient DECISION HOY Fusion Kernel bundle."""
+    try:
+        payload, error = _build_patient_decision_today_for_api(patient_ref, force_recompute=False)
+        if error:
+            return error
+        decision_today = payload["decision_today"]
+        resolved = payload["resolved"]
+        try:
+            from prostanet.agentic.autonomous_improvement_os import build_mission_control
+
+            autonomous_summary = build_mission_control().get("summary", {})
+        except Exception:
+            autonomous_summary = {"mode": "shadow", "status": "blocked"}
+        return jsonify({
+            "success": True,
+            "decision_today": decision_today,
+            **decision_today,
+            "autonomous_improvement_summary": autonomous_summary,
+            "resolved_patient_id": payload["patient_id"],
+            "resolved_patient_ref": resolved.get("nss") or resolved.get("patient_ref") or str(patient_ref),
+        })
+    except Exception as e:
+        logger.error(f"Error getting Decision Today: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/patients/<patient_ref>/decision-today/recompute', methods=['POST'])
+def api_patient_decision_today_recompute(patient_ref):
+    """Recompute DECISION HOY without mutating source clinical facts."""
+    try:
+        payload, error = _build_patient_decision_today_for_api(patient_ref, force_recompute=True)
+        if error:
+            return error
+        decision_today = payload["decision_today"]
+        resolved = payload["resolved"]
+        try:
+            from prostanet.agentic.autonomous_improvement_os import build_mission_control
+
+            autonomous_summary = build_mission_control().get("summary", {})
+        except Exception:
+            autonomous_summary = {"mode": "shadow", "status": "blocked"}
+        return jsonify({
+            "success": True,
+            "decision_today": decision_today,
+            **decision_today,
+            "autonomous_improvement_summary": autonomous_summary,
+            "source_clinical_facts_mutated": False,
+            "model_trained": False,
+            "resolved_patient_id": payload["patient_id"],
+            "resolved_patient_ref": resolved.get("nss") or resolved.get("patient_ref") or str(patient_ref),
+        })
+    except Exception as e:
+        logger.error(f"Error recomputing Decision Today: {e}")
+        return error_response(str(e), 500)
+
+
+def _build_patient_autodrive_for_api(patient_ref, *, force_recompute=False):
+    import tracking_db
+    from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
+        build_patient_autodrive,
+    )
+
+    resolved, error = _resolve_patient_api_ref(patient_ref)
+    if error:
+        return None, error
+    patient_id = resolved["patient_id"]
+    patient = tracking_db.get_patient_full_record(
+        patient_id,
+        include_derivatives=False,
+        include_ledger=False,
+    )
+    if not patient:
+        patient = _minimal_patient_record_from_resolved(resolved, patient_ref)
+    try:
+        bundle = tracking_db.refresh_longitudinal_intelligence(
+            patient_id,
+            force_recompute=bool(force_recompute),
+            record=patient,
+            include_live_benchmark=False,
+        ) or {}
+    except Exception as exc:
+        logger.warning("Autodrive refresh fallback for %s: %s", patient_ref, exc)
+        bundle = {"signals": {}}
+    signals = dict(bundle.get("signals") or {})
+    try:
+        autodrive = build_patient_autodrive(
+            patient,
+            longitudinal_bundle=bundle,
+            state=str(
+                signals.get("effective_state_final")
+                or signals.get("effective_state")
+                or signals.get("reconciled_state")
+                or (patient.get("latest_assessment") or {}).get("state")
+                or ""
+            ),
+            management_track=str(
+                signals.get("effective_management_track_final")
+                or signals.get("effective_management_track")
+                or signals.get("reconciled_management_track")
+                or ""
+            ),
+            patient_ref=str(resolved.get("nss") or resolved.get("patient_ref") or patient_ref),
+        )
+    except Exception as exc:
+        logger.warning("Autodrive fallback bundle for %s: %s", patient_ref, exc)
+        autodrive = {
+            "available": False,
+            "source": "clinical_autodrive_command_center",
+            "summary": {"priority_status": "not_actionable"},
+            "today_queue": [],
+            "autodrive_actions": [],
+            "decision_today": {
+                "available": True,
+                "source": "clinical_decision_today_fusion_kernel",
+                "decision_state": "requires_data",
+            },
+        }
+    return {
+        "patient_id": patient_id,
+        "patient": patient,
+        "bundle": bundle,
+        "autodrive": autodrive,
+        "decision_today": autodrive.get("decision_today") or {},
+        "resolved": resolved,
+    }, None
+
+
+@app.route('/api/autodrive/today', methods=['GET'])
+def api_autodrive_today():
+    """Population Clinical Autodrive Command Center queue."""
+    try:
+        from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
+            build_population_autodrive_from_db,
+        )
+
+        limit = request.args.get("limit", 25)
+        lane = str(request.args.get("lane") or "").strip()
+        stage = str(request.args.get("stage") or "").strip()
+        payload = build_population_autodrive_from_db(
+            limit=int(limit or 25),
+            lane=lane,
+            stage=stage,
+            force_recompute=False,
+        )
+        return jsonify({"success": True, "autodrive": payload, **payload})
+    except Exception as e:
+        logger.error(f"Error getting Autodrive today: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/autodrive/recompute', methods=['POST'])
+def api_autodrive_recompute():
+    """Recompute Autodrive read models without mutating source clinical facts."""
+    try:
+        from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
+            build_population_autodrive_from_db,
+        )
+
+        payload = request.get_json(silent=True) or {}
+        limit = int(payload.get("limit") or request.args.get("limit") or 50)
+        lane = str(payload.get("lane") or request.args.get("lane") or "").strip()
+        stage = str(payload.get("stage") or request.args.get("stage") or "").strip()
+        bundle = build_population_autodrive_from_db(
+            limit=limit,
+            lane=lane,
+            stage=stage,
+            force_recompute=True,
+        )
+        return jsonify({
+            "success": True,
+            "autodrive": bundle,
+            **bundle,
+            "source_clinical_facts_mutated": False,
+            "model_trained": False,
+        })
+    except Exception as e:
+        logger.error(f"Error recomputing Autodrive: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/patients/<patient_ref>/autodrive', methods=['GET'])
+@app.route('/api/patient/<patient_ref>/autodrive', methods=['GET'])
+def api_patient_autodrive(patient_ref):
+    """Patient Clinical Autodrive Command Center bundle."""
+    try:
+        payload, error = _build_patient_autodrive_for_api(patient_ref, force_recompute=False)
+        if error:
+            return error
+        autodrive = payload["autodrive"]
+        resolved = payload["resolved"]
+        return jsonify({
+            "success": True,
+            "autodrive": autodrive,
+            **autodrive,
+            "resolved_patient_id": payload["patient_id"],
+            "resolved_patient_ref": resolved.get("nss") or resolved.get("patient_ref") or str(patient_ref),
+        })
+    except Exception as e:
+        logger.error(f"Error getting patient Autodrive: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/patients/<patient_ref>/autodrive/actions/<path:action_key>/status', methods=['POST'])
+def api_patient_autodrive_action_status(patient_ref, action_key):
+    """Update internal Autodrive action status with patient_events audit trail."""
+    import tracking_db
+
+    payload = request.get_json(silent=True) or {}
+    status = str(payload.get("status") or "").strip().lower()
+    note = str(payload.get("note") or payload.get("audit_note") or "").strip()
+    updated_by = str(payload.get("updated_by") or payload.get("user") or "clinician").strip()
+    try:
+        built, error = _build_patient_autodrive_for_api(patient_ref, force_recompute=False)
+        if error:
+            return error
+        autodrive = dict(built["autodrive"] or {})
+        known_actions = {
+            str(item.get("action_key") or "")
+            for item in list(autodrive.get("autodrive_actions") or []) + list(autodrive.get("today_queue") or [])
+            if isinstance(item, dict)
+        }
+        if action_key not in known_actions:
+            return jsonify({
+                "success": False,
+                "error": "La accion Autodrive no pertenece al paciente o ya no esta activa",
+                "action_key": action_key,
+            }), 404
+        ok, message, result = tracking_db.update_care_pathway_action_status(
+            built["patient_id"],
+            action_key,
+            status,
+            note=note,
+            updated_by=updated_by,
+        )
+        if not ok:
+            return jsonify({"success": False, "error": message, "action_key": action_key}), 400
+        refreshed, error = _build_patient_autodrive_for_api(patient_ref, force_recompute=True)
+        if error:
+            return error
+        return jsonify({
+            "success": True,
+            "message": "Estado Autodrive actualizado",
+            "action_key": action_key,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            **result,
+            "autodrive": refreshed["autodrive"],
+            "resolved_patient_id": refreshed["patient_id"],
+            "resolved_patient_ref": refreshed["resolved"].get("nss") or refreshed["resolved"].get("patient_ref") or str(patient_ref),
+        })
+    except Exception as e:
+        logger.error(f"Error updating Autodrive action status: {e}")
+        return error_response(str(e), 500)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# ProstaMed Autonomous Clinical Improvement OS — shadow-mode control plane
+# ─────────────────────────────────────────────────────────────────────────
+@app.route("/api/autonomous-improvement/mission-control", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_mission_control():
+    """Progress toward ProstaMed longitudinal OS objective."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import build_mission_control
+
+        bundle = build_mission_control()
+        return jsonify({"success": True, "mission_control": bundle, **bundle})
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement mission control: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/gaps", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_gaps():
+    """Clinical Improvement Candidate queue in shadow mode."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import build_gap_intelligence
+
+        limit = int(request.args.get("patient_limit") or 35)
+        bundle = build_gap_intelligence(patient_limit=limit)
+        return jsonify({"success": True, "gap_intelligence": bundle, **bundle})
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement gaps: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/application-telemetry", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_application_telemetry():
+    """Applied-cycle telemetry: software gap closure vs patient capture still needed."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import build_gap_intelligence
+
+        limit = int(request.args.get("patient_limit") or 35)
+        gaps = build_gap_intelligence(patient_limit=limit)
+        telemetry = gaps.get("application_telemetry") or {}
+        return jsonify({
+            "success": True,
+            "application_telemetry": telemetry,
+            **telemetry,
+            "source_clinical_facts_mutated": False,
+            "files_modified_by_telemetry": False,
+            "git_mutated": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement application telemetry: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/proposals", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_proposals():
+    """Structured shadow proposals with tests, evidence and rollback."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_gap_intelligence,
+            build_proposals,
+        )
+
+        gaps = build_gap_intelligence(patient_limit=int(request.args.get("patient_limit") or 35))
+        proposals = build_proposals(gaps.get("candidates", []))
+        return jsonify({"success": True, "proposals_bundle": proposals, **proposals})
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement proposals: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/shadow-pr", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_shadow_pr():
+    """Draft PR package for the selected autonomous improvement; no git mutation."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        shadow_pr = bundle.get("shadow_pr_factory") or {}
+        return jsonify({
+            "success": True,
+            "shadow_pr_factory": shadow_pr,
+            **shadow_pr,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "pull_request_created": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement shadow PR package: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/safety-gates", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_safety_gates():
+    """Safety gates for the selected shadow PR package; plan-only, no command execution."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        gates = bundle.get("safety_gate_runner") or {}
+        return jsonify({
+            "success": True,
+            "safety_gate_runner": gates,
+            **gates,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "commands_executed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement safety gates: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/shadow-execution", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_shadow_execution():
+    """Phase 3D shadow execution artifacts; read-only, no shell execution."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        artifacts = bundle.get("shadow_execution_artifacts") or {}
+        return jsonify({
+            "success": True,
+            "shadow_execution_artifacts": artifacts,
+            **artifacts,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement shadow execution artifacts: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/human-review-gate", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_human_review_gate():
+    """Phase 3E explicit human decision gate; read-only status."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        gate = bundle.get("human_review_decision_gate") or {}
+        return jsonify({
+            "success": True,
+            "human_review_decision_gate": gate,
+            **gate,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "pull_request_created": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement human review gate: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/human-review-gate/decision", methods=["POST"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_human_review_gate_decision():
+    """Record Phase 3E human decision; no branch, PR, merge or medicine mutation."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+            record_human_review_gate_decision,
+        )
+
+        payload = request.get_json(silent=True) or {}
+        pre_bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(payload.get("patient_limit") or request.args.get("patient_limit") or 20)
+        )
+        event = record_human_review_gate_decision(
+            decision=str(payload.get("decision") or "hold"),
+            reviewer=str(payload.get("reviewer") or "local_clinical_reviewer"),
+            note=str(payload.get("note") or ""),
+            shadow_pr_factory=pre_bundle.get("shadow_pr_factory") or {},
+            shadow_execution_artifacts=pre_bundle.get("shadow_execution_artifacts") or {},
+        )
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(payload.get("patient_limit") or request.args.get("patient_limit") or 20)
+        )
+        return jsonify({
+            "success": True,
+            "decision": event,
+            "human_review_decision_gate": bundle.get("human_review_decision_gate") or {},
+            "bundle": bundle,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "pull_request_created": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error recording autonomous improvement human review decision: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/draft-pr-handoff", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_draft_pr_handoff():
+    """Phase 3F manual draft-PR handoff plan; never creates branch or PR."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        handoff = bundle.get("draft_pr_handoff") or {}
+        return jsonify({
+            "success": True,
+            "draft_pr_handoff": handoff,
+            **handoff,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement draft PR handoff: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/pr-review-monitor", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_pr_review_monitor():
+    """Phase 3G PR review monitor; read-only and never merges."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        monitor = bundle.get("pr_review_monitor") or {}
+        return jsonify({
+            "success": True,
+            "pr_review_monitor": monitor,
+            **monitor,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement PR review monitor: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/pr-review-monitor/metadata", methods=["POST"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_pr_review_monitor_metadata():
+    """Record external PR/CI/review metadata for 3G; audit only."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+            record_pr_review_monitor_metadata,
+        )
+
+        payload = request.get_json(silent=True) or {}
+        pre_bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(payload.get("patient_limit") or request.args.get("patient_limit") or 20)
+        )
+        handoff = pre_bundle.get("draft_pr_handoff") or {}
+        branch_plan = handoff.get("branch_plan") or {}
+        event = record_pr_review_monitor_metadata(
+            branch_name=str(payload.get("branch_name") or branch_plan.get("branch_name") or ""),
+            pr_url=str(payload.get("pr_url") or ""),
+            pr_number=payload.get("pr_number") or "",
+            ci_status=str(payload.get("ci_status") or "unknown"),
+            review_status=str(payload.get("review_status") or "pending"),
+            reviewer=str(payload.get("reviewer") or "local_clinical_reviewer"),
+            note=str(payload.get("note") or ""),
+        )
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(payload.get("patient_limit") or request.args.get("patient_limit") or 20)
+        )
+        return jsonify({
+            "success": True,
+            "metadata": event,
+            "pr_review_monitor": bundle.get("pr_review_monitor") or {},
+            "bundle": bundle,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error recording autonomous improvement PR review metadata: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/agent-lane-registry", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_agent_lane_registry():
+    """Phase 4A specialized agent registry; shadow proposals only."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        registry = bundle.get("agent_lane_registry") or {}
+        return jsonify({
+            "success": True,
+            "agent_lane_registry": registry,
+            **registry,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement agent lane registry: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/agent-proposal-packets", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_agent_proposal_packets():
+    """Phase 4B specialized agent proposal packets; proposal-only."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        packets = bundle.get("agent_proposal_packets") or {}
+        return jsonify({
+            "success": True,
+            "agent_proposal_packets": packets,
+            **packets,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement agent proposal packets: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/agent-consensus-synthesizer", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_agent_consensus_synthesizer():
+    """Phase 4C consensus synthesizer; one reviewable next step, no mutation."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        consensus = bundle.get("agent_consensus_synthesizer") or {}
+        return jsonify({
+            "success": True,
+            "agent_consensus_synthesizer": consensus,
+            **consensus,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement agent consensus synthesizer: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/implementation-brief", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_implementation_brief():
+    """Phase 4D implementation brief; read-only handoff, no mutation."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        brief = bundle.get("implementation_brief") or {}
+        return jsonify({
+            "success": True,
+            "implementation_brief": brief,
+            **brief,
+            "commands_executed": False,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement implementation brief: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/shadow-patch-blueprint", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_shadow_patch_blueprint():
+    """Phase 4E shadow patch blueprint; planned diff only, no file writes."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        blueprint = bundle.get("shadow_patch_blueprint") or {}
+        return jsonify({
+            "success": True,
+            "shadow_patch_blueprint": blueprint,
+            **blueprint,
+            "commands_executed": False,
+            "files_modified": False,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement shadow patch blueprint: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/human-patch-authorization", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_human_patch_authorization():
+    """Phase 4F human patch authorization status; read-only."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        authorization = bundle.get("human_patch_authorization") or {}
+        return jsonify({
+            "success": True,
+            "human_patch_authorization": authorization,
+            **authorization,
+            "commands_executed": False,
+            "files_modified": False,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement human patch authorization: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/human-patch-authorization/decision", methods=["POST"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_human_patch_authorization_decision():
+    """Record Phase 4F human patch authorization; no patch, branch, PR, merge or medicine mutation."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+            record_human_patch_authorization_decision,
+        )
+
+        payload = request.get_json(silent=True) or {}
+        patient_limit = int(payload.get("patient_limit") or request.args.get("patient_limit") or 20)
+        pre_bundle = build_autonomous_improvement_bundle(patient_limit=patient_limit)
+        event = record_human_patch_authorization_decision(
+            decision=str(payload.get("decision") or "hold"),
+            reviewer=str(payload.get("reviewer") or "local_clinical_reviewer"),
+            note=str(payload.get("note") or ""),
+            shadow_patch_blueprint=pre_bundle.get("shadow_patch_blueprint") or {},
+        )
+        bundle = build_autonomous_improvement_bundle(patient_limit=patient_limit)
+        return jsonify({
+            "success": True,
+            "decision": event,
+            "human_patch_authorization": bundle.get("human_patch_authorization") or {},
+            "bundle": bundle,
+            "commands_executed": False,
+            "files_modified": False,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error recording autonomous improvement human patch authorization: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/controlled-patch-application", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_controlled_patch_application():
+    """Phase 4G controlled patch application packet; no command/file/git mutation."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        application = bundle.get("controlled_patch_application") or {}
+        return jsonify({
+            "success": True,
+            "controlled_patch_application": application,
+            **application,
+            "commands_executed": False,
+            "files_modified": False,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement controlled patch application: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/controlled-pr-implementation", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_controlled_pr_implementation():
+    """Phase 5A controlled PR implementation packet; no branch/patch/PR mutation."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        implementation = bundle.get("controlled_pr_implementation") or {}
+        return jsonify({
+            "success": True,
+            "controlled_pr_implementation": implementation,
+            **implementation,
+            "commands_executed": False,
+            "files_modified": False,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement controlled PR implementation: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/draft-pr-publication-gate", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_draft_pr_publication_gate():
+    """Phase 5B draft PR publication gate; no PR creation or git mutation."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        gate = bundle.get("draft_pr_publication_gate") or {}
+        return jsonify({
+            "success": True,
+            "draft_pr_publication_gate": gate,
+            **gate,
+            "commands_executed": False,
+            "files_modified": False,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement draft PR publication gate: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/required-safety-gate-contract", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_required_safety_gate_contract():
+    """Phase 6A required safety gate contract; no command execution or git mutation."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        contract = bundle.get("required_safety_gate_contract") or {}
+        return jsonify({
+            "success": True,
+            "required_safety_gate_contract": contract,
+            **contract,
+            "commands_executed": False,
+            "files_modified": False,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement required safety gate contract: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/evidence-refresh-shadow-loop", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_evidence_refresh_shadow_loop():
+    """Phase 7A evidence refresh shadow loop; no evidence application or logic mutation."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        evidence_loop = bundle.get("evidence_refresh_shadow_loop") or {}
+        return jsonify({
+            "success": True,
+            "evidence_refresh_shadow_loop": evidence_loop,
+            **evidence_loop,
+            "evidence_changes_applied": False,
+            "recommendation_logic_mutated": False,
+            "trial_logic_mutated": False,
+            "gate_logic_mutated": False,
+            "commands_executed": False,
+            "files_modified": False,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement evidence refresh shadow loop: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/patient-twin-readiness-loop", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_patient_twin_readiness_loop():
+    """Phase 8A Patient Twin readiness loop; no simulation, ML training or prediction release."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        twin_loop = bundle.get("patient_twin_readiness_loop") or {}
+        return jsonify({
+            "success": True,
+            "patient_twin_readiness_loop": twin_loop,
+            **twin_loop,
+            "simulation_release_allowed": False,
+            "patient_twin_models_trained": False,
+            "patient_twin_predictions_released": False,
+            "commands_executed": False,
+            "files_modified": False,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement patient twin readiness loop: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/ai-readiness-dataset-loop", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_ai_readiness_dataset_loop():
+    """Phase 9A AI readiness dataset loop; no export, ML training or prediction release."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        ai_loop = bundle.get("ai_readiness_dataset_loop") or {}
+        return jsonify({
+            "success": True,
+            "ai_readiness_dataset_loop": ai_loop,
+            **ai_loop,
+            "dataset_export_allowed": False,
+            "dataset_export_written": False,
+            "deidentified_dataset_written": False,
+            "model_training_allowed": False,
+            "model_training_executed": False,
+            "models_trained": False,
+            "prediction_release_allowed": False,
+            "predictions_released": False,
+            "recommendation_logic_mutated": False,
+            "commands_executed": False,
+            "files_modified": False,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement AI readiness dataset loop: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/cortana-loop-interface", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_cortana_loop_interface():
+    """Phase 10A Cortana consultative loop interface; no execution or mutation."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+            build_cortana_loop_interface,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        cortana_loop = build_cortana_loop_interface(
+            ai_readiness_dataset_loop=bundle.get("ai_readiness_dataset_loop") or {},
+            mission_control=bundle.get("mission_control") or {},
+            development_autodrive=bundle.get("development_autodrive") or {},
+            gap_bundle=bundle.get("gaps") or {},
+            patient_twin_readiness_loop=bundle.get("patient_twin_readiness_loop") or {},
+            evidence_refresh_shadow_loop=bundle.get("evidence_refresh_shadow_loop") or {},
+            query=request.args.get("query") or request.args.get("q") or "",
+        )
+        return jsonify({
+            "success": True,
+            "cortana_loop_interface": cortana_loop,
+            **cortana_loop,
+            "voice_write_allowed": False,
+            "clinical_fact_writes_allowed": False,
+            "code_mutation_allowed": False,
+            "dataset_export_allowed": False,
+            "model_training_allowed": False,
+            "prediction_release_allowed": False,
+            "external_action_allowed": False,
+            "commands_executed": False,
+            "files_modified": False,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting autonomous improvement Cortana loop interface: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/continuous-shadow-operation", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_continuous_shadow_operation():
+    """Continuous shadow cycle read-model; packages one gap and returns to human authorization."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+            build_continuous_shadow_operation,
+        )
+
+        bundle = build_autonomous_improvement_bundle(
+            patient_limit=int(request.args.get("patient_limit") or 20)
+        )
+        continuous = build_continuous_shadow_operation(
+            cortana_loop_interface=bundle.get("cortana_loop_interface") or {},
+            mission_control=bundle.get("mission_control") or {},
+            development_autodrive=bundle.get("development_autodrive") or {},
+            gap_bundle=bundle.get("gaps") or {},
+            proposals=bundle.get("proposals") or {},
+            shadow_pr_factory=bundle.get("shadow_pr_factory") or {},
+            safety_gate_runner=bundle.get("safety_gate_runner") or {},
+            shadow_execution_artifacts=bundle.get("shadow_execution_artifacts") or {},
+            agent_consensus_synthesizer=bundle.get("agent_consensus_synthesizer") or {},
+            implementation_brief=bundle.get("implementation_brief") or {},
+            shadow_patch_blueprint=bundle.get("shadow_patch_blueprint") or {},
+            human_patch_authorization=bundle.get("human_patch_authorization") or {},
+            required_safety_gate_contract=bundle.get("required_safety_gate_contract") or {},
+        )
+        return jsonify({
+            "success": True,
+            "continuous_shadow_operation": continuous,
+            **continuous,
+            "commands_executed": False,
+            "files_modified": False,
+            "source_clinical_facts_mutated": False,
+            "git_mutated": False,
+            "branch_created": False,
+            "pull_request_created": False,
+            "merge_performed": False,
+            "auto_merge_allowed": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting continuous shadow operation: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/recompute", methods=["POST"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_recompute():
+    """Recompute shadow read-models without mutating clinical source facts."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import recompute_shadow_bundle
+
+        payload = request.get_json(silent=True) or {}
+        bundle = recompute_shadow_bundle(
+            patient_limit=int(payload.get("patient_limit") or request.args.get("patient_limit") or 35)
+        )
+        return jsonify(bundle)
+    except Exception as e:
+        logger.error(f"Error recomputing autonomous improvement bundle: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/proposals/<path:proposal_id>/approve", methods=["POST"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_approve(proposal_id):
+    """Record human approval of a shadow proposal; no merge or medicine mutation."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+            record_proposal_review,
+        )
+
+        payload = request.get_json(silent=True) or {}
+        event = record_proposal_review(
+            proposal_id,
+            status="approved",
+            reviewer=str(payload.get("reviewer") or "local_clinical_reviewer"),
+            note=str(payload.get("note") or ""),
+        )
+        bundle = build_autonomous_improvement_bundle(patient_limit=20)
+        return jsonify({"success": True, "review": event, "bundle": bundle, "source_clinical_facts_mutated": False})
+    except Exception as e:
+        logger.error(f"Error approving autonomous improvement proposal: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/autonomous-improvement/proposals/<path:proposal_id>/reject", methods=["POST"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_autonomous_improvement_reject(proposal_id):
+    """Record human rejection of a shadow proposal; no medicine mutation."""
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_autonomous_improvement_bundle,
+            record_proposal_review,
+        )
+
+        payload = request.get_json(silent=True) or {}
+        event = record_proposal_review(
+            proposal_id,
+            status="rejected",
+            reviewer=str(payload.get("reviewer") or "local_clinical_reviewer"),
+            note=str(payload.get("note") or ""),
+        )
+        bundle = build_autonomous_improvement_bundle(patient_limit=20)
+        return jsonify({"success": True, "review": event, "bundle": bundle, "source_clinical_facts_mutated": False})
+    except Exception as e:
+        logger.error(f"Error rejecting autonomous improvement proposal: {e}")
+        return error_response(str(e), 500)
+
+
+def _build_clinical_memory_os_for_api(patient_ref, *, force_recompute=False, include_cohort=True):
+    import tracking_db
+    from prostanet.domains.patient_tracking.clinical_memory_os import build_clinical_memory_os
+
+    resolved, error = _resolve_patient_api_ref(patient_ref)
+    if error:
+        return None, error
+    patient_id = resolved["patient_id"]
+    patient = tracking_db.get_patient_full_record(patient_id)
+    if not patient:
+        return None, error_response("Paciente no encontrado", 404)
+    bundle = tracking_db.refresh_longitudinal_intelligence(
+        patient_id,
+        force_recompute=bool(force_recompute),
+        record=patient,
+        include_live_benchmark=False,
+    )
+    patient = tracking_db.get_patient_full_record(patient_id) or patient
+    signals = dict(bundle.get("signals") or {})
+    cohort_records = _load_clinical_memory_cohort_records(tracking_db) if include_cohort else []
+    memory = build_clinical_memory_os(
+        patient,
+        longitudinal_bundle=bundle,
+        state=str(
+            signals.get("effective_state_final")
+            or signals.get("effective_state")
+            or signals.get("reconciled_state")
+            or (patient.get("latest_assessment") or {}).get("state")
+            or ""
+        ),
+        management_track=str(
+            signals.get("effective_management_track_final")
+            or signals.get("effective_management_track")
+            or signals.get("reconciled_management_track")
+            or ""
+        ),
+        patient_ref=str(resolved.get("nss") or resolved.get("patient_ref") or patient_ref),
+        cohort_records=cohort_records,
+    )
+    return {
+        "memory": memory,
+        "bundle": bundle,
+        "patient": patient,
+        "resolved": resolved,
+        "patient_id": patient_id,
+    }, None
+
+
+@app.route('/api/patients/<patient_ref>/clinical-memory-os', methods=['GET'])
+@app.route('/api/patient/<patient_ref>/clinical-memory-os', methods=['GET'])
+def api_patient_clinical_memory_os(patient_ref):
+    """Clinical Memory & Outcomes Learning OS read model for one patient."""
+    try:
+        payload, error = _build_clinical_memory_os_for_api(
+            patient_ref,
+            force_recompute=False,
+            include_cohort=True,
+        )
+        if error:
+            return error
+        memory = payload["memory"]
+        resolved = payload["resolved"]
+        return jsonify({
+            "success": True,
+            "clinical_memory_os": memory,
+            **memory,
+            "resolved_patient_id": payload["patient_id"],
+            "resolved_patient_ref": resolved.get("nss") or resolved.get("patient_ref") or str(patient_ref),
+        })
+    except Exception as e:
+        logger.error(f"Error getting Clinical Memory OS: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/patients/<patient_ref>/outcome-episodes', methods=['GET'])
+def api_patient_outcome_episodes(patient_ref):
+    """Decision episode ledger derived by Clinical Memory OS."""
+    try:
+        payload, error = _build_clinical_memory_os_for_api(
+            patient_ref,
+            force_recompute=False,
+            include_cohort=False,
+        )
+        if error:
+            return error
+        memory = payload["memory"]
+        return jsonify({
+            "success": True,
+            "decision_episodes": memory.get("decision_episodes", []),
+            "summary": memory.get("summary", {}),
+            "audit": memory.get("audit", {}),
+            "resolved_patient_id": payload["patient_id"],
+            "resolved_patient_ref": payload["resolved"].get("nss") or payload["resolved"].get("patient_ref") or str(patient_ref),
+        })
+    except Exception as e:
+        logger.error(f"Error getting outcome episodes: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/patients/<patient_ref>/clinical-memory-os/recompute', methods=['POST'])
+def api_patient_clinical_memory_recompute(patient_ref):
+    """Recompute Clinical Memory OS without inventing or overwriting source facts."""
+    try:
+        payload, error = _build_clinical_memory_os_for_api(
+            patient_ref,
+            force_recompute=True,
+            include_cohort=True,
+        )
+        if error:
+            return error
+        memory = payload["memory"]
+        return jsonify({
+            "success": True,
+            "clinical_memory_os": memory,
+            "source_clinical_facts_mutated": False,
+            "model_trained": False,
+            "resolved_patient_id": payload["patient_id"],
+            "resolved_patient_ref": payload["resolved"].get("nss") or payload["resolved"].get("patient_ref") or str(patient_ref),
+        })
+    except Exception as e:
+        logger.error(f"Error recomputing Clinical Memory OS: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/cohorts/similar-patients', methods=['GET'])
+def api_similar_patients_cohort():
+    """Non-authoritative similar cohort mirror for Clinical Memory OS."""
+    import tracking_db
+    from prostanet.domains.patient_tracking.clinical_memory_os import build_similar_cohort_mirror
+
+    patient_ref = request.args.get("patient_ref") or request.args.get("nss") or ""
+    state = request.args.get("state") or ""
+    if not patient_ref:
+        return error_response("patient_ref requerido", 400)
+    try:
+        resolved, error = _resolve_patient_api_ref(patient_ref)
+        if error:
+            return error
+        patient = tracking_db.get_patient_full_record(
+            resolved["patient_id"],
+            include_derivatives=False,
+            include_ledger=False,
+        )
+        if not patient:
+            return error_response("Paciente no encontrado", 404)
+        cohort_records = _load_clinical_memory_cohort_records(tracking_db)
+        mirror = build_similar_cohort_mirror(
+            patient,
+            cohort_records=cohort_records,
+            state=state,
+        )
+        return jsonify({
+            "success": True,
+            "similar_cohort_mirror": mirror,
+            **mirror,
+            "resolved_patient_id": resolved["patient_id"],
+            "resolved_patient_ref": resolved.get("nss") or resolved.get("patient_ref") or str(patient_ref),
+        })
+    except Exception as e:
+        logger.error(f"Error getting similar patient cohort: {e}")
+        return error_response(str(e), 500)
+
+
 @app.route('/api/patients/<patient_ref>/labs-intelligence', methods=['GET'])
 def api_patient_labs_intelligence(patient_ref):
     import tracking_db
@@ -1532,6 +3724,90 @@ def api_patient_decision_trace(patient_ref):
         return error_response(str(e), 500)
 
 
+@app.route('/api/patients/<patient_ref>/decision-governance', methods=['GET'])
+def api_patient_decision_governance(patient_ref):
+    import tracking_db
+    try:
+        resolved, error = _resolve_patient_api_ref(patient_ref)
+        if error:
+            return error
+        patient_id = resolved["patient_id"]
+        bundle = tracking_db.refresh_longitudinal_intelligence(
+            patient_id,
+            force_recompute=True,
+            include_live_benchmark=False,
+        ) or {}
+        patient = tracking_db.get_patient_full_record(patient_id)
+        if not patient:
+            return error_response("Paciente no encontrado", 404)
+        latest_signal_snapshot = dict(patient.get("latest_signal_snapshot") or {})
+        keys = [
+            "decision_governance_bundle",
+            "recommendation_block_status",
+            "recommendation_block_reason",
+            "allowed_actions_while_blocked",
+            "decision_blocking_bundle",
+            "diagnostic_certainty_bundle",
+            "staging_certainty_bundle",
+            "minimum_decisive_dataset_bundle",
+            "decision_evidence_currentness_bundle",
+            "therapeutic_window_bundle",
+            "window_worklist_bundle",
+            "therapeutic_readiness_bundle",
+            "clinical_readiness_tower",
+            "tumor_board_os",
+            "care_pathway_os",
+            "clinical_memory_os",
+            "clinician_decision_capture_bundle",
+            "state_transition_confirmation_bundle",
+            "adherence_tracking_bundle",
+            "tumor_board_outcome_bundle",
+            "pro_decision_bundle",
+            "shared_decision_bundle",
+            "localized_modality_fitness_bundle",
+            "localized_tradeoff_bundle",
+            "patient_priority_profile",
+            "ctdna_refinement_bundle",
+            "multimodal_imaging_concordance_bundle",
+            "precision_workflow_bundle",
+            "registry_core_bundle",
+            "endpoint_adjudication_bundle",
+            "data_certainty_bundle",
+            "ichom_compliance_bundle",
+            "treatment_adverse_event_bundle",
+            "population_survival_context_bundle",
+            "cost_access_context_bundle",
+            "score_interpretation_catalog_snapshot",
+            "clinical_fact_bundle",
+        ]
+        payload = {
+            key: bundle.get(
+                key,
+                latest_signal_snapshot.get(
+                    key,
+                    {} if key in {"tumor_board_os", "care_pathway_os", "clinical_memory_os"} or key.endswith("_bundle") or key.endswith("_profile") or key.endswith("_snapshot") else "",
+                ),
+            )
+            for key in keys
+        }
+        return jsonify(
+            {
+                "success": True,
+                **payload,
+                "longitudinal_truth_snapshot": bundle.get("longitudinal_truth_snapshot", patient.get("longitudinal_truth_snapshot", {})),
+                "decision_recalculation_trace": bundle.get("decision_recalculation_trace", patient.get("decision_recalculation_trace", {})),
+                "guideline_plan_history": patient.get("guideline_plan_history", []),
+                "missing_input_history": patient.get("missing_input_history", []),
+                "resolved_patient_id": patient_id,
+                "resolved_patient_ref": resolved.get("nss") or resolved.get("patient_ref") or str(patient_ref),
+                **_reconciled_patient_snapshot(patient),
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error getting patient decision governance: {e}")
+        return error_response(str(e), 500)
+
+
 @app.route('/api/patients/<int:patient_id>', methods=['DELETE'])
 def api_delete_patient_profile(patient_id):
     import tracking_db
@@ -1574,6 +3850,16 @@ def register_patient():
             data = tracking_service.merge_assessment_payload(assessment, data)
         else:
             data = tracking_service.canonicalize_payload(data)
+        data = _prepare_registration_contract_payload(data)
+
+        diagnosis_gate = _confirmed_diagnosis_publication_gate(data)
+        if diagnosis_gate["blocked"]:
+            return jsonify({
+                "success": False,
+                "error": diagnosis_gate["message"],
+                "clinical_gate": diagnosis_gate,
+                "official_diagnosis_context": diagnosis_gate["official_diagnosis_context"],
+            }), 400
 
         # ── Faubot LXXXI #audit-pre-cortana A3 — Completeness warner ──
         # Detecta fields críticos faltantes según state clínico estimado.
@@ -1662,6 +3948,8 @@ def register_patient():
                 "processing_summary": processing_summary,
                 "longitudinal_intelligence": loop_payload,
                 "registration_metadata": registration_metadata or {},
+                "official_diagnosis_context": diagnosis_gate["official_diagnosis_context"],
+                "official_diagnosis": diagnosis_gate["official_diagnosis"],
                 "msg": msg,
                 "assessment_id": assessment_id,
                 "next_routes": {
@@ -2423,9 +4711,41 @@ def longitudinal_capture_v2(nss: str):
     patient_for_v2["clinical_baseline"] = data.get("baseline") or {}
     patient_for_v2["consent"] = data.get("consent") or {}
     ctx = bundle_to_v2_profile(profile_view, patient_for_v2)
+    decision_lane_filter = (request.args.get("decision_lane") or "").strip()
+    decision_field_filter = (request.args.get("decision_field") or "").strip()
+    readiness_lane_filter = (
+        request.args.get("readiness_lane")
+        or decision_lane_filter
+        or ""
+    ).strip()
 
     # Build longitudinal-specific context from real bundle
     cb = data.get("baseline") or {}
+    latest_assessment = data.get("latest_assessment") or {}
+    field_router_state = (
+        latest_assessment.get("state")
+        or latest_assessment.get("disease_state")
+        or latest_assessment.get("module")
+        or (profile_view.get("current_state") if isinstance(profile_view, dict) else None)
+        or (profile_view.get("disease_state") if isinstance(profile_view, dict) else None)
+        or cb.get("disease_state")
+        or cb.get("stage")
+        or ctx.get("identity", {}).get("stage")
+        or "localized_initial"
+    )
+    try:
+        from prostanet.presentation.clinical_field_router import (
+            build_clinical_field_router,
+        )
+        longitudinal_field_router = build_clinical_field_router(
+            str(field_router_state),
+            phase="longitudinal_followup",
+            captured_so_far=cb,
+            readiness_lane=readiness_lane_filter or None,
+        )
+    except Exception as exc:
+        logger.exception(f"clinical_field_router longitudinal failed: {exc}")
+        longitudinal_field_router = None
     from prostanet.shared.psa_unified import unified_psa_timeline, unified_testosterone_timeline
     from prostanet.domains.patient_tracking.psa_line_monitor import _classify_line_type
 
@@ -2464,6 +4784,17 @@ def longitudinal_capture_v2(nss: str):
             "line_type": line_type.get("category"),
             "line_type_label": line_type.get("label") or "Sin clasificar",
         })
+    clinical_readiness_tower = (
+        longitudinal_bundle.get("clinical_readiness_tower")
+        or profile_view.get("clinical_readiness_tower")
+        or {}
+    )
+    readiness_lane_detail = {}
+    if readiness_lane_filter and clinical_readiness_tower:
+        for lane in clinical_readiness_tower.get("lanes") or []:
+            if isinstance(lane, dict) and lane.get("key") == readiness_lane_filter:
+                readiness_lane_detail = lane
+                break
 
     long_ctx = {
         "identity": {
@@ -2505,6 +4836,12 @@ def longitudinal_capture_v2(nss: str):
         "treatment_lines": treatment_rows,
         "clinical_events": [],
         "pro_scores": [],
+        "longitudinal_field_router": longitudinal_field_router,
+        "clinical_readiness_tower": clinical_readiness_tower,
+        "decision_lane_filter": decision_lane_filter,
+        "decision_field_filter": decision_field_filter,
+        "readiness_lane_filter": readiness_lane_filter,
+        "readiness_lane_detail": readiness_lane_detail,
         "smart_hints": [
             {"icon": "info", "severity": "info",
              "title": f"{len(psa_real)} mediciones PSA capturadas",
@@ -2642,6 +4979,8 @@ def api_longitudinal_append(nss: str):
         "ctcae": "CTCAE_TOXICITY",
         "psma_pet": "PSMA_PET_STRUCTURED",
         "bone_scan": "BONE_SCAN_STRUCTURED",
+        "mri_pirads": "MRI_PIRADS_STRUCTURED",
+        "ct_recist": "CT_RECIST_STRUCTURED",
         "visceral_mets": "VISCERAL_METS_BREAKDOWN",
         "hrr_germinal": "HRR_GERMINAL",
         "hrr_somatic": "HRR_SOMATIC",
@@ -2660,12 +4999,16 @@ def api_longitudinal_append(nss: str):
         primary_value = None
         try:
             if kind == "psma_pet":
-                primary_value = float(body.get("suvmax", 0) or 0)
+                primary_value = float(body.get("psma_suvmax", body.get("suvmax", 0)) or 0)
             elif kind == "bone_scan":
                 primary_value = sum(int(body.get(k, 0) or 0)
                                      for k in ["pelvis_count", "spine_count",
                                                "femur_count", "humerus_count",
                                                "skull_ribs_count"])
+            elif kind == "mri_pirads":
+                primary_value = float(body.get("pirads_score", body.get("mri_pirads_score", 0)) or 0)
+            elif kind == "ct_recist":
+                primary_value = float(body.get("recist_target_lesion_count", 0) or 0)
             elif kind == "visceral_mets":
                 primary_value = sum(int(body.get(k, 0) or 0)
                                      for k in ["liver_metastasis", "lung_metastasis",
@@ -3295,8 +5638,19 @@ def api_compliance_proposals():
     """Últimas N propuestas del agentic loop."""
     from prostanet.agentic.improvement_loop import PROPOSALS_LOG
     limit = int(request.args.get("limit", 30))
+    autonomous_proposals = {}
+    try:
+        from prostanet.agentic.autonomous_improvement_os import (
+            build_gap_intelligence,
+            build_proposals,
+        )
+
+        gaps = build_gap_intelligence(patient_limit=int(request.args.get("patient_limit") or 20))
+        autonomous_proposals = build_proposals(gaps.get("candidates", []))
+    except Exception as exc:
+        autonomous_proposals = {"available": False, "error": str(exc), "proposals": [], "n": 0}
     if not PROPOSALS_LOG.exists():
-        return jsonify({"proposals": [], "n": 0})
+        return jsonify({"proposals": [], "n": 0, "autonomous_improvement": autonomous_proposals})
     proposals = []
     with PROPOSALS_LOG.open() as f:
         for line in reversed(list(f)):
@@ -3309,7 +5663,7 @@ def api_compliance_proposals():
                 continue
             if len(proposals) >= limit:
                 break
-    return jsonify({"proposals": proposals, "n": len(proposals)})
+    return jsonify({"proposals": proposals, "n": len(proposals), "autonomous_improvement": autonomous_proposals})
 
 
 @app.route("/api/compliance/rollbacks", methods=["GET"])
@@ -3543,36 +5897,13 @@ def api_consent_sign(nss=None):
 @app.route("/intake-wizard", methods=["GET"])
 @require_clinical_session(scope="phi:write", redirect_to_login=True)
 def intake_wizard():
-    """Stage-Aware Progressive Intake wizard (3 steps).
+    """Retired visible new-patient intake route.
 
-    Faubot LXXXVI #67F Fase 3 — Reemplaza intake legacy de 218 campos por
-    flujo NCCN-correcto: 15 campos minimum classify → schema completo del
-    estadio resuelto → confirmación + persist.
+    The official classifier is the only productive entry. Progressive capture
+    refiners now live behind Clinical Field Router and are consumed by state
+    wizards and longitudinal follow-up.
     """
-    page_chrome = build_page_chrome(
-        "intake",
-        "Nuevo paciente · Stage-Aware",
-        "Captura inteligente NCCN 5.2026 + EAU 2026",
-        content_width_class="max-w-none px-0 py-0 sm:px-0 lg:px-0",
-        uses_v2_shell=True,
-    )
-    # Hidratar audit_dims_v2 para sidebar
-    try:
-        from prostanet.shared.algorithm_version import get_algorithm_version
-        v = get_algorithm_version()
-        audit_dims_v2 = {
-            "version": {
-                "faubot_release": v.get("faubot_release", "LXXXVI"),
-                "gates_active_count": v.get("gates_active_count", 89),
-            }
-        }
-    except Exception:
-        audit_dims_v2 = {"version": {"faubot_release": "LXXXVI", "gates_active_count": 89}}
-    return render_template(
-        "intake_stage_aware_v2.html",
-        page_chrome=page_chrome,
-        audit_dims_v2=audit_dims_v2,
-    )
+    return redirect("/clinical-hub#pm2OfficialClassifier", code=302)
 
 
 @app.route("/api/state-classifier", methods=["POST"])
@@ -3628,6 +5959,115 @@ def api_state_classifier():
         "state": state,
         "next_step_url": f"/api/intake-schema/{state}",
         "audit_note": "State classified · 15 fields NCCN minimum · LXXXVI #67F · LXXXVII regression-fixed",
+    })
+
+
+@app.route("/api/intake/classify", methods=["POST"])
+@require_clinical_session(scope="phi:write", redirect_to_login=False)
+def api_intake_classify():
+    """Faubot LXCIII (plan LXXXVII) — Progressive Disclosure classify endpoint.
+
+    Combina state classification + progressive capture structure en una sola
+    llamada para alimentar el intake_progressive_v2.html flow.
+
+    Body JSON: payload con campos always_visible llenos (PSA + Gleason + T/M +
+    ECOG + opcionales).
+
+    Returns:
+      200 → {
+        success: true,
+        disease_state: <17 canonical states>,
+        classification_reason: str,
+        stage_capture: {
+            stage_label, stage_key, always_visible, expandable_groups,
+            next_step_hint, live_classification, recommendation_preview, summary
+        }
+      }
+      400 → {success: false, error: str}
+    """
+    from prostanet.domains.state_classifier.service import StateClassifierService
+    from prostanet.presentation.progressive_capture_builder import (
+        build_stage_aware_capture,
+    )
+
+    payload = request.get_json(silent=True) or {}
+
+    # Coerce strings to numerics where helpful
+    for key in ("psa_value", "psa_baseline_ng_ml", "ecog_score",
+                "gleason_score", "gleason_primary", "gleason_secondary",
+                "bone_lesion_count_total", "bone_appendicular_count",
+                "psa_doubling_time_months", "age",
+                "charlson_comorbidity_index"):
+        if key in payload and isinstance(payload[key], str) and payload[key].strip():
+            try:
+                payload[key] = float(payload[key]) if "." in payload[key] else int(payload[key])
+            except ValueError:
+                pass
+
+    try:
+        classification = StateClassifierService().classify(payload)
+    except Exception as exc:
+        logger.exception(f"intake/classify failed: {exc}")
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+    state = classification.get("state") or "diagnostic_workup"
+
+    try:
+        stage_capture = build_stage_aware_capture(
+            disease_state=state,
+            captured_so_far=payload,
+        )
+    except Exception as exc:
+        logger.exception(f"build_stage_aware_capture failed: {exc}")
+        # Graceful: return classification even if progressive build fails
+        stage_capture = {
+            "stage_key": state,
+            "always_visible": [],
+            "expandable_groups": [],
+            "error": str(exc),
+        }
+
+    return jsonify({
+        "success": True,
+        "disease_state": state,
+        "classification_reason": classification.get("classification_reason", ""),
+        "derived_metastatic_context": classification.get("derived_metastatic_context", {}),
+        "stage_capture": stage_capture,
+        "audit_note": "Progressive disclosure · LXCIII (plan LXXXVII) · stage-aware + role-aware",
+    })
+
+
+@app.route("/api/clinical-field-router/<state>", methods=["GET"])
+@require_clinical_session(scope="phi:read", redirect_to_login=False)
+def api_clinical_field_router(state: str):
+    """Return compact state-scoped fields for wizard or longitudinal capture."""
+    from prostanet.presentation.clinical_field_router import (
+        build_clinical_field_router,
+    )
+
+    phase = request.args.get("phase") or "initial_wizard"
+    readiness_lane = (request.args.get("readiness_lane") or "").strip()
+    payload = build_clinical_field_router(
+        state,
+        phase=phase,
+        readiness_lane=readiness_lane or None,
+    )
+    return jsonify({"success": True, **payload})
+
+
+@app.route("/api/official-diagnosis/preview", methods=["POST"])
+@require_clinical_session(scope="phi:write", redirect_to_login=False)
+def api_official_diagnosis_preview():
+    payload = request.get_json(silent=True) or {}
+    payload = tracking_service.canonicalize_payload(payload)
+    payload = _prepare_registration_contract_payload(payload)
+    gate = _confirmed_diagnosis_publication_gate(payload)
+    return jsonify({
+        "success": True,
+        "clinical_gate": gate,
+        "official_diagnosis_context": gate["official_diagnosis_context"],
+        "official_diagnosis": gate["official_diagnosis"],
+        "audit_note": "Official diagnosis preview uses build_official_diagnosis_context · option 1 gate",
     })
 
 

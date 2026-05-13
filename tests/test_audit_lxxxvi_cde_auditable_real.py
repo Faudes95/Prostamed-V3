@@ -239,13 +239,17 @@ def test_g2851_intake_schema_list_endpoint(client):
 
 
 def test_g2852_intake_wizard_route_renders(client):
-    """H.G2852 — GET /intake-wizard renderiza Stage-Aware wizard 3-step.
+    """H.G2852 — GET /intake-wizard?v=legacy renderiza Stage-Aware wizard 3-step.
 
     LXCII.1 forward-compat: el heading H2 evolucionó de "Datos mínimos para
     clasificación" (LXXXVI) → "Clasificación NCCN 5.2026 · 18 estadios
     canónicos" (LXCII.1). Aceptamos cualquiera para no romper backward-compat.
+
+    LXCIX.4 forward-compat: post-LXCIII el default es `intake_progressive_v2.html`
+    (bento grid). El template Stage-Aware wizard (LXXXVI) ahora es opt-in
+    via `?v=legacy`.
     """
-    r = client.get("/intake-wizard")
+    r = client.get("/intake-wizard?v=legacy")
     assert r.status_code == 200
     body = r.data.decode("utf-8", errors="replace")
     assert "Stage-Aware Progressive" in body

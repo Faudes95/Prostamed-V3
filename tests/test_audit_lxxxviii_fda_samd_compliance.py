@@ -93,6 +93,209 @@ def test_g2886_pillar_2_qms_score():
     assert ps.score >= 80.0
 
 
+def test_part11_archival_procedures_artifact_closes_gap():
+    """21 CFR Part 11 archival procedures are implemented and linked."""
+    import yaml
+
+    from prostanet.agentic.pillars.pillar_2_qms import PILLAR
+
+    checklist_path = Path("prostanet/regulatory/qms/part11_checklist.yaml")
+    checklist = yaml.safe_load(checklist_path.read_text(encoding="utf-8"))
+    archival = checklist["archival_procedures"]
+    artifact_path = Path(archival["artifact_path"])
+    ps = PILLAR.score()
+    gap_kinds = {gap.kind for gap in ps.gaps}
+
+    assert archival["implemented"] is True
+    assert artifact_path.exists()
+    assert "Archive Package" in artifact_path.read_text(encoding="utf-8")
+    assert "part11_control_missing:archival_procedures" not in gap_kinds
+
+
+def test_part11_electronic_signature_artifact_closes_gap():
+    """21 CFR Part 11 electronic signature control is implemented and linked."""
+    import yaml
+
+    from prostanet.agentic.pillars.pillar_2_qms import PILLAR
+
+    checklist_path = Path("prostanet/regulatory/qms/part11_checklist.yaml")
+    checklist = yaml.safe_load(checklist_path.read_text(encoding="utf-8"))
+    electronic_signature = checklist["electronic_signature"]
+    artifact_path = Path(electronic_signature["artifact_path"])
+    procedure_path = Path(electronic_signature["procedure_path"])
+    ps = PILLAR.score()
+    gap_kinds = {gap.kind for gap in ps.gaps}
+
+    assert electronic_signature["implemented"] is True
+    assert artifact_path.exists()
+    assert procedure_path.exists()
+    assert "create_electronic_signature" in artifact_path.read_text(encoding="utf-8")
+    assert "Signature Envelope" in procedure_path.read_text(encoding="utf-8")
+    assert "part11_control_missing:electronic_signature" not in gap_kinds
+
+
+def test_electronic_signature_envelope_is_hash_bound_and_verifiable():
+    """Electronic signature validates only against the exact signed payload."""
+    from prostanet.shared.electronic_signature import (
+        create_electronic_signature,
+        validate_electronic_signature,
+    )
+
+    record_payload = {
+        "decision_state": "releaseable",
+        "decision_today": "Proceed with reviewed plan",
+        "patient_ref": "PX-TEST-001",
+    }
+    envelope = create_electronic_signature(
+        record_type="decision_today",
+        record_ref="PX-TEST-001:2026-05-12",
+        record_payload=record_payload,
+        signer_id="clinician-001",
+        signer_name="Clinical Reviewer",
+        signer_role="Clinical Lead",
+        meaning="clinical_decision_signed",
+        reason="Reviewed Decision Today bundle",
+        auth_method="clinical_session_reauth",
+        authentication_factors=["password_reentry_verified"],
+        session_id="pytest-session",
+        software_version="test",
+        secret="pytest-secret",
+    )
+
+    valid = validate_electronic_signature(
+        envelope,
+        record_payload=record_payload,
+        secret="pytest-secret",
+    )
+    tampered = validate_electronic_signature(
+        envelope,
+        record_payload={**record_payload, "decision_state": "blocked"},
+        secret="pytest-secret",
+    )
+
+    assert valid.valid is True
+    assert valid.reason == "valid"
+    assert envelope["record"]["content_hash"].startswith("sha256:")
+    assert tampered.valid is False
+    assert tampered.reason == "record_payload_hash_mismatch"
+
+
+def test_electronic_signature_requires_explicit_intent_and_auth_factor():
+    """Electronic signatures fail closed when intent/auth binding is incomplete."""
+    from prostanet.shared.electronic_signature import create_electronic_signature
+
+    with pytest.raises(ValueError, match="authentication_factors"):
+        create_electronic_signature(
+            record_type="voice_review",
+            record_ref="voice-session-1",
+            record_payload={"accepted_fields": ["psa"]},
+            signer_id="clinician-001",
+            signer_name="Clinical Reviewer",
+            signer_role="Clinical Lead",
+            meaning="voice_extraction_accepted",
+            auth_method="clinical_session_reauth",
+            authentication_factors=[],
+            secret="pytest-secret",
+        )
+
+    with pytest.raises(ValueError, match="unsupported signature meaning"):
+        create_electronic_signature(
+            record_type="loop_patch",
+            record_ref="patch-1",
+            record_payload={"candidate": "x"},
+            signer_id="quality-001",
+            signer_name="Quality Reviewer",
+            signer_role="Quality Lead",
+            meaning="casual_acknowledgement",
+            auth_method="human_patch_authorization",
+            authentication_factors=["human_authorization_reviewed"],
+            secret="pytest-secret",
+        )
+
+
+def test_part11_retention_policy_artifact_closes_gap():
+    """21 CFR Part 11 retention policy is implemented and linked."""
+    import yaml
+
+    from prostanet.agentic.pillars.pillar_2_qms import PILLAR
+    from prostanet.shared.retention_policy import retention_schedule
+
+    checklist_path = Path("prostanet/regulatory/qms/part11_checklist.yaml")
+    checklist = yaml.safe_load(checklist_path.read_text(encoding="utf-8"))
+    retention = checklist["retention_policy"]
+    artifact_path = Path(retention["artifact_path"])
+    implementation_path = Path(retention["implementation_path"])
+    ps = PILLAR.score()
+    gap_kinds = {gap.kind for gap in ps.gaps}
+    schedule = retention_schedule()
+
+    assert retention["implemented"] is True
+    assert artifact_path.exists()
+    assert implementation_path.exists()
+    assert "Retention Schedule" in artifact_path.read_text(encoding="utf-8")
+    assert "patient_clinical_record" in schedule
+    assert "voice_raw_audio_pending_review" in schedule
+    assert "part11_control_missing:retention_policy" not in gap_kinds
+
+
+def test_retention_policy_classifies_voice_audio_as_temporary():
+    """Raw voice audio is temporary and purgeable after review signature."""
+    from prostanet.shared.retention_policy import (
+        classify_record_from_context,
+        evaluate_retention,
+        get_retention_rule,
+    )
+
+    record_class = classify_record_from_context(
+        {"source": "voice_clinical_os", "record_type": "audio_chunk", "status": "pending"}
+    )
+    rule = get_retention_rule(record_class)
+    signed_eval = evaluate_retention(
+        record_class,
+        "2026-05-01T00:00:00+00:00",
+        now="2026-05-02T00:00:00+00:00",
+        signed_or_reviewed=True,
+    )
+    expired_eval = evaluate_retention(
+        record_class,
+        "2026-05-01T00:00:00+00:00",
+        now="2026-05-20T00:00:00+00:00",
+    )
+
+    assert record_class == "voice_raw_audio_pending_review"
+    assert rule.purge_after_signature is True
+    assert rule.archive_required is False
+    assert signed_eval["status"] == "purge_after_signature"
+    assert expired_eval["status"] == "eligible_for_purge"
+
+
+def test_retention_policy_keeps_clinical_records_and_honors_legal_hold():
+    """Clinical records retain long term and legal hold overrides purge."""
+    from prostanet.shared.retention_policy import evaluate_retention
+
+    within_window = evaluate_retention(
+        "clinical_decision_audit",
+        "2026-05-01T00:00:00+00:00",
+        now="2030-05-01T00:00:00+00:00",
+    )
+    expired_without_hold = evaluate_retention(
+        "clinical_decision_audit",
+        "2026-05-01T00:00:00+00:00",
+        now="2038-05-01T00:00:00+00:00",
+    )
+    expired_with_hold = evaluate_retention(
+        "clinical_decision_audit",
+        "2026-05-01T00:00:00+00:00",
+        now="2038-05-01T00:00:00+00:00",
+        legal_hold=True,
+    )
+
+    assert within_window["status"] == "retain"
+    assert within_window["archive_required"] is True
+    assert expired_without_hold["status"] == "eligible_for_purge"
+    assert expired_with_hold["status"] == "legal_hold"
+
+
 def test_g2887_pillar_3_lifecycle_score():
     """H.G2887 — Pilar 3 score reflects tests mapped + sbom + cve + sdp."""
     from prostanet.agentic.pillars.pillar_3_lifecycle import PILLAR
@@ -122,12 +325,69 @@ def test_g2889_pillar_5_clinical_score_after_retro_seed():
     assert ps.score >= 50.0  # con retro completo + sin trial_refs en muchos gates
 
 
+def test_p5_prospective_protocol_authorized_shadow_contract_closes_gap():
+    """P5 — prospective protocol is authorized without claiming IRB/enrollment."""
+    from pathlib import Path
+
+    import yaml
+
+    from prostanet.agentic.pillars.pillar_5_clinical import PILLAR
+
+    protocol = Path("prostanet/regulatory/clinical/protocol_prospective.md")
+    flag = Path("prostanet/regulatory/clinical/protocol_signed.flag")
+    protocol_text = protocol.read_text(encoding="utf-8")
+    flag_data = yaml.safe_load(flag.read_text(encoding="utf-8"))
+    ps = PILLAR.score()
+
+    assert flag_data["status"] == "authorized_internal_shadow_validation"
+    assert flag_data["irb_approval_claimed"] is False
+    assert flag_data["external_patient_enrollment_allowed"] is False
+    assert flag_data["clinical_fact_mutation_allowed_by_protocol"] is False
+    assert "DECISION TODAY" in protocol_text
+    assert "does not claim IRB approval" in protocol_text.replace("*", "")
+    assert ps.details["prospective_protocol_signed"] is True
+    assert "prospective_protocol_missing" not in {gap.kind for gap in ps.gaps}
+
+
 def test_g2890_pillar_6_security_score():
     """H.G2890 — Pilar 6 score ≥70% después de STRIDE + SBOM + SECURITY.md."""
     from prostanet.agentic.pillars.pillar_6_security import PILLAR
     ps = PILLAR.score()
     assert ps.pillar_id == 6
     assert ps.score >= 60.0
+
+
+def test_pillar_6_vex_addendum_closes_gap_without_fabricated_cves():
+    """Pillar 6 VEX addendum exists, is linked, and avoids fake CVE statements."""
+    import json
+
+    from prostanet.agentic.pillars.pillar_6_security import PILLAR
+
+    vex_path = PROJECT_ROOT / "prostanet/regulatory/security/vex.json"
+    policy_path = PROJECT_ROOT / "prostanet/regulatory/security/vex_policy.md"
+    audit_path = PROJECT_ROOT / "prostanet/regulatory/security/cve-audit-last.json"
+    vex = json.loads(vex_path.read_text(encoding="utf-8"))
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    ps = PILLAR.score()
+    gap_kinds = {gap.kind for gap in ps.gaps}
+    open_vuln_count = sum(len(dep.get("vulns") or []) for dep in audit.get("dependencies", []))
+    properties = {
+        item.get("name"): item.get("value")
+        for item in [*(vex.get("properties") or []), *((vex.get("metadata") or {}).get("properties") or [])]
+        if isinstance(item, dict)
+    }
+
+    assert vex["bomFormat"] == "CycloneDX"
+    assert vex["metadata"]["component"]["bom-ref"] == "prostamed"
+    assert policy_path.exists()
+    assert properties["prostamed:sbom_ref"] == "prostanet/regulatory/security/sbom-cyclonedx.json"
+    assert properties["prostamed:cve_audit_ref"] == "prostanet/regulatory/security/cve-audit-last.json"
+    assert properties["prostamed:no_fabricated_cve_statements"] == "true"
+    assert open_vuln_count == 0
+    assert vex["vulnerabilities"] == []
+    assert "part11_control_missing:retention_policy" not in gap_kinds
+    assert "vex_addendum_missing" not in gap_kinds
+    assert ps.details["vex_present"] is True
 
 
 def test_g2891_pillar_7_dhf_at_100_after_traceability_seed():

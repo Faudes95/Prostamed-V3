@@ -17,7 +17,7 @@
     <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
 </head>
 <body class="bg-slate-950 text-slate-100 antialiased">
 <a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
@@ -28,7 +28,7 @@
     <aside class="pm2-intake-progress" aria-label="Pasos del ingreso">
         <div style="padding:0 var(--space-3) var(--space-4);border-bottom:1px solid var(--border-subtle);margin-bottom:var(--space-3)">
             <img src="{{ url_for('static', filename='img/prostamed_logo_official.png') }}"
-                 alt="PROSTAMED" class="pm-logo" style="width:160px;max-height:48px;object-fit:contain;object-position:left center;filter:drop-shadow(0 6px 12px rgba(23,169,255,.16))">
+                 alt="PROSTAMED" class="pm-logo pm2-demo-intake-logo">
             <div style="color:rgba(191,219,254,.7);font-size:.6rem;font-weight:600;letter-spacing:.28em;text-transform:uppercase;margin-top:6px">Nuevo paciente</div>
         </div>
 

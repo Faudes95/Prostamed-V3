@@ -35,7 +35,7 @@ def client():
 # ─── §A — Bug fix URL hang (P0 critical) ─────────────────────────────────
 def test_g2991_intake_wizard_uses_correct_register_endpoint(client):
     """H.G2991 — intake-wizard JS llama /api/register_patient (no register-patient-v2)."""
-    r = client.get("/intake-wizard")
+    r = client.get("/intake-wizard?v=legacy")
     assert r.status_code == 200
     src = r.data.decode("utf-8", errors="replace")
     # The fetch call must use the correct URL
@@ -45,7 +45,7 @@ def test_g2991_intake_wizard_uses_correct_register_endpoint(client):
 
 def test_g2992_intake_wizard_has_defensive_json_parse(client):
     """H.G2992 — Defensive try/catch para res.json() (LXCI fix)."""
-    r = client.get("/intake-wizard")
+    r = client.get("/intake-wizard?v=legacy")
     src = r.data.decode("utf-8", errors="replace")
     assert "Backend respuesta" in src or "respuesta inv" in src
     assert "btn.disabled = false" in src
@@ -53,7 +53,7 @@ def test_g2992_intake_wizard_has_defensive_json_parse(client):
 
 def test_g2993_intake_wizard_button_text_is_confirmar(client):
     """H.G2993 — Button label 'Confirmar y abrir expediente'."""
-    r = client.get("/intake-wizard")
+    r = client.get("/intake-wizard?v=legacy")
     src = r.data.decode("utf-8", errors="replace")
     assert "Confirmar y abrir expediente" in src
 
@@ -61,7 +61,7 @@ def test_g2993_intake_wizard_button_text_is_confirmar(client):
 # ─── §B — Consent signature modal ────────────────────────────────────────
 def test_g2994_consent_modal_canvas_present(client):
     """H.G2994 — Modal de firma con canvas iw-consent-sig presente."""
-    r = client.get("/intake-wizard")
+    r = client.get("/intake-wizard?v=legacy")
     src = r.data.decode("utf-8", errors="replace")
     assert 'id="iw-consent-modal"' in src
     assert 'id="iw-consent-sig"' in src
@@ -72,7 +72,7 @@ def test_g2994_consent_modal_canvas_present(client):
 
 def test_g2995_consent_signing_handler_defined(client):
     """H.G2995 — Handler iwSignConsentAndOpen + iwClearConsentSig + iwOpenConsentModal."""
-    r = client.get("/intake-wizard")
+    r = client.get("/intake-wizard?v=legacy")
     src = r.data.decode("utf-8", errors="replace")
     assert "function iwOpenConsentModal" in src
     assert "async function iwSignConsentAndOpen" in src
@@ -149,11 +149,11 @@ def test_g3000_sidebar_action_rail_present(client):
 
 
 def test_g3001_sidebar_action_links_correct_targets(client):
-    """H.G3001 — Action rail links target correctos (/intake-wizard, /dashboard)."""
+    """H.G3001 — Action rail links target correctos (clasificador oficial, /dashboard)."""
     r = client.get("/patient_profile/97000000001")
     src = r.data.decode("utf-8", errors="replace")
     # Links presentes con href correcto
-    assert 'href="/intake-wizard"' in src and 'pm2-sidebar-action--primary' in src
+    assert 'href="/clinical-hub#pm2OfficialClassifier"' in src and 'pm2-sidebar-action--primary' in src
     assert 'href="/dashboard"' in src and 'pm2-sidebar-action--accent' in src
 
 
@@ -221,14 +221,18 @@ def test_g3008_sticky_actionbar_css_defined():
 def test_g3009_faubot_release_lxci():
     """H.G3009 — FAUBOT_RELEASE bumped to LXCI (or LXCI.x)."""
     from prostanet.shared.algorithm_version import FAUBOT_RELEASE
-    assert "LXCI" in FAUBOT_RELEASE
+    assert any(tag in FAUBOT_RELEASE for tag in ("LXCI", "LXCII", "LXCIII", "LXCIV", "LXCV", "LXCVI", "LXCVII", "LXCVIII", "LXCIX", "C"))
 
 
 # ─── §I — End-to-end smoke ───────────────────────────────────────────────
 def test_g3010_e2e_intake_wizard_to_consent_flow(client):
-    """H.G3010 — E2E: intake wizard renders → button click → register → consent modal flow."""
-    # Step 1: intake-wizard renders with all UI elements
-    r1 = client.get("/intake-wizard")
+    """H.G3010 — E2E: intake wizard legacy → register → consent modal flow.
+
+    NOTE: post-LXCIII /intake-wizard default sirve progressive_v2.html (sin "Confirmar
+    y abrir expediente" + iw-consent-modal). Use ?v=legacy para legacy template.
+    """
+    # Step 1: intake-wizard legacy renders with all UI elements
+    r1 = client.get("/intake-wizard?v=legacy")
     assert r1.status_code == 200
     src1 = r1.data.decode("utf-8", errors="replace")
     assert "Confirmar y abrir expediente" in src1

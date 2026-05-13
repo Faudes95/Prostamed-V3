@@ -1,0 +1,25 @@
+code: ipatasertib_hyperglycemia_grade3
+title: "Grade 3 hyperglycemia before ipatasertib"
+faubot_added_in: "2026-05-11 Clinical Memory recovery"
+severity: hard_block
+trigger:
+  type: any_of
+  triggers:
+    - type: numeric_threshold
+      field: hyperglycemia_ctcae_grade
+      threshold: 3
+    - type: truthy_flag
+      field: hyperglycemia_grade3_for_ipatasertib
+override:
+  type: truthy_flag
+  field: hyperglycemia_controlled_for_ipatasertib
+regimen_codes:
+  - IPATASERTIB_ABIRATERONE
+keywords:
+  - ipatasertib
+message: |
+  Grade 3 hyperglycemia blocks ipatasertib release until glycemic control and
+  safety monitoring are documented.
+evidence_tag: ipatential150_hyperglycemia
+trial_refs:
+  - IPATential150

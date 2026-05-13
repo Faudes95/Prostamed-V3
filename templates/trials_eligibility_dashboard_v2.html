@@ -42,7 +42,7 @@
         </div>
         <div class="pm2-stat-card pm2-stat-warning">
           <div class="pm2-stat-value">{{ summary.missing_data_count }}</div>
-          <div class="pm2-stat-label">Datos faltantes</div>
+          <div class="pm2-stat-label">No evaluables</div>
         </div>
         <div class="pm2-stat-card pm2-stat-muted">
           <div class="pm2-stat-value">{{ summary.not_eligible_count }}</div>
@@ -105,15 +105,15 @@
       {% endif %}
     </section>
 
-    {# ── Sección 2: Trials CON MISSING DATA ───────────────────────── #}
+    {# ── Sección 2: Trials NO EVALUABLES / REQUIEREN DATOS ────────── #}
     {% if missing_data %}
       <section class="pm2-section pm2-section-warning">
         <h2 class="pm2-section-title">
-          ⚠️ Trials con datos faltantes
+          ⚠️ Trials no evaluables por datos faltantes
           <span class="pm2-badge pm2-badge-warning">{{ missing_data|length }}</span>
         </h2>
         <p class="pm2-section-help">
-          Capturar estos campos completaría la evaluación de elegibilidad.
+          Estos estudios no deben contarse como elegibles hasta capturar los campos decisivos faltantes.
         </p>
         <div class="pm2-trials-grid">
           {% for trial in missing_data[:10] %}
@@ -126,6 +126,7 @@
               </header>
               <div class="pm2-trial-meta">
                 <span class="pm2-trial-stage">{{ trial.stage }}</span>
+                <span class="pm2-trial-subgroup">{{ trial.status or 'requires_data' }}</span>
               </div>
               {% if trial.missing_data %}
                 <ul class="pm2-trial-missing-list">

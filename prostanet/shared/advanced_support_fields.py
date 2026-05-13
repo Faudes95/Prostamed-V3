@@ -599,6 +599,26 @@ def advanced_cardio_fields(
                 "Si >60 ms, contraindica enzalutamida (gate 17 pivotal_contraindication_gates)."
             ),
         ),
+        # Faubot LXXXVI #LXXXVI.D — Gate 17 ARPI cardiotox baseline.
+        # QTc basal pre-tratamiento — necesario para calcular ΔQTc grado 3
+        # durante seguimiento con enzalutamida/apalutamida.
+        FieldSpec(
+            "qtc_baseline_ms",
+            "QTc basal pre-tratamiento (ECG screening)",
+            "number",
+            default="",
+            group=group,
+            group_order=group_order,
+            clinical_role="decision_refiner",
+            unit="ms",
+            evidence_tags=["qtc", "ctcae_v5", "ich_e14", "enzamet", "spartan"],
+            help_text=(
+                "QTc basal documentado antes de iniciar ARPI. Valores normales "
+                "<450 ms (♂), <470 ms (♀). Necesario para detectar ΔQTc >60 ms "
+                "(CTCAE grado 3) durante seguimiento (gate 17). Si baseline "
+                "≥500 ms, contraindica ARPI."
+            ),
+        ),
         # Faubot 2026-04-25 (VII) — Gate 18 ARPI cardiotox.
         # FEVI basal pre-tratamiento — necesario para calcular caída
         # absoluta >10 puntos durante seguimiento con apalutamida.
@@ -2481,6 +2501,43 @@ def pivotal_gate_supporting_fields(
         ),
 
         # ── Gates 17/18 — ARPI cardiotox overrides ────────────────────
+        # Faubot LXXXVI #LXXXVI.D — qtc_baseline_ms + lvef_baseline_percent
+        # ahora son FieldSpecs canónicos en este helper para asegurar wiring
+        # UI ↔ backend. Pre-LXXXVI eran solo aliases documentados.
+        FieldSpec(
+            "qtc_baseline_ms",
+            "QTc basal pre-tratamiento (ECG screening, ms)",
+            "number",
+            default="",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            unit="ms",
+            evidence_tags=["qtc", "ctcae_v5", "ich_e14", "enzamet", "spartan"],
+            help_text=(
+                "QTc basal documentado antes de iniciar ARPI. Valores normales "
+                "<450 ms (♂), <470 ms (♀). Necesario para detectar ΔQTc >60 ms "
+                "(CTCAE grado 3) durante seguimiento (gate 17). Si baseline "
+                "≥500 ms, contraindica ARPI."
+            ),
+        ),
+        FieldSpec(
+            "lvef_baseline_percent",
+            "FEVI basal pre-tratamiento (eco/MUGA, %)",
+            "number",
+            default="",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            unit="%",
+            evidence_tags=["cardio_oncology", "titan", "spartan", "asco_esc_2022"],
+            help_text=(
+                "FEVI documentada antes de iniciar ARPI cardiotóxico. "
+                "Necesaria para detectar caída >10 puntos absolutos durante "
+                "seguimiento (gate 18 — apalutamida). Si <50% absoluto, "
+                "contraindica apalutamida."
+            ),
+        ),
         FieldSpec(
             "qtc_corrected_for_arpi",
             "QTc corregido para ARPI (override gate 17)",
@@ -9325,6 +9382,46 @@ def pivotal_gate_supporting_fields(
                 "implications offspring). Crítico para audit trail."
             ),
         ),
+        # Faubot LXXXVI #LXXXVI.D — Gate 65 Lynch reflex composite history.
+        FieldSpec(
+            "germline_family_history",
+            "Resumen familiar germline-relevant (composite)",
+            "select",
+            options=["Desconocido", "Sin_riesgo", "PCa_under_55", "BRCA_confirmed",
+                     "Lynch_HNPCC", "Multiple_cancers", "Two_or_more_first_degree"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["nccn_genetic_familial_v3_2026", "lynch_amsterdam_ii"],
+            help_text=(
+                "Resumen consolidado de historia familiar germline-relevant. "
+                "Trigger composite para gate 65 (Lynch syndrome reflex MSI/IHC) "
+                "+ gate 64 (HRD comprehensive testing recommendation). "
+                "Pre-poblar desde fields detallados (PCa<55, BRCA, breast/ovarian, "
+                "colorectal Lynch criteria)."
+            ),
+        ),
+        # Faubot LXXXVI #LXXXVI.D — Adverse tertiary Gleason pattern flag.
+        # Sincroniza desde gleason_tertiary numeric → boolean para gates
+        # que requieren simple presence detection (gate 60 SVI risk + gate 56-59 RP/RT decision).
+        FieldSpec(
+            "has_adverse_tertiary_pattern",
+            "Patrón Gleason terciario adverso (4 o 5) presente",
+            "select",
+            options=["Desconocido", "No", "Sí_pattern_4", "Sí_pattern_5"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["epstein_2016_isup", "stephenson_jco_2009"],
+            help_text=(
+                "Patrón Gleason terciario 4 o 5 documentado en biopsia/RP. "
+                "Aumenta riesgo SVI ~30% (Stephenson nomogram) + indica "
+                "tumor más agresivo. Auto-derivado de `gleason_tertiary` numeric "
+                "si ≥4. Triggers gate 60 SVI risk + decision RP+ePLND vs RT+ADT."
+            ),
+        ),
         # ─── NEPC platinum-EP regimen flag ───
         FieldSpec(
             "nepc_platinum_ep_regimen_active",
@@ -9358,5 +9455,351 @@ def pivotal_gate_supporting_fields(
                 "ng/mL → PSMA PET preferido (más sensible que CT/bone scan). "
                 "SPARTAN/PROSPER/ARAMIS criteria + PROMISE recommendations."
             ),
+        ),
+        # ──────────────────────────────────────────────────────────
+        # Faubot LXCVI.D — 25 FieldSpecs Tier 1+2+3 AE & Contraindications
+        # ──────────────────────────────────────────────────────────
+
+        # ─── Tier 1 AE: ARPI fall risk (gate 86) ───
+        FieldSpec(
+            "fall_event_documented",
+            "Evento de caída documentado",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["embark_freedland_nejm_2023", "spartan_smith_nejm_2018"],
+            help_text="Caída documentada durante tratamiento ARPI (gate 86 trigger).",
+        ),
+        FieldSpec(
+            "fall_risk_score_high",
+            "Fall risk score alto (G8 <14, TUG ≥12s, Mini-BEST low)",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["g8_geriatric_assessment", "timed_up_and_go"],
+            help_text="Score de evaluación geriátrica indicando alto riesgo de caídas.",
+        ),
+        FieldSpec(
+            "mobility_decline_longitudinal",
+            "Declive movilidad longitudinal documentado",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["arches_armstrong_jco_2019"],
+            help_text="Deterioro mobility durante tratamiento ARPI (cumulative risk).",
+        ),
+
+        # ─── Tier 1 AE: Taxane diarrhea (gate 87) ───
+        FieldSpec(
+            "diarrhea_ctcae_grade",
+            "Diarrhea CTCAE v5 grado (0-4)",
+            "select",
+            options=["Desconocido", "0", "1", "2", "3", "4"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["ctcae_v5_2017", "tropic_de_bono_lancet_2010"],
+            help_text="Grado CTCAE diarrhea: G3 ≥7 stools/d hospitalization.",
+        ),
+        FieldSpec(
+            "diarrhea_with_dehydration_documented",
+            "Diarrhea con deshidratación documentada",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["tax327_tannock_nejm_2004"],
+            help_text="Proxy de G3+ diarrhea: deshidratación clínica documentada.",
+        ),
+
+        # ─── Tier 1 AE: Cabozantinib HFSR (gate 88) ───
+        FieldSpec(
+            "hfsr_ctcae_grade",
+            "Hand-Foot Skin Reaction (HFSR) CTCAE grado",
+            "select",
+            options=["Desconocido", "0", "1", "2", "3", "4"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["contact02_agarwal_lancet_oncol_2024", "ctcae_v5_2017"],
+            help_text="Síndrome mano-pie cabozantinib G2+ → HOLD + dose reduction.",
+        ),
+        FieldSpec(
+            "hand_foot_skin_reaction_documented",
+            "Síndrome mano-pie clínicamente documentado",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["contact02_agarwal_lancet_oncol_2024"],
+            help_text="HFSR documentado clínicamente (alternativo a CTCAE grade).",
+        ),
+
+        # ─── Tier 1 AE: PARP fatigue (gate 89) ───
+        FieldSpec(
+            "fatigue_ctcae_grade",
+            "Fatigue CTCAE v5 grado",
+            "select",
+            options=["Desconocido", "0", "1", "2", "3", "4"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["profound_de_bono_nejm_2020", "ctcae_v5_2017"],
+            help_text="Fatigue grado CTCAE. G3 = severe, ADL limiting.",
+        ),
+
+        # ─── Tier 1 AE: Apalutamide hypothyroidism (gate 90) ───
+        FieldSpec(
+            "tsh_elevated_new_onset",
+            "TSH elevada new-onset durante apalutamida",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["spartan_smith_nejm_2018", "titan_chi_nejm_2019"],
+            help_text="TSH > upper normal limit, NEW durante apalutamida.",
+        ),
+        FieldSpec(
+            "t4_low_new_onset",
+            "T4 libre baja new-onset durante apalutamida",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["spartan_smith_nejm_2018"],
+            help_text="Free T4 < lower normal, NEW durante apalutamida.",
+        ),
+        FieldSpec(
+            "hypothyroidism_documented_during_treatment",
+            "Hipotiroidismo documentado durante tratamiento ARPI",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["titan_chi_nejm_2019"],
+            help_text="Hipotiroidismo clínico documentado durante tratamiento.",
+        ),
+
+        # ─── Tier 2 contra: Cirrhosis (gate 91) ───
+        # NOTE: child_pugh_score (alphabetic A/B/C) es canónico via
+        # advanced_hepatic_fields(). Aquí declaramos `child_pugh_sum_points`
+        # como campo separado para la suma numérica 5-15 (raw points pre-
+        # clasificación). Esto evita el conflicto select-vs-number en domain
+        # schemas que spread ambas funciones (LXCIX.2 fix).
+        FieldSpec(
+            "child_pugh_sum_points",
+            "Child-Pugh suma de puntos (5-15)",
+            "number",
+            default="",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            unit="puntos",
+            evidence_tags=["pugh_br_j_surg_1973", "zytiga_fda_label"],
+            help_text="Suma raw Child-Pugh (5-15). A=5-6, B=7-9, C=10-15. Abi contraindicada B/C.",
+        ),
+        FieldSpec(
+            "cirrhosis_documented",
+            "Cirrhosis hepática documentada",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["latitude_fizazi_nejm_2017"],
+            help_text="Cirrhosis confirmada (biopsia, imaging, clínica).",
+        ),
+        FieldSpec(
+            "liver_decompensation_documented",
+            "Descompensación hepática documentada (ascitis, encefalopatía, sangrado varicial)",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["zytiga_fda_label"],
+            help_text="Manifestaciones cirrhosis descompensada (Child-Pugh B/C).",
+        ),
+
+        # ─── Tier 2 contra: Lu-177 PSMA-neg (gate 93) ───
+        FieldSpec(
+            "psma_pet_negative_or_low_uptake",
+            "PSMA-PET negativo o low uptake (SUVmax < liver bg)",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["vision_sartor_nejm_2021", "snmmi_lu177_eligibility_2023"],
+            help_text="PSMA-PET sin uptake significativo → contraindica Lu-177.",
+        ),
+        FieldSpec(
+            "psma_pet_max_suvmax_lesion",
+            "PSMA-PET SUVmax máximo en lesiones (numeric)",
+            "number",
+            default="",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            unit="SUVmax",
+            evidence_tags=["therap_hofman_lancet_2021"],
+            help_text="SUVmax máximo across lesions. <5 = negativo, ≥10 elegible Lu-177.",
+        ),
+
+        # ─── Tier 2 contra: Ra-223 visceral (gate 94) ───
+        FieldSpec(
+            "visceral_metastases_documented",
+            "Metástasis viscerales documentadas (liver/lung/peritoneal)",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["alsympca_parker_nejm_2013"],
+            help_text="Visceral mets documentadas → contraindica Ra-223.",
+        ),
+
+        # ─── Tier 2 contra: Sipuleucel immunosuppression (gate 95) ───
+        FieldSpec(
+            "immunosuppression_active",
+            "Immunosuppression activa (corticosteroids ≥10mg/d, autoinmune activa, transplant)",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["impact_kantoff_nejm_2010"],
+            help_text="Cualquier immunosuppression activa contraindica Sipuleucel-T.",
+        ),
+        FieldSpec(
+            "hiv_positive",
+            "HIV seropositive",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["impact_kantoff_nejm_2010"],
+            help_text="HIV+ contraindica Sipuleucel-T (autólogo immunotherapy).",
+        ),
+        FieldSpec(
+            "cd4_count_lt_200",
+            "CD4 count <200 cells/μL",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["impact_kantoff_nejm_2010"],
+            help_text="CD4 <200 → immunocompromise severa, contraindica Provenge.",
+        ),
+
+        # ─── Tier 2 contra: Ipatasertib PTEN-wt (gate 96) ───
+        FieldSpec(
+            "pten_status_wild_type_or_retained",
+            "PTEN wild-type / retained (IHC intact)",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["ipatential150_sweeney_lancet_2021"],
+            help_text="PTEN intact (IHC) → ipatasertib futile, no AKT driver.",
+        ),
+        FieldSpec(
+            "pten_status",
+            "PTEN status (IHC)",
+            "select",
+            options=["Desconocido", "not_tested", "loss", "wild_type", "pending"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["ipatential150_sweeney_lancet_2021"],
+            help_text="Status PTEN por IHC. Loss = ipatasertib elegible.",
+        ),
+
+        # ─── Tier 3 interaction: dual cytopenias (gate 97) ───
+        FieldSpec(
+            "wbc_lt_3_and_platelet_lt_100_combined",
+            "Bicitopenia: WBC <3K/μL AND Platelet <100K/μL",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["peace3_tombal_lancet_2024", "era223_smith_lancet_oncol_2019"],
+            help_text="Dual mielosuppression (WBC + platelet) bajo combo enz+Ra-223.",
+        ),
+        FieldSpec(
+            "dual_bone_marrow_toxicity_documented",
+            "Toxicidad medula ósea dual documentada (clinical)",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["peace3_tombal_lancet_2024"],
+            help_text="Synergistic mielosuppression clínicamente confirmada.",
+        ),
+
+        # ─── Tier 3 interaction: xerostomia Lu-177 (gate 98) ───
+        FieldSpec(
+            "xerostomia_ctcae_grade",
+            "Xerostomia (boca seca) CTCAE v5 grado",
+            "select",
+            options=["Desconocido", "0", "1", "2", "3", "4"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["vision_sartor_nejm_2021", "ctcae_v5_2017"],
+            help_text="Xerostomia G2+ Lu-177 requiere salivary management.",
+        ),
+
+        # ─── Tier 3 interaction: cumulative neuropathy (gate 99) ───
+        FieldSpec(
+            "cumulative_docetaxel_dose_mg_m2",
+            "Dosis cumulativa docetaxel + cabazitaxel (mg/m²)",
+            "number",
+            default="",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            unit="mg/m²",
+            evidence_tags=["tax327_tannock_nejm_2004", "chaarted_sweeney_nejm_2015"],
+            help_text="Suma cumulativa cycles taxane previos. >300 = peak risk neuropathy.",
         ),
     ]

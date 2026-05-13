@@ -1,5 +1,7 @@
 .DS_Store
 .claude/
+.venv-voice311/
+.venv-security/
 .playwright-cli/
 .prostanet_private/
 .pytest_cache/

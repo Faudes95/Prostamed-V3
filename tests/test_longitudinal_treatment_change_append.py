@@ -1,4 +1,5 @@
 from __future__ import annotations
+# IEC 62304 §5.7 (software system testing).
 
 import sqlite3
 

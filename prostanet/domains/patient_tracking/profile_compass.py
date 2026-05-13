@@ -6387,6 +6387,119 @@ def build_patient_profile_view_model(
     latest_signal_snapshot["decision_evidence_currentness_bundle"] = decision_evidence_currentness_bundle
     latest_signal_snapshot["staging_adjudication_bundle"] = staging_adjudication_bundle
     latest_signal_snapshot["supportive_care_toxicity_readiness_bundle"] = supportive_care_toxicity_readiness_bundle
+    clinical_readiness_tower = dict(
+        longitudinal_bundle.get("clinical_readiness_tower")
+        or patient.get("clinical_readiness_tower")
+        or latest_signal_snapshot.get("clinical_readiness_tower")
+        or {}
+    )
+    if not clinical_readiness_tower:
+        try:
+            from prostanet.domains.patient_tracking.clinical_readiness_tower import (
+                build_clinical_readiness_tower,
+            )
+
+            tower_bundle = {
+                **dict(longitudinal_bundle or {}),
+                "therapeutic_readiness_bundle": therapeutic_readiness_bundle,
+                "supportive_care_toxicity_readiness_bundle": supportive_care_toxicity_readiness_bundle,
+                "decision_input_requirements": fallback_decision_input_requirements,
+                "signals": latest_signal_snapshot,
+            }
+            clinical_readiness_tower = build_clinical_readiness_tower(
+                patient,
+                longitudinal_bundle=tower_bundle,
+                state=state,
+                management_track=management_track,
+                patient_ref=str((patient.get("identity") or {}).get("nss") or patient.get("nss") or ""),
+            )
+        except Exception:
+            clinical_readiness_tower = {}
+    latest_signal_snapshot["clinical_readiness_tower"] = clinical_readiness_tower
+    tumor_board_os = dict(
+        longitudinal_bundle.get("tumor_board_os")
+        or patient.get("tumor_board_os")
+        or latest_signal_snapshot.get("tumor_board_os")
+        or {}
+    )
+    if not tumor_board_os:
+        try:
+            from prostanet.domains.patient_tracking.tumor_board_os import build_tumor_board_os
+
+            tumor_board_bundle = {
+                **dict(longitudinal_bundle or {}),
+                "therapeutic_readiness_bundle": therapeutic_readiness_bundle,
+                "supportive_care_toxicity_readiness_bundle": supportive_care_toxicity_readiness_bundle,
+                "decision_input_requirements": fallback_decision_input_requirements,
+                "clinical_readiness_tower": clinical_readiness_tower,
+                "signals": latest_signal_snapshot,
+            }
+            tumor_board_os = build_tumor_board_os(
+                patient,
+                longitudinal_bundle=tumor_board_bundle,
+                state=state,
+                management_track=management_track,
+                patient_ref=str((patient.get("identity") or {}).get("nss") or patient.get("nss") or ""),
+            )
+        except Exception:
+            tumor_board_os = {}
+    latest_signal_snapshot["tumor_board_os"] = tumor_board_os
+    care_pathway_os = dict(
+        longitudinal_bundle.get("care_pathway_os")
+        or patient.get("care_pathway_os")
+        or latest_signal_snapshot.get("care_pathway_os")
+        or {}
+    )
+    if not care_pathway_os:
+        try:
+            from prostanet.domains.patient_tracking.care_pathway_os import build_care_pathway_os
+
+            care_pathway_bundle = {
+                **dict(longitudinal_bundle or {}),
+                "therapeutic_readiness_bundle": therapeutic_readiness_bundle,
+                "supportive_care_toxicity_readiness_bundle": supportive_care_toxicity_readiness_bundle,
+                "decision_input_requirements": fallback_decision_input_requirements,
+                "clinical_readiness_tower": clinical_readiness_tower,
+                "tumor_board_os": tumor_board_os,
+                "signals": latest_signal_snapshot,
+            }
+            care_pathway_os = build_care_pathway_os(
+                patient,
+                longitudinal_bundle=care_pathway_bundle,
+                state=state,
+                management_track=management_track,
+                patient_ref=str((patient.get("identity") or {}).get("nss") or patient.get("nss") or ""),
+            )
+        except Exception:
+            care_pathway_os = {}
+    latest_signal_snapshot["care_pathway_os"] = care_pathway_os
+    clinical_memory_os = dict(
+        longitudinal_bundle.get("clinical_memory_os")
+        or patient.get("clinical_memory_os")
+        or latest_signal_snapshot.get("clinical_memory_os")
+        or {}
+    )
+    if not clinical_memory_os:
+        try:
+            from prostanet.domains.patient_tracking.clinical_memory_os import build_clinical_memory_os
+
+            clinical_memory_bundle = {
+                **dict(longitudinal_bundle or {}),
+                "clinical_readiness_tower": clinical_readiness_tower,
+                "tumor_board_os": tumor_board_os,
+                "care_pathway_os": care_pathway_os,
+                "signals": latest_signal_snapshot,
+            }
+            clinical_memory_os = build_clinical_memory_os(
+                patient,
+                longitudinal_bundle=clinical_memory_bundle,
+                state=state,
+                management_track=management_track,
+                patient_ref=str((patient.get("identity") or {}).get("nss") or patient.get("nss") or ""),
+            )
+        except Exception:
+            clinical_memory_os = {}
+    latest_signal_snapshot["clinical_memory_os"] = clinical_memory_os
     clinical_compass["display_decision_changing_inputs"] = normalize_field_list(
         clinical_compass.get("decision_changing_inputs") or [],
         limit=8,
@@ -6549,6 +6662,10 @@ def build_patient_profile_view_model(
         "decision_evidence_currentness_bundle": decision_evidence_currentness_bundle,
         "therapeutic_window_bundle": therapeutic_window_bundle,
         "therapeutic_readiness_bundle": therapeutic_readiness_bundle,
+        "clinical_readiness_tower": clinical_readiness_tower,
+        "tumor_board_os": tumor_board_os,
+        "care_pathway_os": care_pathway_os,
+        "clinical_memory_os": clinical_memory_os,
         "advanced_therapy_decision_panel": advanced_therapy_decision_panel,
         "readiness_status": therapeutic_readiness_bundle.get("readiness_status", ""),
         "release_blockers": therapeutic_readiness_bundle.get("release_blockers", []),

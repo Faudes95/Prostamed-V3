@@ -1,0 +1,635 @@
+{# Faubot LXCIII (plan LXXXVII) — Progressive Disclosure Intake v2.
+
+   Reemplaza intake_stage_aware_v2.html como default cuando se accede a
+   /intake-wizard. Layout: bento grid (sidebar + main + live preview rail).
+
+   - Step 1: Quick Classifier (8 always_visible fields para clasificar disease_state)
+   - Step 2: State-Routed Capture (always_visible del state + 3 accordions
+             expandibles: refiners + monitoring + research)
+   - Step 3: Confirmación + Persist
+
+   Live preview rail (right column) actualiza en tiempo real:
+   - Disease state classification
+   - D'Amico / CHAARTED / LATITUDE / PCWG3
+   - Recommendation preview
+   - Gates potentially firing
+
+   Skills: ui-ux-pro-max (bento grid + glassmorphism + accordion patterns)
+   + frontend-patterns (live updates + state management vanilla JS)
+   + api-design (endpoint /api/intake/classify integration)
+
+   Opt-out legacy: /intake-wizard?v=legacy → renderiza intake_stage_aware_v2.html
+#}
+{% extends "layouts/base_clinical.html" %}
+{% from "components/pm2_sidebar.html" import pm2_sidebar %}
+
+{% block head_extra %}
+{{ super() if super }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
+<style>
+/* Faubot LXCIII — Progressive Intake bento grid styles */
+
+.pm2-progressive-shell {
+  display: grid;
+  grid-template-columns: 280px 1fr 380px;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0a0e1a 0%, #0f172a 100%);
+  gap: 0;
+}
+@media (max-width: 1280px) {
+  .pm2-progressive-shell { grid-template-columns: 280px 1fr; }
+  .pm2-progressive-rail { display: none; }
+}
+@media (max-width: 768px) {
+  .pm2-progressive-shell { grid-template-columns: 1fr; }
+}
+
+.pm2-progressive-main {
+  padding: 2rem 2.5rem;
+  overflow: visible;
+  min-width: 0;
+}
+
+.pm2-progressive-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.pm2-progressive-title {
+  color: #e2e8f0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.025em;
+  background: linear-gradient(135deg, #67e8f9, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.pm2-progressive-subtitle {
+  color: #94a3b8;
+  font-size: 0.875rem;
+  margin: 0.5rem 0 0;
+  max-width: 56rem;
+  line-height: 1.6;
+}
+
+.pm2-progressive-breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #94a3b8;
+  font-size: 0.8125rem;
+  text-decoration: none;
+  margin-bottom: 0.75rem;
+  transition: color 0.15s ease;
+}
+.pm2-progressive-breadcrumb:hover { color: #67e8f9; }
+
+/* Step indicators */
+.pm2-progressive-steps {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+  padding: 1.25rem;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 1rem;
+  backdrop-filter: blur(8px);
+}
+
+.pm2-progressive-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.875rem 1rem;
+  border-radius: 0.75rem;
+  background: rgba(30, 41, 59, 0.3);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  transition: all 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  cursor: pointer;
+}
+.pm2-progressive-step.is-active {
+  background: linear-gradient(135deg, rgba(103, 232, 249, 0.15), rgba(167, 139, 250, 0.1));
+  border-color: rgba(103, 232, 249, 0.3);
+  box-shadow: 0 0 0 1px rgba(103, 232, 249, 0.2), 0 4px 12px rgba(103, 232, 249, 0.08);
+}
+.pm2-progressive-step.is-completed {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+.pm2-progressive-step-num {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 600;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+.pm2-progressive-step.is-active .pm2-progressive-step-num { color: #67e8f9; }
+.pm2-progressive-step.is-completed .pm2-progressive-step-num { color: #10b981; }
+.pm2-progressive-step-label {
+  font-size: 0.875rem;
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+/* Always-visible card (required fields) */
+.pm2-always-visible-card {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(15, 23, 42, 0.5));
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 1.25rem;
+  padding: 1.75rem;
+  margin-bottom: 1.5rem;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+}
+
+.pm2-always-visible-card h2 {
+  color: #e2e8f0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+.pm2-always-visible-card h2::before {
+  content: "✓";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #67e8f9, #34d399);
+  color: #0a0e1a;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.pm2-always-visible-description {
+  color: #94a3b8;
+  font-size: 0.8125rem;
+  margin: 0 0 1.25rem;
+  line-height: 1.5;
+}
+
+/* Field grid for always-visible */
+.pm2-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem 1.25rem;
+}
+
+.pm2-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.pm2-field-label {
+  color: #cbd5e1;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.pm2-field-required-marker {
+  color: #f87171;
+  font-weight: 700;
+}
+
+.pm2-field-input,
+.pm2-field-select {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  color: #e2e8f0;
+  font-size: 0.875rem;
+  transition: all 0.18s ease;
+  font-family: inherit;
+}
+.pm2-field-input:focus,
+.pm2-field-select:focus {
+  outline: none;
+  border-color: #67e8f9;
+  box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.15);
+}
+
+.pm2-field-help {
+  color: #64748b;
+  font-size: 0.75rem;
+  margin: 0.25rem 0 0;
+  font-style: italic;
+}
+
+/* Expandable disclosure groups (accordions) */
+.pm2-disclosure-group {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 1rem;
+  margin-bottom: 0.875rem;
+  overflow: hidden;
+  transition: border-color 0.18s ease;
+}
+.pm2-disclosure-group:hover {
+  border-color: rgba(103, 232, 249, 0.25);
+}
+.pm2-disclosure-group[open] {
+  border-color: rgba(103, 232, 249, 0.35);
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.pm2-disclosure-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  user-select: none;
+  transition: background 0.18s ease;
+}
+.pm2-disclosure-summary::-webkit-details-marker { display: none; }
+.pm2-disclosure-summary:hover {
+  background: rgba(30, 41, 59, 0.4);
+}
+
+.pm2-disclosure-label-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.pm2-disclosure-icon {
+  font-size: 1.25rem;
+}
+.pm2-disclosure-label {
+  color: #e2e8f0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.pm2-disclosure-description {
+  color: #94a3b8;
+  font-size: 0.75rem;
+  margin: 0.125rem 0 0;
+  font-weight: 400;
+}
+
+.pm2-disclosure-badge {
+  background: rgba(103, 232, 249, 0.1);
+  color: #67e8f9;
+  border: 1px solid rgba(103, 232, 249, 0.2);
+  padding: 0.25rem 0.625rem;
+  border-radius: 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.pm2-disclosure-chevron {
+  color: #64748b;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+details[open] .pm2-disclosure-chevron { transform: rotate(180deg); }
+
+.pm2-disclosure-body {
+  padding: 0 1.25rem 1.25rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+  animation: slideDown 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Live preview rail (right column) */
+.pm2-progressive-rail {
+  background: rgba(8, 12, 22, 0.95);
+  border-left: 1px solid rgba(148, 163, 184, 0.12);
+  padding: 2rem 1.5rem;
+  overflow-y: auto;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  backdrop-filter: blur(12px);
+}
+
+.pm2-rail-section {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.pm2-rail-section h3 {
+  color: #67e8f9;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.085em;
+  text-transform: uppercase;
+  margin: 0 0 0.75rem;
+}
+
+.pm2-rail-state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.15), rgba(103, 232, 249, 0.1));
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  border-radius: 0.625rem;
+  color: #c4b5fd;
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.pm2-rail-classification-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.1);
+  font-size: 0.8125rem;
+}
+.pm2-rail-classification-item:last-child { border-bottom: none; }
+.pm2-rail-classification-key { color: #94a3b8; }
+.pm2-rail-classification-value { color: #67e8f9; font-weight: 600; }
+
+.pm2-rail-recommendation-card {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(34, 197, 94, 0.05));
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 0.625rem;
+  padding: 1rem;
+}
+.pm2-rail-recommendation-action {
+  color: #6ee7b7;
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+.pm2-rail-recommendation-rationale {
+  color: #94a3b8;
+  font-size: 0.75rem;
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* Next-step hint card */
+.pm2-next-step-hint {
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.08), rgba(99, 102, 241, 0.05));
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 0.875rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+}
+.pm2-next-step-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.pm2-next-step-text {
+  color: #cbd5e1;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* Action bar */
+.pm2-progressive-actionbar {
+  display: flex;
+  gap: 0.875rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.pm2-btn-primary {
+  background: linear-gradient(135deg, #67e8f9, #a78bfa);
+  color: #0a0e1a;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.625rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  font-family: inherit;
+}
+.pm2-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(103, 232, 249, 0.25);
+}
+.pm2-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.pm2-btn-ghost {
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.625rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  font-family: inherit;
+  text-decoration: none;
+  display: inline-block;
+}
+.pm2-btn-ghost:hover {
+  border-color: rgba(103, 232, 249, 0.3);
+  color: #67e8f9;
+}
+
+/* Skip link (WCAG 2.4.1) */
+.pm2-skip-link {
+  position: absolute;
+  top: -48px;
+  left: 0;
+  background: #0a0e1a;
+  color: #67e8f9;
+  padding: 0.625rem 1rem;
+  z-index: 100;
+  text-decoration: none;
+  border: 1px solid #67e8f9;
+  border-radius: 0 0 0.5rem 0;
+}
+.pm2-skip-link:focus { top: 0; }
+
+/* Focus visible for all interactive elements (WCAG 2.4.7) */
+.pm2-progressive-shell *:focus-visible {
+  outline: 2px solid #67e8f9;
+  outline-offset: 2px;
+  border-radius: 0.375rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<a href="#progressive-main" class="pm2-skip-link">Saltar al contenido principal</a>
+
+<div class="pm2-progressive-shell">
+  {{ pm2_sidebar(
+       active='intake',
+       identity_nss=None,
+       faubot_release=audit_dims_v2.version.faubot_release if audit_dims_v2 and audit_dims_v2.version else 'LXCIII',
+       gates_count=audit_dims_v2.version.gates_active_count if audit_dims_v2 and audit_dims_v2.version else 89,
+       kpi_total=0,
+       cohort_count=11,
+       therapy_count=27
+  ) }}
+
+  <div id="progressive-main" class="pm2-progressive-main" tabindex="-1">
+    <header class="pm2-progressive-header">
+      <div>
+        <a href="/clinical-hub" class="pm2-progressive-breadcrumb">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+          Centro clínico por estadio
+        </a>
+        <h1 class="pm2-progressive-title">Captura inteligente progresiva</h1>
+        <p class="pm2-progressive-subtitle">
+          Clasificación dinámica NCCN v5.2026 + EAU 2026 con disclosure secuencial:
+          ingrese solo los datos críticos primero, expanda refinadores cuando sean
+          relevantes a su escenario clínico.
+        </p>
+      </div>
+      <div style="display:flex; gap:0.625rem; align-items:center; flex-wrap:wrap;">
+        <a href="?v=legacy" class="pm2-btn-ghost" title="Ver versión legacy stage-aware">Ver legacy</a>
+      </div>
+    </header>
+
+    <!-- Step indicators -->
+    <div class="pm2-progressive-steps" role="tablist">
+      <div class="pm2-progressive-step is-active" data-step="1">
+        <span class="pm2-progressive-step-num">Paso 1</span>
+        <span class="pm2-progressive-step-label">Clasificador rápido</span>
+      </div>
+      <div class="pm2-progressive-step" data-step="2">
+        <span class="pm2-progressive-step-num">Paso 2</span>
+        <span class="pm2-progressive-step-label">Refinadores por estadio</span>
+      </div>
+      <div class="pm2-progressive-step" data-step="3">
+        <span class="pm2-progressive-step-num">Paso 3</span>
+        <span class="pm2-progressive-step-label">Confirmación + persistir</span>
+      </div>
+    </div>
+
+    <!-- Form (gets populated dynamically by intake_progressive.js) -->
+    <form id="progressiveIntakeForm" class="pm2-progressive-form" data-current-step="1">
+      <!-- Step 1: Quick Classifier (always_visible per default state) -->
+      <section id="step1Container" data-step-section="1">
+        <div class="pm2-always-visible-card">
+          <h2>Datos críticos para clasificar</h2>
+          <p class="pm2-always-visible-description">
+            Ingrese estos campos mínimos. El sistema clasificará el estado clínico
+            automáticamente y mostrará solo los refinadores relevantes a su caso.
+          </p>
+          <div class="pm2-fields-grid" id="quickClassifierFields">
+            {# Default initial 8 fields rendered here by JS — synthetic FieldSpecs #}
+            <p style="grid-column: 1 / -1; color: #64748b; font-size: 0.875rem; text-align: center; padding: 2rem 0;">
+              Cargando campos del clasificador inicial…
+            </p>
+          </div>
+        </div>
+
+        <div class="pm2-progressive-actionbar">
+          <button type="button" id="btnClassify" class="pm2-btn-primary">
+            Clasificar estado →
+          </button>
+        </div>
+      </section>
+
+      <!-- Step 2: State-routed capture (hidden until classified) -->
+      <section id="step2Container" data-step-section="2" hidden>
+        <div class="pm2-next-step-hint" id="nextStepHint" hidden>
+          <span class="pm2-next-step-icon">💡</span>
+          <p class="pm2-next-step-text" id="nextStepText"></p>
+        </div>
+
+        <!-- Always visible for resolved state -->
+        <div class="pm2-always-visible-card">
+          <h2 id="stateAlwaysVisibleTitle">Datos críticos por estadio</h2>
+          <p class="pm2-always-visible-description" id="stateAlwaysVisibleDescription"></p>
+          <div class="pm2-fields-grid" id="stateAlwaysVisibleFields"></div>
+        </div>
+
+        <!-- Expandable groups (accordions) -->
+        <div id="expandableGroupsContainer"></div>
+
+        <div class="pm2-progressive-actionbar">
+          <button type="button" id="btnBackToStep1" class="pm2-btn-ghost">← Volver</button>
+          <button type="button" id="btnConfirmAndPersist" class="pm2-btn-primary">
+            Confirmar y abrir expediente →
+          </button>
+        </div>
+      </section>
+
+      <!-- Step 3: Confirmation (hidden until step 2 complete) -->
+      <section id="step3Container" data-step-section="3" hidden>
+        <div class="pm2-always-visible-card">
+          <h2>Confirmación de captura</h2>
+          <p id="step3Summary" class="pm2-always-visible-description"></p>
+        </div>
+      </section>
+    </form>
+  </div>{# /pm2-progressive-main #}
+
+  <!-- Live preview rail (right column) -->
+  <aside class="pm2-progressive-rail" aria-label="Vista previa clasificación en vivo">
+    <div class="pm2-rail-section">
+      <h3>Estado clínico</h3>
+      <div id="railDiseaseState">
+        <p style="color:#64748b; font-size:0.8125rem;">Aguardando datos críticos…</p>
+      </div>
+    </div>
+
+    <div class="pm2-rail-section">
+      <h3>Clasificación en vivo</h3>
+      <div id="railLiveClassification">
+        <p style="color:#64748b; font-size:0.8125rem;">D'Amico · CHAARTED · LATITUDE · PCWG3 actualizan al ingresar datos.</p>
+      </div>
+    </div>
+
+    <div class="pm2-rail-section">
+      <h3>Recomendación preliminar</h3>
+      <div id="railRecommendation">
+        <p style="color:#64748b; font-size:0.8125rem;">La acción clínica sugerida aparecerá tras clasificar el estadio.</p>
+      </div>
+    </div>
+
+    <div class="pm2-rail-section">
+      <h3>Resumen captura</h3>
+      <div id="railSummary">
+        <p style="color:#64748b; font-size:0.8125rem;">Always visible: 0 · Expandable: 0</p>
+      </div>
+    </div>
+  </aside>
+</div>
+
+{% include "components/consent_modal.html" %}
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{{ url_for('static', filename='js/intake_progressive.js') }}"></script>
+{% endblock %}

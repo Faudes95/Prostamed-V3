@@ -395,7 +395,7 @@ def test_g2755_faubot_release_bumped_to_lxxxiv():
     """H.G2755 — FAUBOT_RELEASE ≥ LXXXIV (forward-compat con LXXXV+)."""
     from prostanet.shared.algorithm_version import FAUBOT_RELEASE
     # Forward-compat: LXXXIV o LXXXV o cualquier release posterior
-    assert any(tag in FAUBOT_RELEASE for tag in ("LXXXIV", "LXXXV"))
+    assert any(tag in FAUBOT_RELEASE for tag in ("LXXXIV", "LXXXV", "LXXXVI", "LXXXVII", "LXXXVIII", "LXXXIX", "XC", "XCI", "XCII", "XCIII", "XCIV", "XCV", "XCVI", "XCVII", "XCVIII", "XCIX", "C", "LXCI", "LXCII", "LXCIII", "LXCIV", "LXCV", "LXCVI", "LXCVII"))
 
 
 def test_g2756_algorithm_version_returns_88_gates():

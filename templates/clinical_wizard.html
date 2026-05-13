@@ -10,18 +10,28 @@
 {% block head_extra %}
 {{ super() if super }}
 {% if chrome_mode == 'v2' %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
 <style>
 /* Faubot LXXXV.b — v2 wizard chrome. Sidebar + actionbar wrapping. */
 .pm2-wizard-shell{display:grid;grid-template-columns:280px 1fr;min-height:100vh;background:#0a0e1a;}
 @media (max-width:768px){.pm2-wizard-shell{grid-template-columns:1fr;}}
-.pm2-wizard-main{padding:1.5rem 2rem;overflow-x:auto;}
+.pm2-wizard-main{padding:1.5rem 2rem;overflow:visible;min-width:0;}
 .pm2-wizard-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;padding:1rem 1.25rem;border-radius:1rem;background:linear-gradient(135deg,rgba(15,23,42,0.6),rgba(15,23,42,0.3));border:1px solid rgba(148,163,184,0.15);}
 .pm2-wizard-title{color:#e2e8f0;font-size:1.5rem;font-weight:600;margin:0;line-height:1.3;}
 .pm2-wizard-subtitle{color:#94a3b8;font-size:0.875rem;margin:0.25rem 0 0;max-width:48rem;}
 .pm2-wizard-breadcrumb{display:inline-flex;align-items:center;gap:0.5rem;color:#94a3b8;font-size:0.8125rem;text-decoration:none;margin-bottom:0.5rem;transition:color 0.15s;}
 .pm2-wizard-breadcrumb:hover{color:#67e8f9;}
 .pm2-wizard-actionbar{display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;}
+.pm2-router-panel{margin-bottom:1.25rem;border:1px solid rgba(34,211,238,.22);background:rgba(8,13,26,.72);border-radius:16px;padding:1rem;}
+.pm2-router-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:.85rem;}
+.pm2-router-title{margin:0;color:#e6fbff;font-size:.9rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;}
+.pm2-router-meta{color:#8aa0bb;font-size:.78rem;margin-top:.2rem;}
+.pm2-router-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;}
+.pm2-router-group{border:1px solid rgba(148,163,184,.16);border-radius:12px;background:rgba(15,23,42,.5);padding:.8rem;min-width:0;}
+.pm2-router-group-title{display:flex;justify-content:space-between;gap:.75rem;align-items:center;color:#cfe7ff;font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;}
+.pm2-router-count{color:#67e8f9;font-family:ui-monospace,monospace;}
+.pm2-router-fields{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.65rem;}
+.pm2-router-chip{display:inline-flex;max-width:100%;align-items:center;border:1px solid rgba(103,232,249,.16);background:rgba(8,145,178,.1);color:#d8efff;border-radius:8px;padding:.28rem .45rem;font-size:.72rem;line-height:1.2;overflow-wrap:anywhere;}
 </style>
 {% endif %}
 {% endblock %}
@@ -95,9 +105,42 @@
                     <p class="mt-2 text-sm text-slate-200">Datos que hacen más seguro y comparable el flujo longitudinal.</p>
                 </div>
             </div>
+            {% if clinical_field_router and chrome_mode == 'v2' %}
+            <section class="pm2-router-panel" data-clinical-field-router data-state="{{ clinical_field_router.state }}" data-phase="{{ clinical_field_router.phase }}">
+                <div class="pm2-router-head">
+                    <div>
+                        <p class="pm2-router-title">Campos contextuales del estado</p>
+                        <p class="pm2-router-meta">{{ clinical_field_router.stage_label }} · {{ clinical_field_router.summary.total_fields }} campos activos</p>
+                    </div>
+                    {{ badge("Router clinico", "info") }}
+                </div>
+                <div class="pm2-router-grid">
+                    {% for group in clinical_field_router.get('group_order', []) %}
+                    {% set fields = group.get('fields', []) %}
+                    {% if fields %}
+                    <div class="pm2-router-group" data-router-group="{{ group.key }}">
+                        <div class="pm2-router-group-title">
+                            <span>{{ group.label }}</span>
+                            <span class="pm2-router-count">{{ group.field_count }}</span>
+                        </div>
+                        <div class="pm2-router-fields">
+                            {% for field in fields[:6] %}
+                            <span class="pm2-router-chip">{{ field.label }}</span>
+                            {% endfor %}
+                            {% if group.field_count > 6 %}
+                            <span class="pm2-router-chip">+{{ group.field_count - 6 }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
             <form id="wizardForm" class="space-y-5">
+                {% set active_wizard_fields = wizard_form_fields if wizard_form_fields else schema.fields %}
                 {% set ns = namespace(current_group='') %}
-                {% for field in schema.fields %}
+                {% for field in active_wizard_fields %}
                     {% set skip_standalone_occam_field = field.name.startswith('occam_') %}
                     {% if not skip_standalone_occam_field %}
                         {% if field.group != ns.current_group %}

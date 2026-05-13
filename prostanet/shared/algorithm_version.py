@@ -29,7 +29,7 @@ from typing import Any
 
 # Constante actualizada al cierre de cada iteración del bucle Faubot.
 # Convención: "YYYY-MM-DD ROMAN_NUMERAL" (e.g., "2026-04-25 X").
-FAUBOT_RELEASE = "2026-04-28 LXCII.1"
+FAUBOT_RELEASE = "2026-04-30 LXCIX"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

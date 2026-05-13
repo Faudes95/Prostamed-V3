@@ -1,0 +1,136 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 86: arpi_fall_risk_longitudinal
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.A) — Tier 1 Adverse Event Coverage Closure.
+#
+# Razón clínica:
+#   ARPI class (enzalutamida, apalutamida, darolutamida) tienen
+#   incidencia documentada de caídas/fracturas 5-8% (vs placebo 2-3%):
+#
+#   - **EMBARK (Freedland NEJM 2023;389:1453)**: enzalutamida + leuprolide
+#     fall events 7.1% vs leuprolide 4.6%
+#   - **PROSPER (Hussain NEJM 2018;378:2465)**: enzalutamida fall 11.4% vs
+#     placebo 4.2%
+#   - **SPARTAN (Smith NEJM 2018;378:1408)**: apalutamida fall 15.6% vs
+#     placebo 9.0% (high in elderly)
+#   - **ARCHES (Armstrong JCO 2019;37:2974)**: enzalutamida fracture 6.5%
+#     vs placebo 4.2%
+#   - **PRESTO/AFT-19**: similar pattern
+#
+#   Mecanismo: fatiga + hipotensión postural + dizziness CNS-mediated +
+#   sarcopenia ADT-induced → cumulative fall risk.
+#
+#   Implicación clínica:
+#   - Cualquier evento de caída documented → soft_warning para
+#     escalar evaluación de gait + balance + medication review
+#   - Fall risk score alto (G8 frailty <14, TUG ≥12s) → mismo trigger
+#   - Mobility decline longitudinal → alert sobre cumulative deterioro
+#
+#   NO bloquea tratamiento. Documenta riesgo + sugiere intervenciones:
+#   - Vitamin D + calcium supplementation
+#   - Resistance training + balance exercises
+#   - Medication review (suspender hypnotics + antihypertensives PRN)
+#   - DEXA scan baseline + 12m
+#   - Consider switch a darolutamide (lower CNS penetration)
+# ──────────────────────────────────────────────────────────────────────
+
+code: arpi_fall_risk_longitudinal
+title: "ARPI × riesgo caídas longitudinal — escalation de evaluación gait/balance"
+faubot_added_in: "2026-04-30 LXCVI.A"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: evento caída documentado
+    - type: truthy_flag
+      field: fall_event_documented
+      alias_fields:
+        - fall_documented
+        - caida_documentada
+        - evento_caida
+    # Path B: fall risk score alto
+    - type: truthy_flag
+      field: fall_risk_score_high
+      alias_fields:
+        - high_fall_risk
+        - g8_frailty_below_14
+        - timed_up_and_go_above_12s
+    # Path C: mobility decline longitudinal
+    - type: truthy_flag
+      field: mobility_decline_longitudinal
+      alias_fields:
+        - declive_movilidad
+        - mobility_deterioration
+
+regimen_codes:
+  - REGIMEN_CODES_ARSI
+
+keywords:
+  - falls
+  - caídas
+  - mobility
+  - movilidad
+  - frailty
+  - gait
+  - balance
+  - ARPI
+  - enzalutamida
+  - apalutamida
+  - darolutamida
+
+message: |
+  ⚠️ SOFT WARNING: Paciente bajo ARPI con riesgo de caídas elevado o
+  evento de caída documentado.
+
+  🎯 EVIDENCIA INCIDENCIA POR TRIAL:
+
+  | Trial | ARPI | Falls % vs placebo |
+  |-------|------|---------------------|
+  | EMBARK | Enzalutamida | 7.1% vs 4.6% |
+  | PROSPER | Enzalutamida | 11.4% vs 4.2% |
+  | SPARTAN | Apalutamida | 15.6% vs 9.0% |
+  | ARCHES | Enzalutamida | 6.5% (fracture) vs 4.2% |
+
+  🎯 INTERVENCIONES SUGERIDAS:
+
+  1. **Evaluación geriátrica**:
+     - G8 Geriatric Screening (<14 → CGA recomendado)
+     - Timed Up and Go (TUG ≥12s → physical therapy)
+     - Mini-BESTest balance assessment
+
+  2. **Suplementación**:
+     - Vitamin D 800-2000 UI/día
+     - Calcium 1000-1200 mg/día
+     - Considerar denosumab si DEXA T-score ≤-2.5
+
+  3. **Ejercicio**:
+     - Resistance training 2-3x/sem
+     - Balance + tai chi
+     - Reduce sarcopenia ADT-induced
+
+  4. **Medication review**:
+     - Suspender hypnotics si posible
+     - Reducir antihypertensives si hipotensión postural
+     - Evitar benzodiazepinas
+
+  5. **Considerar darolutamida**:
+     - Lower CNS penetration vs enzalutamida/apalutamida
+     - Menor incidencia falls/seizures (ARAMIS data)
+
+  6. **DEXA scan baseline + 12m** seguimiento óseo
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `fall_event_documented`: bool
+  - `fall_risk_score_high`: bool (derivado de G8/TUG/Mini-BEST)
+  - `mobility_decline_longitudinal`: bool
+
+evidence_tag: arpi_falls_embark_prosper_spartan_arches_2018_2023
+trial_refs:
+  - "EMBARK (Freedland NEJM 2023;389:1453)"
+  - "PROSPER (Hussain NEJM 2018;378:2465)"
+  - "SPARTAN (Smith NEJM 2018;378:1408)"
+  - "ARCHES (Armstrong JCO 2019;37:2974)"
+  - "PRESTO/AFT-19"
+  - "NCCN Prostate v5.2026 PROS-G (geriatric)"

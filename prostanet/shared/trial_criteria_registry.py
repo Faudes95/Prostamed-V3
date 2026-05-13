@@ -581,21 +581,68 @@ def list_trial_ids() -> list[str]:
 
 
 def list_trials_by_stage(stage: str) -> list[str]:
+    """Faubot LXCIX.1 — Fix bug: trials use singular `stage` string, not `stages` list.
+
+    Acepta múltiples convenciones de naming:
+    - `stage`: singular string (e.g., "m1_crpc", "mcspc")
+    - `stages`: list (legacy)
+    - `disease_states`: list (legacy)
+
+    Token matching es flexible:
+    - "mcspc" matches "mcspc"
+    - "m1_crpc" matches "m1_crpc"
+    - "m1crpc" (sin underscore) matches "m1_crpc" (alias)
+    """
     token = str(stage or "").strip().lower()
+    if not token:
+        return []
+    # Normalize token (accept alternate forms)
+    token_alts = {token, token.replace("_", ""), token.replace("-", "_"), token.replace("-", "")}
+
+    def _matches(value: str) -> bool:
+        if not value:
+            return False
+        v = value.lower()
+        v_alts = {v, v.replace("_", ""), v.replace("-", "_"), v.replace("-", "")}
+        # Symmetric comparison — token alts ∩ value alts non-empty, or substring
+        return bool(token_alts & v_alts) or any(t in v for t in token_alts) or any(t in token for t in v_alts)
+
     matching: list[str] = []
     for trial_id, criteria in TRIAL_CRITERIA_REGISTRY.items():
-        stages = [str(item).lower() for item in criteria.get("stages", []) or criteria.get("disease_states", []) or []]
-        if token and token in stages:
+        # Try singular `stage` (canonical)
+        stage_value = str(criteria.get("stage", "") or "")
+        if _matches(stage_value):
+            matching.append(trial_id)
+            continue
+        # Fallback to plural lists
+        plural_stages = [str(item) for item in (criteria.get("stages") or criteria.get("disease_states") or [])]
+        if any(_matches(s) for s in plural_stages):
             matching.append(trial_id)
     return sorted(matching)
 
 
 def list_trials_by_biomarker(biomarker_name: str) -> list[str]:
+    """Faubot LXCIX.1 — Fix bug: trials use singular `biomarker_required` string.
+
+    Acepta substring matching para biomarcadores compuestos:
+    - "HRR" matches "HRR mutation", "HRR positive (BRCA1/2/ATM/...)"
+    - "BRCA" matches "BRCA1/BRCA2/ATM mutation"
+    - "PSMA" matches "PSMA-PET positive (SUVmax ≥20)"
+    - "PTEN" matches "PTEN biallelic loss (IHC + NGS)"
+    """
     token = str(biomarker_name or "").strip().upper()
+    if not token:
+        return []
     matching: list[str] = []
     for trial_id, criteria in TRIAL_CRITERIA_REGISTRY.items():
-        biomarkers = criteria.get("biomarkers", []) or criteria.get("required_biomarkers", []) or []
-        if any(str(item).upper() == token for item in biomarkers):
+        # Try singular `biomarker_required` (canonical)
+        biomarker_value = str(criteria.get("biomarker_required", "") or "").upper()
+        if token in biomarker_value:
+            matching.append(trial_id)
+            continue
+        # Fallback to plural lists
+        plural_biomarkers = criteria.get("biomarkers") or criteria.get("required_biomarkers") or []
+        if any(token in str(item).upper() for item in plural_biomarkers):
             matching.append(trial_id)
     return sorted(matching)
 

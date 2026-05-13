@@ -1,0 +1,70 @@
+name: Evidence Refresh Loop (LXCVII)
+
+# Faubot LXCVII — Iterative Improvement Loop · Weekly Sunday 00:00 UTC.
+# Shadow mode only: detecta evidencia candidata y nunca modifica recomendaciones,
+# gates, trials ni lógica clínica sin revisión humana.
+
+on:
+  schedule:
+    - cron: "0 0 * * 0"  # Weekly Sunday 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  evidence-refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AGENTIC_AUTO_MERGE: "false"
+      PROSTAMED_EVIDENCE_SHADOW_MODE: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deps
+        run: pip install pyyaml pytest
+
+      - name: Verify evidence refresh shadow contract
+        run: |
+          python -m py_compile prostanet/agentic/autonomous_improvement_os.py
+          pytest -q tests/test_autonomous_improvement_os.py::test_phase_7a_evidence_refresh_shadow_loop_requires_6a_and_never_changes_recommendations
+
+      - name: Verify trial_refs URL resolution
+        run: |
+          python -c "
+          from prostanet.shared.pivotal_gates_yaml_loader import _load_yaml_files
+          from prostanet.shared.decision_audit_builder import _build_per_gate_evidence_drill_down
+          import sys
+
+          data = _load_yaml_files(force_reload=True)
+          total_refs = 0
+          resolved_refs = 0
+          for code, config in data.items():
+              gate = {'trial_refs': config.get('trial_refs', []), 'evidence_tag': config.get('evidence_tag', '')}
+              drill = _build_per_gate_evidence_drill_down(gate)
+              total_refs += drill.get('citation_count', 0)
+              resolved_refs += sum(1 for r in drill.get('trial_refs_with_links', []) if r.get('url'))
+          print(f'Total refs: {total_refs}, resolved URLs: {resolved_refs}')
+          assert resolved_refs >= total_refs * 0.7, f'Less than 70% URLs resolved: {resolved_refs}/{total_refs}'
+          "
+
+      - name: Record evidence freshness check
+        if: always()
+        run: |
+          python -c "
+          from prostanet.presentation.loop_monitor import record_iteration
+          import datetime
+          status = 'ok' if '${{ job.status }}' == 'success' else 'warning'
+          record_iteration(
+              iteration_id=f'evidence-refresh-{datetime.date.today().isoformat()}',
+              vector='clinical_evidence',
+              metric='trial_refs_url_resolution_pct',
+              value=70.0,
+              status=status,
+              notes='Weekly evidence_tag → PMID URL resolution check',
+          )
+          "

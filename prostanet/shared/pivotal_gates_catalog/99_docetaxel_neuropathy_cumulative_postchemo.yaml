@@ -1,0 +1,170 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 99: docetaxel_neuropathy_cumulative_postchemo
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.C) — Tier 3 Interaction/Synergistic Gates.
+#
+# Razón clínica:
+#   Docetaxel + cabazitaxel cumulative neuropathy es dose-dependent y
+#   severe puede ser irreversible. Gate 24 cubre post-cycle 4 trigger,
+#   pero falta gate cumulative-dose tracking:
+#
+#   - **TAX-327 (Tannock NEJM 2004;351:1502)**: docetaxel cumulative
+#     - Cycles 1-4: G1-G2 25%, G3 1%
+#     - Cycles 5-8: G3+ 5-7% (cumulative > 300 mg/m²)
+#     - Cycles 9-10: G3+ peak ~10%
+#     - Discontinuation por neuropathy: 8% al final 10 cycles
+#
+#   - **CHAARTED (Sweeney NEJM 2015;373:737)**: docetaxel + ADT mCSPC
+#     - 6 cycles total (75 mg/m² × 6 = 450 mg/m² cumulative)
+#     - Neuropathy G3 5%, G4 <1%
+#     - Some persistent post-treatment
+#
+#   - **TROPIC (de Bono Lancet 2010;376:1147)**: cabazitaxel post-doce
+#     - Pacientes ya tenían cumulative dose previa de docetaxel
+#     - Neuropathy G3 7% with cabazitaxel addition
+#     - **Cross-tolerance/synergistic toxicity**
+#
+#   - **CARD (de Wit NEJM 2019;381:2506)**: cabazitaxel post-doce + ARPI
+#     - Similar pattern, cumulative neuropathy
+#
+#   Mecanismo: tubulin disruption en peripheral nerve axons. Damage
+#   acumulativo dose-dependent. Recovery >50% requires 6-12 meses
+#   off-treatment.
+#
+#   Implicación clínica G3 + cumulative dose >300 mg/m²:
+#   - HARD BLOCK next cycle definitively
+#   - Switch a non-taxane (Lu-177-PSMA, PARP, ARPI, sipuleucel)
+#   - Vitamin B6 + B12 supplementation
+#   - Duloxetine 30-60 mg/d for painful neuropathy
+#   - Gabapentin 300-900 mg TID alternative
+#   - Physical therapy + occupational therapy
+#
+#   Override: si dose-reduced regimen documented + neuro consult clears
+#   continuation con close monitoring.
+# ──────────────────────────────────────────────────────────────────────
+
+code: docetaxel_neuropathy_cumulative_postchemo
+title: "Taxane × neuropathy G3 + cumulative dose >300 mg/m² → discontinue + switch"
+faubot_added_in: "2026-04-30 LXCVI.C"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: all_of
+  triggers:
+    # Neuropathy CTCAE grade ≥3
+    - type: numeric_threshold
+      field: peripheral_neuropathy_grade
+      alias_fields:
+        - neuropathy_grade
+        - neuropathy_ctcae_grade
+        - neuropatia_periferica_grado
+      threshold: 3
+    # Cumulative dose threshold reached
+    - type: numeric_threshold
+      field: cumulative_docetaxel_dose_mg_m2
+      alias_fields:
+        - cumulative_taxane_dose_mg_m2
+        - dosis_acumulada_docetaxel_mg_m2
+      threshold: 300
+
+regimen_codes:
+  - REGIMEN_CODES_TAXANE
+
+override:
+  type: truthy_flag
+  field: dose_reduced_with_neuro_consult_clearance
+  alias_fields:
+    - taxane_dose_reduction_25pct_with_neuro_clearance
+    - neurology_consult_active_continuation_documented
+
+keywords:
+  - neuropathy
+  - neuropatía
+  - docetaxel
+  - cabazitaxel
+  - cumulative dose
+  - TAX-327
+  - CHAARTED
+  - TROPIC
+
+message: |
+  🚨 HARD BLOCK: Neuropathy G3 + cumulative taxane dose >300 mg/m² →
+  discontinue + switch a non-taxane regimen.
+
+  🎯 EVIDENCIA CUMULATIVE DOSE-DEPENDENT:
+
+  | Cumulative Dose | TAX-327 G3+ Neuropathy | Recovery Time |
+  |------------------|------------------------|----------------|
+  | 0-300 mg/m² | <1% | 1-3 meses |
+  | 300-500 mg/m² | 5-7% | 6-12 meses |
+  | 500-750 mg/m² | 8-10% | 12-24 meses |
+  | >750 mg/m² | >10% | Often persistent |
+
+  🎯 CALCULAR DOSE CUMULATIVE:
+
+  **Docetaxel mCSPC (CHAARTED)**:
+  - 75 mg/m² × 6 cycles = 450 mg/m² (alta riesgo)
+
+  **Docetaxel mCRPC (TAX-327)**:
+  - 75 mg/m² × 10 cycles = 750 mg/m² max (peak risk)
+
+  **Cabazitaxel (TROPIC, CARD)**:
+  - 25 mg/m² × 10 cycles = 250 mg/m² (less neuropathy than doce)
+  - Pero suma con docetaxel previous
+
+  🎯 ALTERNATIVAS POST-TAXANE NEUROPATHY:
+
+  **mCRPC HRR+**:
+  - Olaparib (PROfound)
+  - Niraparib + abi (MAGNITUDE)
+  - Talazoparib + enz (TALAPRO-2)
+
+  **mCRPC PSMA+**:
+  - Lu-177-PSMA (VISION, PSMAfore)
+
+  **mCRPC HRR- / PSMA-**:
+  - Sipuleucel-T (IMPACT) si asintomático
+  - Re-challenge ARPI con switch
+  - Considerar Ra-223 si bone-only
+
+  🎯 MANEJO SINTOMÁTICO NEUROPATHY:
+
+  1. **Pharmacologic**:
+     - **Duloxetine 30 mg/d × 1 sem → 60 mg/d** (level A evidence)
+     - Gabapentin 300 mg TID escalating to 900 mg TID
+     - Pregabalin 75 mg BID escalating to 150 mg BID
+     - Topical capsaicin 0.075% TID (less systemic effect)
+
+  2. **Supplementation**:
+     - Vitamin B6 50 mg/d
+     - Vitamin B12 1000 mcg/d
+     - Alpha lipoic acid 600 mg/d (mixed evidence)
+     - L-acetyl carnitine 1g BID (some benefit en cisplatin neuropathy)
+
+  3. **Physical/Occupational therapy**:
+     - Stretching + ROM exercises
+     - Adaptive equipment para fine motor
+     - Fall prevention assessment
+
+  4. **Lifestyle**:
+     - Avoid alcohol + smoking
+     - Tight glycemic control si DM
+     - Foot care (lesion prevention en diabetic-like neuropathy)
+
+  ⚠️ OVERRIDE: documentar `dose_reduced_with_neuro_consult_clearance`
+  + dose reduction 25% + neurology consult active permite continuar
+  cycle adicional bajo close monitoring.
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `peripheral_neuropathy_grade`: int 0-4 (CTCAE v5.0)
+  - `cumulative_docetaxel_dose_mg_m2`: float (suma cycles previos)
+
+evidence_tag: taxane_neuropathy_cumulative_tax327_chaarted_tropic_card_2004_2019
+trial_refs:
+  - "TAX-327 (Tannock NEJM 2004;351:1502)"
+  - "CHAARTED (Sweeney NEJM 2015;373:737)"
+  - "TROPIC (de Bono Lancet 2010;376:1147)"
+  - "CARD (de Wit NEJM 2019;381:2506)"
+  - "ASCO Chemotherapy-Induced Peripheral Neuropathy Guidelines 2020"
+  - "CTCAE v5.0 (NCI 2017)"

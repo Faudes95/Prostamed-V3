@@ -636,6 +636,45 @@ _ADVANCED_STAGE_DEFINITIONS = [
             "germline_test_refused_reason",
         ],
     },
+    {
+        # Faubot LXCVI.G — Wire 26 nuevas FieldSpecs (Tier 1+2+3 AE/contraindications)
+        # al intake v2 para cerrar gap de coverage UI ↔ helper
+        "key": "lxcvi_ae_contraindications",
+        "label": "Eventos adversos + contraindicaciones (LXCVI)",
+        "icon": "shield-alert",
+        "gate_label": "Gates 86-99",
+        "description": (
+            "Trial-by-trial AE coverage closure: ARPI fall risk + taxane diarrhea + "
+            "cabozantinib HFSR + PARP fatigue + apalutamide hypothyroidism + "
+            "cirrhosis baseline + HRR-neg + PSMA-neg + Ra-223 visceral + "
+            "sipuleucel imuno + ipatasertib PTEN-wt + dual myelosuppression + "
+            "Lu-177 xerostomia + cumulative neuropathy. 14 gates × 36 trials."
+        ),
+        "field_names": [
+            # ─── Tier 1 AE (gates 86-90) ───
+            "fall_event_documented", "fall_risk_score_high", "mobility_decline_longitudinal",
+            "diarrhea_ctcae_grade", "diarrhea_with_dehydration_documented",
+            "hfsr_ctcae_grade", "hand_foot_skin_reaction_documented",
+            "fatigue_ctcae_grade",
+            "tsh_elevated_new_onset", "t4_low_new_onset",
+            "hypothyroidism_documented_during_treatment",
+            # ─── Tier 2 contraindications (gates 91-96) ───
+            # LXCIX.2: child_pugh_sum_points (numeric 5-15) renamed to avoid
+            # conflict with canonical child_pugh_score (select A/B/C).
+            "child_pugh_sum_points", "cirrhosis_documented", "liver_decompensation_documented",
+            "psma_pet_negative_or_low_uptake", "psma_pet_max_suvmax_lesion",
+            "visceral_metastases_documented",
+            "immunosuppression_active", "hiv_positive", "cd4_count_lt_200",
+            "pten_status_wild_type_or_retained", "pten_status",
+            # ─── Tier 3 interactions (gates 97-99) ───
+            "wbc_lt_3_and_platelet_lt_100_combined", "dual_bone_marrow_toxicity_documented",
+            "xerostomia_ctcae_grade",
+            "cumulative_docetaxel_dose_mg_m2",
+            # ─── LXCII.2 sync field (also missing) ───
+            "has_adverse_tertiary_pattern",
+            "germline_family_history",
+        ],
+    },
 ]
 
 

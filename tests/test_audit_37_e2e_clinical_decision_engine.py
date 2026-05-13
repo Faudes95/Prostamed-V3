@@ -496,7 +496,7 @@ def test_dim_version_faubot_release_at_least_xxiii():
     # Faubot LXXXIV.b: forward-compat con releases posteriores 2026-04-25 (e.g.,
     # 2026-04-26 LXXXIV.b). Extraemos solo el segmento romano antes del posible
     # patch suffix ".b" / ".c" / etc.
-    assert ver["faubot_release"].startswith("2026-04-2"), (
+    assert ver["faubot_release"].startswith("2026-04-"), (
         f"FAUBOT release {ver['faubot_release']} debe ser 2026-04-2X"
     )
     import re as _re

@@ -357,8 +357,8 @@ class TestEndpointFlask:
 
     def test_html_page_includes_algorithm_version(self, client):
         response = client.get("/gates-coverage-dashboard")
-        # Faubot LXXXV: forward-compat con releases ≥2026-04-25 (e.g. 2026-04-27 LXXXV)
-        assert any(date in response.data for date in (b"2026-04-25", b"2026-04-26", b"2026-04-27"))
+        # Faubot LXCVIII.A.1: forward-compat date prefix 2026-04-XX or 2026-05-XX
+        assert b"2026-04-" in response.data or b"2026-05-" in response.data
 
 
 # ── Sección F — Smoke E2E con escenarios realistas ────────────────────────

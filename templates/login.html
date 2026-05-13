@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Iniciar sesión | ProstaMed Clinical Decision Engine</title>
-    <link rel="icon" href="{{ url_for('static', filename='img/prostamed_logo.svg') }}">
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
 </head>
@@ -12,8 +12,8 @@
     <div class="flex min-h-screen flex-col items-center justify-center px-4 py-12">
         <div class="w-full max-w-md">
             <div class="mb-8 text-center">
-                <img src="{{ url_for('static', filename='img/prostamed_logo.svg') }}"
-                     alt="ProstaMed" class="mx-auto h-16 w-16 mb-4">
+                <img src="{{ ui_assets.prostamed_logo.src }}"
+                     alt="{{ ui_assets.prostamed_logo.alt }}" class="pm-logo pm-auth-logo mx-auto mb-4">
                 <h1 class="text-3xl font-bold tracking-tight text-white">
                     Prosta<span class="text-cyan-400">Med</span>
                 </h1>

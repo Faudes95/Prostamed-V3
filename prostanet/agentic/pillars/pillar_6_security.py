@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 from pathlib import Path
 
+from prostanet.agentic.cve_audit import run_cve_audit
 from prostanet.agentic.compliance_scorer import Gap, PillarScore
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -29,6 +29,8 @@ DISCLOSURE_PATHS = [
     SEC_DIR / "SECURITY.md",
 ]
 VEX_PATH = SEC_DIR / "vex.json"
+VEX_POLICY_PATH = SEC_DIR / "vex_policy.md"
+VEX_ALLOWED_STATES = {"affected", "not_affected", "fixed", "under_investigation"}
 
 EXPECTED_STRIDE_THREATS = [
     "spoofing", "tampering", "repudiation",
@@ -93,21 +95,37 @@ def _score_sbom() -> tuple[float, list[Gap]]:
 
 
 def _score_crit_vulns() -> tuple[float, list[Gap]]:
-    """Returns 1.0 if 0 CRIT/HIGH vulns, 0.5 if scan tool unavailable."""
-    try:
-        proc = subprocess.run(
-            ["pip-audit", "--strict", "--format=json"],
-            cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=60,
-        )
-        if proc.returncode == 0:
-            return 1.0, []
-        return 0.0, [Gap(
-            pillar_id=6, kind="cve_critical_open",
-            description=f"pip-audit found vulnerabilities (rc={proc.returncode})",
-            severity=10, effort_h=4.0,
+    """Returns 1.0 only if pip-audit actually ran clean."""
+    status = run_cve_audit(timeout_seconds=60)
+    if status.clean:
+        return 1.0, []
+    if status.status == "runtime_unavailable":
+        return status.score, [Gap(
+            pillar_id=6,
+            kind="cve_scan_runtime_unavailable",
+            description="pip-audit is declared but not installed in the active runtime.",
+            severity=3,
+            effort_h=0.25,
+            evidence_source="requirements-dev.txt",
+            artifact_path=status.report_path,
         )]
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return 0.5, []
+    if status.status == "tool_missing":
+        return status.score, [Gap(
+            pillar_id=6,
+            kind="cve_scan_tool_missing",
+            description="pip-audit is not pinned in requirements-dev.txt.",
+            severity=4,
+            effort_h=0.5,
+            artifact_path="requirements-dev.txt",
+        )]
+    return status.score, [Gap(
+        pillar_id=6,
+        kind="cve_critical_open",
+        description=f"pip-audit found vulnerabilities or failed with rc={status.returncode}",
+        severity=10,
+        effort_h=4.0,
+        artifact_path="prostanet/regulatory/security/cve-remediation.md",
+    )]
 
 
 def _score_disclosure() -> tuple[float, list[Gap]]:
@@ -124,15 +142,99 @@ def _score_disclosure() -> tuple[float, list[Gap]]:
 
 
 def _score_vex() -> tuple[float, list[Gap]]:
-    if VEX_PATH.exists() and VEX_PATH.stat().st_size > 50:
-        return 1.0, []
-    return 0.0, [Gap(
-        pillar_id=6,
-        kind="vex_addendum_missing",
-        description="Missing VEX (Vulnerability Exploitability eXchange) addendum",
-        severity=4, effort_h=2.0,
-        artifact_path=str(VEX_PATH),
-    )]
+    if not VEX_PATH.exists() or VEX_PATH.stat().st_size <= 50:
+        return 0.0, [Gap(
+            pillar_id=6,
+            kind="vex_addendum_missing",
+            description="Missing VEX (Vulnerability Exploitability eXchange) addendum",
+            severity=4, effort_h=2.0,
+            artifact_path=str(VEX_PATH),
+        )]
+    try:
+        data = json.loads(VEX_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        return 0.0, [Gap(
+            pillar_id=6,
+            kind="vex_addendum_invalid_json",
+            description=f"VEX addendum parse error: {e}",
+            severity=5,
+            effort_h=0.5,
+            artifact_path=str(VEX_PATH),
+        )]
+
+    vulnerabilities = data.get("vulnerabilities")
+    properties = data.get("properties") or []
+    metadata_properties = (data.get("metadata") or {}).get("properties") or []
+    property_map = {
+        str(item.get("name") or ""): str(item.get("value") or "")
+        for item in [*properties, *metadata_properties]
+        if isinstance(item, dict)
+    }
+    has_refs = (
+        property_map.get("prostamed:sbom_ref") == "prostanet/regulatory/security/sbom-cyclonedx.json"
+        and property_map.get("prostamed:cve_audit_ref") == "prostanet/regulatory/security/cve-audit-last.json"
+        and VEX_POLICY_PATH.exists()
+    )
+    if data.get("bomFormat") != "CycloneDX" or not isinstance(vulnerabilities, list) or not has_refs:
+        return 0.0, [Gap(
+            pillar_id=6,
+            kind="vex_addendum_contract_incomplete",
+            description="VEX addendum must be CycloneDX JSON, reference SBOM/CVE audit, and link VEX policy.",
+            severity=4,
+            effort_h=1.0,
+            artifact_path=str(VEX_PATH),
+        )]
+
+    for vuln in vulnerabilities:
+        if not isinstance(vuln, dict):
+            return 0.0, [Gap(
+                pillar_id=6,
+                kind="vex_addendum_invalid_statement",
+                description="VEX vulnerability statement must be an object.",
+                severity=5,
+                effort_h=0.5,
+                artifact_path=str(VEX_PATH),
+            )]
+        analysis = vuln.get("analysis") or {}
+        state = str(analysis.get("state") or "").strip()
+        if state not in VEX_ALLOWED_STATES:
+            return 0.0, [Gap(
+                pillar_id=6,
+                kind="vex_addendum_invalid_state",
+                description=f"VEX statement has unsupported analysis state: {state or '<missing>'}",
+                severity=5,
+                effort_h=0.5,
+                artifact_path=str(VEX_PATH),
+            )]
+        if state == "not_affected" and not str(analysis.get("justification") or "").strip():
+            return 0.0, [Gap(
+                pillar_id=6,
+                kind="vex_not_affected_missing_justification",
+                description="VEX not_affected statement requires a justification.",
+                severity=5,
+                effort_h=0.5,
+                artifact_path=str(VEX_PATH),
+            )]
+        if state == "affected" and not (analysis.get("response") or vuln.get("recommendation")):
+            return 0.0, [Gap(
+                pillar_id=6,
+                kind="vex_affected_missing_response",
+                description="VEX affected statement requires mitigation or remediation response.",
+                severity=6,
+                effort_h=0.5,
+                artifact_path=str(VEX_PATH),
+            )]
+
+    if not vulnerabilities and property_map.get("prostamed:empty_vex_reason") != "latest_cve_audit_contains_no_open_vulnerabilities":
+        return 0.0, [Gap(
+            pillar_id=6,
+            kind="vex_empty_reason_missing",
+            description="Empty VEX addendum must explain that the latest CVE audit contains no open vulnerabilities.",
+            severity=4,
+            effort_h=0.25,
+            artifact_path=str(VEX_PATH),
+        )]
+    return 1.0, []
 
 
 class Pillar6Security:
@@ -162,8 +264,10 @@ class Pillar6Security:
                 "stride_categories_addressed": int(stride_score * 6),
                 "sbom_complete": sbom_score >= 1.0,
                 "crit_vulns_clean": cve_score >= 1.0,
+                "cve_tool_declared": any(g.kind != "cve_scan_tool_missing" for g in cve_gaps) or cve_score >= 1.0,
                 "disclosure_published": disclosure_score >= 1.0,
                 "vex_present": vex_score >= 1.0,
+                "vex_policy_path": str(VEX_POLICY_PATH.relative_to(PROJECT_ROOT)),
             },
         )
 

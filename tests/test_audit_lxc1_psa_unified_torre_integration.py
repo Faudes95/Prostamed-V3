@@ -190,14 +190,11 @@ def test_g2977_adapter_exposes_psa_obs_in_profile_full():
 
 
 # ─── §E — Cross-field validation (C3 fix) ────────────────────────────────
-def test_g2978_intake_wizard_has_cross_field_validation(client):
-    """H.G2978 — Intake wizard includes iwCrossFieldValidate function."""
-    r = client.get("/intake-wizard")
-    src = r.data.decode("utf-8", errors="replace")
-    assert "iwCrossFieldValidate" in src
-    assert "cT0 + M1" in src or "cT0+M1" in src or "ct0" in src.lower()
-    assert "ISUP 2014" in src
-    assert "Gleason 2+2" in src
+def test_g2978_intake_wizard_legacy_redirects_to_official_classifier(client):
+    """H.G2978 — retired intake wizard routes preserve single official entry."""
+    r = client.get("/intake-wizard?v=legacy")
+    assert r.status_code == 302
+    assert r.headers["Location"].endswith("/clinical-hub#pm2OfficialClassifier")
 
 
 # ─── §F — PSADT auto-derive integration (A7 fix) ─────────────────────────

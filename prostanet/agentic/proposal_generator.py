@@ -191,8 +191,12 @@ def _route_cve_tool(gap: Gap) -> ProposalDraft:
         gap=gap,
         skill_chain=["anthropic-skills:code-reviewer"],
         proposed_artifact="requirements-dev.txt (add pip-audit)",
-        proposed_content_seed="pip-audit==2.7.0\n",
-        validation_checks=["pip-audit installed", "Can run pip-audit --strict"],
+        proposed_content_seed="pip-audit==2.10.0\n",
+        validation_checks=[
+            "requirements-dev.txt pins pip-audit",
+            "scripts/run_cve_audit.py can resolve the audit command",
+            "Pillar 3 no longer reports cve_scan_tool_missing when the tool is declared",
+        ],
     )
 
 

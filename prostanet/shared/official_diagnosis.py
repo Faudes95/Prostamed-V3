@@ -28,6 +28,7 @@ OFFICIAL_DIAGNOSIS_FIELD_LABELS = {
     "nodal_status": "N clínico",
     "clinical_stage_group": "etapa clínica",
     "clinical_risk_group": "grupo de riesgo clínico",
+    "clinical_stage_group_or_risk_group": "etapa clínica o grupo de riesgo clínico",
 }
 
 HISTOLOGY_SUBTYPE_OPTIONS = [
@@ -277,7 +278,7 @@ def _normalize_stage_group(value: Any) -> str:
 def _normalize_risk_group(value: Any) -> str:
     if not _is_present(value):
         return ""
-    text = str(value).strip()
+    text = str(value).strip().replace("_", " ").replace("-", " ")
     lower = text.lower()
     mapping = {
         "very low": "muy bajo",
@@ -459,6 +460,28 @@ def _required_fields_for_kind(kind: str) -> list[str]:
     return []
 
 
+def _missing_required_fields_for_kind(kind: str, facts: dict[str, Any]) -> list[str]:
+    if kind == "localized":
+        missing = [
+            field
+            for field in (
+                "histology_subtype",
+                "gleason_primary",
+                "gleason_secondary",
+                "clinical_tstage",
+                "nodal_status",
+            )
+            if not _is_present(facts.get(field))
+        ]
+        if not (
+            _is_present(facts.get("clinical_stage_group"))
+            or _is_present(facts.get("clinical_risk_group"))
+        ):
+            missing.append("clinical_stage_group_or_risk_group")
+        return missing
+    return [field for field in _required_fields_for_kind(kind) if not _is_present(facts.get(field))]
+
+
 def build_official_diagnosis_context(
     *,
     patient: dict[str, Any],
@@ -554,8 +577,7 @@ def build_official_diagnosis_context(
         _is_present(facts.get(key))
         for key in ("histology_subtype", "gleason_primary", "gleason_secondary", "isup_grade", "clinical_tstage", "nodal_status", "clinical_stage_group", "clinical_risk_group")
     )
-    required_fields = _required_fields_for_kind(kind)
-    missing_raw = [field for field in required_fields if not _is_present(facts.get(field))]
+    missing_raw = _missing_required_fields_for_kind(kind, facts)
     if kind == "operational" or not formal_components_present:
         status = "missing"
         official = provisional_operational_label

@@ -1,0 +1,59 @@
+name: Faubot Daily Loop (LXCV)
+
+# Faubot LXCV — Iterative Improvement Loop · Daily 06:00 UTC
+# Ejecuta /faubot 7-fase audit + record en loop_monitor
+
+on:
+  schedule:
+    - cron: "0 6 * * *"  # Daily 06:00 UTC
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  faubot-7-phases:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install minimal deps
+        run: |
+          pip install pyyaml pytest
+
+      - name: Self-check clinical coverage (Fase 1+4+7)
+        run: |
+          python -c "
+          from prostanet.presentation.loop_monitor import (
+              record_clinical_coverage_check,
+              record_backend_integrity_check,
+          )
+          coverage = record_clinical_coverage_check()
+          integrity = record_backend_integrity_check()
+          print(f'Clinical coverage: {coverage}')
+          print(f'Backend integrity: {integrity}')
+          # Fail workflow if critical regressions
+          assert coverage.get('status') != 'critical', 'Critical: gates not loading'
+          assert integrity.get('status') != 'critical', 'Critical: backend integrity broken'
+          "
+
+      - name: Run dedicated tests sample
+        run: |
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest \
+            tests/test_audit_lxcii_2_ui_clinical_recovery.py \
+            tests/test_audit_lxciii_progressive_disclosure.py \
+            tests/test_audit_lxciv_clinical_validation_5_cases.py \
+            -q --no-header -c /dev/null --rootdir=/tmp \
+            -o cache_dir=/tmp/pytest_cache
+
+      - name: Upload loop_monitor DB
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loop-monitor-db-${{ github.run_id }}
+          path: prostanet_loop_monitor.db
+          retention-days: 30

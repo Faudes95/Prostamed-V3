@@ -138,10 +138,21 @@ def _is_present(value: Any) -> bool:
     return True
 
 
-def detect_missing_critical_fields(payload: dict[str, Any], clinical_state: str) -> list[dict[str, Any]]:
+def detect_missing_critical_fields(
+    payload: dict[str, Any],
+    clinical_state: str | None = None,
+) -> list[dict[str, Any]]:
+    """Retorna warnings de campos críticos missing.
+
+    LXCIX.3: `clinical_state` ahora es opcional. Si se omite, sólo evalúa
+    universal critical fields (given_name, family_name, biological_sex).
+    """
     payload = payload or {}
     warnings: list[dict[str, Any]] = []
-    for spec in list(_UNIVERSAL_CRITICAL_FIELDS) + list(_CRITICAL_FIELDS_BY_STATE.get(str(clinical_state or ""), [])):
+    expected = list(_UNIVERSAL_CRITICAL_FIELDS)
+    if clinical_state:
+        expected += list(_CRITICAL_FIELDS_BY_STATE.get(str(clinical_state or ""), []))
+    for spec in expected:
         field = spec.get("field")
         if field and not _is_present(payload.get(field)):
             warnings.append({**spec, "field": field, "missing": True})
@@ -149,6 +160,7 @@ def detect_missing_critical_fields(payload: dict[str, Any], clinical_state: str)
 
 
 def _grade(coverage: float) -> str:
+    """Legacy descriptive grade (LXXXI)."""
     if coverage >= 0.95:
         return "excellent"
     if coverage >= 0.8:
@@ -158,20 +170,53 @@ def _grade(coverage: float) -> str:
     return "insufficient"
 
 
-def summarize_completeness(payload: dict[str, Any], clinical_state: str) -> dict[str, Any]:
-    expected = list(_UNIVERSAL_CRITICAL_FIELDS) + list(_CRITICAL_FIELDS_BY_STATE.get(str(clinical_state or ""), []))
+def _letter_grade(coverage_percent: float) -> str:
+    """LXCIX.3: A-F letter grade based on coverage percent (0-100).
+
+    A: >=90%, B: >=80%, C: >=65%, D: >=50%, F: <50%.
+    """
+    if coverage_percent >= 90:
+        return "A"
+    if coverage_percent >= 80:
+        return "B"
+    if coverage_percent >= 65:
+        return "C"
+    if coverage_percent >= 50:
+        return "D"
+    return "F"
+
+
+def summarize_completeness(
+    payload: dict[str, Any],
+    clinical_state: str | None = None,
+) -> dict[str, Any]:
+    """Resumen de completeness con dual API (legacy + LXCIX.3 keys).
+
+    Returns dict with:
+      - `state` + `clinical_state` (LXCIX.3 alias)
+      - `coverage` (0.0-1.0) + `gate_coverage_percent` (0-100, LXCIX.3)
+      - `grade` (legacy descriptive) + `completeness_grade` (A-F, LXCIX.3)
+      - `missing_count`, `expected_count`, `missing_fields`, `by_severity`
+    """
+    expected = list(_UNIVERSAL_CRITICAL_FIELDS)
+    if clinical_state:
+        expected += list(_CRITICAL_FIELDS_BY_STATE.get(str(clinical_state or ""), []))
     warnings = detect_missing_critical_fields(payload or {}, clinical_state)
     total = len(expected)
     missing = len(warnings)
     coverage = 1.0 if total == 0 else max(0.0, (total - missing) / total)
+    coverage_percent = round(coverage * 100, 1)
     by_severity: dict[str, int] = {}
     for warning in warnings:
         severity = str(warning.get("severity") or "recommended")
         by_severity[severity] = by_severity.get(severity, 0) + 1
     return {
         "clinical_state": clinical_state,
+        "state": clinical_state,  # LXCIX.3 alias
         "coverage": coverage,
+        "gate_coverage_percent": coverage_percent,  # LXCIX.3
         "grade": _grade(coverage),
+        "completeness_grade": _letter_grade(coverage_percent),  # LXCIX.3
         "missing_count": missing,
         "expected_count": total,
         "missing_fields": warnings,

@@ -1,0 +1,135 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 89: parp_fatigue_grade3
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.A) — Tier 1 Adverse Event Coverage Closure.
+#
+# Razón clínica:
+#   PARP inhibitors (olaparib, niraparib, talazoparib, rucaparib) tienen
+#   incidencia significativa de fatiga severa que afecta calidad vida +
+#   adherencia terapéutica:
+#
+#   - **PROfound (de Bono NEJM 2020;382:2091)**: olaparib fatigue any
+#     grade 41%, G3+ 5%
+#   - **PROpel (Saad Lancet Oncol 2023;24:1094)**: olaparib + abi fatigue
+#     any grade 38%, G3+ 4%
+#   - **MAGNITUDE (Chi JCO 2023;41:3339)**: niraparib + abi fatigue 38%,
+#     G3 6%
+#   - **TALAPRO-2 (Agarwal Lancet 2023;402:291)**: talazoparib + enz
+#     fatigue any 47%, G3+ 8% (mayor con anemia coexistente)
+#   - **TRITON-3 (Fizazi NEJM 2023;388:719)**: rucaparib fatigue any 29%,
+#     G3+ 7%
+#
+#   Mecanismo: anemia secundaria (mielosuppression directa) + alteración
+#   metabolismo energético + cytokine-mediated central fatigue.
+#
+#   Implicación clínica G3 (severe, ADL limiting):
+#   - Workup secondary causes: anemia (CBC + reticulocyte + iron + B12 +
+#     folate), thyroid (TSH), depression (PHQ-9), sleep apnea
+#   - Dose reduction PRN (e.g., olaparib 300mg→250mg BID)
+#   - Erythropoietic stimulating agents si Hb <10 g/dL
+#   - Transfusion si Hb <8 g/dL or symptomatic
+#   - Light exercise + pacing strategies (proven benefit)
+#   - Avoid CYP2C19 + CYP3A inducers (drug interactions amplifican)
+#
+#   Soft_warning porque NO siempre requiere discontinuation, pero sí
+#   evaluación + intervención sistemática.
+# ──────────────────────────────────────────────────────────────────────
+
+code: parp_fatigue_grade3
+title: "PARP inhibitor × fatiga G3 → workup secondary causes + dose modification"
+faubot_added_in: "2026-04-30 LXCVI.A"
+faubot_yaml_native: true
+severity: soft_warning
+
+trigger:
+  type: numeric_threshold
+  field: fatigue_ctcae_grade
+  alias_fields:
+    - fatigue_grade
+    - fatiga_grado_ctcae
+    - fatigue_severity_ctcae
+  threshold: 3
+
+regimen_codes:
+  - REGIMEN_CODES_PARP_INHIBITORS
+
+keywords:
+  - PARP
+  - fatigue
+  - fatiga
+  - olaparib
+  - niraparib
+  - talazoparib
+  - rucaparib
+  - PROfound
+  - MAGNITUDE
+  - TALAPRO-2
+
+message: |
+  ⚠️ SOFT WARNING: Fatiga G3 bajo PARP inhibitor → workup secondary
+  causes + dose modification.
+
+  🎯 EVIDENCIA INCIDENCIA POR TRIAL:
+
+  | Trial | PARP | Fatigue any % | G3+ % |
+  |-------|------|---------------|-------|
+  | PROfound | Olaparib | 41% | 5% |
+  | PROpel | Olaparib + abi | 38% | 4% |
+  | MAGNITUDE | Niraparib + abi | 38% | 6% |
+  | TALAPRO-2 | Talazoparib + enz | 47% | 8% |
+  | TRITON-3 | Rucaparib | 29% | 7% |
+
+  🎯 WORKUP SECONDARY CAUSES (TODOS los pacientes G3):
+
+  1. **Hematology**:
+     - CBC con diferencial + reticulocyte count
+     - Hb <10 g/dL → erythropoietic stimulating agent
+     - Hb <8 g/dL or symptomatic → transfusion
+     - Ferritina + iron studies + B12 + folate
+
+  2. **Endocrine**:
+     - TSH + free T4 (ARPI partner si triplete)
+     - Cortisol AM + ACTH si signs Addison
+
+  3. **Mental health**:
+     - PHQ-9 (depression major frequently overlooked)
+     - GAD-7 (anxiety)
+     - Sleep history + Epworth Sleepiness Scale
+
+  4. **Drug interactions**:
+     - Review todos CYP2C19 + CYP3A inhibitors/inducers
+     - Olaparib: avoid clarithromycin, ketoconazole, rifampin
+     - Niraparib: monitor with CYP1A2 substrates
+
+  5. **Otros**:
+     - Renal function (CrCl < 50 amplifica fatigue)
+     - Hepatic (ALT/AST elevations)
+     - Cardiac (pro-BNP si suspect cardiac dysfunction)
+
+  🎯 DOSE MODIFICATION (si secondary causes ruled out):
+
+  | PARP | Dose initial | Dose level -1 | Dose level -2 |
+  |------|--------------|----------------|------------------|
+  | Olaparib | 300mg BID | 250mg BID | 200mg BID |
+  | Niraparib | 200-300mg/d | 200mg/d | 100mg/d |
+  | Talazoparib | 0.5mg/d | 0.35mg/d | 0.25mg/d |
+  | Rucaparib | 600mg BID | 500mg BID | 400mg BID |
+
+  🎯 INTERVENCIONES NO-FARMACOLÓGICAS:
+  - Light exercise 20-30 min/día (proven benefit en CFS oncológica)
+  - Pacing strategies + activity diary
+  - Cognitive behavioral therapy si chronic fatigue >3m
+  - Mindfulness/yoga (level B evidence)
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `fatigue_ctcae_grade`: int 0-4 (CTCAE v5.0)
+
+evidence_tag: parp_fatigue_profound_propel_magnitude_talapro2_triton3_2020_2023
+trial_refs:
+  - "PROfound (de Bono NEJM 2020;382:2091)"
+  - "PROpel (Saad Lancet Oncol 2023;24:1094)"
+  - "MAGNITUDE (Chi JCO 2023;41:3339)"
+  - "TALAPRO-2 (Agarwal Lancet 2023;402:291)"
+  - "TRITON-3 (Fizazi NEJM 2023;388:719)"
+  - "CTCAE v5.0 (NCI 2017)"
+  - "NCCN Cancer-Related Fatigue v1.2026"

@@ -1,0 +1,131 @@
+# ──────────────────────────────────────────────────────────────────────
+# Gate 93: lu177_psma_pet_negative_contraindication
+# ──────────────────────────────────────────────────────────────────────
+# Faubot 2026-04-30 (LXCVI.B) — Tier 2 Contraindication Hard-Blocks.
+#
+# Razón clínica:
+#   Lutetium-177-PSMA-617 (Pluvicto) requiere expresión PSMA en lesiones
+#   tumorales para target therapy. PSMA-PET negativo o low uptake
+#   = no targeting = futile.
+#
+#   - **VISION (Sartor NEJM 2021;385:1091)**: Lu-177-PSMA en mCRPC
+#     - Inclusión: PSMA-PET positive (≥1 lesión SUVmax > liver bg)
+#     - Excluyó: PSMA-PET negative O lesions discordant (FDG+/PSMA-)
+#     - Resultado: rPFS HR 0.40 con PSMA+ adequate
+#
+#   - **TheraP (Hofman Lancet 2021;397:797)**: Lu-177 vs cabazitaxel
+#     - Inclusión: PSMA-PET SUVmax ≥20 + no FDG-discordant lesions
+#     - Stricter screening (more rigurous patient selection)
+#
+#   - **PSMAfore (Sartor ESMO 2023)**: Lu-177 pre-chemo
+#     - Same PSMA+ requirement
+#
+#   Mecanismo: Lu-177-PSMA delivers β-radiation to PSMA-expressing cells.
+#   Si tumor no expresa PSMA → no internalization → no efficacy + toxicity
+#   collateral (xerostomia, mielosuppression) sin benefit.
+#
+#   FDA Pluvicto label: indicated for "PSMA-positive mCRPC". PSMA-PET
+#   eligibility criteria por SNMMI 2023 statement:
+#   - Lesion SUVmax > liver background
+#   - At least 1 measurable PSMA-avid lesion
+#   - No discordant lesions (FDG+/PSMA-)
+#
+#   NO override clínico — sin PSMA expression no hay mecanismo.
+# ──────────────────────────────────────────────────────────────────────
+
+code: lu177_psma_pet_negative_contraindication
+title: "Lu-177-PSMA × PSMA-PET negativo → futility hard_block (no targeting)"
+faubot_added_in: "2026-04-30 LXCVI.B"
+faubot_yaml_native: true
+severity: hard_block
+
+trigger:
+  type: any_of
+  triggers:
+    # Path A: PSMA-PET explícitamente negativo o low uptake
+    - type: truthy_flag
+      field: psma_pet_negative_or_low_uptake
+      alias_fields:
+        - psma_pet_negative
+        - psma_pet_no_uptake
+        - psma_negative_documented
+    # Path B: PSMA-PET SUVmax bajo (< liver background)
+    - type: numeric_below
+      field: psma_pet_max_suvmax_lesion
+      alias_fields:
+        - psma_suvmax_max
+        - max_psma_suvmax
+      threshold: 5.01  # SUVmax ≤5 considered low/negative
+
+regimen_codes:
+  - REGIMEN_CODES_LUTETIUM177
+
+keywords:
+  - PSMA
+  - PSMA-PET
+  - Lu-177
+  - Pluvicto
+  - VISION
+  - PSMAfore
+  - TheraP
+  - radioligand
+
+message: |
+  🚨 HARD BLOCK: Lu-177-PSMA contraindicado en pacientes PSMA-PET
+  negativo o low uptake (no mechanism of action).
+
+  🎯 EVIDENCIA INCLUSIÓN POR TRIAL:
+
+  | Trial | Criterio PSMA-PET |
+  |-------|-------------------|
+  | VISION | ≥1 lesión SUVmax > liver bg + no FDG-discordant |
+  | TheraP | SUVmax ≥20 + strict no FDG-discordant |
+  | PSMAfore | Same VISION criteria |
+  | FDA Pluvicto label | "PSMA-positive mCRPC" (SNMMI criteria) |
+
+  🎯 PSMA-PET INTERPRETATION (SNMMI 2023):
+
+  | SUVmax | Interpretación | Lu-177 elegibility |
+  |--------|----------------|---------------------|
+  | <5 (≤liver bg) | NEGATIVE | ❌ NO elegible |
+  | 5-10 | Borderline | ⚠️ Caution, low uptake |
+  | 10-20 | Moderate | ✅ Eligible (VISION-style) |
+  | ≥20 | High | ✅ Eligible (TheraP-style stricter) |
+
+  🎯 ALTERNATIVAS PSMA-NEGATIVE mCRPC:
+
+  **Si HRR+**:
+  - Olaparib (PROfound)
+  - Niraparib + abi (MAGNITUDE)
+  - Talazoparib + enz (TALAPRO-2)
+
+  **HRR- post-doce**:
+  - Cabazitaxel (TROPIC, CARD)
+  - Re-challenge ARPI con switch (e.g., enza si previously abi)
+  - Sipuleucel-T (IMPACT) si asintomático/mínimo síntoma
+
+  **Bone-only mCRPC**:
+  - Radium-223 (ALSYMPCA) si no visceral
+  - Bone-targeted agents (denosumab/zoledronic acid)
+
+  **Considerar additional imaging**:
+  - FDG-PET para evaluar discordant lesions (PSMA-/FDG+)
+  - MRI whole-body si PSMA-PET inconclusive
+  - Repeat PSMA-PET en 3 meses (algunos pacientes "convert")
+
+  🎯 NO OVERRIDE CLÍNICO:
+  Sin PSMA expression no hay mecanismo de acción. Lu-177 sería
+  toxicity sin benefit (xerostomia + mielosuppression).
+
+  💡 INFRAESTRUCTURA REQUERIDA:
+  - `psma_pet_negative_or_low_uptake`: bool (derivado SUVmax < liver bg)
+  - `psma_pet_max_suvmax_lesion`: float (max SUVmax across lesions)
+
+evidence_tag: lu177_psma_negative_vision_therap_psmafore_pluvicto_label_2021_2023
+trial_refs:
+  - "VISION (Sartor NEJM 2021;385:1091)"
+  - "TheraP (Hofman Lancet 2021;397:797)"
+  - "PSMAfore (Sartor ESMO 2023)"
+  - "Pluvicto FDA label (2022)"
+  - "SNMMI Lu-177-PSMA Eligibility Statement 2023"
+  - "EAU 2026 §6.5 Theranostics"

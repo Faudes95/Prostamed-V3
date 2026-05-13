@@ -128,10 +128,10 @@ def test_route_patients_v2_default():
 
 @requires_server
 def test_route_patient_intake_v2():
-    """Intake mantiene flag explícito (lógica legacy con assessment_id)."""
+    """Nuevo ingreso redirige al clasificador oficial."""
     code, html = _get("/patient_intake?v=2")
     assert code == 200
-    assert "pm2-intake" in html or "intake" in html.lower()
+    assert "pm2OfficialClassifier" in html
 
 
 # ── Legacy escape hatch via ?v=legacy ───────────────────────────────────

@@ -1,0 +1,955 @@
+{# Faubot LXCVIII.B — Clinical Hub UI Redesign Bento Grid
+
+   Clinical Hub oficial v2 con:
+   - Métricas clave disponibles desde icono lateral
+   - Link compacto a Loop monitor desde el rail de estadio
+   - Cohort filter dropdown
+   - Trial drill-down hint markup (modal trigger)
+   - Mobile-first responsive 1280/768/375
+   - WCAG 2.1 AA full compliance (skip-to-content + focus visible + ARIA live regions)
+
+   Route: /clinical-hub (default post-LXCVIII.B)
+   Opt-out legacy v1: /clinical-hub?v=legacy
+#}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Centro Clínico · ProstaMed v2 (LXCVIII.B redesign)</title>
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
+    <style>
+        /* ──────────────────────────────────────────────────────────────
+           LXCVIII.B Redesign — Bento Grid + Sidebar Metrics
+           ────────────────────────────────────────────────────────────── */
+
+        .pm2-redesign-shell {
+            display: grid;
+            grid-template-rows: 1fr auto;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0a0e1a 0%, #0f172a 100%);
+        }
+
+        /* System metrics drawer content */
+        .pm2-kpi-panel-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 0.75rem;
+        }
+        .pm2-kpi-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.875rem;
+            padding: 1rem 1.25rem;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 0.75rem;
+            transition: transform 0.18s ease, border-color 0.18s ease;
+        }
+        .pm2-kpi-badge:hover {
+            transform: translateY(-2px);
+            border-color: rgba(103, 232, 249, 0.4);
+        }
+        .pm2-kpi-badge:focus-visible {
+            outline: 2px solid #67e8f9;
+            outline-offset: 2px;
+            border-radius: 0.5rem;
+        }
+        .pm2-kpi-icon {
+            font-size: 1.75rem;
+            line-height: 1;
+        }
+        .pm2-kpi-content {
+            display: flex;
+            flex-direction: column;
+            gap: 0.125rem;
+        }
+        .pm2-kpi-value {
+            font-size: 1.625rem;
+            font-weight: 700;
+            color: #67e8f9;
+            line-height: 1;
+            font-feature-settings: "tnum";
+        }
+        .pm2-kpi-label {
+            font-size: 0.75rem;
+            color: #cbd5e1;
+            font-weight: 600;
+        }
+        .pm2-kpi-sub {
+            font-size: 0.6875rem;
+            color: #64748b;
+            font-style: italic;
+        }
+        .pm2-sidebar-actions {
+            margin-top: auto;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border-subtle);
+            display: grid;
+            gap: 0.5rem;
+        }
+        .pm2-sidebar-button {
+            width: 100%;
+            appearance: none;
+            background: transparent;
+            font: inherit;
+            text-align: left;
+        }
+        .pm2-sidebar-button[aria-expanded="true"] {
+            background: linear-gradient(90deg, rgba(6, 182, 212, 0.18), rgba(15, 23, 42, 0.6));
+            color: #ecfeff;
+            border-color: var(--clinical-info-edge);
+        }
+
+        /* Main 2-column grid: stage rail + canvas */
+        .pm2-redesign-main {
+            display: grid;
+            grid-template-columns: 280px minmax(0, 1fr);
+            min-height: 0;
+        }
+
+        /* Cohort filter dropdown */
+        .pm2-cohort-filter-bar {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.75rem;
+            padding: 0.625rem 0;
+        }
+        .pm2-cohort-filter-label {
+            font-size: 0.7rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 600;
+        }
+        .pm2-cohort-filter-select {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            color: #cbd5e1;
+            font-size: 0.8125rem;
+            padding: 0.375rem 0.75rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+        }
+        .pm2-cohort-filter-select:focus-visible {
+            outline: 2px solid #67e8f9;
+            outline-offset: 2px;
+        }
+
+        /* Trial drill-down trigger */
+        .pm2-trial-drilldown-trigger {
+            color: #67e8f9;
+            font-size: 0.7rem;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0.25rem 0;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            margin-top: 0.5rem;
+            transition: color 0.15s;
+        }
+        .pm2-trial-drilldown-trigger:hover { color: #a5f3fc; }
+        .pm2-trial-drilldown-trigger:focus-visible {
+            outline: 2px solid #67e8f9;
+            outline-offset: 2px;
+            border-radius: 0.25rem;
+        }
+
+        /* Official quick classifier embedded in v2 hub */
+        .pm2-legacy-classifier {
+            margin: 1rem 1.5rem 1.5rem;
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(103, 232, 249, 0.22);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
+        }
+        .pm2-legacy-classifier-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+            background: rgba(8, 13, 26, 0.58);
+        }
+        .pm2-legacy-eyebrow,
+        .pm2-legacy-result-eyebrow,
+        .pm2-legacy-diagnosis-label {
+            color: #67e8f9;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+        .pm2-legacy-title {
+            margin: 0.35rem 0 0;
+            color: #f8fafc;
+            font-family: var(--pm-font-display);
+            font-size: 1.25rem;
+            font-weight: 680;
+        }
+        .pm2-legacy-subtitle {
+            margin: 0.45rem 0 0;
+            color: #94a3b8;
+            font-size: 0.82rem;
+            line-height: 1.5;
+            max-width: 58rem;
+        }
+        .pm2-legacy-status {
+            min-width: 8rem;
+            color: #fbbf24;
+            font-size: 0.75rem;
+            text-align: right;
+        }
+        .pm2-legacy-classifier-body {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 320px;
+            gap: 1rem;
+            padding: 1rem;
+        }
+        .pm2-legacy-steps {
+            display: grid;
+            gap: 0.85rem;
+        }
+        .pm2-legacy-step {
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.54);
+            padding: 1rem;
+        }
+        .pm2-legacy-step[hidden],
+        .pm2-legacy-field[hidden] {
+            display: none !important;
+        }
+        .pm2-legacy-step-header {
+            display: grid;
+            grid-template-columns: 2rem 1fr;
+            gap: 0.75rem;
+            align-items: start;
+            margin-bottom: 0.9rem;
+        }
+        .pm2-legacy-step-number {
+            display: inline-grid;
+            place-items: center;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 999px;
+            background: rgba(103, 232, 249, 0.14);
+            color: #67e8f9;
+            font-size: 0.78rem;
+            font-weight: 800;
+        }
+        .pm2-legacy-step-header h3 {
+            margin: 0;
+            color: #e2e8f0;
+            font-size: 0.98rem;
+            font-weight: 650;
+        }
+        .pm2-legacy-step-header p {
+            margin: 0.25rem 0 0;
+            color: #94a3b8;
+            font-size: 0.76rem;
+            line-height: 1.45;
+        }
+        .pm2-legacy-fields-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 0.75rem;
+        }
+        .pm2-legacy-field {
+            min-width: 0;
+        }
+        .pm2-legacy-field-label {
+            display: flex;
+            gap: 0.25rem;
+            color: #cbd5e1;
+            font-size: 0.78rem;
+            font-weight: 560;
+            margin-bottom: 0.35rem;
+        }
+        .pm2-legacy-required {
+            color: #f87171;
+        }
+        .pm2-legacy-input {
+            width: 100%;
+            min-height: 2.35rem;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 8px;
+            background: rgba(2, 6, 23, 0.62);
+            color: #e2e8f0;
+            font-size: 0.84rem;
+            padding: 0.55rem 0.65rem;
+        }
+        .pm2-legacy-input:focus {
+            outline: 2px solid rgba(103, 232, 249, 0.42);
+            outline-offset: 1px;
+            border-color: rgba(103, 232, 249, 0.58);
+        }
+        .pm2-legacy-help {
+            margin: 0.3rem 0 0;
+            color: #64748b;
+            font-size: 0.68rem;
+            line-height: 1.35;
+        }
+        .pm2-legacy-side {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .pm2-legacy-result,
+        .pm2-legacy-diagnosis {
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            border-radius: 8px;
+            background: rgba(2, 6, 23, 0.46);
+            padding: 1rem;
+        }
+        .pm2-legacy-result.is-success {
+            border-color: rgba(52, 211, 153, 0.34);
+            background: rgba(6, 78, 59, 0.16);
+        }
+        .pm2-legacy-result h3 {
+            margin: 0.35rem 0 0;
+            color: #f8fafc;
+            font-size: 1.05rem;
+            font-weight: 680;
+            text-transform: none;
+        }
+        .pm2-legacy-result p,
+        .pm2-legacy-diagnosis-text {
+            margin: 0.5rem 0 0;
+            color: #cbd5e1;
+            font-size: 0.82rem;
+            line-height: 1.48;
+        }
+        .pm2-legacy-result-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.5rem;
+            margin: 0.85rem 0;
+        }
+        .pm2-legacy-result-grid div {
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.68);
+            padding: 0.65rem;
+        }
+        .pm2-legacy-result-grid dt {
+            color: #94a3b8;
+            font-size: 0.62rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        .pm2-legacy-result-grid dd {
+            margin: 0.25rem 0 0;
+            color: #f8fafc;
+            font-size: 0.82rem;
+            font-weight: 650;
+        }
+        .pm2-legacy-gate,
+        .pm2-legacy-diagnosis-missing {
+            margin-top: 0.75rem;
+            border-radius: 8px;
+            background: rgba(251, 191, 36, 0.11);
+            border: 1px solid rgba(251, 191, 36, 0.28);
+            color: #fde68a;
+            font-size: 0.76rem;
+            line-height: 1.45;
+            padding: 0.65rem;
+        }
+        .pm2-legacy-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            padding: 0 1rem 1rem;
+        }
+        .pm2-stage-placeholder {
+            margin: 0 1.5rem 1.5rem;
+            border: 1px dashed rgba(103, 232, 249, 0.28);
+            border-radius: 8px;
+            background: rgba(8, 13, 26, 0.46);
+            padding: 1.25rem;
+        }
+        .pm2-stage-placeholder-title {
+            margin: 0;
+            color: #e2e8f0;
+            font-size: 1rem;
+            font-weight: 700;
+        }
+        .pm2-stage-placeholder-text {
+            margin: 0.4rem 0 0;
+            color: #94a3b8;
+            font-size: 0.82rem;
+            line-height: 1.45;
+        }
+
+        /* Mobile responsive breakpoints */
+        @media (max-width: 1280px) {
+            .pm2-redesign-main {
+                grid-template-columns: 240px minmax(0, 1fr);
+            }
+            .pm2-legacy-classifier-body {
+                grid-template-columns: 1fr;
+            }
+        }
+        @media (max-width: 1024px) {
+            .pm2-redesign-main {
+                grid-template-columns: 240px minmax(0, 1fr);
+            }
+            .pm2-redesign-main {
+                grid-template-rows: auto 1fr;
+                grid-template-columns: 240px minmax(0, 1fr);
+            }
+        }
+        @media (max-width: 768px) {
+            .pm2-redesign-main {
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .pm2-stage-rail {
+                position: static;
+                height: auto;
+                overflow: visible;
+                border-right: none;
+                border-bottom: 1px solid var(--border-default);
+                padding: 1rem;
+            }
+            .pm2-stage-rail-brand {
+                margin-bottom: 0.75rem;
+                padding: 0 0 1rem;
+            }
+            .pm2-stage-rail-brand .pm-logo {
+                width: min(100%, 220px);
+                max-height: none;
+            }
+            .pm2-stage-rail > div[style] {
+                margin-top: 0.75rem !important;
+                padding-top: 0.75rem !important;
+            }
+            .pm2-kpi-badge {
+                padding: 0.75rem;
+            }
+            .pm2-kpi-value {
+                font-size: 1.25rem;
+            }
+            .pm2-legacy-classifier {
+                margin: 1rem;
+            }
+            .pm2-legacy-classifier-head {
+                flex-direction: column;
+            }
+            .pm2-legacy-status {
+                text-align: left;
+            }
+            .pm2-legacy-fields-grid,
+            .pm2-legacy-result-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        @media (max-width: 375px) {
+            .pm2-kpi-badge {
+                gap: 0.65rem;
+            }
+            .pm2-kpi-icon {
+                font-size: 1.35rem;
+            }
+        }
+        /* WCAG 2.1 AA — focus visible globally en bento cards */
+        .pm2-bento-card:focus-within {
+            outline: 2px solid rgba(103, 232, 249, 0.4);
+            outline-offset: 2px;
+            border-radius: 0.75rem;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+
+<div class="pm2-redesign-shell">
+
+    {# ── Main 2-column grid: stage rail + canvas ── #}
+    <div class="pm2-redesign-main">
+
+        {# Stage Rail (left navigator) #}
+        <aside class="pm2-stage-rail" data-stage-rail aria-label="Navegador por estadio clínico">
+            <div class="pm2-stage-rail-brand">
+                <img src="{{ url_for('static', filename='img/prostamed_logo_official.png') }}"
+                     alt="PROSTAMED" class="pm-logo">
+                <div class="pm2-stage-rail-tagline">Centro · por estadio</div>
+            </div>
+
+            <nav class="pm2-stage-platform-nav" aria-label="Navegación transversal de plataforma">
+                <div class="pm2-sidebar-section-label">Plataforma</div>
+                <a href="/clinical-hub#pm2OfficialClassifier" class="pm2-sidebar-link">
+                    <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+                    Nuevo paciente
+                </a>
+                <a href="/patients" class="pm2-sidebar-link">
+                    <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg>
+                    Pacientes
+                </a>
+                <a href="/dashboard" class="pm2-sidebar-link">
+                    <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z"/></svg>
+                    Tablero
+                </a>
+                <a href="/clinical-hub" class="pm2-sidebar-link is-active" aria-current="page">
+                    <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>
+                    Centro clínico
+                </a>
+            </nav>
+
+            {% for stage in stages %}
+            <a href="#{{ stage.key }}"
+               class="pm2-stage-rail-pill {% if stage.key == default_stage %}is-active{% endif %}"
+               data-stage="{{ stage.key }}"
+               role="tab"
+               aria-selected="{% if stage.key == default_stage %}true{% else %}false{% endif %}">
+                <div class="pm2-stage-rail-stripe" aria-hidden="true"></div>
+                <div class="pm2-stage-rail-info">
+                    <div class="pm2-stage-rail-name">{{ stage.label }}</div>
+                    <div class="pm2-stage-rail-sub">{{ stage.sub }}</div>
+                </div>
+                <div class="pm2-stage-rail-counter {% if stage.alerts > 0 %}pm2-stage-rail-counter--alert{% endif %}">
+                    {{ stage.count }}
+                </div>
+            </a>
+            {% endfor %}
+
+            <div class="pm2-sidebar-actions">
+                <button class="pm2-sidebar-link pm2-sidebar-button"
+                        type="button"
+                        data-system-metrics-toggle
+                        aria-controls="pm2-drilldown"
+                        aria-expanded="false"
+                        aria-label="Mostrar métricas clave del sistema">
+                    <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 19V5m0 14h16M8 16v-5m4 5V8m4 8v-3"/></svg>
+                    Métricas
+                    <span class="pm2-sidebar-link-badge pm2-sidebar-link-badge--info">{{ kpi_hero|length }}</span>
+                </button>
+                <a href="/loop-monitor" class="pm2-sidebar-link">
+                    <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    Loop monitor
+                </a>
+            </div>
+        </aside>
+
+        {# Main canvas (center) #}
+        <main id="main-content" class="pm2-main" tabindex="-1">
+
+            {# Cohort filter bar (cross-stage) — LXCVIII.B addition #}
+            <div class="pm2-cohort-filter-bar" style="padding: 0.75rem 1.5rem 0;">
+                <span class="pm2-cohort-filter-label">Filtrar cohorte:</span>
+                <select class="pm2-cohort-filter-select" data-cohort-filter aria-label="Filtrar cohorte por rango de fecha">
+                    {% for opt in cohort_filter_options %}
+                    <option value="{{ opt.value }}">{{ opt.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <section id="pm2OfficialClassifier" class="pm2-legacy-classifier" aria-labelledby="pm2OfficialClassifierTitle">
+                <div class="pm2-legacy-classifier-head">
+                    <div>
+                        <div class="pm2-legacy-eyebrow">Clasificación clínica</div>
+                        <h2 id="pm2OfficialClassifierTitle" class="pm2-legacy-title">Selección rápida del módulo clínico</h2>
+                        <p class="pm2-legacy-subtitle">
+                            Defina el escenario real y abra el asistente correcto con la secuencia oficial de captura, conservando el motor clínico actual.
+                        </p>
+                    </div>
+                    <div class="pm2-legacy-status" data-legacy-classifier-status aria-live="polite"></div>
+                </div>
+                <section class="pm2-voice-os-panel pm2-voice-os-panel--intake"
+                         data-pm2-voice-os
+                         data-voice-mode="intake"
+                         data-surface="clinical_hub_classifier"
+                         aria-label="Cortana clínica de ingreso">
+                    <div class="pm2-voice-grid">
+                        <div class="pm2-voice-box">
+                            <div style="font-size:.68rem;color:var(--pn-accent);font-weight:800;letter-spacing:.16em;text-transform:uppercase;">Cortana clínica de ingreso</div>
+                            <h3 style="margin:.35rem 0 .25rem;color:#f8fbff;font-size:1.05rem;">Dictado para prellenar el clasificador</h3>
+                            <p class="pm2-card-subtitle" style="margin:0 0 .75rem;">
+                                Captura voz con consentimiento, extrae candidatos y sólo aplica campos revisados al clasificador oficial. No escribe expediente hasta registrar al paciente.
+                            </p>
+                            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
+                                <span class="pm2-voice-status" data-voice-status>sin sesión</span>
+                                <span class="pm2-voice-status">sesión: <span data-voice-session-key>sin sesión</span></span>
+                            </div>
+                            <textarea class="pm2-voice-textarea"
+                                      data-voice-consent-text
+                                      rows="3">Autorizo que ProstaMed capture esta conversación clínica por voz para transcripción local, revisión médica y prellenado del clasificador oficial.</textarea>
+                            <div class="pm2-voice-actions">
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="create">Crear sesión</button>
+                                <button class="pm2-btn pm2-btn--primary" type="button" data-voice-action="consent">Registrar consentimiento</button>
+                            </div>
+                        </div>
+                        <div class="pm2-voice-box">
+                            <div style="font-size:.68rem;color:var(--pn-accent);font-weight:800;letter-spacing:.16em;text-transform:uppercase;">Transcript revisable</div>
+                            <textarea class="pm2-voice-textarea"
+                                      data-voice-transcript
+                                      rows="4"
+                                      placeholder="Ejemplo: Adenocarcinoma confirmado, PSA basal 12.4, Gleason 4+3, cT2c cN0 M0, sin ADT..."></textarea>
+                            <div class="pm2-voice-actions">
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="record">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path stroke-width="2" stroke-linecap="round" d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></svg>
+                                    Grabar
+                                </button>
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="stop">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="7" y="7" width="10" height="10" rx="1.5" stroke-width="2"/></svg>
+                                    Detener STT
+                                </button>
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="review">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M9 6h11M9 12h11M9 18h11"/><path stroke-width="2" stroke-linecap="round" d="M4 6h.01M4 12h.01M4 18h.01"/></svg>
+                                    Extraer candidatos
+                                </button>
+                                <button class="pm2-btn pm2-btn--primary" type="button" data-voice-action="apply">Aplicar al clasificador</button>
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="toggle-auto">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M10 5v14M14 5v14"/></svg>
+                                    Pausar auto-aplicación
+                                </button>
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="undo">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 14 4 9l5-5"/><path stroke-width="2" stroke-linecap="round" d="M4 9h10a6 6 0 0 1 0 12h-2"/></svg>
+                                    Deshacer último cambio
+                                </button>
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="review-changes">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M8 6h13M8 12h13M8 18h13"/><path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m3 6 1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/></svg>
+                                    Revisar cambios por voz
+                                </button>
+                                <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="discard">
+                                    <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"/></svg>
+                                    Descartar
+                                </button>
+                            </div>
+                            <div class="pm2-voice-change-log" data-voice-change-log hidden>
+                                <div class="pm2-voice-empty">Sin cambios aplicados por voz.</div>
+                            </div>
+                            <div class="pm2-voice-candidates" data-voice-candidates>
+                                <div class="pm2-voice-empty">Sin candidatos. Dicte o pegue un transcript clínico para revisar.</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                <form data-legacy-classifier-form novalidate>
+                    <div class="pm2-legacy-classifier-body">
+                        <div class="pm2-legacy-steps" data-legacy-classifier-steps></div>
+                        <aside class="pm2-legacy-side" aria-label="Resultado del clasificador rápido">
+                            <div class="pm2-legacy-result" data-legacy-classifier-result aria-live="polite">
+                                <div class="pm2-legacy-result-eyebrow">Listo para clasificar</div>
+                                <h3>Defina el escenario real</h3>
+                                <p>Complete los pasos visibles y el sistema abrirá el asistente correcto.</p>
+                                <p><strong>DECISIÓN HOY preliminar:</strong> se activará tras clasificar; no se libera recomendación sin expediente firmado.</p>
+                            </div>
+                            <div class="pm2-legacy-diagnosis" data-legacy-diagnosis-preview hidden></div>
+                            <div class="pm2-legacy-diagnosis" data-legacy-stage-hint hidden></div>
+                        </aside>
+                    </div>
+                    <div class="pm2-legacy-actions">
+                        <button class="pm2-btn pm2-btn--primary" type="button" data-legacy-classify-now>
+                            Clasificar ahora
+                        </button>
+                        <button class="pm2-btn pm2-btn--ghost" type="button" data-legacy-classifier-reset>
+                            Limpiar
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="pm2-stage-placeholder" data-stage-placeholder aria-live="polite">
+                <h2 class="pm2-stage-placeholder-title">Sin módulo clínico seleccionado</h2>
+                <p class="pm2-stage-placeholder-text">Complete la clasificación oficial o seleccione manualmente un estadio del rail para explorar sus módulos.</p>
+            </section>
+
+            {% for stage_key, canvas in canvases.items() %}
+            <div class="pm2-stage-canvas"
+                 data-stage-canvas="{{ stage_key }}"
+                 {% if stage_key != default_stage %}style="display:none"{% endif %}>
+
+                {# Stage Header sticky #}
+                <header class="pm2-stage-header">
+                    <div class="pm2-stage-header-left">
+                        <div class="pm2-guideline-badges">
+                            <span class="pm2-stage-pill" data-stage="{{ stage_key }}">{{ stage_key | upper }}</span>
+                            {% set stage_meta = stages | selectattr("key", "equalto", stage_key) | first %}
+                            {% if stage_meta %}
+                            <span class="pm2-guideline-badge pm2-guideline-badge--nccn">NCCN {{ stage_meta.nccn }} · 5.2026</span>
+                            <span class="pm2-guideline-badge pm2-guideline-badge--eau">EAU {{ stage_meta.eau }} · 2026</span>
+                            {% endif %}
+                        </div>
+                        <h1 class="pm2-stage-header-title">{{ canvas.title }}</h1>
+                        <p class="pm2-stage-header-sub">{{ canvas.subtitle }}</p>
+                    </div>
+                    <div class="pm2-quick-actions">
+                        <a class="pm2-btn pm2-btn--ghost" href="#pm2OfficialClassifier">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            Clasificar paciente
+                        </a>
+                        <button class="pm2-btn pm2-btn--ghost" type="button">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                            Re-evaluar
+                        </button>
+                        <button class="pm2-btn pm2-btn--primary" type="button">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                            Exportar PDF
+                        </button>
+                    </div>
+                </header>
+
+                {# Live stats strip #}
+                <div class="pm2-live-stats" aria-live="polite">
+                    {% for stat in canvas.stats %}
+                    <div class="pm2-stat-card" style="--accent-color: {{ stat.color }}">
+                        <div class="pm2-stat-card-label">{{ stat.label }}</div>
+                        <div class="pm2-stat-card-value" style="color: {{ stat.color }}">{{ stat.value }}</div>
+                        <div class="pm2-stat-card-sub">{{ stat.sub }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {# Decision Modules grid #}
+                {% if canvas.modules %}
+                <section style="margin-bottom: 1.5rem">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:1rem">
+                        <h2 style="font-family:var(--pm-font-display);font-size:1.15rem;font-weight:650;color:#f0fbff;margin:0">
+                            Módulos de decisión · {{ canvas.modules | length }}
+                        </h2>
+                        <span style="color:var(--pn-text-soft);font-size:.72rem;text-transform:uppercase;letter-spacing:.12em">vista NCCN/EAU</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem">
+                        {% for module in canvas.modules %}
+                        <article class="pm2-bento-card">
+                            <div class="pm2-card-head">
+                                <div>
+                                    <div class="pm2-card-eyebrow">Decisión clínica</div>
+                                    <h3 class="pm2-card-title">{{ module.label }}</h3>
+                                </div>
+                                <span class="pm2-stage-pill" data-stage="{{ stage_key }}" style="font-size:.62rem">{{ module.n_decisions_today }} hoy</span>
+                            </div>
+                            <p class="pm2-card-subtitle" style="line-height:1.5">{{ module.desc }}</p>
+                            {% if module.nccn or module.eau %}
+                            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+                                {% if module.nccn %}<span class="pm2-state-chip" style="font-size:.62rem">NCCN {{ module.nccn }}</span>{% endif %}
+                                {% if module.eau %}<span class="pm2-state-chip" style="font-size:.62rem">EAU {{ module.eau }}</span>{% endif %}
+                            </div>
+                            {% endif %}
+                            <a class="pm2-btn pm2-btn--primary" href="{{ module.wizard_url or '/wizard/' ~ module.id }}" style="align-self:flex-start;margin-top:auto;text-decoration:none">
+                                Abrir wizard →
+                            </a>
+                        </article>
+                        {% endfor %}
+                    </div>
+                </section>
+                {% endif %}
+
+                {# Trial eligibility + Cohort snapshot side-by-side #}
+                <div style="display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:1rem;margin-bottom:1.5rem"
+                     class="pm2-canvas-split">
+                    {% if canvas.trial_eligibility %}
+                    <section class="pm2-bento-card">
+                        <div class="pm2-card-head">
+                            <div>
+                                <div class="pm2-card-eyebrow">Trial eligibility · {{ canvas.trial_eligibility | length }} estudios</div>
+                                <h3 class="pm2-card-title">Estudios pivotales aplicables</h3>
+                            </div>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:8px">
+                            {% for trial in canvas.trial_eligibility %}
+                            {% set match_pct = (trial.criteria_match / trial.criteria_total * 100) | round | int %}
+                            {% set is_eligible = trial.criteria_match == trial.criteria_total %}
+                            <div style="padding:12px;background:var(--surface-3);border-radius:8px;border-left:3px solid {% if is_eligible %}var(--clinical-success){% elif trial.criteria_match >= 3 %}var(--clinical-warning){% else %}var(--clinical-neutral){% endif %}">
+                                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">
+                                    <div style="min-width:0;flex:1">
+                                        <div style="color:#f0fbff;font-size:.9rem;font-weight:600">{{ trial.trial }}</div>
+                                        <div style="color:var(--pn-text-muted);font-size:.75rem;margin-top:2px">{{ trial.drug }}</div>
+                                    </div>
+                                    <span style="color:{% if is_eligible %}var(--clinical-success){% elif trial.criteria_match >= 3 %}var(--clinical-warning){% else %}var(--clinical-neutral){% endif %};font-size:.78rem;font-weight:700;font-feature-settings:'tnum';white-space:nowrap">{{ trial.criteria_match }}/{{ trial.criteria_total }}</span>
+                                </div>
+                                <div style="height:4px;background:var(--surface-1);border-radius:2px;overflow:hidden">
+                                    <div style="height:100%;width:{{ match_pct }}%;background:{% if is_eligible %}var(--clinical-success){% elif trial.criteria_match >= 3 %}var(--clinical-warning){% else %}var(--clinical-neutral){% endif %}"></div>
+                                </div>
+                                <div style="color:var(--pn-text-muted);font-size:.72rem;margin-top:6px">{{ trial.status }}</div>
+                                {# LXCVIII.B addition — drill-down trigger #}
+                                <button class="pm2-trial-drilldown-trigger"
+                                        data-trial-detail="{{ trial.trial }}"
+                                        type="button"
+                                        aria-label="Ver criterios de elegibilidad para {{ trial.trial }}">
+                                    Ver criterios →
+                                </button>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </section>
+                    {% endif %}
+
+                    {% if canvas.cohort_snapshot %}
+                    <section class="pm2-bento-card">
+                        <div class="pm2-card-head">
+                            <div>
+                                <div class="pm2-card-eyebrow">Cohort snapshot</div>
+                                <h3 class="pm2-card-title">Distribución del estadio</h3>
+                            </div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                            {% if canvas.cohort_snapshot.psa_distribution %}
+                            <div>
+                                <div style="color:var(--pn-text-muted);font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px">PSA</div>
+                                <div style="height:80px"><canvas data-init="buildBar"
+                                    data-payload='{{ canvas.cohort_snapshot.psa_distribution | tojson | forceescape }}'></canvas></div>
+                            </div>
+                            {% endif %}
+                            {% if canvas.cohort_snapshot.ecog_distribution %}
+                            <div>
+                                <div style="color:var(--pn-text-muted);font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px">ECOG</div>
+                                <div style="height:80px"><canvas data-init="buildBar"
+                                    data-payload='{{ canvas.cohort_snapshot.ecog_distribution | tojson | forceescape }}'></canvas></div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </section>
+                    {% endif %}
+                </div>
+
+            </div>
+            {% endfor %}
+        </main>
+
+    </div>
+
+    {# ── Footer ── #}
+    <footer style="padding: 1rem 1.5rem; text-align: center; color: var(--pn-text-soft); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; border-top: 1px solid var(--border-subtle);">
+        ProstaMed v2 · Centro Clínico LXCVIII.B redesign · Bento grid + métricas laterales · NCCN 5.2026 + EAU 2026
+    </footer>
+</div>
+
+<template id="pm2SystemMetricsTemplate">
+    <div class="pm2-kpi-panel-grid" aria-label="Métricas clave del sistema">
+        {% for kpi in kpi_hero %}
+        <div class="pm2-kpi-badge" tabindex="0" aria-label="{{ kpi.label }}: {{ kpi.value }}">
+            <div class="pm2-kpi-icon" aria-hidden="true">{{ kpi.icon }}</div>
+            <div class="pm2-kpi-content">
+                <div class="pm2-kpi-value">{{ kpi.value }}</div>
+                <div class="pm2-kpi-label">{{ kpi.label }}</div>
+                {% if kpi.sub %}<div class="pm2-kpi-sub">{{ kpi.sub }}</div>{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</template>
+
+{# ── Drill-down lateral panel ── #}
+<aside id="pm2-drilldown" class="pm2-drilldown" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="pm2-drilldown-head">
+        <div style="min-width:0;flex:1">
+            <div class="pm2-drilldown-context" data-drilldown-context>DETALLE</div>
+            <div class="pm2-drilldown-title" data-drilldown-title>Drill-down</div>
+        </div>
+        <button class="pm2-btn pm2-btn--ghost pm2-btn--icon" type="button" data-drilldown-close aria-label="Cerrar panel">
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+    </div>
+    <div class="pm2-drilldown-body" data-drilldown-body>
+        <p class="pm2-card-subtitle">Contenido específico al elemento clickeado.</p>
+    </div>
+</aside>
+
+<script id="pm2OfficialClassifierConfig" type="application/json">{{ quick_classifier | tojson }}</script>
+<script src="{{ url_for('static', filename='js/clinical_intelligence_v2.js') }}"></script>
+<script src="{{ url_for('static', filename='js/clinical_hub_quick_classifier.js') }}"></script>
+<script src="{{ url_for('static', filename='js/prostamed_voice_os.js', v='voice_os_20260511') }}"></script>
+
+<script>
+// LXCVIII.B — Trial drill-down trigger (criteria detail)
+document.addEventListener('DOMContentLoaded', function() {
+    const drilldown = document.getElementById('pm2-drilldown');
+    if (!drilldown) return;
+    const titleEl = drilldown.querySelector('[data-drilldown-title]');
+    const ctxEl = drilldown.querySelector('[data-drilldown-context]');
+    const bodyEl = drilldown.querySelector('[data-drilldown-body]');
+    const closeBtn = drilldown.querySelector('[data-drilldown-close]');
+    const metricsToggle = document.querySelector('[data-system-metrics-toggle]');
+    const metricsTemplate = document.getElementById('pm2SystemMetricsTemplate');
+
+    const openDrilldown = function() {
+        drilldown.setAttribute('aria-hidden', 'false');
+        drilldown.classList.add('is-open');
+        if (closeBtn) closeBtn.focus();
+    };
+
+    const closeDrilldown = function() {
+        drilldown.setAttribute('aria-hidden', 'true');
+        drilldown.classList.remove('is-open');
+        if (metricsToggle) metricsToggle.setAttribute('aria-expanded', 'false');
+    };
+
+    if (metricsToggle && metricsTemplate) {
+        metricsToggle.addEventListener('click', function() {
+            if (titleEl) titleEl.textContent = 'Métricas clave del sistema';
+            if (ctxEl) ctxEl.textContent = 'RESUMEN OPERATIVO';
+            if (bodyEl) bodyEl.innerHTML = metricsTemplate.innerHTML;
+            metricsToggle.setAttribute('aria-expanded', 'true');
+            openDrilldown();
+        });
+    }
+
+    document.querySelectorAll('[data-trial-detail]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const trialName = btn.getAttribute('data-trial-detail');
+            if (titleEl) titleEl.textContent = trialName;
+            if (ctxEl) ctxEl.textContent = 'TRIAL ELIGIBILITY';
+            if (metricsToggle) metricsToggle.setAttribute('aria-expanded', 'false');
+            if (bodyEl) {
+                bodyEl.innerHTML = '<p class="pm2-card-subtitle">Cargando criterios para <strong>' + trialName + '</strong>...</p>';
+                fetch('/api/trials/' + encodeURIComponent(trialName) + '/criteria')
+                    .then(function(r) { return r.ok ? r.json() : Promise.reject(); })
+                    .then(function(data) {
+                        const c = data.criteria || data;
+                        let html = '<div style="display:flex;flex-direction:column;gap:0.75rem">';
+                        if (c.pmid) html += '<div><span class="pm2-card-eyebrow">PMID</span><div style="color:#67e8f9;font-family:ui-monospace,monospace;">' + c.pmid + '</div></div>';
+                        if (c.nct) html += '<div><span class="pm2-card-eyebrow">NCT</span><div style="color:#67e8f9;font-family:ui-monospace,monospace;">' + c.nct + '</div></div>';
+                        if (c.citation) html += '<div><span class="pm2-card-eyebrow">Citation</span><div style="color:#cbd5e1;font-size:0.8125rem;">' + c.citation + '</div></div>';
+                        if (c.inclusion && c.inclusion.length) {
+                            html += '<div><span class="pm2-card-eyebrow">Inclusión</span><ul style="margin:0.5rem 0 0;padding-left:1.25rem">';
+                            c.inclusion.slice(0, 6).forEach(function(item) { html += '<li style="color:#cbd5e1;font-size:0.8125rem;margin-bottom:0.25rem">' + item + '</li>'; });
+                            html += '</ul></div>';
+                        }
+                        if (c.exclusion && c.exclusion.length) {
+                            html += '<div><span class="pm2-card-eyebrow">Exclusión</span><ul style="margin:0.5rem 0 0;padding-left:1.25rem">';
+                            c.exclusion.slice(0, 6).forEach(function(item) { html += '<li style="color:#cbd5e1;font-size:0.8125rem;margin-bottom:0.25rem">' + item + '</li>'; });
+                            html += '</ul></div>';
+                        }
+                        html += '</div>';
+                        if (bodyEl) bodyEl.innerHTML = html;
+                    })
+                    .catch(function() {
+                        if (bodyEl) bodyEl.innerHTML = '<p class="pm2-card-subtitle" style="color:#fbbf24">No se pudo cargar los criterios para este trial. Endpoint: <code>/api/trials/' + trialName + '/criteria</code></p>';
+                    });
+            }
+            openDrilldown();
+        });
+    });
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeDrilldown);
+    }
+    document.addEventListener('keydown', function(ev) {
+        if (ev.key === 'Escape' && drilldown.classList.contains('is-open')) {
+            closeDrilldown();
+        }
+    });
+
+    // LXCVIII.B — Cohort filter dropdown
+    const cohortFilter = document.querySelector('[data-cohort-filter]');
+    if (cohortFilter) {
+        cohortFilter.addEventListener('change', function() {
+            const value = cohortFilter.value;
+            console.log('Cohort filter:', value);
+            // TODO: trigger /api/cohort/filtered?range=X reload of chart.js data
+        });
+    }
+});
+</script>
+</body>
+</html>

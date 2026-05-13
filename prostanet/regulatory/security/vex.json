@@ -1,0 +1,163 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "serialNumber": "urn:uuid:prostamed-vex-2026-05-12-v1",
+  "metadata": {
+    "timestamp": "2026-05-12T00:00:00Z",
+    "tools": [
+      {
+        "vendor": "ProstaMed",
+        "name": "controlled-shadow-security-loop",
+        "version": "v1"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "bom-ref": "prostamed",
+      "name": "ProstaMed/ProstaNet",
+      "version": "2026-04-27 LXXXVIII"
+    },
+    "properties": [
+      {
+        "name": "prostamed:vex_policy",
+        "value": "prostanet/regulatory/security/vex_policy.md"
+      },
+      {
+        "name": "prostamed:sbom_ref",
+        "value": "prostanet/regulatory/security/sbom-cyclonedx.json"
+      },
+      {
+        "name": "prostamed:cve_audit_ref",
+        "value": "prostanet/regulatory/security/cve-audit-last.json"
+      },
+      {
+        "name": "prostamed:open_vulnerability_count",
+        "value": "0"
+      },
+      {
+        "name": "prostamed:no_fabricated_cve_statements",
+        "value": "true"
+      },
+      {
+        "name": "prostamed:human_review_required_for_affected_or_not_affected",
+        "value": "true"
+      }
+    ]
+  },
+  "components": [
+    {
+      "bom-ref": "flask",
+      "name": "flask",
+      "version": ">=3.0",
+      "purl": "pkg:pypi/flask"
+    },
+    {
+      "bom-ref": "pyyaml",
+      "name": "pyyaml",
+      "version": ">=6.0",
+      "purl": "pkg:pypi/pyyaml"
+    },
+    {
+      "bom-ref": "torch",
+      "name": "torch",
+      "version": ">=2.0",
+      "purl": "pkg:pypi/torch"
+    },
+    {
+      "bom-ref": "numpy",
+      "name": "numpy",
+      "version": ">=1.24",
+      "purl": "pkg:pypi/numpy"
+    },
+    {
+      "bom-ref": "pandas",
+      "name": "pandas",
+      "version": ">=2.0",
+      "purl": "pkg:pypi/pandas"
+    },
+    {
+      "bom-ref": "scikit-learn",
+      "name": "scikit-learn",
+      "version": ">=1.3",
+      "purl": "pkg:pypi/scikit-learn"
+    },
+    {
+      "bom-ref": "lifelines",
+      "name": "lifelines",
+      "version": ">=0.27",
+      "purl": "pkg:pypi/lifelines"
+    },
+    {
+      "bom-ref": "joblib",
+      "name": "joblib",
+      "version": ">=1.3",
+      "purl": "pkg:pypi/joblib"
+    },
+    {
+      "bom-ref": "requests",
+      "name": "requests",
+      "version": ">=2.31",
+      "purl": "pkg:pypi/requests"
+    },
+    {
+      "bom-ref": "pytest",
+      "name": "pytest",
+      "version": ">=7.4",
+      "purl": "pkg:pypi/pytest"
+    },
+    {
+      "bom-ref": "tailwindcss-cdn",
+      "name": "Tailwind CSS",
+      "version": "3.x (CDN)",
+      "purl": null
+    },
+    {
+      "bom-ref": "chartjs-cdn",
+      "name": "Chart.js",
+      "version": "4.4.0 (CDN)",
+      "purl": null
+    },
+    {
+      "bom-ref": "chartjs-annotation",
+      "name": "chartjs-plugin-annotation",
+      "version": "3.0.1 (CDN)",
+      "purl": null
+    }
+  ],
+  "vulnerabilities": [],
+  "properties": [
+    {
+      "name": "prostamed:vex_status_vocabulary",
+      "value": "affected,not_affected,fixed,under_investigation"
+    },
+    {
+      "name": "prostamed:not_affected_requires_justification",
+      "value": "true"
+    },
+    {
+      "name": "prostamed:affected_requires_mitigation_or_remediation",
+      "value": "true"
+    },
+    {
+      "name": "prostamed:empty_vex_reason",
+      "value": "latest_cve_audit_contains_no_open_vulnerabilities"
+    }
+  ],
+  "externalReferences": [
+    {
+      "type": "bom",
+      "url": "file:prostanet/regulatory/security/sbom-cyclonedx.json"
+    },
+    {
+      "type": "other",
+      "url": "file:prostanet/regulatory/security/cve-audit-last.json",
+      "comment": "latest local pip-audit report"
+    },
+    {
+      "type": "other",
+      "url": "file:prostanet/regulatory/security/vex_policy.md",
+      "comment": "human-readable VEX procedure"
+    }
+  ]
+}

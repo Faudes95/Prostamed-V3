@@ -11,7 +11,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
 </head>
 <body class="bg-slate-950 text-slate-100 antialiased">
 <a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
@@ -34,9 +34,10 @@
                 <button class="pm2-filter-chip" type="button">ECOG ≤2</button>
                 <button class="pm2-filter-chip" type="button" style="border-style:dashed">+ Filtro</button>
             </div>
-            <div style="display:flex;gap:.5rem;align-items:center">
-                <a href="/demos/v2/stage_center" class="pm2-btn pm2-btn--ghost">Centro Clínico</a>
-                <a href="/demos/v2/patient_profile_full" class="pm2-btn pm2-btn--primary">Perfil Demo</a>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+                <a href="/patients" class="pm2-btn pm2-btn--ghost">Pacientes</a>
+                <a href="/clinical-hub" class="pm2-btn pm2-btn--ghost">Centro clínico</a>
+                <a href="/clinical-hub#pm2OfficialClassifier" class="pm2-btn pm2-btn--primary">Nuevo paciente</a>
             </div>
         </header>
 
@@ -58,6 +59,81 @@
                 </div>
             </article>
             {% endfor %}
+        </section>
+
+        {% set _autodrive = autodrive_today or {} %}
+        {% set _ad_summary = _autodrive.get('summary', {}) if _autodrive else {} %}
+        {% set _ad_queue = _autodrive.get('today_queue', []) if _autodrive else [] %}
+        <section class="pm2-dashboard-panel" id="pm2AutodriveCommandCenter" style="margin-bottom:1.25rem;border-left:5px solid var(--clinical-info);background:linear-gradient(135deg,rgba(6,182,212,.08),rgba(15,23,42,.62));">
+            <div class="pm2-panel-head">
+                <div>
+                    <div class="pm2-card-eyebrow">DECISIÓN HOY · Fusion Kernel + Autodrive</div>
+                    <h2 class="pm2-panel-title">Qué debo hacer hoy</h2>
+                </div>
+                <div style="display:flex;gap:.5rem;flex-wrap:wrap;justify-content:flex-end">
+                    <span class="pm2-state-chip pm2-state-chip--warn">{{ _ad_summary.get('blocked_count', 0) }} bloqueados</span>
+                    <span class="pm2-state-chip pm2-state-chip--primary">{{ _ad_summary.get('ready_decision_count', 0) }} listos</span>
+                    <span class="pm2-state-chip">{{ _ad_summary.get('overdue_count', 0) }} vencidos</span>
+                </div>
+            </div>
+            {% if _ad_queue %}
+            <div class="pm2-alert-stream" role="list" style="max-height:none">
+                {% for item in _ad_queue[:6] %}
+                {% set _cta = item.get('cta', {}) %}
+                <article class="pm2-alert-stream-row" data-severity="{{ 'critical' if item.priority_status == 'critical_today' else 'warning' }}" role="listitem" tabindex="0" onclick="window.location='{{ _cta.get('href', '/patient_profile/' ~ item.patient_ref ~ '?v=2') }}'">
+                    <div class="pm2-alert-stream-stripe" aria-hidden="true"></div>
+                    <div class="pm2-alert-stream-meta">
+                        <span class="pm2-alert-stream-time">{{ item.lane_label }}</span>
+                        <span class="pm2-alert-stream-patient">{{ item.patient_name }} · {{ item.state_label }}</span>
+                    </div>
+                    <div class="pm2-alert-stream-msg">
+                        <strong style="color:#f8fafc">{{ item.title }}</strong>
+                        <span style="display:block;color:var(--pn-text-muted);font-size:.76rem;margin-top:3px">{{ item.reason }}</span>
+                        {% if item.risk_avoided %}<span style="display:block;color:#bae6fd;font-size:.7rem;margin-top:4px">Riesgo evitado: {{ item.risk_avoided }}</span>{% endif %}
+                    </div>
+                    <a class="pm2-btn pm2-btn--ghost" href="{{ _cta.get('href', '/patient_profile/' ~ item.patient_ref ~ '?v=2') }}" onclick="event.stopPropagation()" style="text-decoration:none;white-space:nowrap">{{ _cta.get('label', 'Abrir') }}</a>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div style="padding:1rem;border:1px dashed var(--border-default);border-radius:10px;color:var(--pn-text-muted);font-size:.85rem">
+                Sin acciones Autodrive para hoy. No hay datos demo ni pacientes inventados.
+            </div>
+            {% endif %}
+        </section>
+
+        {% set _aim = autonomous_improvement or {} %}
+        {% set _aim_summary = _aim.get('summary', {}) if _aim else {} %}
+        {% set _aim_metrics = _aim.get('metrics', []) if _aim else [] %}
+        <section class="pm2-dashboard-panel" id="pm2AutonomousImprovementOS" style="margin-bottom:1.25rem;border-left:5px solid #34d399;background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(15,23,42,.62));">
+            <div class="pm2-panel-head">
+                <div>
+                    <div class="pm2-card-eyebrow">AUTOMEJORA CLÍNICA · shadow mode</div>
+                    <h2 class="pm2-panel-title">Camino al objetivo final</h2>
+                </div>
+                <div style="display:flex;gap:.5rem;flex-wrap:wrap;justify-content:flex-end">
+                    <span class="pm2-state-chip pm2-state-chip--primary">{{ _aim_summary.get('overall_pct', 0) }}%</span>
+                    <span class="pm2-state-chip">{{ _aim_summary.get('status', 'shadow') }}</span>
+                    <a class="pm2-btn pm2-btn--ghost" href="/loop-monitor" style="text-decoration:none">Loop Monitor</a>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:minmax(260px,1fr) minmax(320px,1.5fr);gap:1rem;align-items:start">
+                <div style="color:var(--pn-text-muted);font-size:.84rem;line-height:1.55">
+                    <strong style="color:#f8fafc;display:block;margin-bottom:.35rem">Brecha prioritaria</strong>
+                    {{ _aim_summary.get('top_gap_title', 'Sin brecha activa') }}
+                    <div style="margin-top:.65rem;color:#86efac;font-size:.75rem">
+                        PR/draft + revisión humana · sin auto-merge · sin cambios clínicos automáticos.
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.65rem">
+                    {% for metric in _aim_metrics[:6] %}
+                    <div style="padding:.75rem;border:1px solid rgba(148,163,184,.16);border-radius:10px;background:rgba(15,23,42,.5)">
+                        <strong style="display:block;color:#f8fafc;font-size:1.05rem">{{ metric.get('value', 0) }}%</strong>
+                        <span style="display:block;color:var(--pn-text-muted);font-size:.7rem;margin-top:.25rem">{{ metric.get('label', metric.get('key', 'Métrica')) }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
         </section>
 
         {# ── Row 2: Cohort donut + PSA Heatmap ── #}
@@ -287,6 +363,36 @@
                 </div>
             </article>
         </section>
+
+        {% if copilot_verticals %}
+        <section class="pm2-dashboard-grid pm2-dashboard-grid--triple" aria-label="Copilotos clínicos verticales">
+            {% for vertical in copilot_verticals %}
+            <article class="pm2-dashboard-panel">
+                <div class="pm2-panel-head">
+                    <div>
+                        <div class="pm2-card-eyebrow">{{ vertical.eyebrow }}</div>
+                        <h2 class="pm2-panel-title">{{ vertical.label }}</h2>
+                    </div>
+                    <span class="pm2-stage-pill" data-stage="{{ vertical.stage }}">{{ vertical.status_label }}</span>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem">
+                    {% for metric in vertical.metrics %}
+                    <div style="padding:.8rem;background:var(--surface-3);border-radius:8px">
+                        <div style="color:var(--pn-text-soft);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:700">{{ metric.label }}</div>
+                        <div style="margin-top:.35rem;color:#f0fbff;font-weight:700">
+                            {% if metric.value is number %}{{ metric.value }}{% else %}{{ metric.value or '—' }}{% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div style="margin-top:1rem;display:flex;justify-content:space-between;gap:1rem;color:var(--pn-text-soft);font-size:.74rem">
+                    <span>{{ vertical.total_patients }} pacientes</span>
+                    <span>{{ vertical.latest_created_at or 'sin snapshot reciente' }}</span>
+                </div>
+            </article>
+            {% endfor %}
+        </section>
+        {% endif %}
 
         <footer style="padding: 1.5rem; text-align: center; color: var(--pn-text-soft); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; border-top: 1px solid var(--border-subtle); margin-top: 1rem;">
             ProstaMed v2 demo · Tablero Clínico · 6 KPIs · Donut + Heatmap + Alert Stream live · Decision quality 5D

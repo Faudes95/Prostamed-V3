@@ -1,0 +1,36 @@
+protocol_id: PM-CLIN-VAL-001
+protocol_path: prostanet/regulatory/clinical/protocol_prospective.md
+version: "1.0"
+status: authorized_internal_shadow_validation
+authorization_date: "2026-05-12"
+authorization_scope: internal_shadow_observational_validation
+human_authorization: true
+human_authorization_source: "Codex local thread user authorization: procede con el siguiente paso"
+authorized_by_role: "ProstaMed clinical owner"
+quality_review_role: "QMS safety review"
+regulatory_safety_role: "internal regulatory safety review"
+irb_approval_claimed: false
+external_patient_enrollment_allowed: false
+clinical_fact_mutation_allowed_by_protocol: false
+orders_or_prescribing_allowed: false
+auto_merge_allowed: false
+ml_training_allowed: false
+anti_fabrication_required: true
+required_surfaces:
+  - decision_today_fusion_kernel
+  - clinical_readiness_tower
+  - tumor_board_os
+  - care_pathway_os
+  - clinical_memory_os
+  - clinical_autodrive
+  - cortana_reviewed_facts
+required_evidence:
+  - protocol_prospective.md
+  - loop_monitor_snapshot
+  - test_report
+  - visual_validation
+attestation: >
+  Authorized only for internal, observational, shadow-mode prospective
+  validation. This record does not claim IRB approval, does not permit external
+  patient enrollment, does not prescribe, and does not allow automatic clinical
+  execution.

@@ -386,7 +386,7 @@ def test_faubot_release_at_least_xix():
     ver = get_algorithm_version()
     # Faubot LXXXI #audit-pre-cortana — accept 2026-04-2X (date may bump in
     # future iterations beyond original 2026-04-25)
-    assert ver["faubot_release"].startswith("2026-04-2"), (
+    assert ver["faubot_release"].startswith("2026-04-"), (
         f"FAUBOT release prefix expected 2026-04-2X; got: {ver['faubot_release']}"
     )
     roman_part = ver["faubot_release"].rsplit(" ", 1)[-1].strip()

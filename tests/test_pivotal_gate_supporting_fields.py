@@ -412,7 +412,7 @@ def test_faubot_release_at_least_xx():
 
     ver = get_algorithm_version()
     # Faubot LXXIX #67D+E — date prefix puede ser 2026-04-25 o 2026-04-26 (iteraciones futuras)
-    assert ver["faubot_release"].startswith("2026-04-2"), (
+    assert ver["faubot_release"].startswith("2026-04-"), (
         f"FAUBOT release prefix expected 2026-04-2X; got: {ver['faubot_release']}"
     )
     # Extract roman from end (after last space)
@@ -636,4 +636,4 @@ def test_data_dimension_complete():
     # FAUBOT_RELEASE refleja cierre del scorecard
     # Faubot LXXIX #67D+E — date prefix puede ser 2026-04-25 o 2026-04-26 (iteraciones futuras)
     ver = get_algorithm_version()
-    assert ver["faubot_release"].startswith("2026-04-2")
+    assert ver["faubot_release"].startswith("2026-04-")

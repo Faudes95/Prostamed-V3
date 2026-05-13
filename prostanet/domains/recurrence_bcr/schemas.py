@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from prostanet.shared.advanced_support_fields import pivotal_contraindication_fields
 from prostanet.shared.contracts import FieldSpec, module_schema
 
 
@@ -66,5 +67,10 @@ RECURRENCE_BCR_SCHEMA = module_schema(
         FieldSpec("alp", "Fosfatasa alcalina", "number", default=110, group="Monitoreo ARPI basal", group_order=5, clinical_role="monitoring", unit="U/L", conditional_visibility={"bcr2": ["1"]}),
         FieldSpec("potassium", "Potasio sérico", "number", default=4.1, group="Monitoreo ARPI basal", group_order=5, clinical_role="monitoring", unit="mmol/L", conditional_visibility={"bcr2": ["1"]}),
         FieldSpec("glucose_or_hba1c", "Glucosa o HbA1c basal", "number", default=95, group="Monitoreo ARPI basal", group_order=5, clinical_role="monitoring", unit="mg/dL o %", conditional_visibility={"bcr2": ["1"]}),
+        # Faubot LXCVIII.A.4 — Pivotal contraindication fields (7 FieldSpecs)
+        # Misma extensión que aplican localized_initial + mcspc + m0/m1_crpc
+        # para garantizar `pivotal_contraindication_gates` propagación
+        # downstream al copilot view (gates 1-7 medication safety).
+        *pivotal_contraindication_fields(group_order=80),
     ],
 )

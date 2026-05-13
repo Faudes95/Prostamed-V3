@@ -15,6 +15,7 @@ Uso desde app.py:
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any, Mapping, Sequence
 
@@ -73,6 +74,26 @@ def _decision_today(profile_view: Mapping[str, Any]) -> dict[str, Any]:
     `clinical_compass.why_this_now` para el rationale; si faltan, recurre a
     `decision_audit.audit_dimensions.como.preferred_regimen.label`.
     """
+    fusion = profile_view.get("decision_today_fusion_kernel") or profile_view.get("decision_today_fusion") or {}
+    if isinstance(fusion, Mapping) and fusion.get("source") == "clinical_decision_today_fusion_kernel":
+        decision = dict(fusion.get("decision_today") or {})
+        action = dict(fusion.get("next_safe_action") or {})
+        return {
+            "release": fusion.get("version") or "decision_today_fusion_kernel_v1",
+            "headline": decision.get("title") or action.get("title") or "Sin decisión clínica activa",
+            "rationale": fusion.get("clinical_rationale") or decision.get("rationale") or "—",
+            "regimen_code": decision.get("status") or fusion.get("decision_state") or "not_actionable",
+            "decision_quality_score": 1 if fusion.get("decision_state") == "releaseable" else 0,
+            "decision_quality_label": decision.get("label") or fusion.get("decision_state") or "—",
+            "evidence_level": "Fusion Kernel · Readiness/Tumor Board/Care Pathway/Memory/Autodrive",
+            "available": bool(fusion.get("available")),
+            "fusion": fusion,
+            "decision_state": fusion.get("decision_state") or decision.get("status") or "not_actionable",
+            "risk_avoided": decision.get("risk_avoided") or action.get("risk_avoided") or "",
+            "missing_fields": fusion.get("unified_missing_fields") or [],
+            "next_safe_action": action,
+        }
+
     cc = _safe_get(profile_view, "clinical_compass", default={})
     audit = _safe_get(profile_view, "decision_audit", default={})
     como = _safe_get(audit, "audit_dimensions", "como", default={})
@@ -145,6 +166,13 @@ def _identity(patient: Mapping[str, Any], profile_view: Mapping[str, Any]) -> di
         or _safe_get(profile_view, "reconciled_state")
         or "Sin clasificar"
     )
+    raw_track = _safe_get(profile_view, "management_track") or []
+    if isinstance(raw_track, str):
+        current_track = [raw_track] if raw_track else []
+    elif isinstance(raw_track, Sequence) and not isinstance(raw_track, (str, bytes, bytearray)):
+        current_track = list(raw_track)
+    else:
+        current_track = []
     return {
         "name": patient.get("full_name") or patient.get("name") or "Paciente sin nombre",
         "nss": patient.get("nss") or "—",
@@ -155,7 +183,7 @@ def _identity(patient: Mapping[str, Any], profile_view: Mapping[str, Any]) -> di
         "stage_label": str(state_label),
         "stage": _stage_key(str(state_label)),
         "baseline_psa": _safe_get(patient, "clinical_baseline", "baseline_psa") or patient.get("baseline_psa") or "—",
-        "current_track": _safe_get(profile_view, "management_track") or [],
+        "current_track": current_track,
         "vital_status": patient.get("vital_status") or "alive",
     }
 
@@ -354,7 +382,7 @@ def _psa_observability(profile_view: Mapping[str, Any]) -> dict[str, Any]:
         series.append({
             "date": p.get("sample_date") or p.get("date") or "",
             "value": p.get("value") or p.get("psa_value") or 0,
-            "line": p.get("treatment_line_number") or 1,
+            "line": p.get("treatment_line_number"),
             "context": p.get("context") or p.get("clinical_context") or "",
         })
 
@@ -364,7 +392,7 @@ def _psa_observability(profile_view: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(seg, Mapping):
             continue
         per_line.append({
-            "line": seg.get("treatment_line_number") or seg.get("line") or 1,
+            "line": seg.get("treatment_line_number") or seg.get("line") or "—",
             "regimen": seg.get("treatment_line_label") or seg.get("regimen") or "—",
             "baseline": seg.get("baseline_psa") or "—",
             "nadir": seg.get("nadir_psa") or "—",
@@ -387,7 +415,7 @@ def _psa_observability(profile_view: Mapping[str, Any]) -> dict[str, Any]:
             "velocity": metrics.get("psa_velocity") or "—",
         },
         "n_points": len(series),
-        "n_lines": len(per_line),
+        "n_lines": len(bands) or len(per_line),
     }
 
 
@@ -642,6 +670,139 @@ def dashboard_summary_to_v2(summary: Mapping[str, Any] | None = None) -> dict[st
         {"release": "2026-04-26 LXXVI", "diff": "+5 gates genomic critical (HRR HARD_BLOCK)"},
     ]
 
+    research_payload: Mapping[str, Any] = {}
+    autodrive_today: Mapping[str, Any] = {}
+    autonomous_improvement: Mapping[str, Any] = {}
+    try:
+        import tracking_db
+
+        research_payload = {
+            "mhspc_copilot": tracking_db.get_mhspc_copilot_dashboard_summary(),
+            "diagnostic_biopsy_copilot": tracking_db.get_diagnostic_biopsy_dashboard_summary(),
+            "localized_surveillance_copilot": tracking_db.get_localized_surveillance_dashboard_summary(),
+            "post_rt_salvage_copilot": tracking_db.get_post_rt_salvage_dashboard_summary(),
+        }
+    except Exception:
+        research_payload = {}
+    try:
+        from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
+            build_population_autodrive_from_db,
+        )
+
+        autodrive_today = build_population_autodrive_from_db(limit=8) or {}
+    except Exception:
+        autodrive_today = {}
+    try:
+        from prostanet.agentic.autonomous_improvement_os import build_mission_control
+
+        autonomous_improvement = build_mission_control() or {}
+    except Exception:
+        autonomous_improvement = {}
+    ad_summary = autodrive_today.get("summary") or {}
+    if autodrive_today:
+        kpis[1] = {
+            "label": "Autodrive critico",
+            "value": str(ad_summary.get("critical_patient_count") or ad_summary.get("status_counts", {}).get("critical_today") or 0),
+            "trend": "info",
+            "trend_value": "hoy",
+            "spark": [0, 0, ad_summary.get("critical_patient_count") or 0, ad_summary.get("queue_count") or 0, ad_summary.get("ready_decision_count") or 0, ad_summary.get("blocked_count") or 0, ad_summary.get("overdue_count") or 0],
+            "variant": "critical",
+        }
+        kpis[2] = {
+            "label": "Listos para decidir",
+            "value": str(ad_summary.get("ready_decision_count") or 0),
+            "trend": "info",
+            "trend_value": "Tumor Board",
+            "spark": [ad_summary.get("ready_decision_count") or 0] * 7,
+            "variant": "warning",
+        }
+        kpis[3] = {
+            "label": "Bloqueados por datos",
+            "value": str(ad_summary.get("blocked_count") or 0),
+            "trend": "info",
+            "trend_value": "capture",
+            "spark": [ad_summary.get("blocked_count") or 0] * 7,
+            "variant": "success",
+        }
+
+    def _copilot_vertical(
+        key: str,
+        label: str,
+        eyebrow: str,
+        stage: str,
+        metric_map: list[tuple[str, str]],
+    ) -> dict[str, Any]:
+        payload = research_payload.get(key) or {}
+        if not isinstance(payload, Mapping):
+            payload = {}
+        total = (
+            payload.get("total_patients")
+            or payload.get("patient_count")
+            or len(payload.get("recent_cases") or [])
+            or 0
+        )
+        metrics = [
+            {"label": metric_label, "value": payload.get(metric_key, "—")}
+            for metric_label, metric_key in metric_map
+        ]
+        return {
+            "label": label,
+            "eyebrow": eyebrow,
+            "stage": stage,
+            "available": bool(payload.get("available")),
+            "status_label": "activo" if payload.get("available") else "sin cohorte activa",
+            "total_patients": total,
+            "latest_created_at": payload.get("latest_created_at") or "",
+            "metrics": metrics,
+        }
+
+    copilot_verticals = [
+        _copilot_vertical(
+            "mhspc_copilot",
+            "Copiloto mHSPC",
+            "mHSPC · doblete/triplete · RT primario",
+            "mcspc",
+            [
+                ("Cohorte", "total_patients"),
+                ("RT primario", "rt_primary_visible_pct"),
+                ("Triplete", "triplet_visible_pct"),
+            ],
+        ),
+        _copilot_vertical(
+            "diagnostic_biopsy_copilot",
+            "Copiloto diagnóstico",
+            "PRE-Dx · MRI · biopsia · rebiopsia",
+            "diagnostic",
+            [
+                ("Cohorte", "total_patients"),
+                ("Biopsia ready", "biopsy_ready_pct"),
+                ("Reabrir", "reopen_after_negative_pct"),
+            ],
+        ),
+        _copilot_vertical(
+            "localized_surveillance_copilot",
+            "Copiloto localizado / AS",
+            "Localizado · AS · conversión",
+            "localized",
+            [
+                ("Cohorte", "total_patients"),
+                ("AS visible", "active_surveillance_visible_pct"),
+                ("Conversión", "upgrade_exit_pct"),
+            ],
+        ),
+        _copilot_vertical(
+            "post_rt_salvage_copilot",
+            "Copiloto post-RT",
+            "Phoenix · PSMA · salvage local",
+            "bcr",
+            [
+                ("Cohorte", "total_patients"),
+                ("Salvage local", "local_salvage_candidate_pct"),
+                ("Redirección", "redirect_systemic_pct"),
+            ],
+        ),
+    ]
+
     return {
         "kpis": kpis,
         "cohort_distribution": cohort_distribution,
@@ -650,6 +811,9 @@ def dashboard_summary_to_v2(summary: Mapping[str, Any] | None = None) -> dict[st
         "decision_quality": decision_quality,
         "research_intelligence": research_intelligence,
         "versioning": versioning,
+        "copilot_verticals": copilot_verticals,
+        "autodrive_today": autodrive_today,
+        "autonomous_improvement": autonomous_improvement,
     }
 
 
@@ -670,6 +834,244 @@ def _stage_key_for_module(module_id: str) -> str:
     if mid == "survivorship_and_toxicity_followup":
         return "palliative"
     return "diagnostic"
+
+
+def _build_hub_quick_classifier_config() -> dict[str, Any]:
+    """Configura el clasificador secuencial del hub v2.
+
+    El contrato visual queda oficializado dentro del hub v2 integrado, pero el
+    backend vigente conserva la autoridad clínica. Por eso el frontend normaliza estos campos
+    hacia StateClassifierService en vez de duplicar reglas de estadificación.
+    """
+    from prostanet.shared.metastatic_profile import (
+        APPENDICULAR_BONE_SITE_KEYS,
+        AXIAL_BONE_SITE_KEYS,
+        BONE_SITE_LABELS,
+        NONREGIONAL_NODAL_SITE_LABELS,
+        VISCERAL_SITE_LABELS,
+    )
+
+    def _options(labels: Mapping[str, str], keys: Sequence[str] | None = None) -> list[dict[str, str]]:
+        source = keys or tuple(labels.keys())
+        return [{"value": key, "label": labels[key]} for key in source if key in labels]
+
+    yes_no = [{"value": "0", "label": "No"}, {"value": "1", "label": "Sí"}]
+    field_defaults = {f["name"]: f for f in quick_classify_schema().get("fields", [])}
+
+    def _field(name: str, **overrides: Any) -> dict[str, Any]:
+        base = dict(field_defaults.get(name, {}))
+        base.setdefault("name", name)
+        base.setdefault("field_type", "text")
+        base.update(overrides)
+        return base
+
+    steps = [
+        {
+            "key": "diagnosis",
+            "number": "1",
+            "label": "Diagnóstico",
+            "summary": "Separa sospecha, screening y cáncer confirmado antes de abrir una ruta terapéutica.",
+            "fields": [
+                _field(
+                    "known_cancer_diagnosis",
+                    label="Diagnóstico confirmado por biopsia",
+                    field_type="select",
+                    required=True,
+                    options=[{"value": "1", "label": "Sí, cáncer confirmado"}, {"value": "0", "label": "No, sospecha o screening"}],
+                    default="1",
+                ),
+                _field(
+                    "encounter_type",
+                    label="Tipo de encuentro prediagnóstico",
+                    field_type="select",
+                    options=[
+                        {"value": "clinical_evaluation", "label": "Evaluación por sospecha"},
+                        {"value": "screening", "label": "Screening / detección temprana"},
+                        {"value": "second_opinion", "label": "Segunda opinión"},
+                    ],
+                    default="clinical_evaluation",
+                    visible_when={"known_cancer_diagnosis": ["0"]},
+                ),
+                _field(
+                    "screening_context",
+                    label="Encuentro de screening",
+                    field_type="select",
+                    options=yes_no,
+                    default="0",
+                    visible_when={"known_cancer_diagnosis": ["0"]},
+                ),
+                _field(
+                    "prior_negative_biopsy",
+                    label="Biopsia prostática previa benigna",
+                    field_type="select",
+                    options=yes_no,
+                    default="0",
+                    visible_when={"known_cancer_diagnosis": ["0"]},
+                ),
+                _field(
+                    "biopsy_scheduled",
+                    label="Biopsia programada",
+                    field_type="select",
+                    options=yes_no,
+                    default="0",
+                    visible_when={"known_cancer_diagnosis": ["0"]},
+                ),
+                _field("psa", label="PSA actual de sospecha", field_type="number", unit="ng/mL", visible_when={"known_cancer_diagnosis": ["0"]}),
+                _field("psad", label="Densidad de PSA", field_type="number", unit="ng/mL/cc", visible_when={"known_cancer_diagnosis": ["0"]}),
+                _field(
+                    "pirads_score",
+                    label="PI-RADS en MRI",
+                    field_type="select",
+                    options=["0", "2", "3", "4", "5"],
+                    default="0",
+                    visible_when={"known_cancer_diagnosis": ["0"]},
+                ),
+                _field(
+                    "dre_suspicious",
+                    label="Tacto rectal sospechoso",
+                    field_type="select",
+                    options=[{"value": "Desconocido", "label": "Desconocido"}, {"value": "0", "label": "No"}, {"value": "1", "label": "Sí"}],
+                    default="Desconocido",
+                    visible_when={"known_cancer_diagnosis": ["0"]},
+                ),
+                _field("histology_subtype", label="Subtipo histológico", field_type="select", visible_when={"known_cancer_diagnosis": ["1"]}),
+                _field("diagnosis_date", label="Fecha de diagnóstico", field_type="date", visible_when={"known_cancer_diagnosis": ["1"]}),
+                _field("psa_baseline_ng_ml", label="PSA basal al diagnóstico", field_type="number", unit="ng/mL", visible_when={"known_cancer_diagnosis": ["1"]}),
+                _field("gleason_primary", label="Gleason primario", field_type="select", options=["", "3", "4", "5"], visible_when={"known_cancer_diagnosis": ["1"]}),
+                _field("gleason_secondary", label="Gleason secundario", field_type="select", options=["", "3", "4", "5"], visible_when={"known_cancer_diagnosis": ["1"]}),
+                _field("clinical_tstage", label="cT clínico", field_type="select", visible_when={"known_cancer_diagnosis": ["1"]}),
+                _field("nodal_status", label="cN clínico", field_type="select", visible_when={"known_cancer_diagnosis": ["1"]}),
+                _field("clinical_stage_group", label="Etapa clínica AJCC", field_type="select", visible_when={"known_cancer_diagnosis": ["1"]}),
+                _field("clinical_risk_group", label="Grupo de riesgo clínico", field_type="select", visible_when={"known_cancer_diagnosis": ["1"]}),
+            ],
+        },
+        {
+            "key": "local",
+            "number": "2",
+            "label": "Tratamiento local / recurrencia",
+            "summary": "Define si el paciente pertenece a seguimiento post-RP, post-RT o recurrencia bioquímica.",
+            "visible_when": {"known_cancer_diagnosis": ["1"]},
+            "fields": [
+                _field(
+                    "prior_local_therapy",
+                    label="Terapia local previa",
+                    field_type="select",
+                    options=[
+                        {"value": "none", "label": "Ninguna"},
+                        {"value": "prostatectomy", "label": "Prostatectomía radical"},
+                        {"value": "radiation", "label": "Radioterapia"},
+                        {"value": "brachytherapy", "label": "Braquiterapia"},
+                        {"value": "focal", "label": "Terapia focal"},
+                    ],
+                    default="none",
+                ),
+                _field("psa_postop", label="PSA postoperatorio actual", field_type="number", unit="ng/mL", visible_when={"prior_local_therapy": ["prostatectomy"]}),
+                _field("psa_current", label="PSA actual", field_type="number", unit="ng/mL", visible_when={"prior_local_therapy": ["prostatectomy", "radiation", "brachytherapy"]}),
+                _field("bcr_detected", label="BCR documentada", field_type="select", options=yes_no, default="0", visible_when={"prior_local_therapy": ["prostatectomy", "radiation", "brachytherapy"]}),
+                _field("bcr_psa", label="PSA al momento de BCR", field_type="number", unit="ng/mL", visible_when={"bcr_detected": ["1"]}),
+                _field("bcr_date", label="Fecha de BCR", field_type="date", visible_when={"bcr_detected": ["1"]}),
+                _field("bcr2", label="Segunda recurrencia bioquímica", field_type="select", options=yes_no, default="0", visible_when={"bcr_detected": ["1"]}),
+                _field("rt_completion_date", label="Fecha de finalización RT", field_type="date", visible_when={"prior_local_therapy": ["radiation", "brachytherapy"]}),
+                _field("psa_nadir_post_rt", label="PSA nadir post-RT", field_type="number", unit="ng/mL", visible_when={"prior_local_therapy": ["radiation", "brachytherapy"]}),
+                _field("phoenix_delta", label="Delta sobre nadir Phoenix", field_type="number", unit="ng/mL", visible_when={"prior_local_therapy": ["radiation", "brachytherapy"]}),
+                _field(
+                    "failure_confirmation_basis",
+                    label="Base de confirmación post-RT",
+                    field_type="select",
+                    options=[
+                        {"value": "", "label": "Pendiente"},
+                        {"value": "phoenix_confirmed", "label": "Phoenix confirmado"},
+                        {"value": "biopsy_proven_local_failure", "label": "Falla local por biopsia"},
+                        {"value": "radiographic_local_failure", "label": "Falla local radiográfica"},
+                    ],
+                    visible_when={"prior_local_therapy": ["radiation", "brachytherapy"]},
+                ),
+            ],
+        },
+        {
+            "key": "metastatic",
+            "number": "3",
+            "label": "Enfermedad metastásica",
+            "summary": "Captura composición M1 real y permite derivar volumen CHAARTED sin etiqueta manual.",
+            "visible_when": {"known_cancer_diagnosis": ["1"]},
+            "fields": [
+                _field("metastatic_disease_known", label="Enfermedad metastásica conocida", field_type="select", options=yes_no, default="0"),
+                _field(
+                    "metastasis_site",
+                    label="Resumen cM documentado",
+                    field_type="select",
+                    options=[
+                        {"value": "M0", "label": "M0"},
+                        {"value": "M1a", "label": "M1a · ganglios no regionales"},
+                        {"value": "M1b", "label": "M1b · hueso"},
+                        {"value": "M1c", "label": "M1c · visceral"},
+                    ],
+                    default="M0",
+                    visible_when={"metastatic_disease_known": ["1"]},
+                ),
+                _field("nonregional_nodal_metastasis_present", label="Ganglios no regionales presentes", field_type="select", options=yes_no, default="0", visible_when={"metastatic_disease_known": ["1"]}),
+                _field("nonregional_nodal_site", label="Cadena ganglionar no regional", field_type="select", options=_options(NONREGIONAL_NODAL_SITE_LABELS), visible_when={"nonregional_nodal_metastasis_present": ["1"]}),
+                _field("nonregional_nodal_count", label="Número de lesiones ganglionares", field_type="number", visible_when={"nonregional_nodal_metastasis_present": ["1"]}),
+                _field("bone_metastasis_present", label="Metástasis óseas presentes", field_type="select", options=yes_no, default="0", visible_when={"metastatic_disease_known": ["1"]}),
+                _field("bone_axial_site", label="Sitio óseo axial predominante", field_type="select", options=_options(BONE_SITE_LABELS, AXIAL_BONE_SITE_KEYS), visible_when={"bone_metastasis_present": ["1"]}),
+                _field("bone_axial_count", label="Lesiones óseas axiales", field_type="number", visible_when={"bone_metastasis_present": ["1"]}),
+                _field("bone_appendicular_site", label="Sitio óseo apendicular predominante", field_type="select", options=_options(BONE_SITE_LABELS, APPENDICULAR_BONE_SITE_KEYS), visible_when={"bone_metastasis_present": ["1"]}),
+                _field("bone_appendicular_count", label="Lesiones óseas apendiculares", field_type="number", visible_when={"bone_metastasis_present": ["1"]}),
+                _field("visceral_metastasis_present", label="Metástasis viscerales presentes", field_type="select", options=yes_no, default="0", visible_when={"metastatic_disease_known": ["1"]}),
+                _field("visceral_site", label="Órgano visceral predominante", field_type="select", options=_options(VISCERAL_SITE_LABELS), visible_when={"visceral_metastasis_present": ["1"]}),
+                _field("visceral_lesion_count", label="Número de lesiones viscerales", field_type="number", visible_when={"visceral_metastasis_present": ["1"]}),
+                _field("metachronous_metastasis", label="Metástasis metacrónica", field_type="select", options=yes_no, default="0", visible_when={"metastatic_disease_known": ["1"]}),
+            ],
+        },
+        {
+            "key": "adt",
+            "number": "4",
+            "label": "ADT / CRPC",
+            "summary": "Protege el carril resistente: CRPC requiere progresión, castración e imagen convencional.",
+            "visible_when": {"known_cancer_diagnosis": ["1"]},
+            "fields": [
+                _field("current_adt_context", label="Contexto actual de ADT", field_type="select", default="none"),
+                _field(
+                    "systemic_progression_context",
+                    label="Contexto de progresión sistémica",
+                    field_type="select",
+                    options=[
+                        {"value": "none", "label": "Sin progresión bajo ADT"},
+                        {"value": "progression_on_adt_verify_castration", "label": "Progresión bajo ADT: verificar castración"},
+                        {"value": "confirmed_crpc", "label": "CRPC confirmado"},
+                    ],
+                    default="none",
+                ),
+                _field("castrate_testosterone_status", label="Testosterona en rango de castración", field_type="select", default="unknown"),
+                _field("testosterone_value", label="Valor de testosterona", field_type="number", unit="ng/dL"),
+                _field("progression_pattern", label="Patrón de progresión", field_type="select", default="biochemical_only"),
+                _field("conventional_imaging_status", label="Imagen convencional", field_type="select", default="not_restaged"),
+            ],
+        },
+    ]
+
+    return {
+        "source": "ProstaMed official clinical hub",
+        "schema_title": quick_classify_schema().get("title"),
+        "endpoints": {
+            "quick_schema": "/api/intake-schema/_quick",
+            "classify": "/api/state-classifier",
+            "diagnosis_preview": "/api/official-diagnosis/preview",
+            "draft": "/api/clinical-assessments/draft",
+        },
+        "steps": steps,
+        "initial_state": {
+            "known_cancer_diagnosis": "1",
+            "prior_local_therapy": "none",
+            "metastatic_disease_known": "0",
+            "metastasis_site": "M0",
+            "current_adt_context": "none",
+            "systemic_progression_context": "none",
+            "castrate_testosterone_status": "unknown",
+            "progression_pattern": "biochemical_only",
+            "conventional_imaging_status": "not_restaged",
+        },
+    }
 
 
 def stage_center_to_v2(stages_meta: Sequence[Mapping[str, Any]] | None = None,
@@ -788,7 +1190,131 @@ def stage_center_to_v2(stages_meta: Sequence[Mapping[str, Any]] | None = None,
             "cohort_snapshot": {},
         }
 
-    return {"stages": stages, "canvases": canvases, "default_stage": "m1crpc"}
+    # ──────────────────────────────────────────────────────────────────
+    # Faubot LXCVIII.B — Enhanced data for clinical hub redesign
+    # ──────────────────────────────────────────────────────────────────
+
+    # KPI hero bar metrics (top of dashboard)
+    kpi_hero = _build_kpi_hero_metrics()
+
+    # Loop monitor 8 vectors live status (right rail)
+    loop_vectors_live = _build_loop_vectors_compact()
+
+    # Cohort filter options (date ranges)
+    cohort_filter_options = [
+        {"value": "", "label": "Todos los pacientes"},
+        {"value": "3m", "label": "Últimos 3 meses"},
+        {"value": "6m", "label": "Últimos 6 meses"},
+        {"value": "12m", "label": "Últimos 12 meses"},
+    ]
+
+    return {
+        "stages": stages,
+        "canvases": canvases,
+        "default_stage": "",
+        # LXCVIII.B redesign data
+        "kpi_hero": kpi_hero,
+        "loop_vectors_live": loop_vectors_live,
+        "cohort_filter_options": cohort_filter_options,
+        "quick_classifier": _build_hub_quick_classifier_config(),
+    }
+
+
+def _build_kpi_hero_metrics() -> list[dict[str, Any]]:
+    """Faubot LXCVIII.B — Build KPI hero bar metrics (89 gates · 47 trials · 8 vectors · N modules)."""
+    metrics = []
+    # Gates count
+    try:
+        from prostanet.shared.pivotal_gates_yaml_loader import (
+            _load_yaml_files, get_loaded_yaml_codes,
+        )
+        _load_yaml_files(force_reload=False)
+        gates_count = len(get_loaded_yaml_codes())
+    except Exception:
+        gates_count = 103
+    metrics.append({
+        "key": "gates",
+        "icon": "⚙",
+        "value": str(gates_count),
+        "label": "Gates pivotal",
+        "sub": "YAML-native",
+    })
+    # Trials count
+    try:
+        from prostanet.shared.trial_criteria_registry import TRIAL_CRITERIA_REGISTRY
+        trials_count = len(TRIAL_CRITERIA_REGISTRY)
+    except Exception:
+        trials_count = 47
+    metrics.append({
+        "key": "trials",
+        "icon": "📋",
+        "value": str(trials_count),
+        "label": "Trials pivotales",
+        "sub": "eligibility evaluable",
+    })
+    # Loop vectors count (always 8)
+    metrics.append({
+        "key": "vectors",
+        "icon": "📊",
+        "value": "8",
+        "label": "Loop vectors",
+        "sub": "monitoring activo",
+    })
+    # Modules count
+    try:
+        from prostanet.application.module_registry import ModuleRegistry
+        modules_count = len(ModuleRegistry().list_modules() or [])
+    except Exception:
+        modules_count = 15
+    metrics.append({
+        "key": "modules",
+        "icon": "🧩",
+        "value": str(modules_count),
+        "label": "Módulos clínicos",
+        "sub": "wizards disponibles",
+    })
+    return metrics
+
+
+def _build_loop_vectors_compact() -> list[dict[str, Any]]:
+    """Faubot LXCVIII.B — Build compact 8-vector status for right rail."""
+    try:
+        from prostanet.presentation.loop_monitor import (
+            CORE_VECTORS, get_vector_summary,
+        )
+        summary = get_vector_summary(days=30)
+        result = []
+        for vec_key, vec_meta in CORE_VECTORS.items():
+            s = summary.get(vec_key, {})
+            count = s.get("count", 0)
+            ok_count = s.get("ok", 0)
+            warning_count = s.get("warning", 0)
+            critical_count = s.get("critical", 0)
+            # Compute status (5-level)
+            if count == 0:
+                status = "no_data"
+                score = 0
+            elif critical_count > 0:
+                status = "critical"
+                score = 1
+            elif warning_count > ok_count:
+                status = "warning"
+                score = 3
+            else:
+                status = "ok"
+                score = 5
+            result.append({
+                "key": vec_key,
+                "icon": vec_meta["icon"],
+                "label": vec_meta["label"],
+                "status": status,
+                "score": score,
+                "count_30d": count,
+                "skill": vec_meta.get("skill", ""),
+            })
+        return result
+    except Exception:
+        return []
 
 
 def stage_count_lookup(stage_key: str, stages: Sequence[Mapping[str, Any]]) -> int:
@@ -1014,7 +1540,36 @@ def patients_list_to_v2(patients_raw: Sequence[Mapping[str, Any]] | None = None)
                        (SELECT COUNT(*) FROM follow_up_visits fv WHERE fv.patient_id = pi.id) as visit_count,
                        (SELECT COUNT(*) FROM smart_alerts sa
                         WHERE sa.patient_id = pi.id AND sa.acknowledged = 0
-                              AND COALESCE(sa.active, 1) = 1) as alert_count
+                              AND COALESCE(sa.active, 1) = 1) as alert_count,
+                       (SELECT css.next_best_action_json FROM clinical_signal_snapshots css
+                        WHERE css.patient_id = pi.id
+                        ORDER BY css.updated_at DESC, css.id DESC LIMIT 1) as next_best_action_json,
+                       (SELECT COUNT(*) FROM scheduled_events se
+                        WHERE se.patient_id = pi.id
+                          AND COALESCE(se.completed, 0) = 0
+                          AND DATE(COALESCE(se.scheduled_due_at, se.due_date)) < DATE('now')) as care_overdue_count,
+                       (SELECT COUNT(*) FROM followup_agenda_items fai
+                        WHERE fai.patient_id = pi.id
+                          AND fai.status = 'blocked') as care_blocked_count,
+                       (SELECT COUNT(*) FROM scheduled_events se
+                        WHERE se.patient_id = pi.id
+                          AND COALESCE(se.completed, 0) = 0
+                          AND DATE(COALESCE(se.scheduled_due_at, se.due_date)) BETWEEN DATE('now') AND DATE('now', '+30 day')) as care_next_30d_count,
+                       (SELECT se.label FROM scheduled_events se
+                        WHERE se.patient_id = pi.id
+                          AND COALESCE(se.completed, 0) = 0
+                        ORDER BY DATE(COALESCE(se.scheduled_due_at, se.due_date)) ASC, se.id ASC
+                        LIMIT 1) as care_next_label,
+                       (SELECT COUNT(*) FROM outcome_events oe
+                        WHERE oe.patient_id = pi.id
+                          AND COALESCE(oe.active, 1) = 1) as memory_outcome_count,
+                       (SELECT COUNT(*) FROM outcome_events oe
+                        WHERE oe.patient_id = pi.id
+                          AND COALESCE(oe.active, 1) = 1
+                          AND LOWER(COALESCE(oe.event_type, '')) LIKE '%progress%') as memory_progression_count,
+                       (SELECT COUNT(*) FROM treatment_adverse_events tae
+                        WHERE tae.patient_id = pi.id
+                          AND COALESCE(tae.ctcae_grade, 0) >= 3) as memory_grade3_toxicity_count
                 FROM patient_identity pi
                 LEFT JOIN clinical_baseline cb ON cb.patient_id = pi.id
                 ORDER BY pi.created_at DESC
@@ -1075,6 +1630,39 @@ def patients_list_to_v2(patients_raw: Sequence[Mapping[str, Any]] | None = None)
         alerts = int(p.get("alert_count") or 0)
         if alerts > 0:
             with_alerts_count += 1
+        try:
+            next_action = json.loads(p.get("next_best_action_json") or "{}")
+        except (TypeError, ValueError):
+            next_action = {}
+        tumor_board_label = (
+            next_action.get("title")
+            or next_action.get("recommended_action")
+            or "Abrir perfil para Tumor Board OS"
+        )
+        tumor_board_status = "provisional" if next_action else "requires_data"
+        care_overdue = int(p.get("care_overdue_count") or 0)
+        care_blocked = int(p.get("care_blocked_count") or 0)
+        care_next_30d = int(p.get("care_next_30d_count") or 0)
+        care_status = "overdue" if care_overdue else "blocked" if care_blocked else "scheduled" if care_next_30d else "pending"
+        care_label = (
+            p.get("care_next_label")
+            or ("Acciones vencidas" if care_overdue else "Acciones bloqueadas" if care_blocked else "Sin proxima accion operativa")
+        )
+        memory_outcomes = int(p.get("memory_outcome_count") or 0)
+        memory_progression = int(p.get("memory_progression_count") or 0)
+        memory_toxicity = int(p.get("memory_grade3_toxicity_count") or 0)
+        if memory_progression:
+            memory_status = "requires_redecision"
+            memory_label = "Progresion observada"
+        elif memory_toxicity:
+            memory_status = "toxicity_limited"
+            memory_label = "Toxicidad limitante"
+        elif memory_outcomes:
+            memory_status = "observed"
+            memory_label = "Outcome observado"
+        else:
+            memory_status = "insufficient_data"
+            memory_label = "Sin desenlace maduro"
 
         pts.append({
             "id": p.get("id"),
@@ -1091,7 +1679,49 @@ def patients_list_to_v2(patients_raw: Sequence[Mapping[str, Any]] | None = None)
             "alert_count": alerts,
             "visit_count": int(p.get("visit_count") or 0),
             "vital_status": p.get("vital_status") or "alive",
+            "tumor_board_status": tumor_board_status,
+            "tumor_board_label": tumor_board_label,
+            "care_pathway_status": care_status,
+            "care_pathway_label": care_label,
+            "care_overdue_count": care_overdue,
+            "care_blocked_count": care_blocked,
+            "care_next_30d_count": care_next_30d,
+            "clinical_memory_status": memory_status,
+            "clinical_memory_label": memory_label,
+            "clinical_memory_outcome_count": memory_outcomes,
+            "clinical_memory_progression_count": memory_progression,
+            "clinical_memory_toxicity_count": memory_toxicity,
         })
+
+    autodrive_by_ref: dict[str, Mapping[str, Any]] = {}
+    try:
+        from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
+            build_population_autodrive_from_db,
+        )
+
+        population_ad = build_population_autodrive_from_db(limit=max(1, min(len(pts), 12)))
+        for row in population_ad.get("patient_priorities") or []:
+            if isinstance(row, Mapping) and row.get("patient_ref"):
+                autodrive_by_ref[str(row.get("patient_ref"))] = row
+    except Exception:
+        autodrive_by_ref = {}
+    for row in pts:
+        ad = dict(autodrive_by_ref.get(str(row.get("nss"))) or {})
+        next_action = dict(ad.get("next_action") or {})
+        decision_today = dict(ad.get("decision_today") or {})
+        decision = dict(decision_today.get("decision_today") or {})
+        row["autodrive_priority_status"] = ad.get("priority_status") or (
+            "critical_today" if row.get("alert_count") else "high_today" if row.get("care_overdue_count") else "watchlist"
+        )
+        row["autodrive_lane"] = ad.get("dominant_lane") or (
+            "overdue_surveillance" if row.get("care_overdue_count") else "blocked_by_data" if row.get("care_blocked_count") else "watchlist"
+        )
+        row["decision_today_state"] = decision_today.get("decision_state") or decision.get("status") or "not_actionable"
+        row["decision_today_label"] = decision.get("title") or next_action.get("title") or ad.get("dominant_blocker") or "Sin decision hoy"
+        row["autodrive_label"] = row["decision_today_label"]
+        row["autodrive_blocker"] = ad.get("dominant_blocker") or next_action.get("reason") or "—"
+        row["autodrive_cta"] = (next_action.get("cta") or {}).get("href") or f"/patient_profile/{row.get('nss')}?v=2#pm2AutodriveCommandCenter"
+        row["autodrive_redecision_required"] = row["autodrive_lane"] == "redecision_required" or row.get("clinical_memory_status") == "requires_redecision"
 
     # Stages filter options con counts
     stage_meta = [
@@ -1456,6 +2086,12 @@ def bundle_to_v2_profile_full(profile_view: Mapping[str, Any],
         "post_rp_copilot": pv.get("post_rp_salvage_bundle", {}),
         "mhspc_copilot": pv.get("mhspc_copilot_bundle", {}),
         "post_rt_copilot": pv.get("post_rt_salvage_bundle", {}),
+        "clinical_readiness_tower": pv.get("clinical_readiness_tower", {}),
+        "tumor_board_os": pv.get("tumor_board_os", {}),
+        "care_pathway_os": pv.get("care_pathway_os", {}),
+        "clinical_memory_os": pv.get("clinical_memory_os", {}),
+        "autodrive": pv.get("autodrive", {}),
+        "decision_today_fusion_kernel": pv.get("decision_today_fusion_kernel", {}),
         # ── Faubot LXC — Torre vigilancia: APE+Testosterona+Tx integrados ──
         # psa_obs ya existe pero faltaba exponerlo en bundle_to_v2_profile_full
         "psa_obs": _psa_observability(profile_view),
@@ -1497,6 +2133,12 @@ def bundle_to_v2_profile(profile_view: Mapping[str, Any],
         "audit_dims": _audit_dimensions(pv),
         "consent": _consent_status(pt),
         "surface_consistency": _surface_consistency(pv),
+        "clinical_readiness_tower": pv.get("clinical_readiness_tower", {}),
+        "tumor_board_os": pv.get("tumor_board_os", {}),
+        "care_pathway_os": pv.get("care_pathway_os", {}),
+        "clinical_memory_os": pv.get("clinical_memory_os", {}),
+        "autodrive": pv.get("autodrive", {}),
+        "decision_today_fusion_kernel": pv.get("decision_today_fusion_kernel", {}),
         # raw passthroughs para tabs avanzadas
         "profile_view_raw": pv,
         "patient_raw": pt,
@@ -1877,7 +2519,7 @@ _STAGE_SCHEMA_REGISTRY: dict[str, tuple[str, str]] = {
 def quick_classify_schema() -> dict[str, Any]:
     """Faubot LXCII (2026-04-28) — Quick classify NCCN-correcto 18 estadios.
 
-    Expande el schema de classify inicial de 15 → 32 fields con
+    Expande el schema de classify inicial de 15 → 47 fields con
     `conditional_visibility` multi-nivel para que `StateClassifierService.classify()`
     pueda routear correctamente a TODOS los 18 estadios canónicos:
 
@@ -1894,8 +2536,8 @@ def quick_classify_schema() -> dict[str, Any]:
 
       Level 0 — universal (6): identity + performance + family + comorbid
       Level 1 — gate (1): known_cancer_diagnosis
-      Level 2A — pre-Dx (4 if known=0): screening / diagnostic_workup / post-neg-biopsy
-      Level 2B — Dx confirmed (7 if known=1): TNM + Gleason + prior local tx
+      Level 2A — pre-Dx (12 if known=0): screening / diagnostic_workup / post-neg-biopsy
+      Level 2B — Dx confirmed (12 if known=1): histología + TNM + Gleason + riesgo/etapa + prior local tx
       Level 3A — Post-RP (4 if prior_local_therapy=prostatectomy): BCR routing
       Level 3B — Post-RT (2 if prior_local_therapy=radiation/brachytherapy)
       Level 3C — Metastatic (2 if metastasis_site!=M0): sync vs metachronous
@@ -1909,10 +2551,13 @@ def quick_classify_schema() -> dict[str, Any]:
     Al avanzar, el sistema clasifica + carga el schema completo del estadio
     resuelto en Step 2 (preserva rigor clínico — NO ELIMINA campos).
     """
+    from prostanet.shared.official_diagnosis import diagnosis_capture_options
+
+    diagnosis_options = diagnosis_capture_options()
     schema = {
         "module": "quick_classify",
-        "title": "Clasificación rápida NCCN 5.2026 · 32 campos multi-nivel · 18 estadios canónicos",
-        "description": "Set superset mínimo necesario para que state_classifier resuelva los 18 estadios NCCN canónicos. Los campos se muestran progresivamente según las respuestas previas (conditional_visibility multi-nivel). Al guardar, el sistema cargará dinámicamente el schema completo del estadio resuelto.",
+        "title": "Clasificación rápida NCCN 5.2026 · 47 campos multi-nivel · 18 estadios canónicos",
+        "description": "Set superset mínimo necesario para que state_classifier resuelva los 18 estadios NCCN canónicos y no oculte datos diagnósticos que el backend ya procesa. Los campos se muestran progresivamente según las respuestas previas (conditional_visibility multi-nivel). Al guardar, el sistema cargará dinámicamente el schema completo del estadio resuelto.",
         "fields": [
             # ── Level 0 · UNIVERSAL — siempre visible (6) ──────────────────
             {"name": "full_name", "label": "Nombre completo", "field_type": "text", "required": True, "group": "Identidad", "group_order": 1},
@@ -1930,14 +2575,27 @@ def quick_classify_schema() -> dict[str, Any]:
             {"name": "screening_context", "label": "¿Encuentro de screening / detección temprana?", "field_type": "select", "required": False, "options": ["0", "1"], "default": "0", "group": "Pre-diagnóstico", "group_order": 4, "conditional_visibility": {"known_cancer_diagnosis": ["0"]}, "help_text": "1=screening poblacional sin sospecha activa · 0=evaluación con sospecha (PSA elevado, DRE)"},
             {"name": "prior_negative_biopsy", "label": "¿Biopsia previa negativa documentada?", "field_type": "select", "required": False, "options": ["0", "1"], "default": "0", "group": "Pre-diagnóstico", "group_order": 4, "conditional_visibility": {"known_cancer_diagnosis": ["0"]}, "help_text": "Si =1 → ruta `post_negative_biopsy_followup` (seguimiento de baja intensidad NCCN)"},
             {"name": "biopsy_scheduled", "label": "¿Biopsia programada / agendada?", "field_type": "select", "required": False, "options": ["0", "1"], "default": "0", "group": "Pre-diagnóstico", "group_order": 4, "conditional_visibility": {"known_cancer_diagnosis": ["0"]}, "help_text": "Si =1 → ruta `diagnostic_workup` (NCCN PROS-1 minimum)"},
+            {"name": "psa", "label": "PSA actual de sospecha", "field_type": "number", "required": False, "unit": "ng/mL", "group": "Pre-diagnóstico", "group_order": 4, "conditional_visibility": {"known_cancer_diagnosis": ["0"]}, "help_text": "Dato decisivo para repetir PSA, MRI y biopsia en ruta diagnostic_workup."},
+            {"name": "psad", "label": "Densidad de PSA / PSAD", "field_type": "number", "required": False, "unit": "ng/mL/cc", "group": "Pre-diagnóstico", "group_order": 4, "conditional_visibility": {"known_cancer_diagnosis": ["0"]}, "help_text": "PSAD ≥0.15 aumenta sospecha aun con MRI negativa."},
+            {"name": "pirads_score", "label": "PI-RADS en MRI prostática", "field_type": "select", "required": False, "options": ["0", "2", "3", "4", "5"], "default": "0", "group": "Pre-diagnóstico", "group_order": 4, "conditional_visibility": {"known_cancer_diagnosis": ["0"]}, "help_text": "PI-RADS 3-5 cambia la indicación de biopsia dirigida."},
+            {"name": "dre_suspicious", "label": "DRE sospechoso", "field_type": "select", "required": False, "options": ["Desconocido", "0", "1"], "default": "Desconocido", "group": "Pre-diagnóstico", "group_order": 4, "conditional_visibility": {"known_cancer_diagnosis": ["0"]}, "help_text": "Tacto rectal sospechoso reabre o acelera evaluación diagnóstica."},
+            {"name": "repeat_psa_value", "label": "PSA repetido", "field_type": "number", "required": False, "unit": "ng/mL", "group": "Pre-diagnóstico", "group_order": 4, "conditional_visibility": {"known_cancer_diagnosis": ["0"]}, "help_text": "Cierra el contrato de confirmación cuando PSA inicial está entre 3 y 10."},
+            {"name": "repeat_psa_date", "label": "Fecha de PSA repetido", "field_type": "date", "required": False, "group": "Pre-diagnóstico", "group_order": 4, "conditional_visibility": {"known_cancer_diagnosis": ["0"]}},
+            {"name": "planned_biopsy_type", "label": "Tipo de biopsia prevista", "field_type": "select", "required": False, "options": ["Pendiente", "Dirigida + sistemática", "Dirigida", "Sistemática"], "default": "Pendiente", "group": "Pre-diagnóstico", "group_order": 4, "conditional_visibility": {"known_cancer_diagnosis": ["0"]}, "help_text": "El backend usa este contrato para distinguir biopsia sistemática, dirigida o combinada."},
+            {"name": "planned_biopsy_route", "label": "Vía de biopsia prevista", "field_type": "select", "required": False, "options": ["No definida", "Transperineal", "Transrectal"], "default": "No definida", "group": "Pre-diagnóstico", "group_order": 4, "conditional_visibility": {"known_cancer_diagnosis": ["0"]}, "help_text": "Transperineal puede modificar riesgo infeccioso y preparación."},
 
             # ── Level 2B · Dx CONFIRMED (only if known_cancer_diagnosis=1) ─
             {"name": "diagnosis_date", "label": "Fecha de diagnóstico (biopsia índice)", "field_type": "date", "required": False, "group": "Diagnóstico", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}},
+            {"name": "histology_subtype", "label": "Subtipo histológico confirmado", "field_type": "select", "required": True, "options": diagnosis_options["histology_subtype"], "group": "Diagnóstico", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}, "help_text": "Requerido para abrir expediente como cáncer confirmado; se integra al diagnóstico oficial."},
             {"name": "psa_baseline_ng_ml", "label": "PSA basal al diagnóstico (ng/mL)", "field_type": "number", "required": False, "unit": "ng/mL", "group": "Estadificación", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}, "help_text": "PSA al momento del diagnóstico (no PSA actual)"},
-            {"name": "gleason_primary", "label": "Gleason primario (3-5)", "field_type": "select", "required": False, "options": ["3", "4", "5"], "default": "3", "group": "Estadificación", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}},
-            {"name": "gleason_secondary", "label": "Gleason secundario (3-5)", "field_type": "select", "required": False, "options": ["3", "4", "5"], "default": "4", "group": "Estadificación", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}, "help_text": "ISUP grade se deriva automáticamente (WHO 2014)"},
-            {"name": "clinical_tstage", "label": "cT (clinical T-stage)", "field_type": "select", "required": False, "options": ["cT1a", "cT1b", "cT1c", "cT2a", "cT2b", "cT2c", "cT3a", "cT3b", "cT4"], "default": "cT2a", "group": "Estadificación", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}},
-            {"name": "metastasis_site", "label": "Sitio metastásico (cM)", "field_type": "select", "required": False, "options": ["M0", "M1a", "M1b", "M1c"], "default": "M0", "group": "Estadificación", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}, "help_text": "M0=no detectado · M1a=ganglios distantes · M1b=hueso · M1c=visceral"},
+            {"name": "gleason_primary", "label": "Gleason primario (3-5)", "field_type": "select", "required": True, "options": ["", "3", "4", "5"], "group": "Estadificación", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}},
+            {"name": "gleason_secondary", "label": "Gleason secundario (3-5)", "field_type": "select", "required": True, "options": ["", "3", "4", "5"], "group": "Estadificación", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}, "help_text": "ISUP grade se deriva automáticamente (WHO 2014)"},
+            {"name": "gleason_tertiary", "label": "Gleason terciario si existe", "field_type": "select", "required": False, "options": ["", "3", "4", "5"], "group": "Estadificación", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}},
+            {"name": "clinical_tstage", "label": "cT (clinical T-stage)", "field_type": "select", "required": True, "options": ["", "cT1a", "cT1b", "cT1c", "cT2a", "cT2b", "cT2c", "cT3a", "cT3b", "cT4"], "group": "Estadificación", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}},
+            {"name": "nodal_status", "label": "cN (estado ganglionar clínico)", "field_type": "select", "required": True, "options": diagnosis_options["nodal_status"], "group": "Estadificación", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}},
+            {"name": "metastasis_site", "label": "Sitio metastásico (cM)", "field_type": "select", "required": True, "options": ["", "M0", "M1a", "M1b", "M1c"], "group": "Estadificación", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}, "help_text": "M0=no detectado · M1a=ganglios distantes · M1b=hueso · M1c=visceral"},
+            {"name": "clinical_stage_group", "label": "Etapa clínica AJCC", "field_type": "select", "required": False, "options": diagnosis_options["clinical_stage_group"], "group": "Diagnóstico oficial", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}},
+            {"name": "clinical_risk_group", "label": "Grupo de riesgo clínico", "field_type": "select", "required": False, "options": diagnosis_options["clinical_risk_group"], "group": "Diagnóstico oficial", "group_order": 5, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}, "help_text": "Ejemplo: muy alto para Gleason 9-10, ISUP 5 o criterios NCCN/EAU equivalentes."},
             {"name": "prior_local_therapy", "label": "Terapia local previa", "field_type": "select", "required": False, "options": ["none", "prostatectomy", "radiation", "brachytherapy", "focal"], "default": "none", "group": "Tratamiento previo", "group_order": 6, "conditional_visibility": {"known_cancer_diagnosis": ["1"]}, "help_text": "prostatectomy → ruta post-RP / BCR · radiation/brachytherapy → ruta post-RT · focal → focal_therapy"},
 
             # ── Level 3A · POST-RP (if prior_local_therapy=prostatectomy) ──

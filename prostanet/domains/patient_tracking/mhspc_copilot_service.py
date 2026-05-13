@@ -316,6 +316,13 @@ class MhspcCopilotService:
             "decision_delta_since_last_visit": decision_delta_since_last_visit,
             "mhspc_schedule_overlay": self._build_schedule_overlay(phenotype_summary, blocking_inputs, module_result, progression_gate_active=progression_gate_active),
             "trigger_event": trigger_event or "longitudinal_refresh",
+            # Faubot LXCVIII.A.3 — propagación safety gates desde module_result.
+            # Los 4 medication safety gates (gate 9, 11, etc.) deben llegar a la
+            # vista del copilot para que UI muestre warnings al clínico.
+            "pivotal_contraindication_gates": list(
+                module_result.get("pivotal_contraindication_gates") or []
+            ),
+            "not_recommended": list(module_result.get("not_recommended") or []),
         }
 
     def _disabled_bundle(self, *, state: str, runtime_mode: str, status: str) -> dict[str, Any]:
@@ -363,6 +370,9 @@ class MhspcCopilotService:
             "why_changed_today": [],
             "decision_delta_since_last_visit": {"available": False},
             "mhspc_schedule_overlay": {},
+            # Faubot LXCVIII.A.3 — propagation keys siempre presentes (test contract)
+            "pivotal_contraindication_gates": [],
+            "not_recommended": [],
         }
 
     def _normalize_state_family(self, state: str, payload: dict[str, Any]) -> str:

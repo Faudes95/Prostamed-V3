@@ -1,4 +1,5 @@
 from __future__ import annotations
+# IEC 62304 §5.7 (software system testing).
 
 from prostanet.presentation.v2_adapters import quick_classify_schema, stage_specific_intake_schema
 from prostanet.shared.contracts import FieldSpec

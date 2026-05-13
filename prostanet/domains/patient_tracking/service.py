@@ -121,6 +121,7 @@ CANONICAL_FIELD_MAP = {
     "molecular_assay_source": "biomarker_source",
     "castrate_testosterone_confirmed": "castrate_testosterone_status",
     "positive_cores": "num_cores_positive",
+    "psa_baseline_ng_ml": "baseline_psa",
 }
 
 CANONICAL_VALUE_MAPS = {

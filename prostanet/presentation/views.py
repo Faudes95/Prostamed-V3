@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, render_template
+from flask import Blueprint, redirect, render_template
 
 from prostanet.application.module_registry import ModuleRegistry
 from prostanet.presentation.view_models import build_page_chrome
@@ -56,11 +56,15 @@ def clinical_hub():
         "Centro clínico por estadio",
         "Clasificación clínica guiada por la Red Nacional Integral del Cáncer (NCCN) 5.2026 con comparación paralela de la Asociación Europea de Urología (EAU) 2026.",
     )
-    # Faubot LXXX #67E — v2 es DEFAULT. Legacy disponible vía ?v=legacy.
-    if _req.args.get("v") != "legacy":
+    # Faubot LXXX #67E — v2 es DEFAULT. Legacy v1 disponible vía ?v=legacy.
+    # Faubot C — v2_legacy retirado: el hub oficial es el rediseño integrado.
+    v_flag = _req.args.get("v")
+    if v_flag != "legacy":
         from prostanet.presentation.v2_adapters import stage_center_to_v2
         v2_data = stage_center_to_v2()
-        return render_template("demos/stage_clinical_center_v2_demo.html", **v2_data)
+        if v_flag == "v2_legacy":
+            return redirect("/clinical-hub", code=302)
+        return render_template("demos/stage_clinical_center_v2_redesign.html", **v2_data)
     return render_template(
         "clinical_hub.html",
         modules=modules,
@@ -75,6 +79,18 @@ def wizard(module_id: str):
     from flask import request as _req
     schema = humanize_schema(registry.get_module_schema(module_id))
     evidence = humanize_evidence(registry.get_module_evidence(module_id))
+    readiness_lane_arg = (_req.args.get("readiness_lane") or "").strip()
+    try:
+        from prostanet.presentation.clinical_field_router import (
+            build_clinical_field_router,
+        )
+        clinical_field_router = build_clinical_field_router(
+            module_id,
+            phase="initial_wizard",
+            readiness_lane=readiness_lane_arg or None,
+        )
+    except Exception:
+        clinical_field_router = None
 
     # Faubot LXXXV.b — v2 chrome es DEFAULT (mismo patrón LXXX para hub/dashboard/profile).
     # Legacy disponible vía ?v=legacy. v2 envuelve con pm2_sidebar + actionbar moderno
@@ -108,6 +124,12 @@ def wizard(module_id: str):
         except Exception:
             audit_dims_v2 = {"version": {"faubot_release": "LXXXV.b", "gates_active_count": 89}}
 
+    wizard_form_fields = (
+        _router_fields_for_wizard_form(clinical_field_router)
+        if chrome_mode == "v2" and readiness_lane_arg and clinical_field_router
+        else None
+    )
+
     return render_template(
         "clinical_wizard.html",
         schema=schema,
@@ -116,4 +138,51 @@ def wizard(module_id: str):
         metastatic_capture_config=_quick_classifier_config(),
         chrome_mode=chrome_mode,
         audit_dims_v2=audit_dims_v2,
+        clinical_field_router=clinical_field_router,
+        wizard_form_fields=wizard_form_fields,
     )
+
+
+def _router_fields_for_wizard_form(clinical_field_router: dict | None) -> list[dict]:
+    """Flatten Clinical Field Router groups into fields compatible with the wizard template."""
+    if not clinical_field_router:
+        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for group in clinical_field_router.get("group_order") or []:
+        group_key = str(group.get("key") or "")
+        group_label = str(group.get("label") or group_key or "Datos clinicos")
+        for raw_field in group.get("fields") or []:
+            field = dict(raw_field or {})
+            name = str(field.get("name") or "")
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            field_type = str(field.get("field_type") or field.get("type") or "text")
+            display_options = []
+            for option in field.get("display_options") or field.get("options") or []:
+                if isinstance(option, dict):
+                    display_options.append({
+                        "value": str(option.get("value", option.get("key", ""))),
+                        "label": str(option.get("label", option.get("value", option.get("key", "")))),
+                    })
+                else:
+                    display_options.append({"value": str(option), "label": str(option)})
+            field.update({
+                "group": group_label,
+                "field_type": field_type,
+                "type": field_type,
+                "required": bool(field.get("required") or group_key == "required"),
+                "default": field.get("default", ""),
+                "display_options": display_options,
+                "unit": field.get("unit", ""),
+                "help_text": field.get("help_text", ""),
+                "benchmark_note": field.get("benchmark_note", ""),
+                "conditional_visibility": field.get("conditional_visibility") or {},
+                "clinical_role": field.get("clinical_role") or (
+                    "minimum_decision" if group_key == "required" else "decision_refiner"
+                ),
+                "clinical_role_label": field.get("clinical_role_label") or group_label,
+            })
+            out.append(field)
+    return out

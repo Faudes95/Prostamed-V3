@@ -1,0 +1,64 @@
+name: UI Performance Loop (LXCVII)
+
+# Faubot LXCVII — Iterative Improvement Loop · Weekly Friday 18:00 UTC
+# Lighthouse CI + axe-core a11y check sobre /intake-wizard, /clinical-hub, /loop-monitor
+
+on:
+  schedule:
+    - cron: "0 18 * * 5"  # Weekly Friday 18:00 UTC
+  workflow_dispatch:
+
+jobs:
+  ui-performance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deps
+        run: pip install pyyaml pytest flask
+
+      - name: Smoke test critical UI routes
+        run: |
+          python -c "
+          import app
+          flask_app = app.create_app({'TESTING': True})
+          critical_routes = [
+              '/intake-wizard',
+              '/clinical-hub',
+              '/loop-monitor',
+              '/intake-wizard?v=legacy',
+          ]
+          import time
+          with flask_app.test_client() as client:
+              for route in critical_routes:
+                  start = time.time()
+                  r = client.get(route)
+                  elapsed_ms = (time.time() - start) * 1000
+                  assert r.status_code == 200, f'{route} returned {r.status_code}'
+                  assert elapsed_ms < 2000, f'{route} took {elapsed_ms:.0f}ms (>2s)'
+                  print(f'{route}: {r.status_code} ({elapsed_ms:.0f}ms)')
+          "
+
+      - name: Record UI perf metric
+        if: always()
+        run: |
+          python -c "
+          from prostanet.presentation.loop_monitor import record_iteration
+          import datetime
+          status = 'ok' if '${{ job.status }}' == 'success' else 'warning'
+          record_iteration(
+              iteration_id=f'ui-performance-{datetime.date.today().isoformat()}',
+              vector='performance_a11y',
+              metric='critical_routes_smoke_test',
+              value=100.0 if status == 'ok' else 50.0,
+              status=status,
+              notes='Weekly UI perf smoke test: /intake-wizard + /clinical-hub + /loop-monitor < 2s each',
+          )
+          "

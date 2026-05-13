@@ -116,6 +116,21 @@ def _merge_next_best_action(
         merged["rationale"] = rationale
     if family:
         merged["recommendation_family"] = family
+    blocking_bundle = _as_dict(bundle.get("decision_blocking_bundle"))
+    blocking_fields = _as_list(blocking_bundle.get("hard_blocking_inputs")) + _as_list(
+        blocking_bundle.get("decision_blocking_inputs")
+    )
+    if (
+        _text(bundle.get("recommendation_block_status")) == "hard_stop"
+        and "testosterone" in blocking_fields
+        and "testosterona" not in _text(merged.get("title")).lower()
+        and "crpc" not in _text(merged.get("title")).lower()
+    ):
+        merged["title"] = "Confirmar testosterona en rango de castración y cerrar verificación CRPC"
+        merged["recommendation_family"] = _first_nonempty(
+            merged.get("recommendation_family"),
+            "Confirmar testosterona y completar reestadificación convencional",
+        )
     if _is_post_rp_salvage_runtime(bundle, signals):
         merged_title = _text(merged.get("title")).lower()
         if (
@@ -260,6 +275,10 @@ def build_runtime_publication_payload(
     vertical_bundles = _as_dict(vertical_bundles)
     kernel_bundles = _as_dict(kernel_bundles)
     therapeutic_readiness = _as_dict(runtime_bundle.get("therapeutic_readiness_bundle"))
+    clinical_readiness_tower = _as_dict(runtime_bundle.get("clinical_readiness_tower"))
+    tumor_board_os = _as_dict(runtime_bundle.get("tumor_board_os"))
+    care_pathway_os = _as_dict(runtime_bundle.get("care_pathway_os"))
+    clinical_memory_os = _as_dict(runtime_bundle.get("clinical_memory_os"))
     decision_evidence = _as_dict(runtime_bundle.get("decision_evidence_currentness_bundle"))
 
     public_payload: dict[str, Any] = {
@@ -293,6 +312,10 @@ def build_runtime_publication_payload(
         "decision_refresh_actions": _as_list(decision_evidence.get("refresh_actions")),
         "decision_input_requirements": deepcopy(decision_input_requirements),
         "therapeutic_readiness_bundle": deepcopy(therapeutic_readiness),
+        "clinical_readiness_tower": deepcopy(clinical_readiness_tower),
+        "tumor_board_os": deepcopy(tumor_board_os),
+        "care_pathway_os": deepcopy(care_pathway_os),
+        "clinical_memory_os": deepcopy(clinical_memory_os),
         "readiness_status": therapeutic_readiness.get("readiness_status", ""),
         "required_to_release": _as_list(therapeutic_readiness.get("required_to_release")),
         "display_required_to_release": _as_list(therapeutic_readiness.get("display_required_to_release")),
@@ -351,6 +374,10 @@ def build_runtime_publication_payload(
     signals_to_persist = {
         "signals": signal_view,
         "next_best_action": deepcopy(public_payload.get("next_best_action") or {}),
+        "clinical_readiness_tower": deepcopy(clinical_readiness_tower),
+        "tumor_board_os": deepcopy(tumor_board_os),
+        "care_pathway_os": deepcopy(care_pathway_os),
+        "clinical_memory_os": deepcopy(clinical_memory_os),
     }
     return {
         "signals": signal_view,

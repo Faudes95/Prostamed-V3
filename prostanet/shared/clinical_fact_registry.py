@@ -32,6 +32,7 @@ FACT_SPECS: dict[str, FactSpec] = {
     "progression_pattern": FactSpec("progression_pattern", "staging", "text", (), True, ("decision_input_requirements", "governance")),
     "known_cancer_diagnosis": FactSpec("known_cancer_diagnosis", "diagnostic", "boolean", (), True, ("reconciled_state", "contradictions")),
     "pirads_score": FactSpec("pirads_score", "diagnostic", "number", ("prior_mpmri_pirads_score", "pirads_v21_score"), True, ("decision_input_requirements", "profile")),
+    "dre_suspicious": FactSpec("dre_suspicious", "diagnostic", "boolean", ("dre_abnormal", "digital_rectal_exam_suspicious"), True, ("decision_input_requirements", "governance", "profile")),
     "mri_fact_date": FactSpec("mri_fact_date", "diagnostic", "date", ("mpmri_date",), False, ("decision_input_requirements", "profile")),
     "biopsy_date": FactSpec("biopsy_date", "pathology", "date", (), False, ("decision_input_requirements", "profile")),
     "confirmatory_biopsy_done": FactSpec("confirmatory_biopsy_done", "pathology", "boolean", (), False, ("decision_input_requirements", "governance", "profile")),
@@ -424,6 +425,12 @@ def build_legacy_shadow_payload(patient: dict[str, Any]) -> dict[str, Any]:
             latest_assessment.get("input_snapshot") or {},
             "pirads_score",
             "prior_mpmri_pirads_score",
+        ),
+        "dre_suspicious": _first_present(
+            latest_assessment.get("input_snapshot") or {},
+            "dre_suspicious",
+            "dre_abnormal",
+            "digital_rectal_exam_suspicious",
         ),
         "mri_fact_date": _first_present(latest_assessment.get("input_snapshot") or {}, "mpmri_date", "mri_fact_date")
         or latest_mri_fact.get("mpmri_date")

@@ -3,6 +3,13 @@
 
 {% block content %}
     <div class="mx-auto max-w-6xl space-y-6">
+        <nav class="grid gap-3 rounded-3xl border border-slate-800 bg-slate-900/70 p-4 shadow-2xl shadow-slate-950/30 sm:grid-cols-2 lg:grid-cols-4" aria-label="Navegación transversal de ingreso clínico">
+            <a href="/clinical-hub#pm2OfficialClassifier" class="pn-btn pn-btn-primary justify-center">Nuevo paciente</a>
+            <a href="/patients" class="pn-btn pn-btn-secondary justify-center">Pacientes</a>
+            <a href="/dashboard" class="pn-btn pn-btn-secondary justify-center">Tablero general</a>
+            <a href="/clinical-hub" class="pn-btn pn-btn-secondary justify-center">Centro clínico</a>
+        </nav>
+
         {% call surface_card("Compatibilidad", "Ingreso legacy del paciente", "Esta vista ya no mantiene un formulario manual separado. Consume el mismo contexto modular del wizard y solo pide los datos adicionales realmente faltantes.") %}
             <div class="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(340px,1.1fr)]">
                 <div class="rounded-3xl border border-cyan-500/20 bg-cyan-500/10 p-5">
@@ -61,7 +68,9 @@
                         <p class="mt-2 text-sm text-slate-300" id="registrationStatus">Cargando contexto del borrador clínico...</p>
                     </div>
                     <div class="flex flex-wrap justify-end gap-3">
-                        <a href="/clinical-hub" class="pn-btn pn-btn-secondary">Volver al centro clínico</a>
+                        <a href="/patients" class="pn-btn pn-btn-secondary">Pacientes</a>
+                        <a href="/dashboard" class="pn-btn pn-btn-secondary">Tablero general</a>
+                        <a href="/clinical-hub#pm2OfficialClassifier" class="pn-btn pn-btn-secondary">Nuevo paciente</a>
                         <button type="submit" id="registerPatientButton" class="pn-btn pn-btn-primary">Guardar y abrir expediente</button>
                     </div>
                 </form>

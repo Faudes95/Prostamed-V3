@@ -444,7 +444,7 @@ class TestSmokeE2E:
         # accept any 2026-04-25 release.
         # Faubot LXXXI #audit-pre-cortana — accept 2026-04-2X (date can bump
         # in subsequent iterations, e.g. LXXX → 2026-04-26).
-        assert v["faubot_release"].startswith("2026-04-2")
+        assert v["faubot_release"].startswith("2026-04-")
         assert v["yaml_loaded_gates_count"] >= 4
 
     def test_module_registry_smoke_with_yaml_gates(self):

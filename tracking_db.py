@@ -3,6 +3,8 @@ import json
 import os
 import shutil
 import re
+import hashlib
+import uuid
 from copy import deepcopy
 from datetime import datetime, timedelta, date
 import logging
@@ -43,6 +45,7 @@ _RUNTIME_DERIVED_RECORD_KEYS = {
     "advanced_release_gate",
     "care_intent_contract",
     "decision_input_requirements",
+    "clinical_memory_os",
     "clinical_kernel_snapshot",
     "profile_read_model",
     "schedule_read_model",
@@ -1284,6 +1287,27 @@ def _hydrate_document_task_rows(rows):
     return tasks
 
 
+def _hydrate_voice_session_rows(rows):
+    sessions = []
+    for row in rows:
+        item = dict(row)
+        item["session_context"] = _parse_json_blob(item.pop("session_context_json", None), {})
+        item["review_payload"] = _parse_json_blob(item.pop("review_payload_json", None), {})
+        item["metadata"] = _parse_json_blob(item.pop("metadata_json", None), {})
+        sessions.append(item)
+    return sessions
+
+
+def _hydrate_voice_segment_rows(rows):
+    segments = []
+    for row in rows:
+        item = dict(row)
+        item["transcript_envelope"] = _parse_json_blob(item.pop("transcript_envelope_json", None), {})
+        item["metadata"] = _parse_json_blob(item.pop("metadata_json", None), {})
+        segments.append(item)
+    return segments
+
+
 def _hydrate_verified_fact_rows(rows):
     facts = []
     for row in rows:
@@ -2211,6 +2235,9 @@ def init_tracking_db():
         "ALTER TABLE patient_identity ADD COLUMN last_contact_date DATE",
         "ALTER TABLE patient_identity ADD COLUMN last_contact_status TEXT",
         "ALTER TABLE patient_identity ADD COLUMN death_source TEXT",
+        # Faubot LXCVI.F.4 — Demographic fields gap closure
+        "ALTER TABLE patient_identity ADD COLUMN country TEXT DEFAULT 'México'",
+        "ALTER TABLE patient_demographics ADD COLUMN preferred_language TEXT DEFAULT 'es'",
     ):
         try:
             c.execute(ddl)
@@ -3717,6 +3744,62 @@ def init_tracking_db():
             FOREIGN KEY(patient_id) REFERENCES patient_identity(id),
             FOREIGN KEY(document_id) REFERENCES source_documents(id),
             FOREIGN KEY(task_id) REFERENCES document_verification_tasks(id)
+        )
+        '''
+    )
+
+    c.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS voice_encounter_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL,
+            session_key TEXT NOT NULL UNIQUE,
+            status TEXT DEFAULT 'created',
+            consent_status TEXT DEFAULT 'missing',
+            consent_id INTEGER,
+            source_document_id INTEGER,
+            retention_policy TEXT DEFAULT 'delete_audio_after_review',
+            stt_provider TEXT DEFAULT 'local-first',
+            extractor_version TEXT,
+            transcript_hash TEXT,
+            audio_sha256 TEXT,
+            encrypted_audio_path TEXT,
+            raw_audio_deleted_at TIMESTAMP,
+            session_context_json TEXT,
+            review_payload_json TEXT,
+            created_by TEXT,
+            reviewed_by TEXT,
+            committed_by TEXT,
+            discarded_by TEXT,
+            signed_at TIMESTAMP,
+            discarded_at TIMESTAMP,
+            metadata_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(patient_id) REFERENCES patient_identity(id),
+            FOREIGN KEY(consent_id) REFERENCES patient_consents(id),
+            FOREIGN KEY(source_document_id) REFERENCES source_documents(id)
+        )
+        '''
+    )
+    c.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS voice_transcript_segments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            patient_id INTEGER NOT NULL,
+            segment_index INTEGER NOT NULL,
+            start_ms INTEGER DEFAULT 0,
+            end_ms INTEGER DEFAULT 0,
+            transcript_envelope_json TEXT NOT NULL,
+            transcript_sha256 TEXT NOT NULL,
+            confidence REAL DEFAULT 0,
+            stt_provider TEXT,
+            metadata_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(session_id) REFERENCES voice_encounter_sessions(id),
+            FOREIGN KEY(patient_id) REFERENCES patient_identity(id),
+            UNIQUE(session_id, segment_index)
         )
         '''
     )
@@ -5835,6 +5918,7 @@ def _preferred_testosterone_longitudinal_value(data):
     value = _safe_float(
         _first_nonempty(
             data.get("testosterone_current"),
+            data.get("testosterone_value"),
             data.get("testosterone"),
             data.get("testosterone_baseline"),
         ),
@@ -5844,6 +5928,8 @@ def _preferred_testosterone_longitudinal_value(data):
         return None, ""
     if _is_present(data.get("testosterone_current")):
         return value, "testosterone_current"
+    if _is_present(data.get("testosterone_value")):
+        return value, "testosterone_value"
     if _is_present(data.get("testosterone")):
         return value, "testosterone"
     return value, "testosterone_baseline"
@@ -6381,13 +6467,15 @@ def _persist_intake_biomarker_series(cursor, patient_id, diagnosis_date, data):
 
     persisted_points = _persist_psa_series_points(cursor, patient_id, psa_history)
     persisted_testosterone_points = _persist_testosterone_series_points(cursor, patient_id, testosterone_history)
-    scalar_psa_points = _preferred_psa_longitudinal_points(
-        data,
-        sample_date=data.get("local_therapy_date") or diagnosis_date,
-        default_source="ingreso_inicial",
-        default_entry_origin="intake_registration",
-        default_context="otro",
-    )
+    scalar_psa_points = []
+    if not (selected_baseline_point and not baseline_was_explicit):
+        scalar_psa_points = _preferred_psa_longitudinal_points(
+            data,
+            sample_date=data.get("local_therapy_date") or diagnosis_date,
+            default_source="ingreso_inicial",
+            default_entry_origin="intake_registration",
+            default_context="otro",
+        )
     if scalar_psa_points:
         persisted_points += _persist_psa_series_points(cursor, patient_id, scalar_psa_points)
     scalar_testosterone_points = _preferred_testosterone_longitudinal_points(
@@ -6566,8 +6654,10 @@ def register_new_patient(data, assessment=None):
             INSERT INTO prior_clinical_history (
                 patient_id,
                 rt_primary_received, rt_primary_dose_gy, rt_metastasis_history,
-                prior_docetaxel_cycles, prior_arpi_agent, prior_arpi_duration
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                prior_docetaxel_cycles, prior_arpi_agent, prior_arpi_duration,
+                assessment_source, assessment_module, assessment_state,
+                assessment_summary, current_state
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             patient_id,
             1 if _is_truthy(data.get('rt_primary_received')) else 0,
@@ -6575,7 +6665,12 @@ def register_new_patient(data, assessment=None):
             data.get('rt_metastasis_history', '[]'), # JSON string expected
             _safe_int(data.get('prior_docetaxel_cycles'), 0),
             data.get('prior_arpi_agent'),
-            _safe_int(data.get('prior_arpi_duration'), 0)
+            _safe_int(data.get('prior_arpi_duration'), 0),
+            data.get("assessment_source") or ("intake_stage_aware_v2" if data.get("_classified_state") else "manual_registration"),
+            data.get("assessment_module") or assessment_state or "",
+            assessment_state or "",
+            data.get("classification_reason") or data.get("_classification_reason") or "",
+            assessment_state or "diagnostic_workup",
         ))
         _persist_canonical_facts_from_payload(
             c,
@@ -8255,6 +8350,182 @@ def record_patient_event(
         return None
 
 
+def update_care_pathway_action_status(
+    nss_or_id,
+    action_key,
+    status,
+    *,
+    note="",
+    updated_by="clinician",
+):
+    """Update internal Care Pathway OS action status and write audit event.
+
+    This is intentionally scoped to internal operational status. It does not
+    create external orders, prescriptions, treatment facts, PSA, testosterone,
+    imaging, molecular results, or trial eligibility.
+    """
+    from prostanet.domains.patient_tracking.care_pathway_os import CARE_PATHWAY_ACTION_STATUSES
+
+    action_key = str(action_key or "").strip()
+    normalized_status = str(status or "").strip().lower()
+    if not action_key:
+        return False, "action_key requerido", {}
+    if normalized_status not in CARE_PATHWAY_ACTION_STATUSES:
+        return False, f"Estado invalido: {status}", {}
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    identity = _resolve_identity_row(c, nss_or_id)
+    if not identity:
+        conn.close()
+        return False, "Paciente no encontrado", {}
+    patient_id = int(identity["id"])
+    today = datetime.now().strftime("%Y-%m-%d")
+    updated_targets = []
+    source_record_id = None
+
+    try:
+        if action_key.startswith("schedule:"):
+            source_key = action_key.split(":", 1)[1]
+            c.execute(
+                '''
+                SELECT id FROM scheduled_events
+                WHERE patient_id = ?
+                  AND (schedule_key = ? OR CAST(id AS TEXT) = ?)
+                ORDER BY id DESC
+                LIMIT 1
+                ''',
+                (patient_id, source_key, source_key),
+            )
+            row = c.fetchone()
+            if not row:
+                conn.close()
+                return False, "Accion programada no encontrada para este paciente", {}
+            source_record_id = int(row["id"])
+            if normalized_status == "completed":
+                c.execute(
+                    '''
+                    UPDATE scheduled_events
+                    SET completed = 1,
+                        completed_date = COALESCE(completed_date, ?),
+                        performed_date = COALESCE(performed_date, ?),
+                        completion_status = 'completed_manual',
+                        completion_source = 'care_pathway_os_manual',
+                        next_recovery_action = COALESCE(?, next_recovery_action)
+                    WHERE id = ? AND patient_id = ?
+                    ''',
+                    (today, today, note, source_record_id, patient_id),
+                )
+            else:
+                c.execute(
+                    '''
+                    UPDATE scheduled_events
+                    SET completed = 0,
+                        completion_status = ?,
+                        completion_source = 'care_pathway_os_manual',
+                        next_recovery_action = COALESCE(?, next_recovery_action)
+                    WHERE id = ? AND patient_id = ?
+                    ''',
+                    (normalized_status, note, source_record_id, patient_id),
+                )
+            updated_targets.append("scheduled_events")
+        elif action_key.startswith("agenda:"):
+            source_key = action_key.split(":", 1)[1]
+            c.execute(
+                '''
+                SELECT id, agenda_key FROM followup_agenda_items
+                WHERE patient_id = ?
+                  AND (agenda_key = ? OR CAST(id AS TEXT) = ?)
+                ORDER BY id DESC
+                LIMIT 1
+                ''',
+                (patient_id, source_key, source_key),
+            )
+            row = c.fetchone()
+            if not row:
+                conn.close()
+                return False, "Accion de agenda no encontrada para este paciente", {}
+            source_record_id = int(row["id"])
+            completed_at_sql = "CURRENT_TIMESTAMP" if normalized_status == "completed" else "completed_at"
+            c.execute(
+                f'''
+                UPDATE followup_agenda_items
+                SET status = ?,
+                    completed_at = {completed_at_sql},
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND patient_id = ?
+                ''',
+                (normalized_status, source_record_id, patient_id),
+            )
+            agenda_key = str(row["agenda_key"] or "")
+            if agenda_key:
+                if normalized_status == "completed":
+                    c.execute(
+                        '''
+                        UPDATE scheduled_events
+                        SET completed = 1,
+                            completed_date = COALESCE(completed_date, DATE('now')),
+                            performed_date = COALESCE(performed_date, DATE('now')),
+                            completion_status = 'completed_manual',
+                            completion_source = 'care_pathway_os_manual'
+                        WHERE patient_id = ? AND schedule_key = ?
+                        ''',
+                        (patient_id, agenda_key),
+                    )
+                else:
+                    c.execute(
+                        '''
+                        UPDATE scheduled_events
+                        SET completion_status = ?,
+                            completion_source = 'care_pathway_os_manual'
+                        WHERE patient_id = ? AND schedule_key = ?
+                        ''',
+                        (normalized_status, patient_id, agenda_key),
+                    )
+            updated_targets.extend(["followup_agenda_items", "scheduled_events"])
+        else:
+            # Synthetic Tumor Board/readiness actions have no source table in v1.
+            # They are still auditable through patient_events and reflected by the
+            # Care Pathway OS override layer.
+            updated_targets.append("patient_events")
+
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        conn.rollback()
+        conn.close()
+        logger.error(f"Error updating Care Pathway OS action status: {exc}")
+        return False, str(exc), {}
+
+    event_id = record_patient_event(
+        patient_id,
+        event_type="care_pathway_action_status_updated",
+        source_type="care_pathway_os",
+        source_record_id=source_record_id,
+        status="recorded",
+        payload={
+            "action_key": action_key,
+            "status": normalized_status,
+            "note": str(note or ""),
+            "updated_by": str(updated_by or "clinician"),
+            "updated_targets": updated_targets,
+            "external_order_created": False,
+        },
+    )
+    refreshed = refresh_longitudinal_intelligence(
+        patient_id,
+        event_id=event_id,
+        force_recompute=True,
+        include_live_benchmark=False,
+    )
+    return True, "Estado Care Pathway OS actualizado", {
+        "event_id": event_id,
+        "updated_targets": updated_targets,
+        "care_pathway_os": (refreshed or {}).get("care_pathway_os", {}),
+    }
+
+
 def _persist_signal_snapshot(cursor, patient_id, event_id, bundle):
     signals = bundle.get("signals", {})
     next_best_action = bundle.get("next_best_action", {})
@@ -9258,6 +9529,18 @@ def refresh_longitudinal_intelligence(
     from prostanet.domains.patient_tracking.therapeutic_readiness_builder import (
         build_therapeutic_readiness_bundle,
     )
+    from prostanet.domains.patient_tracking.clinical_readiness_tower import (
+        build_clinical_readiness_tower,
+    )
+    from prostanet.domains.patient_tracking.tumor_board_os import (
+        build_tumor_board_os,
+    )
+    from prostanet.domains.patient_tracking.care_pathway_os import (
+        build_care_pathway_os,
+    )
+    from prostanet.domains.patient_tracking.clinical_memory_os import (
+        build_clinical_memory_os,
+    )
     from prostanet.domains.patient_tracking.runtime_publication_builder import (
         build_runtime_publication_payload,
         prepare_runtime_publication_state,
@@ -9622,6 +9905,22 @@ def refresh_longitudinal_intelligence(
             advanced_release_gate=dict(bundle.get("advanced_release_gate") or {}),
             clinical_fact_bundle=clinical_fact_bundle,
         )
+    bundle["clinical_readiness_tower"] = build_clinical_readiness_tower(
+        refreshed,
+        longitudinal_bundle=bundle,
+        state=current_state,
+        management_track=current_track,
+        patient_ref=str((refreshed.get("identity") or {}).get("nss") or nss_or_id or ""),
+    )
+    bundle["tumor_board_os"] = build_tumor_board_os(
+        refreshed,
+        longitudinal_bundle=bundle,
+        state=current_state,
+        management_track=current_track,
+        patient_ref=str((refreshed.get("identity") or {}).get("nss") or nss_or_id or ""),
+    )
+    latest_snapshot["clinical_readiness_tower"] = bundle["clinical_readiness_tower"]
+    latest_snapshot["tumor_board_os"] = bundle["tumor_board_os"]
     runtime_signal_projection = build_runtime_signal_snapshot(
         patient_record=refreshed,
         bundle=bundle,
@@ -9657,6 +9956,75 @@ def refresh_longitudinal_intelligence(
         signals=latest_snapshot,
         longitudinal_bundle=runtime_context_bundle,
     )
+    care_pathway_bundle = {
+        **dict(runtime_bundle or {}),
+        **dict(runtime_context_bundle or {}),
+        "signals": latest_snapshot,
+        "clinical_readiness_tower": runtime_bundle.get("clinical_readiness_tower")
+        or bundle.get("clinical_readiness_tower")
+        or latest_snapshot.get("clinical_readiness_tower")
+        or {},
+        "tumor_board_os": runtime_bundle.get("tumor_board_os")
+        or bundle.get("tumor_board_os")
+        or latest_snapshot.get("tumor_board_os")
+        or {},
+        "master_followup_plan": orchestration.get("master_followup_plan")
+        or runtime_bundle.get("master_followup_plan")
+        or {},
+        "guideline_followup_plan": orchestration.get("guideline_followup_plan")
+        or runtime_bundle.get("guideline_followup_plan")
+        or {},
+        "scheduled_items": orchestration.get("scheduled_items")
+        or orchestration.get("schedule")
+        or runtime_bundle.get("scheduled_items")
+        or [],
+        "active_schedule": orchestration.get("active_schedule")
+        or runtime_bundle.get("active_schedule")
+        or [],
+        "encounters": orchestration.get("encounters")
+        or runtime_bundle.get("encounters")
+        or [],
+    }
+    care_pathway_os = build_care_pathway_os(
+        refreshed,
+        longitudinal_bundle=care_pathway_bundle,
+        state=current_state,
+        management_track=current_track,
+        patient_ref=str((refreshed.get("identity") or {}).get("nss") or nss_or_id or ""),
+    )
+    bundle["care_pathway_os"] = care_pathway_os
+    runtime_bundle["care_pathway_os"] = care_pathway_os
+    latest_snapshot["care_pathway_os"] = care_pathway_os
+    clinical_memory_bundle = {
+        **dict(runtime_bundle or {}),
+        **dict(runtime_context_bundle or {}),
+        "signals": latest_snapshot,
+        "clinical_readiness_tower": runtime_bundle.get("clinical_readiness_tower")
+        or bundle.get("clinical_readiness_tower")
+        or latest_snapshot.get("clinical_readiness_tower")
+        or {},
+        "tumor_board_os": runtime_bundle.get("tumor_board_os")
+        or bundle.get("tumor_board_os")
+        or latest_snapshot.get("tumor_board_os")
+        or {},
+        "care_pathway_os": care_pathway_os,
+        "outcome_events": outcome_bundle.get("outcome_events", []),
+        "outcome_events_summary": outcome_bundle.get("outcome_events_summary", {}),
+        "current_response_state": outcome_bundle.get("current_response_state", {}),
+        "current_course_status": outcome_bundle.get("current_course_status", ""),
+        "last_adjudicated_event": outcome_bundle.get("last_adjudicated_event", {}),
+        "clinical_fact_bundle": runtime_kernel_context.get("clinical_fact_bundle", {}),
+    }
+    clinical_memory_os = build_clinical_memory_os(
+        refreshed,
+        longitudinal_bundle=clinical_memory_bundle,
+        state=current_state,
+        management_track=current_track,
+        patient_ref=str((refreshed.get("identity") or {}).get("nss") or nss_or_id or ""),
+    )
+    bundle["clinical_memory_os"] = clinical_memory_os
+    runtime_bundle["clinical_memory_os"] = clinical_memory_os
+    latest_snapshot["clinical_memory_os"] = clinical_memory_os
     clinical_ledger_bundle = build_patient_clinical_ledger_bundle(refreshed)
     publication_projection = build_runtime_publication_payload(
         patient_record=refreshed,
@@ -11300,6 +11668,869 @@ def get_document_facts(patient_id, document_id):
     except Exception as e:
         logger.error(f"Error fetching document facts: {e}")
         return None
+
+
+def _voice_crypto():
+    from prostanet.voice.encryption import get_voice_crypto
+
+    return get_voice_crypto(testing=bool(os.environ.get("PYTEST_CURRENT_TEST")), db_path=DB_PATH)
+
+
+def _ensure_voice_consent_version(cursor):
+    from prostanet.voice.consent import VOICE_CONSENT_TEXT, VOICE_CONSENT_TITLE, VOICE_CONSENT_VERSION
+
+    cursor.execute(
+        """
+        INSERT INTO consent_versions (version_code, title, consent_text, html_snapshot, effective_at, active)
+        VALUES (?, ?, ?, ?, ?, 1)
+        ON CONFLICT(version_code) DO UPDATE SET
+            title=excluded.title,
+            consent_text=excluded.consent_text,
+            html_snapshot=excluded.html_snapshot,
+            active=1
+        """,
+        (
+            VOICE_CONSENT_VERSION,
+            VOICE_CONSENT_TITLE,
+            VOICE_CONSENT_TEXT,
+            VOICE_CONSENT_TEXT.replace("\n", "<br>"),
+            datetime.now().isoformat(timespec="seconds"),
+        ),
+    )
+    return VOICE_CONSENT_VERSION
+
+
+def _load_voice_session(cursor, patient_id, session_key):
+    cursor.execute(
+        "SELECT * FROM voice_encounter_sessions WHERE patient_id = ? AND session_key = ?",
+        (patient_id, str(session_key or "").strip()),
+    )
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def _voice_transcript_text(session_id):
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT * FROM voice_transcript_segments
+        WHERE session_id = ?
+        ORDER BY segment_index ASC, id ASC
+        """,
+        (int(session_id),),
+    )
+    rows = _hydrate_voice_segment_rows(cursor.fetchall())
+    conn.close()
+    crypto = _voice_crypto()
+    texts = []
+    for row in rows:
+        try:
+            texts.append(crypto.decrypt_text(row.get("transcript_envelope")))
+        except Exception:
+            texts.append("")
+    return "\n".join(text for text in texts if text).strip()
+
+
+def _serialize_voice_session_bundle(patient_id, session_key):
+    conn = _connect()
+    cursor = conn.cursor()
+    session = _load_voice_session(cursor, patient_id, session_key)
+    if not session:
+        conn.close()
+        return None
+    session_id = int(session["id"])
+    session_payload = _hydrate_voice_session_rows([session])[0]
+    cursor.execute(
+        """
+        SELECT * FROM voice_transcript_segments
+        WHERE session_id = ?
+        ORDER BY segment_index ASC, id ASC
+        """,
+        (session_id,),
+    )
+    segment_rows = _hydrate_voice_segment_rows(cursor.fetchall())
+    transcript_text = ""
+    try:
+        crypto = _voice_crypto()
+        transcript_text = "\n".join(
+            crypto.decrypt_text(row.get("transcript_envelope")) for row in segment_rows
+        ).strip()
+    except Exception:
+        transcript_text = ""
+
+    candidates = []
+    document = None
+    if session_payload.get("source_document_id"):
+        document_bundle = _serialize_document_bundle(patient_id, int(session_payload["source_document_id"]))
+        if document_bundle:
+            document = document_bundle.get("document")
+            candidates = document_bundle.get("candidates") or []
+    conn.close()
+    return {
+        "session": session_payload,
+        "transcript": {
+            "text": transcript_text,
+            "segment_count": len(segment_rows),
+            "sha256": session_payload.get("transcript_hash") or hashlib.sha256(transcript_text.encode("utf-8")).hexdigest() if transcript_text else "",
+        },
+        "source_document": document,
+        "candidates": candidates,
+        "audit_note": "Voice Clinical OS · transcript is untrusted until clinician review",
+    }
+
+
+def _ensure_voice_source_document(cursor, patient_id, session, transcript_text):
+    session_key = session["session_key"]
+    document_key = f"voice:{session_key}"
+    sha = hashlib.sha256(str(transcript_text or "").encode("utf-8")).hexdigest()
+    title = f"Cortana clínica · {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    metadata = {
+        "voice_session_key": session_key,
+        "source": "voice_clinical_os",
+        "transcript_hash": sha,
+        "local_first": True,
+        "human_review_required": True,
+    }
+    cursor.execute(
+        "SELECT id FROM source_documents WHERE patient_id = ? AND document_key = ?",
+        (patient_id, document_key),
+    )
+    row = cursor.fetchone()
+    if row:
+        document_id = row["id"]
+        cursor.execute(
+            """
+            UPDATE source_documents
+            SET sha256 = ?, title = ?, preview_excerpt = ?, extraction_status = ?,
+                verification_status = CASE WHEN verification_status = 'verified' THEN verification_status ELSE 'draft' END,
+                metadata_json = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND patient_id = ?
+            """,
+            (
+                sha,
+                title,
+                str(transcript_text or "")[:1800],
+                "extracted",
+                _json_blob(metadata),
+                document_id,
+                patient_id,
+            ),
+        )
+    else:
+        cursor.execute(
+            """
+            INSERT INTO source_documents (
+                patient_id, document_key, document_type, title, file_name, mime_type, sha256,
+                storage_path, private_index_path, source_date, classification_status,
+                extraction_status, verification_status, uploaded_by, preview_excerpt, page_count, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                patient_id,
+                document_key,
+                "voice_encounter",
+                title,
+                f"{session_key}.voice",
+                "text/plain+voice-transcript",
+                sha,
+                "",
+                "",
+                datetime.now().strftime("%Y-%m-%d"),
+                "voice_transcript",
+                "extracted",
+                "draft",
+                session.get("created_by") or "clinico",
+                str(transcript_text or "")[:1800],
+                1,
+                _json_blob(metadata),
+            ),
+        )
+        document_id = cursor.lastrowid
+    cursor.execute(
+        "UPDATE voice_encounter_sessions SET source_document_id = ?, transcript_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (document_id, sha, session["id"]),
+    )
+    return document_id
+
+
+def create_voice_encounter_session(nss_or_id, data=None):
+    data = dict(data or {})
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return False, "patient_not_found"
+        patient_id = int(identity["id"])
+        session_key = str(data.get("session_key") or f"voice-{uuid.uuid4().hex[:18]}")
+        cursor.execute(
+            """
+            INSERT INTO voice_encounter_sessions (
+                patient_id, session_key, status, consent_status, retention_policy, stt_provider,
+                extractor_version, session_context_json, created_by, metadata_json
+            ) VALUES (?, ?, 'created', 'missing', ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                patient_id,
+                session_key,
+                data.get("retention_policy") or "delete_audio_after_review",
+                data.get("stt_provider") or "local-first:faster-whisper",
+                "voice-deterministic-v1.0",
+                _json_blob(data.get("context") or {}),
+                data.get("created_by") or "clinico",
+                _json_blob({"ui_surface": data.get("ui_surface") or "patient_profile_v2", "local_first": True}),
+            ),
+        )
+        session_id = cursor.lastrowid
+        conn.commit()
+    finally:
+        conn.close()
+    record_patient_event(
+        patient_id,
+        event_type="voice_encounter_created",
+        source_type="voice_clinical_os",
+        source_record_id=session_id,
+        status="created",
+        payload={"session_key": session_key, "local_first": True},
+    )
+    return True, _serialize_voice_session_bundle(patient_id, session_key)
+
+
+def get_voice_encounter_session(nss_or_id, session_key):
+    resolved = resolve_patient_ref(nss_or_id)
+    if not resolved:
+        return None
+    return _serialize_voice_session_bundle(resolved["patient_id"], session_key)
+
+
+def record_voice_consent(nss_or_id, session_key, data=None):
+    from prostanet.voice.consent import (
+        VOICE_CONSENT_TEXT,
+        build_consent_metadata,
+        build_voice_consent_hash,
+        is_affirmative_verbal_consent,
+        now_iso,
+    )
+
+    data = dict(data or {})
+    spoken_text = str(data.get("spoken_text") or "").strip()
+    if not is_affirmative_verbal_consent(spoken_text):
+        return False, "verbal_consent_not_affirmative"
+    signed_at = data.get("signed_at") or now_iso()
+    signer_name = data.get("signer_name") or "Consentimiento verbal"
+
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return False, "patient_not_found"
+        patient_id = int(identity["id"])
+        session = _load_voice_session(cursor, patient_id, session_key)
+        if not session:
+            return False, "voice_session_not_found"
+        version_code = _ensure_voice_consent_version(cursor)
+        content_hash = build_voice_consent_hash(
+            patient_ref=str(identity["nss"]),
+            session_key=str(session_key),
+            spoken_text=spoken_text,
+            signed_at=signed_at,
+        )
+        cursor.execute(
+            """
+            INSERT INTO patient_consents (
+                patient_id, consent_version_code, status, signer_name, signed_at, content_hash
+            ) VALUES (?, ?, 'signed', ?, ?, ?)
+            """,
+            (patient_id, version_code, signer_name, signed_at, content_hash),
+        )
+        consent_id = cursor.lastrowid
+        metadata = build_consent_metadata(
+            patient_ref=str(identity["nss"]),
+            session_key=str(session_key),
+            spoken_text=spoken_text,
+            signed_at=signed_at,
+        )
+        cursor.execute(
+            """
+            INSERT INTO consent_signature_evidence (
+                patient_id, consent_id, signature_data_url, evidence_html, audit_metadata_json
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                patient_id,
+                consent_id,
+                "",
+                f"<p>{VOICE_CONSENT_TEXT}</p><p>Consentimiento verbal registrado {signed_at}</p>",
+                _json_blob(metadata),
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE voice_encounter_sessions
+            SET consent_status = 'signed', consent_id = ?, status = 'consented',
+                signed_at = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (consent_id, signed_at, session["id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    record_patient_event(
+        patient_id,
+        event_type="voice_consent_signed",
+        event_date=signed_at[:10],
+        source_type="voice_clinical_os",
+        source_record_id=session["id"],
+        status="signed",
+        payload={"session_key": session_key, "consent_id": consent_id, "content_hash": content_hash},
+    )
+    return True, {"consent_id": consent_id, "content_hash": content_hash, **_serialize_voice_session_bundle(patient_id, session_key)}
+
+
+def _append_voice_transcript_segment(cursor, patient_id, session, text, *, confidence=1.0, stt_provider="text-review"):
+    text = str(text or "").strip()
+    if not text:
+        return None
+    cursor.execute("SELECT COALESCE(MAX(segment_index), -1) + 1 FROM voice_transcript_segments WHERE session_id = ?", (session["id"],))
+    segment_index = int(cursor.fetchone()[0] or 0)
+    aad = f"voice:{session['session_key']}:{segment_index}"
+    envelope = _voice_crypto().encrypt_text(text, aad=aad)
+    cursor.execute(
+        """
+        INSERT INTO voice_transcript_segments (
+            session_id, patient_id, segment_index, start_ms, end_ms, transcript_envelope_json,
+            transcript_sha256, confidence, stt_provider, metadata_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            session["id"],
+            patient_id,
+            segment_index,
+            0,
+            max(len(text) * 40, 800),
+            _json_blob(envelope),
+            envelope["sha256"],
+            confidence,
+            stt_provider,
+            _json_blob({"source": "voice_review_payload", "encrypted": True}),
+        ),
+    )
+    return cursor.lastrowid
+
+
+def _voice_audio_suffix(mime_type="", file_name=""):
+    suffix = Path(str(file_name or "")).suffix.lower()
+    if suffix in {".webm", ".wav", ".mp3", ".m4a", ".ogg", ".opus"}:
+        return suffix
+    mime = str(mime_type or "").lower()
+    if "wav" in mime:
+        return ".wav"
+    if "mpeg" in mime or "mp3" in mime:
+        return ".mp3"
+    if "ogg" in mime:
+        return ".ogg"
+    if "opus" in mime:
+        return ".opus"
+    if "mp4" in mime or "m4a" in mime:
+        return ".m4a"
+    return ".webm"
+
+
+def _voice_audio_store_path(patient_id, session_key, audio_sha):
+    root = Path(DB_PATH).resolve().parent / ".prostanet_private" / "voice_audio" / f"patient_{int(patient_id)}"
+    root.mkdir(parents=True, exist_ok=True)
+    return root / f"{session_key}-{str(audio_sha)[:16]}.json"
+
+
+def store_voice_audio_chunk(nss_or_id, session_key, audio_bytes, *, mime_type="", file_name="", transcribe=True):
+    """Store raw voice audio encrypted, then optionally transcribe locally.
+
+    No cloud fallback exists here. If faster-whisper is not installed, the audio
+    is still encrypted and retained temporarily for later local transcription,
+    but no clinical candidates are generated.
+    """
+
+    if not audio_bytes:
+        return False, "audio_required"
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return False, "patient_not_found"
+        patient_id = int(identity["id"])
+        session = _load_voice_session(cursor, patient_id, session_key)
+        if not session:
+            return False, "voice_session_not_found"
+        if session.get("consent_status") != "signed":
+            return False, "voice_consent_required"
+        if session.get("status") in {"signed", "discarded"}:
+            return False, f"voice_session_already_{session.get('status')}"
+
+        audio_sha = hashlib.sha256(audio_bytes).hexdigest()
+        aad = f"voice-audio:{session_key}:{audio_sha}"
+        envelope = _voice_crypto().encrypt_bytes(audio_bytes, aad=aad)
+        encrypted_path = _voice_audio_store_path(patient_id, session_key, audio_sha)
+        encrypted_path.write_text(
+            _json_blob(
+                {
+                    "envelope": envelope,
+                    "mime_type": mime_type or "audio/webm",
+                    "file_name": file_name or "voice.webm",
+                    "session_key": session_key,
+                    "patient_id": patient_id,
+                    "created_at": datetime.now().isoformat(timespec="seconds"),
+                    "retention_policy": session.get("retention_policy") or "delete_audio_after_review",
+                    "local_first": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+        try:
+            os.chmod(encrypted_path, 0o600)
+        except OSError:
+            pass
+        cursor.execute(
+            """
+            UPDATE voice_encounter_sessions
+            SET status = ?, audio_sha256 = ?, encrypted_audio_path = ?,
+                metadata_json = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                "audio_received",
+                audio_sha,
+                str(encrypted_path),
+                _json_blob({
+                    "mime_type": mime_type or "audio/webm",
+                    "file_name": file_name or "voice.webm",
+                    "audio_bytes": len(audio_bytes),
+                    "audio_encrypted": True,
+                    "local_first": True,
+                }),
+                session["id"],
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    record_patient_event(
+        patient_id,
+        event_type="voice_audio_received",
+        source_type="voice_clinical_os",
+        source_record_id=session["id"],
+        status="encrypted",
+        payload={
+            "session_key": session_key,
+            "audio_sha256": audio_sha,
+            "mime_type": mime_type or "audio/webm",
+            "audio_bytes": len(audio_bytes),
+            "transcribe_requested": bool(transcribe),
+        },
+    )
+
+    if not transcribe:
+        bundle = _serialize_voice_session_bundle(patient_id, session_key) or {}
+        return True, {
+            **bundle,
+            "audio": {"stored": True, "encrypted": True, "sha256": audio_sha, "transcription_status": "not_requested"},
+        }
+
+    from prostanet.voice.stt_engine import LocalSTTEngine
+
+    stt = LocalSTTEngine()
+    if not stt.is_available():
+        bundle = _serialize_voice_session_bundle(patient_id, session_key) or {}
+        return True, {
+            **bundle,
+            "audio": {
+                "stored": True,
+                "encrypted": True,
+                "sha256": audio_sha,
+                "transcription_status": "requires_local_stt",
+                "local_stt_available": False,
+            },
+        }
+
+    try:
+        segments = stt.transcribe_bytes(
+            audio_bytes,
+            suffix=_voice_audio_suffix(mime_type=mime_type, file_name=file_name),
+            language="es",
+        )
+        transcript_text = " ".join(segment.text for segment in segments if segment.text).strip()
+    except Exception as exc:
+        bundle = _serialize_voice_session_bundle(patient_id, session_key) or {}
+        return True, {
+            **bundle,
+            "audio": {
+                "stored": True,
+                "encrypted": True,
+                "sha256": audio_sha,
+                "transcription_status": "stt_error",
+                "stt_error": type(exc).__name__,
+            },
+        }
+
+    if not transcript_text:
+        bundle = _serialize_voice_session_bundle(patient_id, session_key) or {}
+        return True, {
+            **bundle,
+            "audio": {"stored": True, "encrypted": True, "sha256": audio_sha, "transcription_status": "empty_transcript"},
+        }
+    ok, result = review_voice_encounter(
+        nss_or_id,
+        session_key,
+        {"transcript_text": transcript_text, "audio_sha256": audio_sha},
+    )
+    if not ok:
+        return False, result
+    result["audio"] = {
+        "stored": True,
+        "encrypted": True,
+        "sha256": audio_sha,
+        "transcription_status": "transcribed",
+        "local_stt_available": True,
+    }
+    return True, result
+
+
+def review_voice_encounter(nss_or_id, session_key, data=None):
+    from prostanet.voice.intent_extractor import extract_voice_candidates
+
+    data = dict(data or {})
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return False, "patient_not_found"
+        patient_id = int(identity["id"])
+        session = _load_voice_session(cursor, patient_id, session_key)
+        if not session:
+            return False, "voice_session_not_found"
+        if session.get("consent_status") != "signed":
+            return False, "voice_consent_required"
+        transcript_text = str(data.get("transcript_text") or "").strip()
+        if transcript_text:
+            _append_voice_transcript_segment(cursor, patient_id, session, transcript_text, confidence=1.0)
+            conn.commit()
+            session = _load_voice_session(cursor, patient_id, session_key)
+        else:
+            transcript_text = _voice_transcript_text(session["id"])
+        if not transcript_text:
+            return False, "transcript_required"
+
+        document_id = _ensure_voice_source_document(cursor, patient_id, session, transcript_text)
+        record = get_patient_full_record(patient_id) or {}
+        state = ((record.get("latest_assessment") or {}).get("state") or (record.get("prior_history") or {}).get("current_state") or "diagnostic_workup")
+        field_specs = []
+        try:
+            from prostanet.presentation.clinical_field_router import build_clinical_field_router
+
+            router = build_clinical_field_router(state, phase="longitudinal_followup")
+            for group in (router.get("group_order") or []):
+                field_specs.extend(group.get("fields") or [])
+        except Exception:
+            field_specs = []
+        candidates = extract_voice_candidates(
+            transcript_text,
+            session_key=str(session_key),
+            patient=record,
+            field_specs=field_specs,
+        )
+        _replace_document_candidates(cursor, patient_id, document_id, candidates)
+
+        reviewed = data.get("reviewed_candidates") or []
+        if reviewed:
+            for item in reviewed:
+                status = "accepted" if item.get("accepted") else "rejected"
+                cursor.execute(
+                    """
+                    UPDATE document_extraction_candidates
+                    SET status = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE patient_id = ? AND document_id = ? AND candidate_key = ?
+                    """,
+                    (status, patient_id, document_id, item.get("candidate_key")),
+                )
+        cursor.execute(
+            """
+            UPDATE voice_encounter_sessions
+            SET status = 'review_pending', review_payload_json = ?, source_document_id = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (_json_blob({"candidate_count": len(candidates), "reviewed_count": len(reviewed)}), document_id, session["id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    record_patient_event(
+        patient_id,
+        event_type="voice_transcript_reviewed",
+        source_type="voice_clinical_os",
+        source_record_id=session["id"],
+        status="review_pending",
+        payload={"session_key": session_key, "candidate_count": len(candidates)},
+    )
+    return True, _serialize_voice_session_bundle(patient_id, session_key)
+
+
+def _candidate_to_verified_fact(candidate, verified_by, source_date):
+    value = candidate.get("value")
+    return {
+        "fact_key": candidate.get("candidate_key"),
+        "field_name": candidate.get("field_name"),
+        "fact_group": candidate.get("fact_group"),
+        "target_result_type": candidate.get("target_result_type"),
+        "value": value,
+        "value_display": candidate.get("value_display"),
+        "source_date": source_date,
+        "status": "verified",
+        "correction_note": "",
+        "verified_by": verified_by,
+    }
+
+
+def _record_voice_provenance(cursor, patient_id, document_key, state, source_date, facts, verified_by):
+    for fact in facts:
+        field_name = fact.get("field_name")
+        if not field_name or not _is_present(fact.get("value")):
+            continue
+        cursor.execute(
+            """
+            INSERT INTO data_provenance (
+                patient_id, visit_record_id, field_name, value_json, source_type, source_document_id,
+                source_date, verified_by, entered_manually, stage_context
+            ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                patient_id,
+                field_name,
+                _json_blob(fact.get("value")),
+                "voice_encounter",
+                document_key,
+                source_date,
+                verified_by,
+                0,
+                state,
+            ),
+        )
+
+
+def commit_voice_encounter(nss_or_id, session_key, data=None):
+    data = dict(data or {})
+    verified_by = data.get("verified_by") or "clinico"
+    accepted_keys = {str(key) for key in (data.get("accepted_candidate_keys") or []) if str(key).strip()}
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return False, "patient_not_found"
+        patient_id = int(identity["id"])
+        session = _load_voice_session(cursor, patient_id, session_key)
+        if not session:
+            return False, "voice_session_not_found"
+        if session.get("consent_status") != "signed":
+            return False, "voice_consent_required"
+        if session.get("status") in {"signed", "discarded"}:
+            return False, f"voice_session_already_{session.get('status')}"
+        document_id = session.get("source_document_id")
+        if not document_id:
+            return False, "voice_review_required"
+        cursor.execute("SELECT * FROM source_documents WHERE id = ? AND patient_id = ?", (document_id, patient_id))
+        document_row = cursor.fetchone()
+        if not document_row:
+            return False, "voice_source_document_missing"
+        document = dict(document_row)
+        cursor.execute(
+            "SELECT * FROM document_extraction_candidates WHERE patient_id = ? AND document_id = ? ORDER BY id ASC",
+            (patient_id, document_id),
+        )
+        candidates = _hydrate_document_candidate_rows(cursor.fetchall())
+        selected = []
+        for candidate in candidates:
+            if accepted_keys and candidate.get("candidate_key") not in accepted_keys:
+                continue
+            if not accepted_keys and candidate.get("status") != "accepted":
+                continue
+            selected.append(candidate)
+        if not selected:
+            return False, "accepted_candidates_required"
+
+        source_date = datetime.now().strftime("%Y-%m-%d")
+        state = ((get_patient_full_record(patient_id) or {}).get("prior_history") or {}).get("current_state") or ""
+        verified_facts = [_candidate_to_verified_fact(item, verified_by, source_date) for item in selected]
+        task_id = _upsert_document_verification_task(
+            cursor,
+            patient_id,
+            int(document_id),
+            {
+                "task_key": f"{document.get('document_key')}:voice-review",
+                "task_status": "verified",
+                "verified_by": verified_by,
+                "summary": {"fact_count": len(verified_facts), "source": "voice_clinical_os"},
+            },
+            verified_by=verified_by,
+        )
+        _replace_verified_document_facts(cursor, patient_id, int(document_id), task_id, verified_facts, verified_by)
+        _record_voice_provenance(cursor, patient_id, document.get("document_key"), state, source_date, verified_facts, verified_by)
+        _persist_patient_clinical_facts(
+            cursor,
+            patient_id,
+            [
+                {
+                    "fact_key": fact.get("fact_key"),
+                    "value": fact.get("value"),
+                    "source_type": "voice_encounter",
+                    "source_record_type": "verified_voice_fact",
+                    "source_record_id": document_id,
+                    "source_date": fact.get("source_date") or source_date,
+                    "observed_at": fact.get("source_date") or source_date,
+                    "state_context": state,
+                    "certainty_tier": "clinician_verified_voice",
+                    "clinician_verified": True,
+                    "verification_note": f"Voz revisada por {verified_by}",
+                }
+                for fact in verified_facts
+                if fact.get("target_result_type") not in {"longitudinal_biomarker", "treatment_change"}
+            ],
+        )
+        cursor.execute(
+            """
+            UPDATE document_extraction_candidates
+            SET status = CASE WHEN candidate_key IN ({placeholders}) THEN 'accepted' ELSE 'rejected' END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE patient_id = ? AND document_id = ?
+            """.format(placeholders=",".join(["?"] * len(selected))),
+            [item["candidate_key"] for item in selected] + [patient_id, document_id],
+        )
+        cursor.execute(
+            """
+            UPDATE source_documents
+            SET verification_status = 'verified', extraction_status = 'verified', updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND patient_id = ?
+            """,
+            (document_id, patient_id),
+        )
+        cursor.execute(
+            """
+            UPDATE voice_encounter_sessions
+            SET status = 'signed', reviewed_by = ?, committed_by = ?, raw_audio_deleted_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (verified_by, verified_by, session["id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    write_results = []
+    for candidate in selected:
+        target = candidate.get("target_result_type")
+        value = candidate.get("value") if isinstance(candidate.get("value"), dict) else {}
+        if target == "longitudinal_biomarker":
+            kind = value.get("kind") or candidate.get("field_name")
+            biomarker_map = {
+                "psa": "PSA",
+                "testosterone": "TESTOSTERONA",
+                "hb": "HEMOGLOBINA",
+                "hemoglobin": "HEMOGLOBINA",
+                "alp": "FOSFATASA_ALCALINA",
+                "ldh": "LDH",
+                "ecog": "ECOG_PERFORMANCE",
+                "ctcae": "CTCAE_TOXICITY",
+            }
+            biomarker_type = biomarker_map.get(str(kind).lower())
+            if biomarker_type:
+                res = append_biomarker_longitudinal(
+                    nss_or_id=nss_or_id,
+                    biomarker_type=biomarker_type,
+                    sample_date=value.get("date") or source_date,
+                    value=value.get("value") if value.get("value") is not None else value.get("grade"),
+                    unit=value.get("unit"),
+                    context="voice_reviewed",
+                    source="voice_clinical_os",
+                    extra_data={"candidate_key": candidate.get("candidate_key"), "evidence_excerpt": candidate.get("evidence_excerpt")},
+                )
+                write_results.append({"candidate_key": candidate.get("candidate_key"), "target": target, **res})
+        elif target == "treatment_change":
+            res = append_treatment_line_update(nss_or_id, value)
+            write_results.append({"candidate_key": candidate.get("candidate_key"), "target": target, **res})
+
+    event_id = record_patient_event(
+        patient_id,
+        event_type="voice_encounter_committed",
+        event_date=source_date,
+        state_context=state,
+        source_type="voice_clinical_os",
+        source_record_id=session["id"],
+        status="signed",
+        payload={
+            "session_key": session_key,
+            "accepted_candidate_count": len(selected),
+            "write_results": write_results,
+            "raw_audio_deleted": True,
+        },
+        mcode_focus={"voice_reviewed_fields": [item.get("field_name") for item in selected]},
+    )
+    recompute = {}
+    agenda = {}
+    try:
+        recompute = refresh_longitudinal_intelligence(nss_or_id, event_id=event_id, force_recompute=True)
+        agenda = refresh_followup_agenda(get_patient_full_record(nss_or_id), longitudinal_bundle=recompute)
+    except Exception as exc:
+        recompute = {"success": False, "recompute_error": str(exc)}
+    bundle = _serialize_voice_session_bundle(patient_id, session_key)
+    return True, {
+        **(bundle or {}),
+        "write_results": write_results,
+        "recompute": recompute,
+        "agenda": agenda,
+        "event_id": event_id,
+        "audit_note": "Voice encounter committed after clinician review; raw audio marked deleted.",
+    }
+
+
+def discard_voice_encounter(nss_or_id, session_key, data=None):
+    data = dict(data or {})
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return False, "patient_not_found"
+        patient_id = int(identity["id"])
+        session = _load_voice_session(cursor, patient_id, session_key)
+        if not session:
+            return False, "voice_session_not_found"
+        cursor.execute(
+            """
+            UPDATE voice_encounter_sessions
+            SET status = 'discarded', discarded_by = ?, discarded_at = CURRENT_TIMESTAMP,
+                raw_audio_deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (data.get("discarded_by") or "clinico", session["id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    record_patient_event(
+        patient_id,
+        event_type="voice_encounter_discarded",
+        source_type="voice_clinical_os",
+        source_record_id=session["id"],
+        status="discarded",
+        payload={"session_key": session_key, "reason": data.get("reason") or ""},
+    )
+    return True, _serialize_voice_session_bundle(patient_id, session_key)
 
 
 def _commit_verified_document(patient_id, document, facts, verified_by):
@@ -12955,8 +14186,11 @@ def get_patient_full_record(nss_or_id, *, include_derivatives=True, include_ledg
     Acepta NSS (texto) o ID numérico como identificador.
     """
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        import sqlite3 as _sqlite3
+
+        globals()["sqlite3"] = _sqlite3
+        conn = _sqlite3.connect(DB_PATH)
+        conn.row_factory = _sqlite3.Row
         c = conn.cursor()
 
         # 1. Identity — buscar primero por NSS, luego por ID numérico

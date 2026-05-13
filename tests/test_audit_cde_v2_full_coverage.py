@@ -344,7 +344,7 @@ def test_g2520_cde_auditable_5_dimensions_post_cleanup():
 
     ver = get_algorithm_version()
     # VERSIÓN
-    assert ver["faubot_release"].startswith("2026-04-2")
+    assert ver["faubot_release"].startswith("2026-04-")
     assert ver["gates_active_count"] >= 85
     # POR QUÉ (gates)
     codes = get_loaded_yaml_codes()

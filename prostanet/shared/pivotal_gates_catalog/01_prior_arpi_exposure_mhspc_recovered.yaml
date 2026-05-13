@@ -1,0 +1,20 @@
+code: prior_arpi_exposure_mhspc
+title: "Prior ARPI exposure in mHSPC"
+faubot_added_in: "2026-05-11 Clinical Memory recovery"
+severity: hard_block
+trigger:
+  type: truthy_flag
+  field: prior_arpi_exposure_mhspc
+  alias_fields:
+    - prior_arpi_exposure
+override: null
+regimen_codes:
+  - REGIMEN_CODES_DAROLUTAMIDE
+keywords:
+  - KEYWORDS_DAROLUTAMIDE
+message: |
+  Prior ARPI exposure in mHSPC blocks an unqualified darolutamide-only pathway
+  until sequencing context and resistance are documented.
+evidence_tag: saad_lancet_oncol_2024_aranote
+trial_refs:
+  - ARANOTE

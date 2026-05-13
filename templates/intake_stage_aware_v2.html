@@ -7,7 +7,7 @@
 #}
 {% extends "layouts/base_clinical.html" %}
 {% block head_extra %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
 <style>
 .iw-shell { display:grid; grid-template-columns: 280px 1fr 320px; gap: 24px; min-height: calc(100vh - 80px); padding: 24px; }
 @media (max-width: 1100px) { .iw-shell { grid-template-columns: 1fr; } .iw-rail, .iw-preview { position: static; } }
@@ -67,7 +67,7 @@
                     <div class="iw-step-num">1</div>
                     <div>
                         <div class="iw-step-label">Quick Classify</div>
-                        <div class="iw-step-meta">32 campos NCCN · 18 estadios</div>
+                        <div class="iw-step-meta">47 campos NCCN · 18 estadios</div>
                     </div>
                 </div>
                 <div class="iw-step" data-step="2" onclick="iwGoStep(2)">
@@ -97,10 +97,10 @@
                     Nuevo paciente · Stage-Aware Progressive
                 </h1>
                 <p style="color: var(--pn-text-muted); font-size: .85rem; margin: 0 0 20px;">
-                    Captura inteligente: clasificación NCCN multi-nivel (32 campos · 18 estadios canónicos) → schema completo del estadio resuelto.
+                    Captura inteligente: clasificación NCCN multi-nivel (47 campos · 18 estadios canónicos) → schema completo del estadio resuelto.
                 </p>
 
-                {# STEP 1 — Quick Classify (32 fields NCCN minimum, multi-level conditional · LXCII.1) #}
+                {# STEP 1 — Quick Classify (47 fields NCCN minimum, multi-level conditional · LXCII.1) #}
                 <section class="iw-step-panel is-active" data-panel="1" id="iw-panel-1">
                     <h2 style="color: var(--clinical-info); font-size: 1rem; margin: 0 0 12px;">Step 1 · Clasificación NCCN 5.2026 · 18 estadios canónicos</h2>
 
@@ -113,6 +113,11 @@
                        Computed in real-time from form inputs. #}
                     <aside id="iw-live-preview" style="background: linear-gradient(135deg, rgba(56, 189, 248, 0.06), rgba(56, 189, 248, 0.02)); border: 1px solid rgba(56, 189, 248, 0.18); border-radius: 10px; padding: 12px 16px; margin: 0 0 16px; font-size: .85rem; color: rgba(165, 243, 252, 0.9); line-height: 1.6;">
                         <em>Captura los campos clínicos para ver clasificación inicial en vivo (D'Amico / CHAARTED / LATITUDE / PCWG3)…</em>
+                    </aside>
+                    <aside style="background:rgba(15,23,42,.62);border:1px solid rgba(148,163,184,.18);border-left:3px solid var(--clinical-warning);border-radius:10px;padding:12px 16px;margin:0 0 16px;color:var(--pn-text-muted);font-size:.8rem;line-height:1.55;">
+                        <strong style="color:#f8fbff;">Checklist clínico decisivo:</strong>
+                        PSA repetido · PI-RADS · PSAD · DRE sospechoso · tipo/ruta de biopsia.
+                        PSMA, HRR, PROs y toxicidad se cargan en Step 2 según estadio.
                     </aside>
 
                     <div id="iw-quick-form-container">
@@ -370,12 +375,63 @@ function iwRenderFieldHtml(f, prefix) {
     </div>`;
 }
 
+function iwFieldVisible(fieldEl) {
+    if (!fieldEl) return true;
+    if (fieldEl.style.display === 'none') return false;
+    return fieldEl.offsetParent !== null || Boolean(fieldEl.closest('details'));
+}
+
+function iwFieldSubmittable(fieldEl) {
+    if (!fieldEl) return true;
+    // Conditional branches are hidden by setting display:none on the field
+    // itself. Inactive step panels are hidden by a parent, and their values
+    // must remain publishable once the clinician captured them.
+    return fieldEl.style.display !== 'none';
+}
+
+function iwInputValue(inputEl) {
+    if (!inputEl) return '';
+    if (inputEl.type === 'checkbox') return inputEl.checked ? (inputEl.value || '1') : '';
+    return inputEl.value;
+}
+
+function iwCollectPersistablePayload() {
+    const payload = { ...(window.iwState.payload || {}) };
+    const allInputs = document.querySelectorAll('#iw-panel-1 input, #iw-panel-1 select, #iw-panel-1 textarea, #iw-panel-2 input, #iw-panel-2 select, #iw-panel-2 textarea');
+    allInputs.forEach((i) => {
+        if (!i.name) return;
+        const fieldEl = i.closest('.iw-field');
+        if (!iwFieldSubmittable(fieldEl)) {
+            delete payload[i.name];
+            return;
+        }
+        const value = iwInputValue(i);
+        if (value !== '' && value !== null && value !== undefined) {
+            payload[i.name] = value;
+        } else {
+            delete payload[i.name];
+        }
+    });
+    if (window.iwState.classifiedState) payload.assessment_state = window.iwState.classifiedState;
+    if (window.iwState.classifiedReason) payload.classification_reason = window.iwState.classifiedReason;
+    return iwAutoDeriveClassifierFlags(payload);
+}
+
+function iwGetFieldValue(name, scope) {
+    const local = scope ? scope.querySelector(`[name="${name}"]`) : null;
+    const el = local || document.querySelector(`[name="${name}"]`);
+    if (el && el.value !== undefined) return el.value;
+    return window.iwState.payload ? window.iwState.payload[name] : undefined;
+}
+
 function iwUpdateStats() {
     const panel = document.querySelector('.iw-step-panel.is-active');
     if (!panel) return;
     const inputs = panel.querySelectorAll('input, select, textarea');
-    let completed = 0, requiredPending = 0, total = inputs.length;
+    let completed = 0, requiredPending = 0, total = 0;
     inputs.forEach((i) => {
+        if (!iwFieldVisible(i.closest('.iw-field'))) return;
+        total++;
         if (i.value) completed++;
         if (i.required && !i.value) requiredPending++;
     });
@@ -412,7 +468,7 @@ function iwGoStep(n) {
 
 // LXCII (2026-04-28) — Auto-derive flags que el state_classifier consume
 // pero que la UI NO expone explícitamente, evitando duplicación visual.
-// Mantiene rigor clínico completo del classifier (44 fields) con form de 32.
+// Mantiene rigor clínico completo del classifier con form clínico progresivo.
 //
 // LXCII.1 (2026-04-28) — Refinement: agregado D'Amico + CHAARTED HV/LV +
 // LATITUDE HR autoderived de inputs canónicos (PSA + GS + cT + visceral +
@@ -487,9 +543,10 @@ function iwAutoDeriveClassifierFlags(payload) {
 function iwBuildLiveClassificationPreview() {
     const panel1 = document.getElementById('iw-panel-1');
     if (!panel1) return;
-    const inputs = panel1.querySelectorAll('input, select');
+    const inputs = panel1.querySelectorAll('input, select, textarea');
     const payload = {};
     inputs.forEach((i) => {
+        if (!iwFieldVisible(i.closest('.iw-field'))) return;
         if (i.value !== '' && i.value !== null) payload[i.name] = i.value;
     });
     iwAutoDeriveClassifierFlags(payload);
@@ -615,14 +672,13 @@ async function iwClassifyAndAdvance() {
     // for required-validation, since conditional_visibility hides branches
     // not active for the selected disease history (LXCII).
     const panel1 = document.getElementById('iw-panel-1');
-    const inputs = panel1.querySelectorAll('input, select');
+    const inputs = panel1.querySelectorAll('input, select, textarea');
     const payload = {};
     let missingRequired = [];
     inputs.forEach((i) => {
         const fieldEl = i.closest('.iw-field');
-        const isHidden = fieldEl && fieldEl.style.display === 'none';
-        if (isHidden) return;  // skip hidden conditional branches
-        if (i.required && !i.value) missingRequired.push(i.previousElementSibling?.textContent || i.name);
+        if (!iwFieldVisible(fieldEl)) return;  // skip hidden conditional branches
+        if (i.required && !i.value) missingRequired.push(fieldEl?.querySelector('label')?.textContent || i.name);
         if (i.value !== '' && i.value !== null) payload[i.name] = i.value;
     });
     if (missingRequired.length) {
@@ -644,7 +700,7 @@ async function iwClassifyAndAdvance() {
     // visualmente compacto sin perder rigor del classifier (44 fields).
     iwAutoDeriveClassifierFlags(payload);
 
-    Object.assign(window.iwState.payload, payload);
+    window.iwState.payload = { ...payload };
 
     const btn = document.getElementById('iw-step1-next');
     btn.disabled = true;
@@ -751,7 +807,13 @@ async function iwLoadStageSchema(state) {
         container.innerHTML = html;
 
         container.querySelectorAll('input, select, textarea').forEach((el) => {
-            el.addEventListener('input', () => iwUpdateStats());
+            if (window.iwState.payload[el.name] !== undefined && !el.value) {
+                el.value = window.iwState.payload[el.name];
+            }
+            el.addEventListener('input', () => {
+                iwUpdateStats();
+                iwApplyConditionalVisibility(container);
+            });
             el.addEventListener('change', () => {
                 iwUpdateStats();
                 iwApplyConditionalVisibility(container);
@@ -770,35 +832,67 @@ function iwApplyConditionalVisibility(container) {
             const cond = JSON.parse(field.dataset.conditional);
             let show = true;
             for (const [depField, allowedValues] of Object.entries(cond)) {
-                const depEl = container.querySelector(`[name="${depField}"]`);
-                if (!depEl) continue;
-                const v = depEl.value;
-                if (!allowedValues.includes(v)) { show = false; break; }
+                const v = iwGetFieldValue(depField, container);
+                if (v === undefined) continue;
+                const allowed = (allowedValues || []).map((item) => String(item));
+                if (!allowed.includes(String(v))) { show = false; break; }
             }
             field.style.display = show ? '' : 'none';
         } catch (e) { /* malformed conditional */ }
     });
 }
 
-function iwBuildSummary() {
-    const container = document.getElementById('iw-summary-container');
-    const allInputs = document.querySelectorAll('#iw-panel-1 input, #iw-panel-1 select, #iw-panel-2 input, #iw-panel-2 select');
-    const captured = {};
-    allInputs.forEach((i) => {
-        if (i.value && i.style.display !== 'none' && (i.offsetParent !== null || i.closest('details'))) {
-            captured[i.name] = i.value;
+async function iwRefreshOfficialDiagnosisPreview(payload) {
+    const target = document.getElementById('iw-official-diagnosis-preview');
+    if (!target) return;
+    try {
+        const res = await fetch('/api/official-diagnosis/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const body = await res.json();
+        if (!body.success) {
+            target.innerHTML = `<strong style="color:var(--clinical-critical);">Diagnóstico oficial:</strong> ${escapeHtml(body.error || 'No disponible')}`;
+            return;
         }
-    });
-    Object.assign(window.iwState.payload, captured);
+        window.iwState.diagnosisPreview = body;
+        const gate = body.clinical_gate || {};
+        const status = gate.official_diagnosis_display_status || gate.official_diagnosis_status || 'operational_only';
+        const blocked = Boolean(gate.blocked);
+        const color = blocked ? 'var(--clinical-critical)' : (status === 'provisional' ? 'var(--clinical-warning)' : 'var(--clinical-success)');
+        const diagnosis = gate.official_diagnosis || body.official_diagnosis || 'Diagnóstico en consolidación';
+        const missing = (gate.missing_fields || []).length
+            ? `<div style="margin-top:8px;color:var(--clinical-critical);">Falta: ${escapeHtml(gate.missing_fields.join(', '))}</div>`
+            : '';
+        const note = blocked
+            ? 'Bloqueo activo: cáncer confirmado requiere diagnóstico estructurado antes de abrir expediente.'
+            : (gate.applies ? 'Listo para publicar como diagnóstico confirmado estructurado.' : 'Ruta provisional: sospecha diagnóstica sin exigir histología/Gleason.');
+        target.innerHTML = `<div style="color:${color};font-weight:700;">Diagnóstico oficial · ${escapeHtml(status)}</div>
+            <div style="margin-top:6px;color:#f8fbff;">${escapeHtml(diagnosis)}</div>
+            <div style="margin-top:6px;color:var(--pn-text-muted);">${escapeHtml(note)}</div>${missing}`;
+    } catch (err) {
+        target.innerHTML = `<strong style="color:var(--clinical-warning);">Diagnóstico oficial:</strong> vista previa no disponible (${escapeHtml(err.message || err)})`;
+    }
+}
+
+async function iwBuildSummary() {
+    const container = document.getElementById('iw-summary-container');
+    const captured = iwCollectPersistablePayload();
+    window.iwState.payload = captured;
 
     let html = `<h4 style="color:#f0fbff;margin:0 0 12px;">📋 ${Object.keys(captured).length} campos capturados</h4>`;
     html += `<div class="iw-stat"><span>Estadio NCCN</span> <strong>${window.iwState.classifiedState || '—'}</strong></div>`;
     html += `<div class="iw-stat"><span>Schema total</span> <strong>${window.iwState.stageSchema?.total_fields || '—'} campos</strong></div>`;
     html += `<div class="iw-stat"><span>Capturados</span> <strong>${Object.keys(captured).length}</strong></div>`;
+    html += `<div id="iw-official-diagnosis-preview" style="margin-top:12px;padding:10px;background:var(--surface-3);border-radius:6px;font-size:.78rem;line-height:1.5;color:var(--pn-text-muted);">
+        Validando diagnóstico oficial…
+    </div>`;
     html += `<div style="margin-top:12px;padding:10px;background:var(--surface-3);border-radius:6px;font-size:.78rem;color:var(--pn-text-muted);">
         <strong style="color:var(--clinical-success);">Reasoning:</strong> ${escapeHtml(window.iwState.classifiedReason)}
     </div>`;
     container.innerHTML = html;
+    await iwRefreshOfficialDiagnosisPreview(captured);
 }
 
 async function iwSavePatient() {
@@ -810,12 +904,9 @@ async function iwSavePatient() {
     btn.disabled = true;
     btn.textContent = '⏳ Abriendo expediente…';
 
-    // Build full payload
-    const allInputs = document.querySelectorAll('#iw-panel-1 input, #iw-panel-1 select, #iw-panel-2 input, #iw-panel-2 select');
-    const payload = {};
-    allInputs.forEach((i) => {
-        if (i.value) payload[i.name] = i.value;
-    });
+    // Build full payload while preserving values captured in prior hidden steps.
+    const payload = iwCollectPersistablePayload();
+    window.iwState.payload = payload;
     payload._classified_state = window.iwState.classifiedState;
     payload._classification_reason = window.iwState.classifiedReason;
 
@@ -839,7 +930,10 @@ async function iwSavePatient() {
         }
 
         if (!body.success) {
-            if (window.pm2Toast) window.pm2Toast('error', body.error || body.msg || 'Error guardando paciente');
+            const gate = body.clinical_gate || {};
+            const missing = (gate.missing_fields || []).join(', ');
+            const msg = missing ? `${body.error || 'Diagnóstico incompleto'} · ${missing}` : (body.error || body.msg || 'Error guardando paciente');
+            if (window.pm2Toast) window.pm2Toast('error', msg);
             btn.disabled = false;
             btn.textContent = originalText;
             return;

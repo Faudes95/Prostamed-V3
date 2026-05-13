@@ -197,7 +197,7 @@ def test_g2713_algorithm_version_returns_85_gates():
     from prostanet.shared.algorithm_version import get_algorithm_version
     v = get_algorithm_version()
     assert v["gates_active_count"] >= 85
-    assert v["faubot_release"].startswith("2026-04-2")
+    assert v["faubot_release"].startswith("2026-04-")
 
 
 # ──────────────────────────────────────────────────────────────────────

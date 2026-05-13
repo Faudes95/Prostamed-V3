@@ -106,9 +106,13 @@ def api_trials_list():
 
 @trial_eligibility_bp.route("/api/trials/<string:trial_id>/criteria", methods=["GET"])
 def api_trial_criteria(trial_id: str):
-    """Returns full criteria registry entry for trial_id."""
+    """Returns full criteria registry entry for trial_id.
+
+    Faubot LXCIX.1 — Fix: get_trial_criteria retorna {} (no None) cuando trial
+    no existe. Detectar empty dict + retornar 404 con sugerencias.
+    """
     criteria = get_trial_criteria(trial_id)
-    if criteria is None:
+    if not criteria:  # Empty dict OR None
         return jsonify({
             "error": "trial_not_found",
             "message": f"Trial '{trial_id}' no está en registry",
@@ -132,10 +136,12 @@ def api_trials_eligible_for(nss: str):
     flat = _enrich_patient_for_evaluation(patient)
     results = evaluate_all_eligible_trials(flat)
     eligible_count = sum(1 for r in results if r["eligible"])
+    requires_data_count = sum(1 for r in results if r.get("status") == "requires_data")
     return jsonify({
         "nss": nss,
         "total_evaluated": len(results),
         "eligible_count": eligible_count,
+        "requires_data_count": requires_data_count,
         "results": results,
     })
 
@@ -214,7 +220,7 @@ def ui_trials_eligibility_dashboard(nss: str):
 
     # Particionar para template
     eligible = [r for r in results if r["eligible"]]
-    missing_data = [r for r in results if not r["eligible"] and r["missing_data"]]
+    missing_data = [r for r in results if r.get("status") == "requires_data" or (not r["eligible"] and r["missing_data"])]
     not_eligible = [r for r in results if not r["eligible"] and not r["missing_data"]]
 
     # Métricas resumen

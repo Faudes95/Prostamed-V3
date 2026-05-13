@@ -20,15 +20,18 @@ import sys
 import types
 
 if "tracking_db" not in sys.modules:
-    class _S(types.ModuleType):
-        def __getattr__(self, n):
-            # Faubot LXXXV: dejar dunders pasar (evita romper inspect/torch)
-            if n.startswith("__") and n.endswith("__"):
-                raise AttributeError(n)
-            def _f(*a, **k):
-                return [] if "list" in n else {}
-            return _f
-    sys.modules["tracking_db"] = _S("tracking_db")
+    try:
+        import tracking_db  # noqa: F401
+    except Exception:
+        class _S(types.ModuleType):
+            def __getattr__(self, n):
+                # Faubot LXXXV: dejar dunders pasar (evita romper inspect/torch)
+                if n.startswith("__") and n.endswith("__"):
+                    raise AttributeError(n)
+                def _f(*a, **k):
+                    return [] if "list" in n else {}
+                return _f
+        sys.modules["tracking_db"] = _S("tracking_db")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -465,7 +468,7 @@ def test_g2810_triton3_requires_brca_atm():
 def test_g2811_api_trials_list_returns_47():
     """H.G2811 — GET /api/trials/list retorna 47 trials."""
     import app as app_module
-    flask_app = app_module.create_app({"TESTING": True})
+    flask_app = app_module.create_app({"TESTING": True, "LOAD_MODEL": False})
     with flask_app.test_client() as client:
         r = client.get("/api/trials/list")
         assert r.status_code == 200
@@ -476,7 +479,7 @@ def test_g2811_api_trials_list_returns_47():
 def test_g2812_api_trial_criteria_chaarted_returns_pmid():
     """H.G2812 — GET /api/trials/CHAARTED/criteria retorna PMID."""
     import app as app_module
-    flask_app = app_module.create_app({"TESTING": True})
+    flask_app = app_module.create_app({"TESTING": True, "LOAD_MODEL": False})
     with flask_app.test_client() as client:
         r = client.get("/api/trials/CHAARTED/criteria")
         assert r.status_code == 200
@@ -486,7 +489,7 @@ def test_g2812_api_trial_criteria_chaarted_returns_pmid():
 def test_g2813_api_trial_criteria_unknown_returns_404():
     """H.G2813 — GET /api/trials/UNKNOWN/criteria retorna 404."""
     import app as app_module
-    flask_app = app_module.create_app({"TESTING": True})
+    flask_app = app_module.create_app({"TESTING": True, "LOAD_MODEL": False})
     with flask_app.test_client() as client:
         r = client.get("/api/trials/UNKNOWN_TRIAL/criteria")
         assert r.status_code == 404
@@ -496,7 +499,7 @@ def test_g2813_api_trial_criteria_unknown_returns_404():
 def test_g2814_api_trials_by_stage_mcspc():
     """H.G2814 — GET /api/trials/by_stage/mcspc retorna trials mCSPC."""
     import app as app_module
-    flask_app = app_module.create_app({"TESTING": True})
+    flask_app = app_module.create_app({"TESTING": True, "LOAD_MODEL": False})
     with flask_app.test_client() as client:
         r = client.get("/api/trials/by_stage/mcspc")
         assert r.status_code == 200
@@ -509,7 +512,7 @@ def test_g2814_api_trials_by_stage_mcspc():
 def test_g2815_api_trials_eligible_for_unknown_patient_returns_404():
     """H.G2815 — GET /api/trials/eligible_for/UNKNOWN_NSS retorna 404."""
     import app as app_module
-    flask_app = app_module.create_app({"TESTING": True})
+    flask_app = app_module.create_app({"TESTING": True, "LOAD_MODEL": False})
     with flask_app.test_client() as client:
         r = client.get("/api/trials/eligible_for/UNKNOWN_NSS_XYZ")
         assert r.status_code == 404
@@ -518,7 +521,7 @@ def test_g2815_api_trials_eligible_for_unknown_patient_returns_404():
 def test_g2816_api_trial_eligibility_for_patient_unknown_trial_404():
     """H.G2816 — GET /api/trials/UNKNOWN/eligibility/<nss> retorna 404."""
     import app as app_module
-    flask_app = app_module.create_app({"TESTING": True})
+    flask_app = app_module.create_app({"TESTING": True, "LOAD_MODEL": False})
     with flask_app.test_client() as client:
         # Mock un patient existente — usar mock interno simple
         # Si no hay paciente, devolverá 404 antes de llegar a chequear trial
@@ -531,7 +534,7 @@ def test_g2817_api_response_includes_total_evaluated():
     """H.G2817 — Response /api/trials/eligible_for incluye total_evaluated."""
     # Este test requiere paciente real; usar mock con tracking_db stub
     import app as app_module
-    flask_app = app_module.create_app({"TESTING": True})
+    flask_app = app_module.create_app({"TESTING": True, "LOAD_MODEL": False})
     # Mockear tracking_db para devolver paciente test
     import prostanet.presentation.trial_eligibility_routes as routes_mod
     original_loader = routes_mod._load_patient
@@ -554,7 +557,7 @@ def test_g2817_api_response_includes_total_evaluated():
 def test_g2818_api_eligibility_per_trial_per_patient():
     """H.G2818 — GET /api/trials/CHAARTED/eligibility/<nss> retorna evaluation."""
     import app as app_module
-    flask_app = app_module.create_app({"TESTING": True})
+    flask_app = app_module.create_app({"TESTING": True, "LOAD_MODEL": False})
     import prostanet.presentation.trial_eligibility_routes as routes_mod
     original_loader = routes_mod._load_patient
     def mock_loader(nss):
@@ -575,7 +578,7 @@ def test_g2818_api_eligibility_per_trial_per_patient():
 def test_g2819_api_responses_are_json():
     """H.G2819 — Todos los API endpoints devuelven application/json."""
     import app as app_module
-    flask_app = app_module.create_app({"TESTING": True})
+    flask_app = app_module.create_app({"TESTING": True, "LOAD_MODEL": False})
     with flask_app.test_client() as client:
         for endpoint in [
             "/api/trials/list",
@@ -590,7 +593,7 @@ def test_g2819_api_responses_are_json():
 def test_g2820_api_trial_list_includes_amplitude_and_cou_aa_301():
     """H.G2820 — Lista de trials incluye AMPLITUDE + COU-AA-301 (gaps cerrados)."""
     import app as app_module
-    flask_app = app_module.create_app({"TESTING": True})
+    flask_app = app_module.create_app({"TESTING": True, "LOAD_MODEL": False})
     with flask_app.test_client() as client:
         r = client.get("/api/trials/list")
         trials = r.get_json()["trials"]
@@ -621,9 +624,9 @@ def test_g2822_dashboard_template_extends_base_clinical():
 
 
 def test_g2823_dashboard_renders_three_sections():
-    """H.G2823 — Dashboard tiene 3 secciones: elegibles, missing, no elegibles."""
+    """H.G2823 — Dashboard distingue elegibles, no evaluables y no elegibles."""
     from pathlib import Path
     template = (Path("/Users/oscaralvarado/Desktop/ProstaNet_Model_Fase6/templates/trials_eligibility_dashboard_v2.html")).read_text()
     assert "Trials elegibles" in template
-    assert "Trials con datos faltantes" in template
+    assert "Trials no evaluables por datos faltantes" in template
     assert "Trials no elegibles" in template

@@ -277,11 +277,15 @@ def _make_result(
     subgroup: str | None = None,
 ) -> dict:
     """Estructura estándar resultado evaluación elegibilidad."""
+    status = "not_eligible" if reasons_not_eligible else "requires_data" if missing_data else "eligible" if eligible else "not_eligible"
+    eligible_final = bool(eligible and status == "eligible")
     confidence = 1.0 if not missing_data else max(0.3, 1.0 - 0.15 * len(missing_data))
     criteria = get_trial_criteria(trial_id) or {}
     return {
         "trial_id": trial_id,
-        "eligible": eligible,
+        "eligible": eligible_final,
+        "status": status,
+        "eligibility_status": status,
         "reasons_eligible": reasons_eligible,
         "reasons_not_eligible": reasons_not_eligible,
         "missing_data": missing_data,
@@ -1432,7 +1436,29 @@ def evaluate_trial_eligibility(patient: dict, trial_id: str) -> dict:
             f"Trial '{trial_id}' no registrado. "
             f"Trials disponibles: {sorted(_EVALUATOR_DISPATCHER.keys())[:10]}…"
         )
-    return evaluator(patient or {})
+    payload = patient or {}
+    result = evaluator(payload)
+    if _extract_disease_state(payload) is None:
+        return _mark_requires_data(result, "Estado clínico actual")
+    return result
+
+
+def _mark_requires_data(result: dict, missing_label: str) -> dict:
+    """Normalize sparse payloads to non-evaluable instead of false eligible."""
+    normalized = dict(result)
+    missing = list(normalized.get("missing_data") or [])
+    if missing_label not in missing:
+        missing.insert(0, missing_label)
+    normalized["missing_data"] = missing
+    normalized["eligible"] = False
+    if not normalized.get("reasons_not_eligible"):
+        normalized["status"] = "requires_data"
+        normalized["eligibility_status"] = "requires_data"
+    normalized["confidence"] = min(
+        float(normalized.get("confidence") or 1.0),
+        max(0.3, 1.0 - 0.15 * len(missing)),
+    )
+    return normalized
 
 
 def evaluate_all_eligible_trials(patient: dict) -> list[dict]:

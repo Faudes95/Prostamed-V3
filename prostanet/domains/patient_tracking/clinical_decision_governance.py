@@ -3,12 +3,24 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from prostanet.domains.patient_tracking.decision_input_requirements_engine import _field_values as _decision_field_values
+from prostanet.domains.patient_tracking.decision_evidence_currentness_builder import (
+    build_decision_evidence_currentness_bundle,
+)
+from prostanet.domains.patient_tracking.decision_input_requirements_engine import (
+    STATE_RULES,
+    _field_values as _decision_field_values,
+)
+from prostanet.domains.patient_tracking.localized_modality import (
+    build_localized_modality_fitness_bundle,
+    build_localized_tradeoff_bundle,
+    parse_patient_priority_profile,
+)
 from prostanet.domains.patient_tracking.pro_engine import PRODecisionEngine
 from prostanet.domains.patient_tracking.score_interpretation_catalog import (
     build_score_interpretation_snapshot,
 )
 from prostanet.domains.reporting.decision_aids import DecisionAidService
+from prostanet.shared.clinical_fact_resolver import resolve_patient_clinical_facts
 from prostanet.shared.ddi_engine import DDIEngine
 
 
@@ -73,6 +85,14 @@ HIGH_IMPACT_TRANSITIONS = {
     ("mcspc_high_volume", "m1_crpc"),
     ("mcspc_high_volume_sync", "m1_crpc"),
     ("mcspc_high_volume_metachronous", "m1_crpc"),
+}
+
+MHSPC_STATES = {
+    "mcspc_oligo_metachronous",
+    "mcspc_low_volume_sync_oligo",
+    "mcspc_high_volume",
+    "mcspc_high_volume_sync",
+    "mcspc_high_volume_metachronous",
 }
 
 
@@ -171,12 +191,382 @@ def _merge_score_fields(patient: dict[str, Any], field_values: dict[str, Any]) -
     latest_pro = _latest(patient.get("pros") or [], "assessment_date")
     if latest_pro:
         for key, value in latest_pro.items():
-            if _is_present(value) and not _is_present(merged.get(key)):
+            if _is_present(value):
                 merged[key] = value
     latest_biomarker = _latest(patient.get("biomarker_longitudinal") or [], "sample_date")
     if _is_present(latest_biomarker.get("value")) and str(latest_biomarker.get("biomarker_type") or "").upper() == "PSA":
         merged.setdefault("psa", latest_biomarker.get("value"))
+    if _is_present(merged.get("epic26_urinary_domain")):
+        merged.setdefault("epic26_urinary_incontinence_domain", merged.get("epic26_urinary_domain"))
+        merged.setdefault("epic26_urinary_irritative_domain", merged.get("epic26_urinary_domain"))
     return merged
+
+
+def _field_present(field_name: str, field_values: dict[str, Any]) -> bool:
+    aliases = {
+        "psa": ["current_psa", "psa_current", "baseline_psa", "bcr_psa", "psa_postop"],
+        "current_psa": ["psa", "psa_current", "baseline_psa", "bcr_psa"],
+        "psa_current": ["psa", "current_psa", "baseline_psa", "bcr_psa"],
+        "pirads_score": ["prior_mpmri_pirads_score", "pirads_v21_score"],
+        "mri_fact_date": ["mpmri_date", "fact_date"],
+        "biopsy_date": ["confirmatory_biopsy_date"],
+        "psa_postop": ["bcr_psa", "psa_current", "psa"],
+        "psadt_months": ["psadt_at_bcr", "psa_doubling_time_months"],
+        "pathologic_stage": ["pathologic_stage_group", "pathologic_tstage", "pathologic_nstage", "pathologic_mstage"],
+        "testosterone": ["testosterone_current", "testosterone_value"],
+        "current_adt_context": ["current_treatment", "drug_scheme"],
+        "isup_grade": ["grade_group"],
+        "positive_cores": ["num_cores_positive"],
+        "total_cores": ["num_cores_total"],
+    }
+    for candidate in [field_name, *aliases.get(field_name, [])]:
+        if _is_present(field_values.get(candidate)):
+            return True
+    if field_name == "imaging_negative":
+        status = str(field_values.get("conventional_imaging_status") or "").strip().lower()
+        return status in {"m0", "negative", "negativo", "negative_conventional"}
+    return False
+
+
+def _merge_governance_field_values(
+    patient: dict[str, Any],
+    *,
+    latest_assessment: dict[str, Any] | None = None,
+    clinical_fact_bundle: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    values = dict(_decision_field_values(patient) or {})
+    latest_assessment = latest_assessment or patient.get("latest_assessment") or {}
+    clinical_fact_bundle = dict(clinical_fact_bundle or {})
+    for source in (
+        patient.get("baseline") or {},
+        clinical_fact_bundle.get("field_values") or {},
+        (latest_assessment or {}).get("input_snapshot") or {},
+        ((patient.get("latest_assessment") or {}).get("input_snapshot") or {}),
+    ):
+        if not isinstance(source, dict):
+            continue
+        for key, value in source.items():
+            if _is_present(value):
+                values[key] = value
+    for latest_inputs in (
+        (latest_assessment or {}).get("input_snapshot") or {},
+        ((patient.get("latest_assessment") or {}).get("input_snapshot") or {}),
+    ):
+        if _is_present(latest_inputs.get("testosterone")):
+            values["testosterone_current"] = latest_inputs.get("testosterone")
+        if _is_present(latest_inputs.get("testosterone_value")):
+            values["testosterone_current"] = latest_inputs.get("testosterone_value")
+
+    latest_mri = _latest(list(patient.get("mri_facts") or []), "fact_date", "mpmri_date", "study_date")
+    if latest_mri:
+        if _is_present(latest_mri.get("pirads_score")):
+            values["pirads_score"] = latest_mri.get("pirads_score")
+        fact_date = latest_mri.get("fact_date") or latest_mri.get("mpmri_date") or latest_mri.get("study_date")
+        if _is_present(fact_date):
+            values["mri_fact_date"] = fact_date
+            values.setdefault("mpmri_date", fact_date)
+        if _is_present(latest_mri.get("prostate_volume_ml")):
+            values["prostate_volume_ml"] = latest_mri.get("prostate_volume_ml")
+
+    biopsies = list(patient.get("biopsies") or [])
+    latest_biopsy = _latest(biopsies, "biopsy_date", "created_at")
+    if latest_biopsy:
+        values.setdefault("biopsy_date", latest_biopsy.get("biopsy_date"))
+        values.setdefault("prior_biopsy_count", len(biopsies))
+        if _is_present(latest_biopsy.get("biopsy_type")):
+            values.setdefault("planned_biopsy_type", latest_biopsy.get("biopsy_type"))
+            biopsy_type = str(latest_biopsy.get("biopsy_type") or "").lower()
+            if any(token in biopsy_type for token in ("fusion", "target", "dirig")):
+                values.setdefault("targeted_biopsy_status", "done")
+        if _is_present(latest_biopsy.get("positive_cores")):
+            values.setdefault("positive_cores", latest_biopsy.get("positive_cores"))
+        if _is_present(latest_biopsy.get("total_cores")):
+            values.setdefault("total_cores", latest_biopsy.get("total_cores"))
+
+    return values
+
+
+def _required_fields_for_state(state: str, decision_input_requirements: dict[str, Any]) -> list[str]:
+    rules = dict(STATE_RULES.get(state) or {})
+    required = list(rules.get("blocking_inputs") or [])
+    if not required:
+        required = list(decision_input_requirements.get("blocking_inputs") or [])
+    return _dedupe([str(item) for item in required])
+
+
+def _build_minimum_decisive_dataset_bundle(
+    *,
+    state: str,
+    field_values: dict[str, Any],
+    decision_input_requirements: dict[str, Any],
+) -> dict[str, Any]:
+    required = _required_fields_for_state(state, decision_input_requirements)
+    psa = _safe_float(field_values.get("psa") or field_values.get("current_psa") or field_values.get("psa_current"))
+    if state == "diagnostic_workup" and psa is not None and 3 <= psa <= 10:
+        required = _dedupe(required + ["repeat_psa_value", "repeat_psa_date"])
+    missing = [field for field in required if not _field_present(field, field_values)]
+    if state in {"adt_progression_verification", "m0_crpc", "m1_crpc"}:
+        current_testosterone_present = any(
+            _is_present(field_values.get(field))
+            for field in ("testosterone_current", "testosterone_value", "latest_testosterone_value")
+        )
+        if not current_testosterone_present and "testosterone" in required and "testosterone" not in missing:
+            missing.append("testosterone")
+    if state in {"adt_progression_verification", "m0_crpc", "m1_crpc"}:
+        dataset_key = "CRPC"
+    elif state in MHSPC_STATES:
+        dataset_key = "mHSPC"
+    else:
+        dataset_key = state or "diagnostic_workup"
+    status = "clear" if not missing else "provisional"
+    return {
+        "available": True,
+        "dataset_key": dataset_key,
+        "state": state,
+        "required_fields": required,
+        "missing_required_fields": missing,
+        "captured_required_fields": [field for field in required if field not in missing],
+        "dataset_status": status,
+        "dataset_release_status": "ready_to_release" if status == "clear" else "blocked_until_dataset_complete",
+    }
+
+
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "si", "sí", "sospechoso", "suspicious"}
+
+
+def _build_diagnostic_certainty_bundle(
+    *,
+    state: str,
+    field_values: dict[str, Any],
+    dataset_bundle: dict[str, Any],
+) -> dict[str, Any]:
+    psa = _safe_float(field_values.get("psa") or field_values.get("current_psa") or field_values.get("psa_current"))
+    repeat_required = state == "diagnostic_workup" and psa is not None and 3 <= psa <= 10
+    repeat_done = _field_present("repeat_psa_value", field_values) and _field_present("repeat_psa_date", field_values)
+    pirads_raw = field_values.get("pirads_score") or field_values.get("prior_mpmri_pirads_score")
+    pirads = _safe_float(pirads_raw)
+    psad = _safe_float(field_values.get("psad") or field_values.get("psa_density"))
+    drivers: list[str] = []
+    if state == "post_negative_biopsy_followup":
+        if pirads is not None and pirads >= 3:
+            drivers.append(f"PI-RADS {int(pirads)}")
+        if _truthy(field_values.get("dre_suspicious")):
+            drivers.append("DRE sospechoso")
+        if psad is not None and psad >= 0.15:
+            drivers.append(f"PSAD {psad:.2f}")
+    persistent = bool(drivers)
+    if persistent:
+        diagnosis_certainty = "persistent_suspicion_after_negative_biopsy"
+        followup_status = "persistent_suspicion_reopen_workup"
+    elif state == "post_negative_biopsy_followup":
+        diagnosis_certainty = "post_negative_biopsy_low_intensity_followup"
+        followup_status = "serial_followup"
+    elif repeat_required and not repeat_done:
+        diagnosis_certainty = "suspected_prostate_cancer_in_workup"
+        followup_status = "repeat_psa_before_closure"
+    else:
+        diagnosis_certainty = "diagnostic_dataset_ready" if not dataset_bundle.get("missing_required_fields") else "diagnostic_dataset_incomplete"
+        followup_status = "diagnostic_workup"
+    return {
+        "available": state in {"diagnostic_workup", "post_negative_biopsy_followup"},
+        "state": state,
+        "diagnosis_certainty": diagnosis_certainty,
+        "negative_biopsy_followup_status": followup_status,
+        "persistent_suspicion_drivers": drivers,
+        "repeat_psa_required": bool(repeat_required),
+        "repeat_psa_status": "completed" if repeat_required and repeat_done else "required_not_done" if repeat_required else "not_required",
+        "minimum_dataset_status": dataset_bundle.get("dataset_status", ""),
+    }
+
+
+def _build_window_worklist_bundle(
+    *,
+    state: str,
+    field_values: dict[str, Any],
+    dataset_bundle: dict[str, Any],
+    diagnostic_certainty_bundle: dict[str, Any],
+    localized_modality_fitness_bundle: dict[str, Any],
+) -> dict[str, Any]:
+    missing = list(dataset_bundle.get("missing_required_fields") or [])
+    closure_tasks: list[dict[str, Any]] = []
+    window_key = "general_decision_dataset_window"
+    title = "Cerrar dataset decisivo"
+    why = "La recomendación visible necesita los datos decisivos antes de liberarse como conducta final."
+    required_inputs = list(missing)
+    owner_domain = state or "clinical_governance"
+
+    if state in {"diagnostic_workup", "post_negative_biopsy_followup"}:
+        window_key = "diagnostic_mri_biopsy_window"
+        title = "Ventana diagnóstica MRI/biopsia"
+        drivers = list(diagnostic_certainty_bundle.get("persistent_suspicion_drivers") or [])
+        if diagnostic_certainty_bundle.get("repeat_psa_status") == "required_not_done":
+            closure_tasks.append(
+                {
+                    "key": "repeat_psa_before_diagnostic_closure",
+                    "label": "Solicitar PSA repetido antes de cerrar la decisión diagnóstica",
+                    "required_inputs": ["repeat_psa_value", "repeat_psa_date"],
+                    "agenda_key": "repeat_psa_before_diagnostic_closure",
+                }
+            )
+            why = "PSA inicial 3-10 ng/mL requiere PSA repetido para evitar cierre diagnóstico prematuro."
+        if drivers:
+            closure_tasks.append(
+                {
+                    "key": "reopen_diagnostic_workup_after_negative_biopsy",
+                    "label": "Reabrir estudio diagnóstico con MRI, PSAD y decisión de rebiopsia",
+                    "required_inputs": ["pirads_score", "psad", "planned_biopsy_type", "planned_biopsy_route"],
+                    "agenda_key": "reopen_diagnostic_workup_after_negative_biopsy",
+                }
+            )
+            why = "Sospecha persistente tras biopsia negativa: " + ", ".join(drivers) + "."
+        required_inputs = _dedupe(required_inputs + ["psa", "psad", "pirads_score", "dre_suspicious"])
+        owner_domain = "diagnostic"
+    elif state == "localized_initial":
+        modality_missing = list(localized_modality_fitness_bundle.get("missing_modality_fields") or [])
+        tradeoff_gaps = list(localized_modality_fitness_bundle.get("modality_tradeoff_gaps") or [])
+        window_key = "localized_modality_closure_window"
+        title = "Cierre de modalidad local"
+        why = "Cirugía, radioterapia y vigilancia activa requieren cerrar factibilidad objetiva y trade-offs compartidos."
+        required_inputs = _dedupe(required_inputs + modality_missing + ["radiotherapy_feasibility"])
+        closure_tasks.append(
+            {
+                "key": "localized_modality_tradeoff_closure",
+                "label": "Cerrar aptitud por modalidad local y prioridades del paciente",
+                "required_inputs": _dedupe(["radiotherapy_feasibility", "anesthesia_surgical_fitness"] + tradeoff_gaps),
+                "agenda_key": "localized_modality_tradeoff_closure",
+            }
+        )
+        owner_domain = "localized_modality"
+    elif state in {"adt_progression_verification", "m0_crpc"}:
+        raw_signals = field_values.get("signals")
+        signals = dict(raw_signals) if isinstance(raw_signals, dict) else {}
+        metastatic_stage = str(
+            field_values.get("metastatic_stage_resolved")
+            or field_values.get("m_substage_resolved")
+            or signals.get("metastatic_stage_resolved")
+            or ""
+        ).upper()
+        if metastatic_stage.startswith("M1") or _truthy(field_values.get("progression_gate_active")):
+            window_key = "progression_verification_closure_window"
+        else:
+            window_key = "crpc_verification_window"
+        title = "Verificación de progresión bajo ADT"
+        why = "No debe consolidarse CRPC ni intensificación sistémica sin testosterona y reestadificación coherente."
+        required_inputs = _dedupe(required_inputs + ["testosterone", "current_adt_context", "progression_pattern", "conventional_imaging_status"])
+        closure_tasks.append(
+            {
+                "key": "close_crpc_verification_dataset",
+                "label": "Cerrar testosterona en rango de castración y reestadificación CRPC",
+                "required_inputs": required_inputs,
+                "agenda_key": "close_crpc_verification_dataset",
+            }
+        )
+        owner_domain = "advanced_sequencing"
+    elif state == "post_prostatectomy":
+        window_key = "post_rp_salvage_window"
+        title = "Ventana de salvage post-RP"
+        why = "PSA ultrasensible, patología y cinética definen si la ventana de salvage debe acelerarse."
+        required_inputs = _dedupe(required_inputs + ["psa_postop", "psadt_months", "pathologic_stage"])
+        closure_tasks.append(
+            {
+                "key": "post_rp_salvage_window_closure",
+                "label": "Cerrar PSADT y criterios de salvage post-RP",
+                "required_inputs": required_inputs,
+                "agenda_key": "post_rp_salvage_window_closure",
+            }
+        )
+        owner_domain = "salvage"
+    elif state == "post_radiotherapy_or_local_salvage":
+        window_key = "post_rt_salvage_window"
+        title = "Ventana de salvage local post-RT"
+        why = "Phoenix, confirmación local e imagen sistémica definen si salvage local es visible."
+        required_inputs = _dedupe(required_inputs + ["psa_current", "psa_nadir", "phoenix_delta", "mpmri_done", "psma_pet_done"])
+        closure_tasks.append(
+            {
+                "key": "post_rt_salvage_window_closure",
+                "label": "Cerrar Phoenix, localización y ranking de salvage local post-RT",
+                "required_inputs": required_inputs,
+                "agenda_key": "post_rt_salvage_window_closure",
+            }
+        )
+        owner_domain = "post_rt_salvage"
+
+    if not closure_tasks:
+        closure_tasks.append(
+            {
+                "key": f"{window_key}_closure",
+                "label": "Completar datos decisivos de la ventana clínica activa",
+                "required_inputs": required_inputs,
+                "agenda_key": f"{window_key}_closure",
+            }
+        )
+    top_window = {
+        "window_key": window_key,
+        "title": title,
+        "why_this_matters_now": why,
+        "required_inputs": required_inputs,
+        "missing_decisive_fields": missing,
+        "closure_tasks": closure_tasks,
+        "owner_domain": owner_domain,
+        "window_status": "clear" if not missing else "open",
+    }
+    return {
+        "available": True,
+        "top_active_window": top_window,
+        "active_windows_ranked": [top_window],
+        "closure_tasks": closure_tasks,
+        "blocking_dataset_fields": missing,
+        "owner_domain": owner_domain,
+    }
+
+
+def _build_static_governance_publication_bundles(
+    *,
+    state: str,
+    field_values: dict[str, Any],
+    dataset_bundle: dict[str, Any],
+    window_worklist_bundle: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    missing = list(dataset_bundle.get("missing_required_fields") or [])
+    data_certainty = "high" if not missing else "provisional"
+    return {
+        "staging_certainty_bundle": {
+            "available": True,
+            "state": state,
+            "staging_certainty": "complete" if not missing else "incomplete",
+            "missing_staging_fields": missing,
+        },
+        "therapeutic_window_bundle": {
+            "available": True,
+            "state": state,
+            "top_window_key": (window_worklist_bundle.get("top_active_window") or {}).get("window_key", ""),
+            "window_status": (window_worklist_bundle.get("top_active_window") or {}).get("window_status", ""),
+        },
+        "precision_workflow_bundle": {
+            "available": True,
+            "molecular_ready": _field_present("hrr_status", field_values) or _field_present("brca2_status", field_values),
+            "psma_ready": _field_present("psma_pet_done", field_values),
+            "missing_precision_fields": [field for field in ("hrr_status", "brca2_status", "psma_pet_done") if not _field_present(field, field_values)],
+        },
+        "registry_core_bundle": {
+            "available": True,
+            "state": state,
+            "dataset_key": dataset_bundle.get("dataset_key", state),
+            "required_fields": list(dataset_bundle.get("required_fields") or []),
+            "missing_required_fields": missing,
+        },
+        "endpoint_adjudication_bundle": {
+            "available": True,
+            "endpoint_capture_ready": not missing,
+            "pending_endpoint_inputs": missing,
+        },
+        "data_certainty_bundle": {
+            "available": True,
+            "certainty_status": data_certainty,
+            "missing_required_fields": missing,
+        },
+    }
 
 
 def _build_recommendation_blocking_bundle(
@@ -203,6 +593,13 @@ def _build_recommendation_blocking_bundle(
         status = "clear"
         reason = "La recomendación tiene los datos mínimos para sostener una conducta visible."
         allowed = ["recomendacion_final", "shared_decision", "planificacion"]
+    raw_capture_block = decision_input_requirements.get("capture_block")
+    if isinstance(raw_capture_block, dict):
+        capture_block = dict(raw_capture_block)
+    elif _is_present(raw_capture_block):
+        capture_block = {"summary": str(raw_capture_block)}
+    else:
+        capture_block = {}
     bundle = {
         "available": True,
         "recommendation_block_status": status,
@@ -211,7 +608,7 @@ def _build_recommendation_blocking_bundle(
         "hard_blocking_inputs": hard,
         "decision_blocking_inputs": decision,
         "supportive_gaps": supportive,
-        "capture_block": dict(decision_input_requirements.get("capture_block") or {}),
+        "capture_block": capture_block,
         "blocking_input_descriptors": list(decision_input_requirements.get("blocking_input_descriptors") or []),
     }
     return bundle, status, reason, allowed
@@ -695,9 +1092,17 @@ def apply_governance_to_next_best_action(
     pro_bundle = dict(governance_bundle.get("pro_decision_bundle") or {})
     if block_status == "hard_stop":
         capture_block = dict(blocking_bundle.get("capture_block") or {})
+        blocking_fields = list(blocking_bundle.get("hard_blocking_inputs") or []) + list(
+            blocking_bundle.get("decision_blocking_inputs") or []
+        )
+        testosterone_crpc_title = (
+            "Confirmar testosterona en rango de castración y cerrar verificación CRPC"
+            if "testosterone" in blocking_fields
+            else ""
+        )
         action.update(
             {
-                "title": capture_block.get("title") or "Completar datos críticos antes de cerrar recomendación",
+                "title": testosterone_crpc_title or capture_block.get("title") or "Completar datos críticos antes de cerrar recomendación",
                 "recommendation_family": "governance_block",
                 "rationale": block_reason,
                 "immediate_actions": _dedupe(
@@ -735,6 +1140,7 @@ def build_clinical_decision_governance_bundle(
     latest_assessment: dict[str, Any] | None = None,
     next_best_action: dict[str, Any] | None = None,
     decision_input_requirements: dict[str, Any] | None = None,
+    clinical_fact_bundle: dict[str, Any] | None = None,
     care_intent_contract: dict[str, Any] | None = None,
     transition_proposals: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -743,11 +1149,110 @@ def build_clinical_decision_governance_bundle(
     latest_assessment = latest_assessment or patient.get("latest_assessment") or {}
     next_best_action = dict(next_best_action or {})
     decision_input_requirements = dict(decision_input_requirements or {})
+    clinical_fact_bundle = dict(clinical_fact_bundle or patient.get("clinical_fact_bundle") or {})
+    if not clinical_fact_bundle:
+        clinical_fact_bundle = resolve_patient_clinical_facts(patient)
     care_intent_contract = dict(care_intent_contract or {})
-    field_values = _decision_field_values(patient)
+    field_values = _merge_governance_field_values(
+        patient,
+        latest_assessment=latest_assessment,
+        clinical_fact_bundle=clinical_fact_bundle,
+    )
+    dataset_bundle = _build_minimum_decisive_dataset_bundle(
+        state=state,
+        field_values=field_values,
+        decision_input_requirements=decision_input_requirements,
+    )
+    decision_evidence_currentness_bundle = build_decision_evidence_currentness_bundle(
+        state=state,
+        management_track=management_track,
+        field_values=field_values,
+        clinical_fact_bundle=clinical_fact_bundle,
+        minimum_decisive_dataset_bundle=dataset_bundle,
+        decision_input_requirements=decision_input_requirements,
+        next_best_action=next_best_action,
+    )
+    dataset_bundle = {
+        **dataset_bundle,
+        "selected_decision_release_status": decision_evidence_currentness_bundle.get("selected_decision_release_status", ""),
+        "selected_decision_evidence_status": decision_evidence_currentness_bundle.get("selected_decision_evidence_status", ""),
+        "decision_evidence_summary": decision_evidence_currentness_bundle.get("summary", ""),
+        "refresh_actions": list(decision_evidence_currentness_bundle.get("refresh_actions") or []),
+        "field_currentness": dict(decision_evidence_currentness_bundle.get("field_currentness") or {}),
+    }
+    diagnostic_certainty_bundle = _build_diagnostic_certainty_bundle(
+        state=state,
+        field_values=field_values,
+        dataset_bundle=dataset_bundle,
+    )
+    localized_modality_fitness_bundle: dict[str, Any] = {}
+    localized_tradeoff_bundle: dict[str, Any] = {}
+    patient_priorities = parse_patient_priority_profile(field_values.get("patient_priority_profile"))
+    patient_priority_profile = {
+        "available": bool(patient_priorities),
+        "priorities": patient_priorities,
+    }
+    if state == "localized_initial":
+        nccn_group = str(field_values.get("clinical_risk_group") or field_values.get("nccn_risk_group") or "")
+        localized_modality_fitness_bundle = build_localized_modality_fitness_bundle(
+            field_values,
+            nccn_group=nccn_group,
+        )
+        localized_tradeoff_bundle = build_localized_tradeoff_bundle(
+            field_values,
+            nccn_group=nccn_group,
+            modality_bundle=localized_modality_fitness_bundle,
+        )
+        patient_priority_profile = {
+            "available": bool(localized_modality_fitness_bundle.get("patient_priority_profile")),
+            "priorities": list(localized_modality_fitness_bundle.get("patient_priority_profile") or []),
+        }
+    window_worklist_bundle = _build_window_worklist_bundle(
+        state=state,
+        field_values={
+            **field_values,
+            "progression_gate_active": (patient.get("latest_signal_snapshot") or {}).get("progression_gate_active"),
+            "metastatic_stage_resolved": (
+                (patient.get("latest_signal_snapshot") or {}).get("metastatic_stage_resolved")
+                or field_values.get("metastatic_stage_resolved")
+            ),
+        },
+        dataset_bundle=dataset_bundle,
+        diagnostic_certainty_bundle=diagnostic_certainty_bundle,
+        localized_modality_fitness_bundle=localized_modality_fitness_bundle,
+    )
+    publication_bundles = _build_static_governance_publication_bundles(
+        state=state,
+        field_values=field_values,
+        dataset_bundle=dataset_bundle,
+        window_worklist_bundle=window_worklist_bundle,
+    )
     decision_blocking_bundle, block_status, block_reason, allowed_actions = _build_recommendation_blocking_bundle(
         decision_input_requirements
     )
+    dataset_missing_fields = list(dataset_bundle.get("missing_required_fields") or [])
+    if dataset_missing_fields:
+        target_bucket = "hard_blocking_inputs" if block_status == "hard_stop" else "decision_blocking_inputs"
+        decision_blocking_bundle[target_bucket] = _dedupe(
+            list(decision_blocking_bundle.get(target_bucket) or []) + dataset_missing_fields
+        )
+    if block_status == "clear" and (
+        dataset_missing_fields
+        or diagnostic_certainty_bundle.get("repeat_psa_status") == "required_not_done"
+        or diagnostic_certainty_bundle.get("negative_biopsy_followup_status") == "persistent_suspicion_reopen_workup"
+    ):
+        block_status = "provisional"
+        block_reason = (
+            "La recomendación sigue abierta hasta cerrar el dataset decisivo: "
+            + ", ".join(list(dataset_bundle.get("missing_required_fields") or [])[:6])
+        ).rstrip(": ")
+        allowed_actions = ["captura_dirigida", "discusion_compartida_provisional", "monitorizacion_temporal"]
+        decision_blocking_bundle["recommendation_block_status"] = block_status
+        decision_blocking_bundle["recommendation_block_reason"] = block_reason
+        decision_blocking_bundle["decision_blocking_inputs"] = _dedupe(
+            list(decision_blocking_bundle.get("decision_blocking_inputs") or [])
+            + dataset_missing_fields
+        )
     clinician_decision_capture_bundle = _build_clinician_decision_capture_bundle(
         patient,
         latest_assessment,
@@ -781,7 +1286,14 @@ def build_clinical_decision_governance_bundle(
         clinician_decision_capture_bundle,
         cost_access_context_bundle,
     )
+    if localized_modality_fitness_bundle:
+        epic_contract = dict(localized_modality_fitness_bundle.get("epic26_governance_contract") or {})
+        shared_decision_bundle["epic26_governance_contract"] = epic_contract
+        shared_decision_bundle["epic26_shared_decision_signals"] = list(
+            localized_modality_fitness_bundle.get("epic26_shared_decision_signals") or []
+        )
     score_snapshot = dict(pro_decision_bundle.get("score_interpretation_catalog_snapshot") or {})
+    epic_contract = dict((localized_modality_fitness_bundle or {}).get("epic26_governance_contract") or {})
     governance_summary = {
         "available": True,
         "state": state,
@@ -793,23 +1305,48 @@ def build_clinical_decision_governance_bundle(
         "supportive_priority": care_intent_contract.get("supportive_priority") or "",
         "palliative_trigger_status": care_intent_contract.get("palliative_trigger_status") or "",
     }
+    if epic_contract:
+        governance_summary.update(
+            {
+                "epic26_governance_status": epic_contract.get("governance_status", ""),
+                "epic26_primary_guideline_driver": epic_contract.get("primary_guideline_driver", ""),
+                "epic26_guardrail": (
+                    epic_contract.get("governance_guardrail")
+                    or "EPIC-26 informa decisión compartida y seguimiento; no redefine por sí solo la modalidad dominante."
+                ),
+            }
+        )
     return {
         "decision_governance_bundle": governance_summary,
         "recommendation_block_status": block_status,
         "recommendation_block_reason": block_reason,
         "allowed_actions_while_blocked": allowed_actions,
         "decision_blocking_bundle": decision_blocking_bundle,
+        "diagnostic_certainty_bundle": diagnostic_certainty_bundle,
+        "staging_certainty_bundle": publication_bundles["staging_certainty_bundle"],
+        "minimum_decisive_dataset_bundle": dataset_bundle,
+        "decision_evidence_currentness_bundle": decision_evidence_currentness_bundle,
+        "therapeutic_window_bundle": publication_bundles["therapeutic_window_bundle"],
+        "window_worklist_bundle": window_worklist_bundle,
         "clinician_decision_capture_bundle": clinician_decision_capture_bundle,
         "state_transition_confirmation_bundle": state_transition_confirmation_bundle,
         "adherence_tracking_bundle": adherence_tracking_bundle,
         "tumor_board_outcome_bundle": tumor_board_outcome_bundle,
         "pro_decision_bundle": pro_decision_bundle,
         "shared_decision_bundle": shared_decision_bundle,
+        "localized_modality_fitness_bundle": localized_modality_fitness_bundle,
+        "localized_tradeoff_bundle": localized_tradeoff_bundle,
+        "patient_priority_profile": patient_priority_profile,
         "ctdna_refinement_bundle": ctdna_refinement_bundle,
         "multimodal_imaging_concordance_bundle": multimodal_imaging_concordance_bundle,
+        "precision_workflow_bundle": publication_bundles["precision_workflow_bundle"],
+        "registry_core_bundle": publication_bundles["registry_core_bundle"],
+        "endpoint_adjudication_bundle": publication_bundles["endpoint_adjudication_bundle"],
+        "data_certainty_bundle": publication_bundles["data_certainty_bundle"],
         "ichom_compliance_bundle": ichom_compliance_bundle,
         "treatment_adverse_event_bundle": treatment_adverse_event_bundle,
         "population_survival_context_bundle": population_survival_context_bundle,
         "cost_access_context_bundle": cost_access_context_bundle,
         "score_interpretation_catalog_snapshot": score_snapshot,
+        "clinical_fact_bundle": clinical_fact_bundle,
     }

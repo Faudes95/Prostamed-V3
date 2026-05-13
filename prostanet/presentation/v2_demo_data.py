@@ -678,6 +678,29 @@ def build_intake_demo_data() -> dict[str, Any]:
         )
         adv_stages, adv_fields = build_advanced_capture_stages()
         if adv_stages:
+            # Faubot LXCII.2 #LXXXVI.D — Cross-stage de-dup: si advanced stage
+            # contiene un field name que ya existe en base stages (e.g.,
+            # `psa_density` en `labs` + `pre_dx_atypical`, o `hrr_status` en
+            # `genomics` + `genomic_critical`), filtrar el duplicado del
+            # advanced stage. Base wins (UI usa el field más cercano al
+            # workflow clínico inicial). Esto previene FormData duplicate
+            # values → backend `unhashable type: 'list'` TypeError.
+            base_field_names: set[str] = set()
+            for stage_key, stage_fields in base["fields"].items():
+                for f in stage_fields:
+                    if isinstance(f, dict) and f.get("name"):
+                        base_field_names.add(f["name"])
+            # Filter adv_fields removing any field name already in base
+            for adv_stage_key, adv_stage_fields in list(adv_fields.items()):
+                filtered = [
+                    f for f in adv_stage_fields
+                    if not (isinstance(f, dict) and f.get("name") in base_field_names)
+                ]
+                adv_fields[adv_stage_key] = filtered
+                # Update emitted set so subsequent advanced stages also skip
+                for f in filtered:
+                    if isinstance(f, dict) and f.get("name"):
+                        base_field_names.add(f["name"])
             base["stages"].extend(adv_stages)
             base["fields"].update(adv_fields)
     except (ImportError, Exception):

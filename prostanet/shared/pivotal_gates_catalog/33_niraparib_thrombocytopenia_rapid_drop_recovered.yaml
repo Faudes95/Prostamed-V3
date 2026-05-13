@@ -1,0 +1,27 @@
+code: niraparib_thrombocytopenia_rapid_drop
+title: "Rapid platelet drop on niraparib pathway"
+faubot_added_in: "2026-05-11 Clinical Memory recovery"
+severity: hard_block
+trigger:
+  type: any_of
+  triggers:
+    - type: numeric_threshold
+      field: thrombocytopenia_ctcae_grade
+      threshold: 3
+    - type: truthy_flag
+      field: thrombocytopenia_grade3_for_niraparib
+    - type: truthy_flag
+      field: rapid_platelet_drop_for_niraparib
+override:
+  type: truthy_flag
+  field: platelets_recovered_post_rapid_drop_for_niraparib
+regimen_codes:
+  - NIRAPARIB_ABIRATERONE
+keywords:
+  - niraparib
+message: |
+  Grade 3 thrombocytopenia or rapid platelet drop blocks niraparib release
+  until platelet recovery and hematologic safety review are documented.
+evidence_tag: magnitude_niraparib_thrombocytopenia
+trial_refs:
+  - MAGNITUDE

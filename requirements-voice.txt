@@ -1,0 +1,9 @@
+# Optional local STT runtime for ProstaMed Voice Clinical OS.
+# The app is safe without this file installed: audio remains encrypted and
+# encounters fall back to physician-reviewed manual transcript/candidates.
+#
+# faster-whisper 1.0.3 depends on PyAV wheels that are not available for the
+# current Python 3.14 desktop runtime. Use a Python 3.10-3.12 environment for
+# local STT until PyAV/faster-whisper publish compatible wheels.
+faster-whisper==1.0.3 ; python_version >= "3.10" and python_version < "3.13"
+requests==2.33.0 ; python_version >= "3.10" and python_version < "3.13"

@@ -1,12 +1,8 @@
 {# ProstaMed v2 PRODUCTION patient profile FULL (9 tabs)
    Faubot 2026-04-26 LXXX (#67E production wiring).
 
-   COPIA del demo /demos/v2/patient_profile_full con SOLO los campos del
-   paciente parametrizados (identity, decision hoy, consent badge, vitals,
-   NSS para los links del sidebar). El resto de la riqueza visual del demo
-   (PSA chart sample, cohort references table, changelog, audit input_snapshot,
-   signature pad demo, evidence table) se preserva 1:1 con los datos del
-   demo — son fixtures de plataforma, no por-paciente.
+   Perfil productivo: no debe mostrar PSA, testosterona ni líneas terapéuticas
+   demo cuando no existen datos reales del paciente.
 
    Ruta producción: /patient_profile/<nss>?v=2 #}
 <!DOCTYPE html>
@@ -21,7 +17,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='tumor_board_os_20260510') }}">
     {# LXCI Fase 6 — Transitions framework + hover prefetch #}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2_transitions.css') }}">
     <script src="{{ url_for('static', filename='js/pm2_prefetch.js') }}" defer></script>
@@ -33,6 +29,12 @@
 
 {# Faubot LXXXIII — Sidebar centralizado via macro (resuelve bug "UI previa cargada") #}
 {% from "components/pm2_sidebar.html" import pm2_sidebar %}
+{% set pm2_psa = psa_obs|default({}) %}
+{% set pm2_psa_points = pm2_psa.get('points') or [] %}
+{% set pm2_treatment_bands = pm2_psa.get('treatment_bands') or [] %}
+{% set pm2_per_line = pm2_psa.get('per_line') or [] %}
+{% set pm2_testosterone_points = testosterone_history|default([]) %}
+{% set pm2_has_tx = (pm2_treatment_bands|length > 0) or (pm2_per_line|length > 0) %}
 
 <div class="pm2-app-shell">
 
@@ -150,6 +152,304 @@
             </div>
         </section>
 
+        {% set _readiness = clinical_readiness_tower or profile_view_raw.get('clinical_readiness_tower', {}) %}
+        {% set _readiness_summary = _readiness.get('summary', {}) if _readiness else {} %}
+        {% set _readiness_lanes = _readiness.get('lanes', []) if _readiness else [] %}
+        {% if _readiness and _readiness_lanes %}
+        <section style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: rgba(8,13,26,.78); border: 1px solid rgba(34,211,238,.24); border-radius: 14px;" aria-label="Readiness clinico">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:var(--pn-accent); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Readiness clínico</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        {{ _readiness_summary.priority_lane_label or 'Torre longitudinal de seguridad' }}
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:78ch;">
+                        {{ _readiness_summary.dominant_blocker or 'Sin bloqueo dominante.' }}
+                    </p>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+                    <span class="pm2-state-chip">{{ _readiness_summary.active_lane_count or 0 }} carriles activos</span>
+                    <span class="pm2-state-chip">{{ _readiness_summary.real_treatment_line_count or 0 }} líneas reales</span>
+                    <a class="pm2-state-chip pm2-state-chip--primary" style="text-decoration:none" href="/api/patients/{{ identity.nss }}/clinical-readiness">API tower</a>
+                </div>
+            </div>
+            <div style="margin-top:12px; display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px;">
+                {% for lane in _readiness_lanes if lane.status != 'not_applicable' %}
+                {% if loop.index <= 4 %}
+                <article style="padding:12px; background:rgba(15,23,42,.58); border:1px solid rgba(148,163,184,.16); border-radius:12px; min-width:0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                        <strong style="color:#e2f5ff; font-size:.82rem;">{{ lane.label }}</strong>
+                        <span class="pm2-state-chip {% if lane.status == 'ready' %}pm2-state-chip--success{% elif lane.status in ['active_risk','requires_data'] %}pm2-state-chip--warn{% endif %}" style="font-size:.64rem;">{{ lane.status }}</span>
+                    </div>
+                    <p style="margin:8px 0 0; color:var(--pn-text-muted); font-size:.77rem; line-height:1.4;">{{ lane.reason }}</p>
+                    {% if lane.display_missing_fields %}
+                    <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:5px;">
+                        {% for field in lane.display_missing_fields[:4] %}
+                        <span style="display:inline-flex; max-width:100%; border:1px solid rgba(245,158,11,.18); background:rgba(245,158,11,.08); color:#fde68a; border-radius:8px; padding:3px 6px; font-size:.68rem; overflow-wrap:anywhere;">{{ field }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <div style="margin-top:10px;">
+                        <a href="{{ lane.cta_url }}" class="pm2-btn pm2-btn--ghost" style="text-decoration:none; font-size:.72rem; padding:6px 9px;">Capturar faltantes</a>
+                    </div>
+                </article>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% set _tumor_board = tumor_board_os or profile_view_raw.get('tumor_board_os', {}) %}
+        {% set _tb_summary = _tumor_board.get('summary', {}) if _tumor_board else {} %}
+        {% set _tb_options = _tumor_board.get('options', []) if _tumor_board else [] %}
+        {% set _tb_recommendation = _tumor_board.get('recommendation', {}) if _tumor_board else {} %}
+        {% if _tumor_board and _tb_options %}
+        <section id="pm2TumorBoardOS" class="pm2-tumor-board-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(34,211,238,.08), rgba(15,23,42,.62)); border: 1px solid rgba(34,211,238,.28); border-radius: 14px;" aria-label="Tumor Board OS">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:var(--pn-accent); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Tumor Board OS</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        {{ _tb_recommendation.title or _tb_summary.winner_option_label or 'Decisión comparativa pendiente' }}
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        {{ _tb_summary.dominant_blocker or _tb_recommendation.rationale or 'Sin bloqueo dominante.' }}
+                    </p>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+                    <span class="pm2-state-chip {% if _tb_summary.board_status == 'released' %}pm2-state-chip--success{% elif _tb_summary.board_status in ['blocked','provisional'] %}pm2-state-chip--warn{% endif %}">{{ _tb_summary.board_status or 'provisional' }}</span>
+                    <span class="pm2-state-chip">{{ _tb_summary.releaseable_count or 0 }} listas</span>
+                    <a class="pm2-state-chip pm2-state-chip--primary" style="text-decoration:none" href="/api/patients/{{ identity.nss }}/tumor-board-os">API board</a>
+                </div>
+            </div>
+            <div style="margin-top:12px; display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px;">
+                {% for option in _tb_options[:4] %}
+                <article style="padding:12px; background:rgba(15,23,42,.62); border:1px solid rgba(148,163,184,.16); border-radius:12px; min-width:0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                        <strong style="color:#e2f5ff; font-size:.82rem;">{{ option.label }}</strong>
+                        <span class="pm2-state-chip {% if option.status == 'releaseable' %}pm2-state-chip--success{% elif option.status in ['blocked','requires_data','provisional'] %}pm2-state-chip--warn{% endif %}" style="font-size:.64rem;">{{ option.status }}</span>
+                    </div>
+                    <p style="margin:8px 0 0; color:var(--pn-text-muted); font-size:.77rem; line-height:1.4;">{{ option.why[0] if option.why else option.rationale }}</p>
+                    {% if option.display_missing_fields %}
+                    <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:5px;">
+                        {% for field in option.display_missing_fields[:4] %}
+                        <span style="display:inline-flex; max-width:100%; border:1px solid rgba(245,158,11,.18); background:rgba(245,158,11,.08); color:#fde68a; border-radius:8px; padding:3px 6px; font-size:.68rem; overflow-wrap:anywhere;">{{ field }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+                        {% if option.cta and option.cta.url %}
+                        <a href="{{ option.cta.url }}" class="pm2-btn pm2-btn--ghost" style="text-decoration:none; font-size:.72rem; padding:6px 9px;">{{ option.cta.label or 'Capturar' }}</a>
+                        {% endif %}
+                        {% if option.trials_impacted %}
+                        <span class="pm2-state-chip" style="font-size:.62rem;">{{ option.trials_impacted|length }} trials</span>
+                        {% endif %}
+                        {% if option.gates_impacted %}
+                        <span class="pm2-state-chip" style="font-size:.62rem;">{{ option.gates_impacted|length }} gates</span>
+                        {% endif %}
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% set _care_pathway = care_pathway_os or profile_view_raw.get('care_pathway_os', {}) %}
+        {% set _cp_summary = _care_pathway.get('summary', {}) if _care_pathway else {} %}
+        {% set _cp_actions = _care_pathway.get('pathway_actions', []) if _care_pathway else [] %}
+        {% set _cp_triggers = _care_pathway.get('redecision_triggers', []) if _care_pathway else [] %}
+        {% if _care_pathway and _cp_actions %}
+        <section id="pm2CarePathwayOS" class="pm2-care-pathway-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(16,185,129,.08), rgba(15,23,42,.66)); border: 1px solid rgba(16,185,129,.28); border-radius: 14px;" aria-label="Care Pathway OS">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:#86efac; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Care Pathway OS</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        {{ _cp_summary.next_action_label or 'Ejecución clínica auditable' }}
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        Orquesta decisión, ejecución interna, vigilancia y nueva decisión. {{ _cp_summary.dominant_blocker or 'Sin bloqueo dominante.' }}
+                    </p>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+                    <span class="pm2-state-chip {% if _cp_summary.execution_status == 'overdue' %}pm2-state-chip--warn{% elif _cp_summary.execution_status == 'blocked' %}pm2-state-chip--warn{% elif _cp_summary.execution_status in ['active','complete'] %}pm2-state-chip--success{% endif %}">{{ _cp_summary.execution_status or 'active' }}</span>
+                    <span class="pm2-state-chip">{{ _cp_summary.overdue_count or 0 }} vencidas</span>
+                    <span class="pm2-state-chip">{{ _cp_summary.blocked_count or 0 }} bloqueadas</span>
+                    <a class="pm2-state-chip pm2-state-chip--primary" style="text-decoration:none" href="/api/patients/{{ identity.nss }}/care-pathway-os">API pathway</a>
+                </div>
+            </div>
+            <div style="margin-top:12px; display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px;">
+                {% for action in _cp_actions[:6] %}
+                <article style="padding:12px; background:rgba(15,23,42,.62); border:1px solid rgba(148,163,184,.16); border-radius:12px; min-width:0;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                        <div style="min-width:0;">
+                            <strong style="display:block;color:#e2f5ff; font-size:.82rem; line-height:1.3; overflow-wrap:anywhere;">{{ action.title }}</strong>
+                            <span style="display:block;margin-top:4px;color:#94a3b8;font-size:.66rem;text-transform:uppercase;letter-spacing:.1em;">{{ action.family_label }}</span>
+                        </div>
+                        <span class="pm2-state-chip {% if action.status == 'completed' %}pm2-state-chip--success{% elif action.status in ['blocked','overdue'] %}pm2-state-chip--warn{% elif action.status in ['scheduled','ordered'] %}pm2-state-chip--primary{% endif %}" style="font-size:.62rem;">{{ action.status }}</span>
+                    </div>
+                    <p style="margin:8px 0 0; color:var(--pn-text-muted); font-size:.76rem; line-height:1.4;">{{ action.reason }}</p>
+                    <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:5px;">
+                        {% if action.scheduled_due_at or action.due_at %}
+                        <span class="pm2-state-chip" style="font-size:.6rem;">Fecha: {{ action.scheduled_due_at or action.due_at }}</span>
+                        {% endif %}
+                        {% if action.gates_impacted %}
+                        <span class="pm2-state-chip" style="font-size:.6rem;">{{ action.gates_impacted|length }} gates</span>
+                        {% endif %}
+                        {% if action.trials_impacted %}
+                        <span class="pm2-state-chip" style="font-size:.6rem;">{{ action.trials_impacted|length }} trials</span>
+                        {% endif %}
+                    </div>
+                    {% if action.display_missing_fields %}
+                    <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:5px;">
+                        {% for field in action.display_missing_fields[:4] %}
+                        <span style="display:inline-flex; max-width:100%; border:1px solid rgba(245,158,11,.18); background:rgba(245,158,11,.08); color:#fde68a; border-radius:8px; padding:3px 6px; font-size:.66rem; overflow-wrap:anywhere;">{{ field }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    {% if action.manual_status_note %}
+                    <p style="margin:8px 0 0; color:#bae6fd; font-size:.68rem; line-height:1.35;">Audit: {{ action.manual_status_note }}</p>
+                    {% endif %}
+                    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+                        {% if action.cta and action.cta.url %}
+                        <a href="{{ action.cta.url }}" class="pm2-btn pm2-btn--ghost" style="text-decoration:none; font-size:.72rem; padding:6px 9px;">{{ action.cta.label or 'Capturar' }}</a>
+                        {% endif %}
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            {% if _cp_triggers %}
+            <div style="margin-top:12px; padding:12px; background:rgba(245,158,11,.07); border:1px solid rgba(245,158,11,.2); border-radius:12px;">
+                <div style="font-size:.66rem; color:#fde68a; font-weight:800; letter-spacing:.14em; text-transform:uppercase;">Triggers de nueva decisión</div>
+                <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:8px;">
+                    {% for trigger in _cp_triggers[:4] %}
+                    <span class="pm2-state-chip pm2-state-chip--warn" style="font-size:.62rem;">{{ trigger.reason }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {% set _clinical_memory = clinical_memory_os or profile_view_raw.get('clinical_memory_os', {}) %}
+        {% set _cm_summary = _clinical_memory.get('summary', {}) if _clinical_memory else {} %}
+        {% set _cm_observed = _clinical_memory.get('expected_vs_observed', {}) if _clinical_memory else {} %}
+        {% set _cm_attribution = _clinical_memory.get('outcome_attribution', {}) if _clinical_memory else {} %}
+        {% set _cm_cohort = _clinical_memory.get('similar_cohort_mirror', {}) if _clinical_memory else {} %}
+        {% set _cm_ai = _clinical_memory.get('ai_readiness', {}) if _clinical_memory else {} %}
+        {% set _cm_episodes = _clinical_memory.get('decision_episodes', []) if _clinical_memory else [] %}
+        {% set _cm_redecision = _clinical_memory.get('redecision_reasons', []) if _clinical_memory else [] %}
+        {% if _clinical_memory %}
+        <section id="pm2ClinicalMemoryOS" class="pm2-clinical-memory-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(14,165,233,.08), rgba(15,23,42,.66)); border: 1px solid rgba(14,165,233,.28); border-radius: 14px;" aria-label="Clinical Memory OS">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:#7dd3fc; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Clinical Memory OS</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        {{ _cm_summary.active_episode_label or 'Memoria longitudinal de decisión y desenlace' }}
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:84ch;">
+                        Recuerda la decisión, ejecución, vigilancia y desenlace real. {{ _cm_summary.outcome_label or 'Aún no hay outcome maduro suficiente para aprendizaje clínico.' }}
+                    </p>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+                    <span class="pm2-state-chip {% if _cm_summary.requires_redecision %}pm2-state-chip--warn{% elif _cm_summary.outcome_status == 'on_track' %}pm2-state-chip--success{% elif _cm_summary.outcome_status in ['toxicity_limited','off_track'] %}pm2-state-chip--warn{% endif %}">{{ _cm_summary.outcome_status or 'insufficient_data' }}</span>
+                    <span class="pm2-state-chip">{{ _cm_summary.similar_cohort_count or 0 }} cohorte</span>
+                    <span class="pm2-state-chip">{{ _cm_ai.status or 'blocked' }} IA</span>
+                    <a class="pm2-state-chip pm2-state-chip--primary" style="text-decoration:none" href="/api/patients/{{ identity.nss }}/clinical-memory-os">API memory</a>
+                </div>
+            </div>
+            <div style="margin-top:12px; display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px;">
+                <article style="padding:12px; background:rgba(15,23,42,.62); border:1px solid rgba(148,163,184,.16); border-radius:12px; min-width:0;">
+                    <div style="font-size:.66rem; color:#93c5fd; font-weight:800; letter-spacing:.14em; text-transform:uppercase;">Episodio activo</div>
+                    {% set _cm_episode = _cm_episodes[0] if _cm_episodes else {} %}
+                    <strong style="display:block;margin-top:6px;color:#e2f5ff; font-size:.86rem; line-height:1.3;">{{ _cm_episode.recommendation_title or _cm_summary.active_episode_label or 'Sin episodio liberado' }}</strong>
+                    <p style="margin:8px 0 0; color:var(--pn-text-muted); font-size:.76rem; line-height:1.4;">
+                        {{ _cm_episode.learning_maturity or _cm_summary.memory_maturity or 'immature' }} · {{ _cm_episode.board_status or 'requires_data' }}
+                    </p>
+                </article>
+                <article style="padding:12px; background:rgba(15,23,42,.62); border:1px solid rgba(148,163,184,.16); border-radius:12px; min-width:0;">
+                    <div style="font-size:.66rem; color:#93c5fd; font-weight:800; letter-spacing:.14em; text-transform:uppercase;">Expected vs observed</div>
+                    {% set _cm_obs = _cm_observed.get('observed', {}) %}
+                    <strong style="display:block;margin-top:6px;color:#e2f5ff; font-size:.86rem;">{{ _cm_observed.label or 'Datos insuficientes' }}</strong>
+                    <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:5px;">
+                        <span class="pm2-state-chip" style="font-size:.6rem;">APE/PSA {{ _cm_obs.psa_point_count or 0 }}</span>
+                        <span class="pm2-state-chip" style="font-size:.6rem;">Testo {{ _cm_obs.testosterone_point_count or 0 }}</span>
+                        <span class="pm2-state-chip" style="font-size:.6rem;">Tx {{ _cm_obs.treatment_line_count or 0 }}</span>
+                    </div>
+                </article>
+                <article style="padding:12px; background:rgba(15,23,42,.62); border:1px solid rgba(148,163,184,.16); border-radius:12px; min-width:0;">
+                    <div style="font-size:.66rem; color:#93c5fd; font-weight:800; letter-spacing:.14em; text-transform:uppercase;">Atribución</div>
+                    <strong style="display:block;margin-top:6px;color:#e2f5ff; font-size:.86rem;">{{ _cm_attribution.primary_cause or 'insufficient_data' }}</strong>
+                    <p style="margin:8px 0 0; color:var(--pn-text-muted); font-size:.76rem; line-height:1.4;">{{ (_cm_attribution.reasons[0] if _cm_attribution.reasons else 'No se atribuye respuesta sin datos reales.') }}</p>
+                </article>
+                <article style="padding:12px; background:rgba(15,23,42,.62); border:1px solid rgba(148,163,184,.16); border-radius:12px; min-width:0;">
+                    <div style="font-size:.66rem; color:#93c5fd; font-weight:800; letter-spacing:.14em; text-transform:uppercase;">Cohorte + IA futura</div>
+                    <strong style="display:block;margin-top:6px;color:#e2f5ff; font-size:.86rem;">{{ _cm_cohort.status or 'insufficient_cohort_size' }}</strong>
+                    <p style="margin:8px 0 0; color:var(--pn-text-muted); font-size:.76rem; line-height:1.4;">
+                        {{ _cm_ai.blockers|length if _cm_ai.blockers else 0 }} bloqueos IA · modelo clínico no liberado en v1.
+                    </p>
+                </article>
+            </div>
+            {% if _cm_redecision %}
+            <div style="margin-top:12px; padding:12px; background:rgba(245,158,11,.07); border:1px solid rgba(245,158,11,.2); border-radius:12px;">
+                <div style="font-size:.66rem; color:#fde68a; font-weight:800; letter-spacing:.14em; text-transform:uppercase;">Razones de nueva decisión</div>
+                <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:8px;">
+                    {% for reason in _cm_redecision[:4] %}
+                    <span class="pm2-state-chip pm2-state-chip--warn" style="font-size:.62rem;">{{ reason.reason }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        <section id="pm2VoiceClinicalOS" class="pm2-voice-os-panel" data-pm2-voice-os data-patient-ref="{{ identity.nss }}" data-surface="patient_profile_v2" aria-label="Cortana clínica">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem;color:var(--pn-accent);font-weight:800;letter-spacing:.16em;text-transform:uppercase;">Cortana clínica</div>
+                    <h3 style="font-family:var(--pm-font-display);font-size:1.15rem;color:#f8fafc;margin:5px 0 0;">Voice Clinical OS · captura con revisión médica</h3>
+                    <p style="margin:6px 0 0;color:var(--pn-text-muted);font-size:.84rem;line-height:1.45;max-width:84ch;">
+                        Local-first: consentimiento verbal, transcript cifrado, extracción estructurada y escritura sólo después de firma clínica.
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+                    <span class="pm2-voice-status" data-voice-status data-tone="idle">sin sesión</span>
+                    <span class="pm2-state-chip">sesión: <span data-voice-session-key>sin sesión</span></span>
+                </div>
+            </div>
+            <div class="pm2-voice-grid">
+                <div class="pm2-voice-box">
+                    <div style="font-size:.68rem;color:#67e8f9;font-weight:800;letter-spacing:.12em;text-transform:uppercase;">1 · consentimiento</div>
+                    <textarea class="pm2-voice-textarea" data-voice-consent-text>Autorizo que ProstaMed capture esta conversación clínica por voz para transcripción local, revisión médica y escritura auditada en mi expediente.</textarea>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="create">Crear sesión</button>
+                        <button type="button" class="pm2-btn pm2-btn--primary" data-voice-action="consent">Registrar consentimiento</button>
+                    </div>
+                    <p style="margin:10px 0 0;color:var(--pn-text-soft);font-size:.72rem;line-height:1.4;">
+                        El audio crudo queda temporal y se marca eliminado al firmar o descartar. El transcript firmado y los campos aceptados conservan provenance.
+                    </p>
+                </div>
+                <div class="pm2-voice-box">
+                    <div style="font-size:.68rem;color:#67e8f9;font-weight:800;letter-spacing:.12em;text-transform:uppercase;">2 · transcript y candidatos</div>
+                    <textarea class="pm2-voice-textarea" data-voice-transcript placeholder="Dictado clínico: APE 2.4 ng/mL el 2026-05-11, testosterona 38 ng/dL, ECOG 1..."></textarea>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="record">
+                            <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="2" stroke-linecap="round" d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path stroke-width="2" stroke-linecap="round" d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></svg>
+                            Grabar
+                        </button>
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="stop">
+                            <svg class="pm2-btn-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="7" y="7" width="10" height="10" rx="1.5" stroke-width="2"/></svg>
+                            Detener STT
+                        </button>
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="review">Extraer candidatos</button>
+                        <button type="button" class="pm2-btn pm2-btn--primary" data-voice-action="commit">Firmar y escribir aceptados</button>
+                        <button type="button" class="pm2-btn pm2-btn--ghost" data-voice-action="discard">Descartar</button>
+                    </div>
+                    <div data-voice-candidates style="margin-top:10px;">
+                        <div class="pm2-voice-empty">Aún no hay candidatos. La voz nunca escribe sin revisión médica.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         {% set _surface = surface_consistency or {} %}
         {% if _surface.should_show %}
         <section style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.28); border-radius: 12px;" aria-label="Consistencia de superficies">
@@ -185,9 +485,11 @@
         </section>
         {% endif %}
 
-        {% set _show_crpc_copilot = crpc_copilot and (crpc_copilot.show_card or crpc_copilot.status in ['shadow', 'shadow-blocked', 'advisory', 'active']) %}
-        {% set _show_post_rp_copilot = post_rp_copilot and (post_rp_copilot.show_card or post_rp_copilot.status in ['shadow', 'shadow-blocked', 'advisory', 'active']) %}
-        {% if _show_crpc_copilot or _show_post_rp_copilot %}
+        {% set _show_crpc_copilot = crpc_copilot and (crpc_copilot.show_card or crpc_copilot.available or crpc_copilot.status in ['shadow', 'shadow-blocked', 'advisory', 'active']) %}
+        {% set _show_post_rp_copilot = post_rp_copilot and (post_rp_copilot.show_card or post_rp_copilot.available or post_rp_copilot.status in ['shadow', 'shadow-blocked', 'advisory', 'active']) %}
+        {% set _show_mhspc_copilot = mhspc_copilot and (mhspc_copilot.show_card or mhspc_copilot.available or mhspc_copilot.status in ['shadow', 'shadow-blocked', 'advisory', 'active']) %}
+        {% set _show_post_rt_copilot = post_rt_copilot and (post_rt_copilot.show_card or post_rt_copilot.available or post_rt_copilot.status in ['shadow', 'shadow-blocked', 'advisory', 'active']) %}
+        {% if _show_crpc_copilot or _show_post_rp_copilot or _show_mhspc_copilot or _show_post_rt_copilot %}
         <section style="margin: var(--space-4) var(--space-6); display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--space-4);">
             {% if _show_crpc_copilot %}
             <article style="padding: var(--space-5); background: linear-gradient(180deg, rgba(112,26,117,0.14), rgba(15,23,42,0.72)); border: 1px solid rgba(217,70,239,0.28); border-radius: 14px;">
@@ -233,6 +535,64 @@
             </article>
             {% endif %}
 
+            {% if _show_mhspc_copilot %}
+            <article style="padding: var(--space-5); background: linear-gradient(180deg, rgba(79,70,229,0.13), rgba(15,23,42,0.72)); border: 1px solid rgba(129,140,248,0.28); border-radius: 14px;">
+                <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                    <div>
+                        <div style="font-size:.7rem; color:#a5b4fc; font-weight:700; letter-spacing:.18em; text-transform:uppercase;">Copiloto mHSPC</div>
+                        <h3 style="font-family:var(--pm-font-display); font-size:1.1rem; color:#f8fafc; margin:6px 0 0;">Volumen, temporalidad y terapia al primario</h3>
+                    </div>
+                    <span class="pm2-state-chip">{{ mhspc_copilot.status or mhspc_copilot.runtime_mode or 'shadow' }}</span>
+                </div>
+                {% set _mhspc_preferred = mhspc_copilot.preferred_frontline_regimen or (mhspc_copilot.eligible_treatments[0] if mhspc_copilot.eligible_treatments else {}) %}
+                {% set _mhspc_final = mhspc_copilot.final_presented_recommendation or mhspc_copilot.rule_based_recommendation or {} %}
+                <div style="margin-top:var(--space-4); display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px;">
+                    <div style="padding:12px; background:var(--surface-3); border-radius:10px;">
+                        <div style="font-size:.66rem; color:var(--pn-text-soft); font-weight:700; letter-spacing:.14em; text-transform:uppercase;">Régimen frontline preferente</div>
+                        <div style="margin-top:6px; color:#f8fafc; font-weight:700;">
+                            {{ _mhspc_preferred.regimen_label or _mhspc_preferred.display_label or _mhspc_preferred.name or _mhspc_final.recommended_action or 'Sin frontline preferente cerrado' }}
+                        </div>
+                        <p style="margin:8px 0 0; color:var(--pn-text-muted); font-size:.82rem; line-height:1.45;">
+                            {{ _mhspc_preferred.description or _mhspc_final.rationale or 'La preferencia se resuelve con volumen CHAARTED/LATITUDE, fitness y disponibilidad.' }}
+                        </p>
+                    </div>
+                    <div style="padding:12px; background:var(--surface-3); border-radius:10px;">
+                        <div style="font-size:.66rem; color:var(--pn-text-soft); font-weight:700; letter-spacing:.14em; text-transform:uppercase;">Tratamiento global preferente hoy</div>
+                        <div style="margin-top:6px; color:#f8fafc; font-weight:700;">{{ _mhspc_final.recommended_action or decision_today.headline or 'Pendiente de cierre clínico' }}</div>
+                        <p style="margin:8px 0 0; color:var(--pn-text-muted); font-size:.82rem; line-height:1.45;">{{ _mhspc_final.rationale or mhspc_copilot.why_this_now or 'Sin cambio longitudinal mHSPC visible todavía.' }}</p>
+                    </div>
+                </div>
+                <div style="margin-top:var(--space-4); padding:12px; background:rgba(99,102,241,0.09); border:1px solid rgba(129,140,248,0.24); border-radius:10px;">
+                    <div style="font-size:.66rem; color:#c4b5fd; font-weight:700; letter-spacing:.14em; text-transform:uppercase;">RT primario</div>
+                    <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                        <span class="pm2-state-chip pm2-state-chip--{{ 'success' if mhspc_copilot.rt_primary_candidate else 'info' }}">
+                            {{ 'candidato visible' if mhspc_copilot.rt_primary_candidate else 'no prioritizado / no visible' }}
+                        </span>
+                        {% if mhspc_copilot.mdt_candidate %}
+                        <span class="pm2-state-chip">MDT candidata</span>
+                        {% endif %}
+                        {% if mhspc_copilot.phenotype_summary %}
+                        <span class="pm2-state-chip">{{ mhspc_copilot.phenotype_summary.volume_disease_label or mhspc_copilot.volume_disease or 'volumen no resuelto' }}</span>
+                        <span class="pm2-state-chip">{{ mhspc_copilot.phenotype_summary.temporality_label or mhspc_copilot.temporality or 'temporalidad no visible' }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div style="margin-top:var(--space-4); padding:12px; background:rgba(15,23,42,0.72); border:1px solid rgba(148,163,184,0.18); border-radius:10px;">
+                    <div style="font-size:.66rem; color:var(--pn-text-soft); font-weight:700; letter-spacing:.14em; text-transform:uppercase;">Gate de progresión / recomendación final</div>
+                    <div style="margin-top:6px; color:#f8fafc; font-weight:700;">
+                        {{ 'Gate activo' if mhspc_copilot.progression_gate_active else (mhspc_copilot.progression_gate_status or 'Sin gate de progresión activo') }}
+                    </div>
+                    {% if mhspc_copilot.blocking_inputs %}
+                    <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px;">
+                        {% for group in mhspc_copilot.blocking_inputs[:4] %}
+                        <span class="pm2-state-chip">{{ group.label or group.group or group.status or 'Dato faltante' }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+            </article>
+            {% endif %}
+
             {% if _show_post_rp_copilot %}
             <article style="padding: var(--space-5); background: linear-gradient(180deg, rgba(8,145,178,0.12), rgba(15,23,42,0.72)); border: 1px solid rgba(34,211,238,0.28); border-radius: 14px;">
                 <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
@@ -258,6 +618,71 @@
                     <div style="font-size:.66rem; color:#67e8f9; font-weight:700; letter-spacing:.14em; text-transform:uppercase;">Overlay asesor AI</div>
                     <div style="margin-top:6px; color:#f8fafc; font-weight:700;">{{ post_rp_copilot.ai_advisory_overlay.recommended_action or 'Sin overlay elegible todavía' }}</div>
                     <p style="margin:8px 0 0; color:var(--pn-text-muted); font-size:.82rem; line-height:1.45;">{{ post_rp_copilot.ai_advisory_overlay.concordance_label or 'rule_only' }}</p>
+                </div>
+            </article>
+            {% endif %}
+
+            {% if _show_post_rt_copilot %}
+            <article style="padding: var(--space-5); background: linear-gradient(180deg, rgba(20,184,166,0.12), rgba(15,23,42,0.72)); border: 1px solid rgba(45,212,191,0.28); border-radius: 14px;">
+                <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                    <div>
+                        <div style="font-size:.7rem; color:#5eead4; font-weight:700; letter-spacing:.18em; text-transform:uppercase;">Copiloto post-RT</div>
+                        <h3 style="font-family:var(--pm-font-display); font-size:1.1rem; color:#f8fafc; margin:6px 0 0;">Phoenix, reestadificación y salvage local</h3>
+                    </div>
+                    <span class="pm2-state-chip">{{ post_rt_copilot.status or post_rt_copilot.runtime_mode or 'shadow' }}</span>
+                </div>
+                {% set _post_rt_rule = post_rt_copilot.rule_based_recommendation or {} %}
+                {% set _post_rt_final = post_rt_copilot.final_presented_recommendation or {} %}
+                {% set _post_rt_action = _post_rt_rule.recommended_action or _post_rt_final.recommended_action or next_best_action.title or decision_today.headline %}
+                <div style="margin-top:var(--space-4); display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px;">
+                    <div style="padding:12px; background:var(--surface-3); border-radius:10px;">
+                        <div style="font-size:.66rem; color:var(--pn-text-soft); font-weight:700; letter-spacing:.14em; text-transform:uppercase;">Ruta visible</div>
+                        <div style="margin-top:6px; color:#f8fafc; font-weight:700;">{{ _post_rt_action or 'Sin ruta visible' }}</div>
+                        <p style="margin:8px 0 0; color:var(--pn-text-muted); font-size:.82rem; line-height:1.45;">{{ _post_rt_rule.rationale or _post_rt_final.rationale or 'La ruta local vs sistémica se decide con Phoenix, PSMA y fitness de rescate.' }}</p>
+                    </div>
+                    <div style="padding:12px; background:var(--surface-3); border-radius:10px;">
+                        <div style="font-size:.66rem; color:var(--pn-text-soft); font-weight:700; letter-spacing:.14em; text-transform:uppercase;">Phoenix</div>
+                        <div style="margin-top:6px; color:#f8fafc; font-weight:700;">{{ post_rt_copilot.post_rt_failure_definition.phoenix_status or 'no evaluable' }}</div>
+                        <p style="margin:8px 0 0; color:var(--pn-text-muted); font-size:.82rem; line-height:1.45;">Base: {{ post_rt_copilot.post_rt_failure_definition.failure_confirmation_basis or post_rt_copilot.post_rt_course or 'indeterminada' }}</p>
+                    </div>
+                </div>
+                <div style="margin-top:var(--space-4); padding:12px; background:rgba(20,184,166,0.08); border:1px solid rgba(45,212,191,0.22); border-radius:10px;">
+                    <div style="font-size:.66rem; color:#5eead4; font-weight:700; letter-spacing:.14em; text-transform:uppercase;">Ranking de salvage local</div>
+                    {% set _post_rt_ranking = post_rt_copilot.post_rt_local_salvage_ranking or [] %}
+                    {% if _post_rt_ranking %}
+                    <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
+                        {% for item in _post_rt_ranking[:5] %}
+                        <div style="display:flex; justify-content:space-between; gap:12px; color:#f8fafc; font-size:.84rem;">
+                            <span>{{ item.name or item.label or item.regimen_label or item.regimen_code }}</span>
+                            <strong>{{ item.score or item.rank or item.status or 'visible' }}</strong>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div style="margin-top:8px; color:#f8fafc; font-weight:700;">{{ post_rt_copilot.local_salvage_pathway.recommended_path or _post_rt_action or 'Ranking no disponible' }}</div>
+                    {% endif %}
+                    <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px;">
+                        <span class="pm2-state-chip">{{ post_rt_copilot.post_rt_salvage_window_status or 'ventana no visible' }}</span>
+                        {% if post_rt_copilot.local_salvage_pathway.visible %}
+                        <span class="pm2-state-chip pm2-state-chip--success">salvage local visible</span>
+                        {% endif %}
+                        {% if post_rt_copilot.systemic_redirection_status.redirected %}
+                        <span class="pm2-state-chip pm2-state-chip--warn">redirección sistémica</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% set _post_rt_missing = post_rt_copilot.required_missing_fields or post_rt_copilot.post_rt_failure_definition.required_missing_fields or post_rt_copilot.blocking_inputs or [] %}
+                <div style="margin-top:var(--space-4); padding:12px; background:rgba(15,23,42,0.72); border:1px solid rgba(148,163,184,0.18); border-radius:10px;">
+                    <div style="font-size:.66rem; color:var(--pn-text-soft); font-weight:700; letter-spacing:.14em; text-transform:uppercase;">Campos faltantes para cerrar la ruta</div>
+                    {% if _post_rt_missing %}
+                    <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px;">
+                        {% for item in _post_rt_missing[:6] %}
+                        <span class="pm2-state-chip">{{ item.label or item.name or item.field or item }}</span>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div style="margin-top:6px; color:#f8fafc; font-weight:700;">Sin bloqueos decisivos visibles</div>
+                    {% endif %}
                 </div>
             </article>
             {% endif %}
@@ -510,6 +935,56 @@
             </details>
         </section>
 
+        {% set _fusion = decision_today_fusion_kernel or profile_view_raw.get('decision_today_fusion_kernel', {}) %}
+        {% set _fusion_decision = _fusion.get('decision_today', {}) if _fusion else {} %}
+        {% set _fusion_action = _fusion.get('next_safe_action', {}) if _fusion else {} %}
+        {% set _fusion_missing = _fusion.get('unified_missing_fields', []) if _fusion else [] %}
+        {% set _autodrive = autodrive or profile_view_raw.get('autodrive', {}) %}
+        {% set _ad_summary = _autodrive.get('summary', {}) if _autodrive else {} %}
+        {% set _ad_queue = _autodrive.get('today_queue', []) if _autodrive else [] %}
+        {% set _ad_top = _ad_queue[0] if _ad_queue else {} %}
+        <section id="pm2AutodriveCommandCenter" data-decision-today-fusion style="margin: var(--space-4) var(--space-6); padding: var(--space-5); background: linear-gradient(135deg, rgba(14,165,233,0.08), rgba(15,23,42,0.58)); border: 1px solid rgba(14,165,233,0.32); border-left: 6px solid var(--clinical-info); border-radius: 14px;">
+            <div style="display:flex;justify-content:space-between;gap:var(--space-3);align-items:flex-start;flex-wrap:wrap;margin-bottom:var(--space-3);">
+                <div style="min-width:220px;flex:1">
+                    <div style="font-size:.7rem;color:var(--clinical-info);font-weight:800;letter-spacing:.18em;text-transform:uppercase;">DECISIÓN HOY · Fusion Kernel</div>
+                    <h3 style="font-family:var(--pm-font-display);font-size:1.2rem;color:#f0fbff;margin:6px 0 4px;letter-spacing:-.02em;">
+                        {{ _fusion_decision.get('title') or _ad_summary.get('top_action_title') or 'Sin decisión clínica accionable hoy' }}
+                    </h3>
+                    <p style="color:var(--pn-text-muted);font-size:.84rem;line-height:1.5;margin:0">
+                        {{ _fusion.get('clinical_rationale') or _ad_summary.get('dominant_blocker') or 'No hay bloqueo dominante documentado.' }}
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+                    <span class="pm2-state-chip {% if _fusion.get('decision_state') in ['urgent_safety','redecision_required'] or _ad_summary.get('priority_status') == 'critical_today' %}pm2-state-chip--warn{% else %}pm2-state-chip--primary{% endif %}">
+                        {{ _fusion.get('decision_state') or _ad_summary.get('priority_status', 'not_actionable') }}
+                    </span>
+                    <span class="pm2-state-chip">{{ _fusion_decision.get('label') or _ad_summary.get('dominant_lane_label', 'sin carril') }}</span>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:var(--space-3);">
+                <div style="padding:10px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:8px;">
+                    <div style="font-size:.66rem;color:var(--pn-text-soft);font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Riesgo evitado</div>
+                    <div style="font-size:.8rem;color:#e0f2fe;margin-top:4px">{{ _fusion_decision.get('risk_avoided') or _fusion_action.get('risk_avoided') or _ad_summary.get('risk_avoided') or _ad_top.get('risk_avoided') or '—' }}</div>
+                </div>
+                <div style="padding:10px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:8px;">
+                    <div style="font-size:.66rem;color:var(--pn-text-soft);font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Dato requerido</div>
+                    <div style="font-size:.8rem;color:#e0f2fe;margin-top:4px">
+                        {% if _fusion_missing %}{% for item in _fusion_missing[:3] %}{{ item.get('label') or item.get('field') }}{% if not loop.last %} · {% endif %}{% endfor %}{% elif _ad_top.get('missing_fields') %}{{ _ad_top.get('missing_fields')[:3] | join(' · ') }}{% else %}—{% endif %}
+                    </div>
+                </div>
+                <div style="padding:10px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:8px;">
+                    <div style="font-size:.66rem;color:var(--pn-text-soft);font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Fecha limite</div>
+                    <div style="font-size:.8rem;color:#e0f2fe;margin-top:4px">{{ _fusion_action.get('due_at') or _ad_top.get('due_at') or 'hoy / segun agenda' }}</div>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:var(--space-3);">
+                {% set _ad_cta = _fusion_action.get('cta', {}) or (_ad_top.get('cta', {}) if _ad_top else _ad_summary.get('top_cta', {})) %}
+                <a href="{{ _ad_cta.get('href', '/patient_profile/' ~ identity.nss ~ '?v=2') }}" class="pm2-btn pm2-btn--primary" style="text-decoration:none">{{ _ad_cta.get('label', 'Abrir acción') }}</a>
+                <a href="/api/patients/{{ identity.nss }}/decision-today" class="pm2-btn pm2-btn--ghost" style="text-decoration:none">Ver Decisión Hoy JSON</a>
+                <a href="/api/patients/{{ identity.nss }}/autodrive" class="pm2-btn pm2-btn--ghost" style="text-decoration:none">Ver JSON auditable</a>
+            </div>
+        </section>
+
         {# ── Faubot LXXXVI #67F — Next Best Action ejecutivo (B-fix Fase 4) ── #}
         {% if next_best_action.available %}
         <section style="margin: var(--space-4) var(--space-6); padding: var(--space-5); background: linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(15, 23, 42, 0.5)); border: 1px solid var(--clinical-info-edge); border-left: 6px solid var(--clinical-info); border-radius: 14px;">
@@ -571,18 +1046,18 @@
         </section>
         {% endif %}
 
-        {# ── Faubot LXXXVI #67F Fase 5 — What-if simulator card ── #}
+        {# ── Tumor Board OS — What-if simulator card ── #}
         <section style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(168,85,247,0.06), rgba(15,23,42,0.5)); border: 1px solid rgba(168,85,247,0.3); border-left: 4px solid rgb(168,85,247); border-radius: 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3);">
                 <div>
-                    <div style="font-size: 0.7rem; color: rgb(196,181,253); font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;">🔮 Simulador what-if · explorar sin escribir</div>
-                    <h3 style="font-family: var(--pm-font-display); font-size: 1.05rem; color: #f0fbff; margin: 6px 0 0;">¿Qué cambiaría si capturara…?</h3>
+                    <div style="font-size: 0.7rem; color: rgb(196,181,253); font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;">Tumor Board OS · what-if sin escribir</div>
+                    <h3 style="font-family: var(--pm-font-display); font-size: 1.05rem; color: #f0fbff; margin: 6px 0 0;">¿Qué opción se desbloquearía si capturara…?</h3>
                 </div>
                 <button type="button" class="pm2-btn pm2-btn--ghost" onclick="document.getElementById('pm2-simulator').style.display='block'">Abrir simulador</button>
             </div>
             <div id="pm2-simulator" style="display:none; padding: var(--space-3); background: var(--surface-2); border-radius: 8px;">
                 <p style="color: var(--pn-text-muted); font-size: 0.78rem; margin: 0 0 12px;">
-                    Modifica un input hipotético; el sistema computa qué cambiaría en la decisión clínica (sin escribir a DB).
+                    Modifica un input hipotético; el Tumor Board OS recomputa opciones, gates y trials sin escribir a DB.
                 </p>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 12px;">
                     <select id="sim-field" class="pm2-append-form-input">
@@ -654,16 +1129,31 @@
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--pn-accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 14l4-4 4 4 6-6"/></svg>
                             PSA Observability — torre de vigilancia
                         </h3>
-                        <span class="pm2-head-meta">3 líneas · 11 puntos · forecast 3/6/12m</span>
+                        <span class="pm2-head-meta">
+                            {% if pm2_psa_points %}
+                                {{ pm2_treatment_bands|length }} líneas documentadas · {{ pm2_psa_points|length }} puntos APE
+                            {% else %}
+                                Sin mediciones APE registradas
+                            {% endif %}
+                        </span>
                     </div>
                     <div class="pm2-tab-card-body">
                         <div class="pm2-chart-shell" style="height:340px"><canvas id="psaMini"></canvas></div>
                         <div class="pm2-chart-legend">
-                            <span><span class="pm2-legend-swatch" style="background:#1FB8FF"></span>L1 ADT+Daro+Doce</span>
-                            <span><span class="pm2-legend-swatch" style="background:#7C5CFF"></span>L2 Cabazitaxel</span>
-                            <span><span class="pm2-legend-swatch" style="background:#A857E8"></span>ARASENS mediana</span>
-                            <span><span class="pm2-legend-swatch" style="background:rgba(31,184,255,.3)"></span>Forecast CI 95%</span>
-                            <span><span class="pm2-legend-swatch" style="background:#dc2626"></span>BCR · Detect · CRPC</span>
+                            {% if pm2_psa_points %}
+                            <span><span class="pm2-legend-swatch" style="background:#1FB8FF"></span>APE paciente</span>
+                            {% endif %}
+                            {% if pm2_treatment_bands %}
+                                {% for band in pm2_treatment_bands[:4] %}
+                                <span><span class="pm2-legend-swatch" style="background:#7C5CFF"></span>{{ band.label or band.drug_scheme_label or band.drug_scheme or ('Línea ' ~ loop.index) }}</span>
+                                {% endfor %}
+                            {% else %}
+                            <span><span class="pm2-legend-swatch" style="background:#64748b"></span>Sin línea terapéutica documentada</span>
+                            {% endif %}
+                            {% if pm2_testosterone_points %}
+                            <span><span class="pm2-legend-swatch" style="background:#fbbf24"></span>Testosterona</span>
+                            {% endif %}
+                            <span><span class="pm2-legend-swatch" style="background:#dc2626"></span>Umbrales clínicos</span>
                         </div>
                     </div>
                 </div>
@@ -768,18 +1258,25 @@
             <div class="pm2-grid-3" style="margin-top:18px">
                 <div class="pm2-tab-card">
                     <div class="pm2-tab-card-head">
-                        <h3>Línea 1 · ADT+Daro+Doce</h3>
-                        <span class="pm2-kin-badge pm2-kin-response" style="margin-left:auto">response</span>
+                        {% set quick_line = pm2_per_line[0] if pm2_per_line else None %}
+                        <h3>{{ ('Línea ' ~ quick_line.line ~ ' · ' ~ quick_line.regimen) if quick_line else 'Sin línea terapéutica documentada' }}</h3>
+                        {% if quick_line %}
+                        <span class="pm2-kin-badge pm2-kin-response" style="margin-left:auto">{{ quick_line.kinetics or 'insufficient_data' }}</span>
+                        {% endif %}
                     </div>
                     <div class="pm2-tab-card-body">
+                        {% if quick_line %}
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.78rem">
-                            <div><div class="pm2-kicker">Baseline</div><strong class="pm2-mono" style="color:#f0fbff;font-size:1.1rem">45.0</strong></div>
-                            <div><div class="pm2-kicker">Nadir</div><strong class="pm2-mono" style="color:#f0fbff;font-size:1.1rem">2.1</strong></div>
-                            <div><div class="pm2-kicker">Best Δ%</div><strong class="pm2-mono" style="color:var(--clinical-success);font-size:1.1rem">−95.3%</strong></div>
-                            <div><div class="pm2-kicker">Time to nadir</div><strong class="pm2-mono" style="color:#f0fbff">9.2 m</strong></div>
-                            <div><div class="pm2-kicker">DOR</div><strong class="pm2-mono" style="color:#f0fbff">14.6 m</strong></div>
-                            <div><div class="pm2-kicker">PSADT prog</div><strong class="pm2-mono" style="color:#f0fbff">11.2 m</strong></div>
+                            <div><div class="pm2-kicker">Baseline</div><strong class="pm2-mono" style="color:#f0fbff;font-size:1.1rem">{{ quick_line.baseline }}</strong></div>
+                            <div><div class="pm2-kicker">Nadir</div><strong class="pm2-mono" style="color:#f0fbff;font-size:1.1rem">{{ quick_line.nadir }}</strong></div>
+                            <div><div class="pm2-kicker">Best Δ%</div><strong class="pm2-mono" style="color:var(--clinical-success);font-size:1.1rem">{{ quick_line.best_pct_change }}</strong></div>
+                            <div><div class="pm2-kicker">Time to nadir</div><strong class="pm2-mono" style="color:#f0fbff">{{ quick_line.ttn }} m</strong></div>
+                            <div><div class="pm2-kicker">DOR</div><strong class="pm2-mono" style="color:#f0fbff">{{ quick_line.dor }} m</strong></div>
+                            <div><div class="pm2-kicker">PSADT prog</div><strong class="pm2-mono" style="color:#f0fbff">{{ quick_line.psadt }} m</strong></div>
                         </div>
+                        {% else %}
+                        <p style="margin:0;color:var(--pn-text-muted);font-size:.82rem;line-height:1.55">No se ha ingresado una línea sistémica. La torre APE no asumirá ADT, ARPI, docetaxel ni cualquier combinación terapéutica sin captura explícita.</p>
+                        {% endif %}
                     </div>
                 </div>
                 <div class="pm2-tab-card">
@@ -788,33 +1285,40 @@
                         <span class="pm2-state-chip pm2-state-chip--success" style="margin-left:auto;font-size:.65rem">model_fit: high</span>
                     </div>
                     <div class="pm2-tab-card-body" style="padding:0">
+                        {% if psa_forecast_per_line and psa_forecast_per_line.points %}
                         <table class="pm2-tbl">
                             <thead><tr><th>Horizonte</th><th>Esperado</th><th>CI inf</th><th>CI sup</th><th>Width</th></tr></thead>
                             <tbody>
-                                <tr><td>3 m</td><td class="pm2-num">4.1</td><td class="pm2-num">3.6</td><td class="pm2-num">4.7</td><td class="pm2-num">1.1</td></tr>
-                                <tr><td>6 m</td><td class="pm2-num">5.0</td><td class="pm2-num">4.0</td><td class="pm2-num">6.4</td><td class="pm2-num">2.4</td></tr>
-                                <tr><td>12 m</td><td class="pm2-num">7.4</td><td class="pm2-num">5.2</td><td class="pm2-num">10.5</td><td class="pm2-num">5.3</td></tr>
+                                {% for point in psa_forecast_per_line.points[:3] %}
+                                <tr><td>{{ point.horizon_label or point.date or '—' }}</td><td class="pm2-num">{{ point.mean or point.median or point.value or '—' }}</td><td class="pm2-num">{{ point.ci_lower or point.lower or '—' }}</td><td class="pm2-num">{{ point.ci_upper or point.upper or '—' }}</td><td class="pm2-num">—</td></tr>
+                                {% endfor %}
                             </tbody>
                         </table>
-                        <div style="padding:10px 14px;color:var(--pn-text-muted);font-size:.7rem">R² = 0.91 · outliers = 0 · reliability = high · 11 puntos · 2 líneas estables</div>
+                        <div style="padding:10px 14px;color:var(--pn-text-muted);font-size:.7rem">Forecast calculado desde APE real del paciente.</div>
+                        {% else %}
+                        <div style="padding:16px;color:var(--pn-text-muted);font-size:.82rem;line-height:1.55">Sin forecast: se requieren mediciones APE seriadas reales suficientes.</div>
+                        {% endif %}
                     </div>
                 </div>
                 <div class="pm2-tab-card">
                     <div class="pm2-tab-card-head">
-                        <h3>Cohort ref · ARASENS</h3>
+                        <h3>Cohort ref · pivotal aplicable</h3>
                         <span class="pm2-state-chip" style="margin-left:auto;font-size:.65rem;background:rgba(168,87,232,.18);color:#d8b4fe;border-color:rgba(168,87,232,.4)">trial overlay</span>
                     </div>
                     <div class="pm2-tab-card-body" style="padding:0">
+                        {% if psa_cohort_reference and psa_cohort_reference.applicable_combos %}
                         <table class="pm2-tbl pm2-cohort-tbl">
                             <thead><tr><th>Métrica</th><th>Paciente</th><th>Cohort</th><th>Δ</th></tr></thead>
                             <tbody>
-                                <tr><td>PSA mes 6</td><td class="pm2-num">5.0</td><td class="pm2-num">3.8</td><td class="pm2-num pm2-delta-neg">+1.2</td></tr>
-                                <tr><td>PSA mes 12</td><td class="pm2-num">7.4</td><td class="pm2-num">2.1</td><td class="pm2-num pm2-delta-neg">+5.3</td></tr>
-                                <tr><td>Time to nadir</td><td class="pm2-num">9.2 m</td><td class="pm2-num">7.4 m</td><td class="pm2-num pm2-delta-neg">+1.8</td></tr>
-                                <tr><td>DOR</td><td class="pm2-num">14.6 m</td><td class="pm2-num">22.1 m</td><td class="pm2-num pm2-delta-neg">−7.5</td></tr>
+                                {% for combo in psa_cohort_reference.applicable_combos[:4] %}
+                                <tr><td>{{ combo.median_label or combo.regimen_class or 'Cohorte' }}</td><td class="pm2-num">{{ psa_cohort_reference.anchor_baseline_psa or '—' }}</td><td class="pm2-num">{{ combo.time_to_nadir_m or combo.nadir_pct or '—' }}</td><td class="pm2-num">—</td></tr>
+                                {% endfor %}
                             </tbody>
                         </table>
-                        <div style="padding:10px 14px;color:var(--pn-text-muted);font-size:.7rem">ARASENS NEJM 2022 · n=1306 mHSPC · ADT+Daro+Doce</div>
+                        <div style="padding:10px 14px;color:var(--pn-text-muted);font-size:.7rem">Overlay calculado desde cohorte aplicable y APE real del paciente.</div>
+                        {% else %}
+                        <div style="padding:16px;color:var(--pn-text-muted);font-size:.82rem;line-height:1.55">Sin cohorte aplicable: no se renderiza comparación pivotal hasta tener estado, línea y APE suficientes.</div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -883,10 +1387,19 @@
                     <div class="pm2-tab-card-body">
                         <div class="pm2-chart-shell" style="height:440px"><canvas id="psaFull"></canvas></div>
                         <div class="pm2-chart-legend">
-                            <span><span class="pm2-legend-swatch" style="background:#1FB8FF"></span>L1 ADT+Daro+Doce</span>
-                            <span><span class="pm2-legend-swatch" style="background:#7C5CFF"></span>L2 Cabazitaxel</span>
-                            <span><span class="pm2-legend-swatch" style="background:#A857E8"></span>ARASENS mediana</span>
+                            {% if pm2_psa_points %}
+                            <span><span class="pm2-legend-swatch" style="background:#1FB8FF"></span>APE paciente</span>
+                            {% endif %}
+                            {% if pm2_treatment_bands %}
+                                {% for band in pm2_treatment_bands[:4] %}
+                                <span><span class="pm2-legend-swatch" style="background:#7C5CFF"></span>{{ band.label or band.drug_scheme_label or band.drug_scheme or ('Línea ' ~ loop.index) }}</span>
+                                {% endfor %}
+                            {% else %}
+                            <span><span class="pm2-legend-swatch" style="background:#64748b"></span>Sin línea terapéutica documentada</span>
+                            {% endif %}
+                            {% if psa_forecast_per_line and psa_forecast_per_line.points %}
                             <span><span class="pm2-legend-swatch" style="background:rgba(31,184,255,.3)"></span>Forecast CI 95%</span>
+                            {% endif %}
                             <span><span class="pm2-legend-swatch" style="background:#dc2626"></span>Phoenix BCR (≥nadir+2)</span>
                             <span><span class="pm2-legend-swatch" style="background:#f59e0b"></span>PSA detectable (0.1)</span>
                         </div>
@@ -901,43 +1414,42 @@
                                 <tr><th>L#</th><th>Régimen</th><th>Baseline</th><th>Nadir</th><th>TtN</th><th>DOR</th><th>PSADT</th><th>Estado</th></tr>
                             </thead>
                             <tbody>
+                                {% if pm2_per_line %}
+                                {% for line in pm2_per_line %}
                                 <tr>
-                                    <td><span class="pm2-state-chip pm2-line-1">L1</span></td>
-                                    <td>ADT+Daro+Doce</td>
-                                    <td class="pm2-num">45.0</td><td class="pm2-num">2.1</td>
-                                    <td class="pm2-num">9.2 m</td><td class="pm2-num">14.6 m</td><td class="pm2-num">11.2 m</td>
-                                    <td><span class="pm2-kin-badge pm2-kin-response">response</span></td>
+                                    <td><span class="pm2-state-chip pm2-line-{{ loop.index }}">L{{ line.line or loop.index }}</span></td>
+                                    <td>{{ line.regimen }}</td>
+                                    <td class="pm2-num">{{ line.baseline }}</td><td class="pm2-num">{{ line.nadir }}</td>
+                                    <td class="pm2-num">{{ line.ttn }}</td><td class="pm2-num">{{ line.dor }}</td><td class="pm2-num">{{ line.psadt }}</td>
+                                    <td><span class="pm2-kin-badge pm2-kin-response">{{ line.kinetics }}</span></td>
                                 </tr>
+                                {% endfor %}
+                                {% else %}
                                 <tr>
-                                    <td><span class="pm2-state-chip pm2-line-2">L2</span></td>
-                                    <td>Cabazitaxel</td>
-                                    <td class="pm2-num">8.5</td><td class="pm2-num">3.8</td>
-                                    <td class="pm2-num">3.4 m</td><td class="pm2-num">5.1 m</td><td class="pm2-num">6.8 m</td>
-                                    <td><span class="pm2-kin-badge pm2-kin-partial">partial_response</span></td>
+                                    <td colspan="8" style="color:var(--pn-text-muted);padding:14px">Sin línea terapéutica documentada. La analítica per-line permanece vacía hasta capturar un tratamiento real.</td>
                                 </tr>
-                                <tr style="opacity:.6">
-                                    <td><span class="pm2-state-chip pm2-line-3">L3</span></td>
-                                    <td>(planif) Lu-177 PSMA</td>
-                                    <td class="pm2-num">—</td><td class="pm2-num">—</td>
-                                    <td class="pm2-num">—</td><td class="pm2-num">—</td><td class="pm2-num">—</td>
-                                    <td><span class="pm2-kin-badge pm2-kin-insufficient">insufficient_data</span></td>
-                                </tr>
+                                {% endif %}
                             </tbody>
                         </table>
                         <div style="padding:14px;border-top:1px solid var(--border-default);background:rgba(15,23,42,0.6)">
                             <div class="pm2-kicker" style="margin-bottom:6px">Confidence reasons (forecast_reliability)</div>
                             <ul style="margin:0;padding-left:18px;font-size:.78rem;color:var(--pn-text-muted);line-height:1.6">
-                                <li><strong style="color:#cbd5e1">minimum_data_passed</strong>: 11 puntos ≥ umbral (5)</li>
-                                <li><strong style="color:#cbd5e1">line_stability_passed</strong>: paciente en L2 estable últimos 90 d</li>
-                                <li><strong style="color:#cbd5e1">model_fit_quality</strong>: high (R²=0.91)</li>
-                                <li><strong style="color:#cbd5e1">outlier_burden</strong>: 0 outliers detectados</li>
-                                <li><strong style="color:#cbd5e1">confidence final</strong>: <span class="pm2-state-chip pm2-state-chip--success">high</span></li>
+                                <li><strong style="color:#cbd5e1">minimum_data</strong>: {{ pm2_psa_points|length }} puntos APE reales</li>
+                                <li><strong style="color:#cbd5e1">line_stability</strong>: {{ pm2_treatment_bands|length }} líneas terapéuticas documentadas</li>
+                                <li><strong style="color:#cbd5e1">model_fit_quality</strong>: {{ 'calculable' if psa_forecast_per_line and psa_forecast_per_line.points else 'no calculable' }}</li>
+                                <li><strong style="color:#cbd5e1">data_source</strong>: biomarker_longitudinal + baseline real auto-seeded</li>
+                                <li><strong style="color:#cbd5e1">confidence final</strong>: <span class="pm2-state-chip {{ 'pm2-state-chip--success' if psa_forecast_per_line and psa_forecast_per_line.points else '' }}">{{ 'high' if psa_forecast_per_line and psa_forecast_per_line.points else 'insufficient_data' }}</span></li>
                             </ul>
                         </div>
                         <div style="padding:14px;border-top:1px solid var(--border-default)">
                             <div class="pm2-kicker" style="margin-bottom:6px">Drill-down per-band (click sobre la banda en chart)</div>
-                            <button class="pm2-btn pm2-btn--ghost" style="margin-right:6px" onclick="pm2OpenDrill('L1')">Ver detalle L1 →</button>
-                            <button class="pm2-btn pm2-btn--ghost" onclick="pm2OpenDrill('L2')">Ver detalle L2 →</button>
+                            {% if pm2_per_line %}
+                            {% for line in pm2_per_line[:2] %}
+                            <button class="pm2-btn pm2-btn--ghost" style="margin-right:6px" onclick="pm2OpenDrill('L{{ line.line or loop.index }}')">Ver detalle L{{ line.line or loop.index }} →</button>
+                            {% endfor %}
+                            {% else %}
+                            <span style="color:var(--pn-text-muted);font-size:.78rem">Sin bandas terapéuticas capturadas.</span>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -954,19 +1466,27 @@
                     </div>
                     <div class="pm2-tab-card-body">
                         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-                            <span class="pm2-state-chip pm2-state-chip--primary" style="font-size:.85rem;padding:8px 14px">ADT_DAROLUTAMIDE_DOCETAXEL</span>
-                            <span class="pm2-state-chip pm2-state-chip--success">decision_quality: high</span>
-                            <span class="pm2-state-chip" style="background:var(--clinical-info-soft);color:#c5e8ff;border-color:var(--clinical-info-edge)">applicability: directly_applicable</span>
+                            {% if pm2_has_tx %}
+                            {% set active_tx = pm2_treatment_bands|last if pm2_treatment_bands else {} %}
+                            <span class="pm2-state-chip pm2-state-chip--primary" style="font-size:.85rem;padding:8px 14px">{{ active_tx.drug_scheme or active_tx.label or active_tx.drug_scheme_label or 'Tratamiento documentado' }}</span>
+                            <span class="pm2-state-chip pm2-state-chip--success">decision_quality: calculada</span>
+                            {% else %}
+                            <span class="pm2-state-chip" style="font-size:.85rem;padding:8px 14px">Sin tratamiento sistémico documentado</span>
+                            <span class="pm2-state-chip">decision_quality: pendiente</span>
+                            {% endif %}
+                            <span class="pm2-state-chip" style="background:var(--clinical-info-soft);color:#c5e8ff;border-color:var(--clinical-info-edge)">applicability: según datos reales</span>
                         </div>
                         <div style="margin-top:14px;font-size:.82rem;color:var(--pn-text-muted);line-height:1.6">
-                            <strong style="color:#f0fbff">Razonamiento clínico</strong> · paciente mHSPC alto-volumen sincrónico, performance status preservado, sin contraindicaciones a docetaxel ni darolutamida. Triplete preferido por ARASENS (HR mortalidad 0.68).
+                            <strong style="color:#f0fbff">Razonamiento clínico</strong> · {{ decision_today.rationale if decision_today and decision_today.rationale else 'La recomendación no inventa líneas ni esquemas; requiere estado, biomarcadores, progresión y tratamiento explícitamente capturados.' }}
                         </div>
-                        <div style="margin-top:12px"><span class="pm2-kicker">Alternativas (3)</span></div>
+                        {% if decision_today and decision_today.alternatives %}
+                        <div style="margin-top:12px"><span class="pm2-kicker">Alternativas ({{ decision_today.alternatives|length }})</span></div>
                         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
-                            <span class="pm2-state-chip">ADT_DOCETAXEL_ABIRATERONE (PEACE-1)</span>
-                            <span class="pm2-state-chip">ADT_APALUTAMIDE (TITAN)</span>
-                            <span class="pm2-state-chip">ADT_ENZALUTAMIDE (ENZAMET / ARCHES)</span>
+                            {% for alt in decision_today.alternatives[:4] %}
+                            <span class="pm2-state-chip">{{ alt.label or alt.name or alt }}</span>
+                            {% endfor %}
                         </div>
+                        {% endif %}
                     </div>
                 </div>
 
@@ -1280,108 +1800,39 @@
                     </div>
                     <div class="pm2-tab-card-body">
                         <div class="pm2-timeline-v">
-                            <div class="pm2-tv-item" data-type="tx">
-                                <div class="pm2-tv-head">
-                                    <span class="pm2-state-chip pm2-line-1">Línea 1 inicio</span>
-                                    <span class="pm2-tv-date">2024-06-15</span>
+                            {% if timeline_vertical %}
+                                {% for event in timeline_vertical %}
+                                <div class="pm2-tv-item" data-type="{{ event.type or 'event' }}">
+                                    <div class="pm2-tv-head">
+                                        <span class="pm2-state-chip">{{ event.tag or event.type or 'Evento' }}</span>
+                                        <span class="pm2-tv-date">{{ event.date or '—' }}</span>
+                                    </div>
+                                    <div class="pm2-tv-title">{{ event.title or 'Evento clínico' }}</div>
+                                    <div class="pm2-tv-body">{{ event.body or 'Fuente clínica documentada.' }}</div>
                                 </div>
-                                <div class="pm2-tv-title">Inicio ADT + Darolutamida + Docetaxel (triplete ARASENS)</div>
-                                <div class="pm2-tv-body">Régimen: <span class="pm2-mono" style="color:var(--pn-accent)">ADT_DAROLUTAMIDE_DOCETAXEL</span> · indicación: mHSPC alto-volumen sincrónico · 6 ciclos docetaxel programados.</div>
-                            </div>
-
+                                {% endfor %}
+                            {% else %}
                             <div class="pm2-tv-item">
                                 <div class="pm2-tv-head">
-                                    <span class="pm2-state-chip">PSA</span>
-                                    <span class="pm2-tv-date">2024-09-01 · L1 mes 3</span>
+                                    <span class="pm2-state-chip">Sin eventos</span>
+                                    <span class="pm2-tv-date">—</span>
                                 </div>
-                                <div class="pm2-tv-title">PSA 12.0 ng/mL · ▼ 73% vs basal</div>
-                                <div class="pm2-tv-body">Respuesta esperada al triplete. Nadir aún no alcanzado. Source: <span class="pm2-mono">biomarker_longitudinal</span>.</div>
+                                <div class="pm2-tv-title">No hay eventos longitudinales documentados</div>
+                                <div class="pm2-tv-body">La cronología se alimentará únicamente con APE, testosterona, imagen, biopsias y tratamientos reales capturados.</div>
                             </div>
-
-                            <div class="pm2-tv-item" data-type="img">
-                                <div class="pm2-tv-head">
-                                    <span class="pm2-state-chip" style="background:rgba(168,87,232,.18);color:#d8b4fe;border-color:rgba(168,87,232,.4)">Imaging</span>
-                                    <span class="pm2-tv-date">2024-12-10</span>
-                                </div>
-                                <div class="pm2-tv-title">CT + bone scan · respuesta parcial</div>
-                                <div class="pm2-tv-body">Reducción carga ósea · sin nuevas lesiones. Reconfirma estado M1 (high-volume).</div>
-                            </div>
-
-                            <div class="pm2-tv-item" data-type="event">
-                                <div class="pm2-tv-head">
-                                    <span class="pm2-state-chip pm2-state-chip--success">PSA · NADIR</span>
-                                    <span class="pm2-tv-date">2025-04-12 · L1 mes 9.2</span>
-                                </div>
-                                <div class="pm2-tv-title">PSA nadir = 2.1 ng/mL · ▼ 95.3% vs basal · PSA50/90 ✓</div>
-                                <div class="pm2-tv-body">Time-to-nadir 9.2 m. Inicia ventana <strong style="color:#f0fbff">duration_response</strong>.</div>
-                            </div>
-
-                            <div class="pm2-tv-item" data-type="gate">
-                                <div class="pm2-tv-head">
-                                    <span class="pm2-gate-badge" data-severity="soft_warning">G47 soft_warning</span>
-                                    <span class="pm2-tv-date">2025-06-18</span>
-                                </div>
-                                <div class="pm2-tv-title">PSA flare detectado · pseudoprogresión probable</div>
-                                <div class="pm2-tv-body">PSA 3.4 (subida +62% desde nadir, &lt;12 sem post-ARPI re-escalation). Sistema flagged para no interpretar como BCR.</div>
-                            </div>
-
-                            <div class="pm2-tv-item">
-                                <div class="pm2-tv-head">
-                                    <span class="pm2-state-chip pm2-state-chip--warn">PSA progresión</span>
-                                    <span class="pm2-tv-date">2025-10-20 · L1 mes 16</span>
-                                </div>
-                                <div class="pm2-tv-title">Progresión PSA confirmada · L1 → L2</div>
-                                <div class="pm2-tv-body">3 mediciones ascendentes consecutivas. PSADT post-nadir = 11.2 m. Kinetics → <span class="pm2-kin-badge pm2-kin-progression">progression</span>.</div>
-                            </div>
-
-                            <div class="pm2-tv-item" data-type="tx">
-                                <div class="pm2-tv-head">
-                                    <span class="pm2-state-chip pm2-line-2">Línea 2 inicio</span>
-                                    <span class="pm2-tv-date">2025-11-02</span>
-                                </div>
-                                <div class="pm2-tv-title">Inicio Cabazitaxel · CARD trial logic</div>
-                                <div class="pm2-tv-body">Régimen: <span class="pm2-mono" style="color:var(--pn-accent)">CABAZITAXEL</span> · prior ARPI + Doce → CARD evidence support.</div>
-                            </div>
-
-                            <div class="pm2-tv-item" data-type="gate">
-                                <div class="pm2-tv-head">
-                                    <span class="pm2-gate-badge" data-severity="hard_block">G07 hard_block</span>
-                                    <span class="pm2-tv-date">2025-12-05</span>
-                                </div>
-                                <div class="pm2-tv-title">Hepatotoxicidad detectada · Abi/Niraparib bloqueadas</div>
-                                <div class="pm2-tv-body">ALT 6.2 × LSN. Excluye ADT_ABIRATERONE y NIRAPARIB_ABIRATERONE de futuras líneas.</div>
-                            </div>
-
-                            <div class="pm2-tv-item">
-                                <div class="pm2-tv-head">
-                                    <span class="pm2-state-chip">PSA</span>
-                                    <span class="pm2-tv-date">2026-04-02 · L2 mes 5</span>
-                                </div>
-                                <div class="pm2-tv-title">PSA 3.8 ng/mL · respuesta parcial L2</div>
-                                <div class="pm2-tv-body">Best Δ% L2 = −55.3% (de 8.5 → 3.8). Kinetics → <span class="pm2-kin-badge pm2-kin-partial">partial_response</span>.</div>
-                            </div>
-
-                            <div class="pm2-tv-item" data-type="event">
-                                <div class="pm2-tv-head">
-                                    <span class="pm2-state-chip" style="background:var(--clinical-info-soft);color:#c5e8ff;border-color:var(--clinical-info-edge)">PSMA-PET planificado</span>
-                                    <span class="pm2-tv-date">2026-05-15</span>
-                                </div>
-                                <div class="pm2-tv-title">PSMA-PET para qualificar Lu-177 PSMA-617 (línea 3)</div>
-                                <div class="pm2-tv-body">Si PSMA+ → trial VISION elegibility (mediana cohort PSA 5.9 ng/mL post-Lu).</div>
-                            </div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
 
                 <div class="pm2-tab-card">
-                    <div class="pm2-tab-card-head"><h3>Eventos clave (12)</h3></div>
+                    <div class="pm2-tab-card-head"><h3>Eventos clave ({{ timeline_vertical|length if timeline_vertical else 0 }})</h3></div>
                     <div class="pm2-tab-card-body">
                         <div style="display:grid;gap:8px;font-size:.8rem">
-                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip pm2-state-chip--success">9</span>PSA measurements</div>
-                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip pm2-line-2">3</span>Treatment starts/ends</div>
-                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip" style="background:var(--clinical-info-soft);color:#c5e8ff">2</span>Imaging events</div>
-                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip pm2-state-chip--warn">2</span>Gate triggers</div>
-                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip pm2-state-chip--danger">1</span>Clinical milestone (BCR)</div>
+                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip pm2-state-chip--success">{{ pm2_psa_points|length }}</span>APE measurements</div>
+                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip pm2-line-2">{{ pm2_treatment_bands|length }}</span>Treatment starts/ends</div>
+                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip" style="background:var(--clinical-info-soft);color:#c5e8ff">{{ timeline_vertical|length if timeline_vertical else 0 }}</span>Clinical events</div>
+                            <div style="display:flex;gap:8px;align-items:center"><span class="pm2-state-chip pm2-state-chip--warn">{{ gates_top|length if gates_top else 0 }}</span>Gate triggers</div>
                         </div>
                         <div style="margin-top:14px;padding:12px;border:1px dashed var(--border-default);border-radius:10px;font-size:.74rem;color:var(--pn-text-muted);line-height:1.5">
                             Cada evento se asigna automáticamente a la línea activa (auto-asignación por fecha · LXV #63B). Los gates con severity = soft_warning aparecen contextualizados pero NO bloquean tratamiento (anti-misinterpretation pattern · LVIII #62).
@@ -1405,10 +1856,10 @@
                     <div class="pm2-dim-title">Reasoning chain</div>
                     <div class="pm2-dim-body">UI muestra el razonamiento completo al médico: estado → régimen preferido → alternativas → policy version.</div>
                     <div style="margin-top:10px">
-                        <div class="pm2-dim-stat"><span>preferred_regimen</span><strong>ADT_DARO_DOCE</strong></div>
-                        <div class="pm2-dim-stat"><span>decision_quality</span><strong>high</strong></div>
-                        <div class="pm2-dim-stat"><span>alternatives</span><strong>3</strong></div>
-                        <div class="pm2-dim-stat"><span>ranking_policy</span><strong>v3.4</strong></div>
+                        <div class="pm2-dim-stat"><span>preferred_regimen</span><strong>{{ audit_dims.como.preferred_regimen or 'Sin régimen preferente activo' }}</strong></div>
+                        <div class="pm2-dim-stat"><span>decision_quality</span><strong>{{ audit_dims.como.decision_quality or '—' }}</strong></div>
+                        <div class="pm2-dim-stat"><span>alternatives</span><strong>{{ audit_dims.como.alternatives_count or 0 }}</strong></div>
+                        <div class="pm2-dim-stat"><span>ranking_policy</span><strong>{{ audit_dims.como.ranking_policy or 'v—' }}</strong></div>
                     </div>
                 </div>
 
@@ -1418,9 +1869,9 @@
                     <div class="pm2-dim-title">Gates pivotales con razón</div>
                     <div class="pm2-dim-body">Cada gate documentado con clinical_reason + severity 3-tier + override clínico + trial_refs.</div>
                     <div style="margin-top:10px">
-                        <div class="pm2-dim-stat"><span>active_gates</span><strong>5</strong></div>
-                        <div class="pm2-dim-stat"><span>contraindications</span><strong>2</strong></div>
-                        <div class="pm2-dim-stat"><span>not_recommended</span><strong>4</strong></div>
+                        <div class="pm2-dim-stat"><span>active_gates</span><strong>{{ audit_dims.por_que.active_gates_count or 0 }}</strong></div>
+                        <div class="pm2-dim-stat"><span>contraindications</span><strong>{{ audit_dims.por_que.contraindications_count or 0 }}</strong></div>
+                        <div class="pm2-dim-stat"><span>not_recommended</span><strong>{{ audit_dims.por_que.not_recommended_count or 0 }}</strong></div>
                         <div class="pm2-dim-stat"><span>severity 3-tier</span><strong>✓</strong></div>
                     </div>
                 </div>
@@ -1431,9 +1882,9 @@
                     <div class="pm2-dim-title">Captura estructurada</div>
                     <div class="pm2-dim-body">input_snapshot completo, PHI-scrubbed, missing/stale flags explícitos para auditoría regulatoria.</div>
                     <div style="margin-top:10px">
-                        <div class="pm2-dim-stat"><span>input_field_count</span><strong>147</strong></div>
-                        <div class="pm2-dim-stat"><span>missing_critical</span><strong>2</strong></div>
-                        <div class="pm2-dim-stat"><span>stale_inputs</span><strong>1</strong></div>
+                        <div class="pm2-dim-stat"><span>input_field_count</span><strong>{{ audit_dims.datos.input_field_count or 0 }}</strong></div>
+                        <div class="pm2-dim-stat"><span>missing_critical</span><strong>{{ audit_dims.datos.missing_critical or 0 }}</strong></div>
+                        <div class="pm2-dim-stat"><span>stale_inputs</span><strong>{{ audit_dims.datos.stale_inputs or 0 }}</strong></div>
                         <div class="pm2-dim-stat"><span>phi_scrubbed</span><strong>true</strong></div>
                     </div>
                 </div>
@@ -1442,12 +1893,12 @@
                     <div class="pm2-dim-name">EVIDENCIA</div>
                     <div class="pm2-dim-stars">★★★★★</div>
                     <div class="pm2-dim-title">Referencias vivas</div>
-                    <div class="pm2-dim-body">37 trials reconocidos · per-gate evidence drill-down a PubMed/CT.gov/DOI · NCCN/EAU vivos.</div>
+                    <div class="pm2-dim-body">{{ audit_dims.evidencia.unique_trial_refs or 0 }} trials enlazados al contexto del paciente · per-gate evidence drill-down a PubMed/CT.gov/DOI · NCCN/EAU vivos.</div>
                     <div style="margin-top:10px">
-                        <div class="pm2-dim-stat"><span>unique_trial_refs</span><strong>37</strong></div>
-                        <div class="pm2-dim-stat"><span>per_gate_evidence</span><strong>5</strong></div>
-                        <div class="pm2-dim-stat"><span>NCCN</span><strong>v2.2026</strong></div>
-                        <div class="pm2-dim-stat"><span>EAU</span><strong>2026</strong></div>
+                        <div class="pm2-dim-stat"><span>unique_trial_refs</span><strong>{{ audit_dims.evidencia.unique_trial_refs or 0 }}</strong></div>
+                        <div class="pm2-dim-stat"><span>per_gate_evidence</span><strong>{{ audit_dims.evidencia.per_gate_evidence or 0 }}</strong></div>
+                        <div class="pm2-dim-stat"><span>NCCN</span><strong>{{ audit_dims.evidencia.guideline_versions.NCCN or '—' }}</strong></div>
+                        <div class="pm2-dim-stat"><span>EAU</span><strong>{{ audit_dims.evidencia.guideline_versions.EAU or '—' }}</strong></div>
                     </div>
                 </div>
 
@@ -1457,10 +1908,10 @@
                     <div class="pm2-dim-title">Reproducibilidad algorítmica</div>
                     <div class="pm2-dim-body">FAUBOT_RELEASE + module_sha + per-gate YAML SHA garantizan reproducir cualquier decisión histórica.</div>
                     <div style="margin-top:10px">
-                        <div class="pm2-dim-stat"><span>FAUBOT_RELEASE</span><strong>LXXVII</strong></div>
-                        <div class="pm2-dim-stat"><span>gates_active</span><strong>55</strong></div>
-                        <div class="pm2-dim-stat"><span>module_sha</span><strong class="pm2-mono">a7f3c92e</strong></div>
-                        <div class="pm2-dim-stat"><span>YAML SHAs</span><strong>52 / 55</strong></div>
+                        <div class="pm2-dim-stat"><span>FAUBOT_RELEASE</span><strong>{{ audit_dims.version.faubot_release or '—' }}</strong></div>
+                        <div class="pm2-dim-stat"><span>gates_active</span><strong>{{ audit_dims.version.gates_active_count or 0 }}</strong></div>
+                        <div class="pm2-dim-stat"><span>module_sha</span><strong class="pm2-mono">{{ audit_dims.version.module_sha or '—' }}</strong></div>
+                        <div class="pm2-dim-stat"><span>YAML SHAs</span><strong>{{ audit_dims.version.gates_active_count or 0 }} / {{ audit_dims.version.gates_active_count or 0 }}</strong></div>
                     </div>
                 </div>
             </div>
@@ -1475,25 +1926,15 @@
                     </div>
                     <div style="font-family:ui-monospace,'JetBrains Mono',monospace;font-size:.74rem;line-height:1.65;color:#cbd5e1;background:var(--surface-1);max-height:300px;overflow:auto;padding:14px"><pre style="margin:0;white-space:pre-wrap">{
   "patient_hash": "{{ identity.nss }} [PHI-scrubbed]",
-  "diagnosis_date": "2024-06-01",
-  "baseline_psa": 45.0,
-  "current_state_capture": "mcspc_high_volume_sync",
-  "current_state_reconciled": "mcspc_high_volume",
-  "management_track": ["on_arpi", "on_docetaxel"],
-  "castrate_testosterone_status": "confirmed_castrate",
-  "conventional_imaging_status": "M1",
-  "current_regimen": "ADT_DAROLUTAMIDE_DOCETAXEL",
-  "line_of_therapy_number": 2,
-  "prior_treatment_lines_count": 1,
-  "prior_arpi_agent": "darolutamide",
-  "prior_docetaxel_cycles": 6,
-  "psa_history_count": 11,
-  "testosterone_history_count": 4,
-  "alt_value_x_uln": 6.2,
+  "baseline_psa": "{{ identity.baseline_psa }}",
+  "current_state_reconciled": "{{ compass.effective_state if compass else '' }}",
+  "treatment_line_count": {{ pm2_treatment_bands|length }},
+  "psa_history_count": {{ pm2_psa_points|length }},
+  "testosterone_history_count": {{ pm2_testosterone_points|length }},
   "_audit": {
     "phi_scrubbed": true,
-    "missing_critical": ["HRR_status", "ECOG_PS"],
-    "stale": ["imaging_date >90d"]
+    "source": "patient_profile_v2_real_context",
+    "no_demo_patient_values": true
   }
 }</pre></div>
                 </div>
@@ -1908,26 +2349,32 @@
     </div>
     <div class="pm2-drilldown-body" data-drilldown-body>
         <h4>Per-line analytics</h4>
-        <div class="pm2-kv"><span>regimen</span><strong>ADT_DAROLUTAMIDE_DOCETAXEL</strong></div>
-        <div class="pm2-kv"><span>baseline_psa</span><strong>45.0 ng/mL</strong></div>
-        <div class="pm2-kv"><span>nadir_psa</span><strong>2.1 ng/mL</strong></div>
-        <div class="pm2-kv"><span>best_pct_change</span><strong style="color:var(--clinical-success)">−95.3%</strong></div>
-        <div class="pm2-kv"><span>psa50_achieved</span><strong>true</strong></div>
-        <div class="pm2-kv"><span>time_to_nadir_months</span><strong>9.2</strong></div>
-        <div class="pm2-kv"><span>duration_response_months</span><strong>14.6</strong></div>
-        <div class="pm2-kv"><span>psadt_during_progression</span><strong>11.2</strong></div>
-        <div class="pm2-kv"><span>kinetics_classification</span><strong><span class="pm2-kin-badge pm2-kin-progression">progression</span></strong></div>
-        <div class="pm2-kv"><span>point_count</span><strong>7</strong></div>
+        {% if pm2_per_line %}
+        {% set drill_line = pm2_per_line[0] %}
+        <div class="pm2-kv"><span>regimen</span><strong>{{ drill_line.regimen }}</strong></div>
+        <div class="pm2-kv"><span>baseline_psa</span><strong>{{ drill_line.baseline }} ng/mL</strong></div>
+        <div class="pm2-kv"><span>nadir_psa</span><strong>{{ drill_line.nadir }} ng/mL</strong></div>
+        <div class="pm2-kv"><span>best_pct_change</span><strong style="color:var(--clinical-success)">{{ drill_line.best_pct_change }}</strong></div>
+        <div class="pm2-kv"><span>time_to_nadir_months</span><strong>{{ drill_line.ttn }}</strong></div>
+        <div class="pm2-kv"><span>duration_response_months</span><strong>{{ drill_line.dor }}</strong></div>
+        <div class="pm2-kv"><span>psadt_during_progression</span><strong>{{ drill_line.psadt }}</strong></div>
+        <div class="pm2-kv"><span>kinetics_classification</span><strong><span class="pm2-kin-badge pm2-kin-progression">{{ drill_line.kinetics }}</span></strong></div>
+        {% else %}
+        <div class="pm2-kv"><span>regimen</span><strong>Sin línea terapéutica documentada</strong></div>
+        <div class="pm2-kv"><span>point_count</span><strong>{{ pm2_psa_points|length }}</strong></div>
+        {% endif %}
 
         <h4>Forecast horizons (per-line log-linear)</h4>
-        <div class="pm2-kv"><span>3m esperado</span><strong>4.1 (3.6–4.7)</strong></div>
-        <div class="pm2-kv"><span>6m esperado</span><strong>5.0 (4.0–6.4)</strong></div>
-        <div class="pm2-kv"><span>12m esperado</span><strong>7.4 (5.2–10.5)</strong></div>
+        {% if psa_forecast_per_line and psa_forecast_per_line.points %}
+        {% for point in psa_forecast_per_line.points[:3] %}
+        <div class="pm2-kv"><span>{{ point.horizon_label or point.date or 'Horizonte' }}</span><strong>{{ point.mean or point.median or point.value or '—' }}</strong></div>
+        {% endfor %}
+        {% else %}
+        <div class="pm2-kv"><span>forecast</span><strong>insufficient_data</strong></div>
+        {% endif %}
 
-        <h4>Cohort comparison · ARASENS</h4>
-        <div class="pm2-kv"><span>Δ PSA mes 6</span><strong style="color:var(--clinical-critical)">+1.2 vs mediana</strong></div>
-        <div class="pm2-kv"><span>Δ duration_response</span><strong style="color:var(--clinical-critical)">−7.5 m vs mediana</strong></div>
-        <div class="pm2-kv"><span>Δ time_to_nadir</span><strong style="color:var(--clinical-critical)">+1.8 m vs mediana</strong></div>
+        <h4>Cohort comparison</h4>
+        <div class="pm2-kv"><span>estado</span><strong>{{ 'calculable' if psa_cohort_reference and psa_cohort_reference.applicable_combos else 'sin cohorte aplicable' }}</strong></div>
 
         <h4>Gates contextualizados</h4>
         <div style="display:flex;flex-direction:column;gap:8px">
@@ -1956,6 +2403,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/clinical_intelligence_v2.js') }}"></script>
+<script src="{{ url_for('static', filename='js/prostamed_voice_os.js', v='voice_os_20260511') }}"></script>
 <script>
 /* ===== Tabs ===== */
 function pm2ShowTab(name) {
@@ -1981,25 +2429,14 @@ function pm2OpenDrill(line) {
 
 /* ===== Horizontal timeline events ===== */
 (function buildHTimeline() {
-    const events = [
-        { left: '4%',  cls:'tx',    label:'Inicio L1 ADT+Daro+Doce', date:'2024-06-15' },
-        { left: '12%', cls:'psa',   label:'PSA 12.0 ▼73%', date:'2024-09-01' },
-        { left: '20%', cls:'img',   label:'CT/Bone scan', date:'2024-12-10' },
-        { left: '34%', cls:'psa',   label:'NADIR 2.1', date:'2025-04-12' },
-        { left: '46%', cls:'gate',  label:'G47 PSA flare', date:'2025-06-18' },
-        { left: '60%', cls:'psa',   label:'Progresión 8.5', date:'2025-10-20' },
-        { left: '64%', cls:'tx',    label:'Inicio L2 Cabazitaxel', date:'2025-11-02' },
-        { left: '70%', cls:'gate',  label:'G07 hard_block', date:'2025-12-05' },
-        { left: '88%', cls:'psa',   label:'PSA 3.8 (L2)', date:'2026-04-02' },
-        { left: '95%', cls:'event', label:'PSMA-PET planned', date:'2026-05-15' },
-    ];
+    const events = {{ (timeline_horizontal or []) | tojson | safe }};
     const track = document.getElementById('timelineHTrack');
     if (!track) return;
     events.forEach(e => {
         const el = document.createElement('div');
         el.className = 'pm2-timeline-event';
         el.dataset.cls = e.cls;
-        el.style.left = e.left;
+        el.style.left = (e.left || e.left_pct || 2) + (String(e.left || '').includes('%') ? '' : '%');
         el.innerHTML = `<span class="pm2-te-dot"></span><span class="pm2-te-label">${e.label}</span><span class="pm2-te-date">${e.date}</span>`;
         track.appendChild(el);
     });
@@ -2008,7 +2445,7 @@ function pm2OpenDrill(line) {
 /* ===== PSA charts (mini + full) — LXC: alimentado del bundle real ===== */
 // PSA + Testosterona + Treatment lines integrados (torre de vigilancia única).
 // Source: psa_obs.points + psa_obs.treatment_bands + psa_obs.metrics (backend bundle)
-// Fallback a demo arrays si bundle vacío (dev mode).
+// Producción: sin fallbacks demo. Si no hay datos reales, la torre queda vacía.
 
 const psaObsBundle = {{ (psa_obs or {}) | tojson | safe }};
 const psaForecastBundle = {{ (psa_forecast_per_line or {}) | tojson | safe }};
@@ -2020,13 +2457,13 @@ const _bundleBands = (psaObsBundle && psaObsBundle.treatment_bands) || [];
 
 const psaDates = _bundlePoints.length
     ? _bundlePoints.map(p => p.date || p.sample_date)
-    : ['2024-06-01','2024-09-01','2024-12-15','2025-04-12','2025-06-18','2025-08-10','2025-10-20','2025-11-02','2025-12-10','2026-02-05','2026-04-02'];
+    : [];
 const psaValues = _bundlePoints.length
     ? _bundlePoints.map(p => p.value || p.psa_value || 0)
-    : [45.0, 12.0, 5.6, 2.1, 3.4, 5.2, 8.5, 8.5, 5.4, 4.0, 3.8];
+    : [];
 const lineAssign = _bundlePoints.length
-    ? _bundlePoints.map(p => p.line || p.treatment_line_number || 1)
-    : [1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2];
+    ? _bundlePoints.map(p => p.line || p.treatment_line_number || null)
+    : [];
 
 // LXC: dynamic line colors per N treatment lines (up to 6)
 const _lineColorsList = ['#1FB8FF','#7C5CFF','#10B981','#F59E0B','#EF4444','#A855F7'];
@@ -2038,37 +2475,38 @@ const _testoBundle = {{ (testosterone_history or []) | tojson | safe }};
 const testoDates = (_testoBundle || []).map(t => t.date || t.sample_date);
 const testoValues = (_testoBundle || []).map(t => parseFloat(t.value || t.testo_value || 0));
 
-// Cohort overlay from backend (psa_cohort_reference) or fallback demo
+// Cohort overlay from backend only
 const _cohortPoints = (psaCohortBundle && psaCohortBundle.points) || [];
 const cohortDates = _cohortPoints.length
     ? _cohortPoints.map(p => p.date)
-    : (psaDates.concat(['2026-07-01','2026-10-01']));
+    : [];
 const cohortVals = _cohortPoints.length
     ? _cohortPoints.map(p => p.median_value || p.value)
-    : [45, 18, 8, 3.5, 2.6, 2.3, 2.1, 2.1, 2.05, 2.0, 2.0, 2.0, 2.0];
+    : [];
 
-// Forecast from backend (psa_forecast_per_line) or fallback
+// Forecast from backend only
 const _forecastPoints = (psaForecastBundle && psaForecastBundle.points) || [];
 const forecastDates = _forecastPoints.length
     ? _forecastPoints.map(p => p.date)
-    : ['2026-04-02','2026-07-02','2026-10-02','2027-04-02'];
+    : [];
 const forecastUpper = _forecastPoints.length
     ? _forecastPoints.map(p => p.ci_upper || p.upper)
-    : [3.8, 4.7, 6.4, 10.5];
+    : [];
 const forecastLower = _forecastPoints.length
     ? _forecastPoints.map(p => p.ci_lower || p.lower)
-    : [3.8, 3.6, 4.0, 5.2];
+    : [];
 const forecastMean = _forecastPoints.length
     ? _forecastPoints.map(p => p.mean || p.median || p.value)
-    : [3.8, 4.1, 5.0, 7.4];
+    : [];
 
 console.log('LXC PSA tower:', psaDates.length + ' PSA points', testoDates.length + ' testo', _bundleBands.length + ' tx bands');
 
 if (window['chartjs-plugin-annotation']) Chart.register(window['chartjs-plugin-annotation']);
 
 function buildDataSets() {
-    const datasets = [
-        {
+    const datasets = [];
+    if (psaDates.length > 0) {
+        datasets.push({
             label: 'PSA paciente (ng/mL)',
             yAxisID: 'y',
             data: psaDates.map((d, i) => ({ x: d, y: psaValues[i] })),
@@ -2084,37 +2522,41 @@ function buildDataSets() {
                     return color + 'aa';  // ~67% opacity
                 }
             }
-        },
-        {
+        });
+    }
+    if (cohortDates.length > 0) {
+        datasets.push({
             label: 'Cohorte mediana (pivotal)',
             yAxisID: 'y',
             data: cohortDates.map((d, i) => ({ x: d, y: cohortVals[i] })),
             borderColor: 'rgba(168,87,232,.85)', borderWidth: 2, borderDash: [6, 4],
             pointRadius: 0, tension: 0.4, fill: false
-        },
-        {
+        });
+    }
+    if (forecastDates.length > 0) {
+        datasets.push({
             label: 'Forecast central',
             yAxisID: 'y',
             data: forecastDates.map((d, i) => ({ x: d, y: forecastMean[i] })),
             borderColor: 'rgba(31,184,255,.9)', borderWidth: 2, borderDash: [2, 3],
             pointRadius: 4, pointBackgroundColor: '#1FB8FF',
             tension: 0.35, fill: false
-        },
-        {
+        });
+        datasets.push({
             label: 'CI 95 upper',
             yAxisID: 'y',
             data: forecastDates.map((d, i) => ({ x: d, y: forecastUpper[i] })),
             borderColor: 'rgba(31,184,255,.4)', borderWidth: 1, borderDash: [2, 2],
             pointRadius: 0, fill: '+1', backgroundColor: 'rgba(31,184,255,.10)', tension: 0.35
-        },
-        {
+        });
+        datasets.push({
             label: 'CI 95 lower',
             yAxisID: 'y',
             data: forecastDates.map((d, i) => ({ x: d, y: forecastLower[i] })),
             borderColor: 'rgba(31,184,255,.4)', borderWidth: 1, borderDash: [2, 2],
             pointRadius: 0, fill: false, tension: 0.35
-        }
-    ];
+        });
+    }
 
     // LXC: Testosterona overlay (eje secundario y2) — integración APE+Testo+Tx
     if (testoDates.length > 0) {
@@ -2177,16 +2619,6 @@ function buildTreatmentBandAnnotations() {
                          font: { size: 10, weight: '700' }, padding: 4 }
             };
         });
-    } else {
-        // Fallback demo bands
-        annotations.band1 = { type: 'box', xMin: '2024-06-15', xMax: '2025-10-20',
-                              backgroundColor: 'rgba(31,184,255,.08)', borderColor: 'rgba(31,184,255,.3)', borderWidth: 1,
-                              label: { display: true, content: 'L1 · ADT+Daro+Doce', position: { x: 'start', y: 'start' },
-                                       backgroundColor: 'rgba(31,184,255,.85)', color: '#020617', font: { size: 10, weight: '700' }, padding: 4 } };
-        annotations.band2 = { type: 'box', xMin: '2025-11-02', xMax: '2026-04-02',
-                              backgroundColor: 'rgba(124,92,255,.10)', borderColor: 'rgba(124,92,255,.4)', borderWidth: 1,
-                              label: { display: true, content: 'L2 · Cabazitaxel', position: { x: 'start', y: 'start' },
-                                       backgroundColor: 'rgba(124,92,255,.85)', color: '#020617', font: { size: 10, weight: '700' }, padding: 4 } };
     }
     if (forecastDates.length > 0) {
         annotations.forecast = { type: 'box',
@@ -2473,7 +2905,7 @@ function renderFullPSA() {
         resultEl.style.display = 'block';
         resultEl.innerHTML = '<em style="color:var(--pn-text-muted);">⏳ Simulando…</em>';
         try {
-            const res = await fetch(`/api/simulate/${encodeURIComponent(nss)}`, {
+            const res = await fetch(`/api/patients/${encodeURIComponent(nss)}/tumor-board-os/what-if`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -2488,25 +2920,26 @@ function renderFullPSA() {
             const old = body.delta?.old || {};
             const nv = body.delta?.new || {};
             const changedClass = body.decision_changed
-                ? '<span class="pm2-state-chip pm2-state-chip--success">✓ DECISIÓN CAMBIA</span>'
+                ? '<span class="pm2-state-chip pm2-state-chip--success">✓ OPCIÓN PRIORITARIA CAMBIA</span>'
                 : '<span class="pm2-state-chip">sin cambio en decisión</span>';
             resultEl.innerHTML = `
                 ${changedClass}
                 <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                     <div>
                         <div style="font-size:.66rem;color:var(--pn-text-muted);font-weight:700;text-transform:uppercase;">ANTES</div>
-                        <div style="color:#cbd5e1;font-size:.78rem;">${escapeForUI(old.headline) || '—'}</div>
-                        <div style="font-size:.7rem;color:var(--pn-text-soft);margin-top:4px;">${escapeForUI(old.recommendation_family) || ''}</div>
+                        <div style="color:#cbd5e1;font-size:.78rem;">${escapeForUI(old.winner_option_label || old.headline) || '—'}</div>
+                        <div style="font-size:.7rem;color:var(--pn-text-soft);margin-top:4px;">${escapeForUI(old.board_status || old.recommendation_family) || ''}</div>
                     </div>
                     <div>
                         <div style="font-size:.66rem;color:var(--clinical-success);font-weight:700;text-transform:uppercase;">SI ${escapeForUI(field)}=${escapeForUI(value)}</div>
-                        <div style="color:#f0fbff;font-size:.78rem;">${escapeForUI(nv.headline) || '—'}</div>
-                        <div style="font-size:.7rem;color:var(--clinical-info);margin-top:4px;">${escapeForUI(nv.recommendation_family) || ''}</div>
+                        <div style="color:#f0fbff;font-size:.78rem;">${escapeForUI(nv.winner_option_label || nv.headline) || '—'}</div>
+                        <div style="font-size:.7rem;color:var(--clinical-info);margin-top:4px;">${escapeForUI(nv.board_status || nv.recommendation_family) || ''}</div>
                     </div>
                 </div>
-                ${body.hypothetical_state ? `<div style="margin-top:10px;font-size:.72rem;color:var(--pn-text-muted);">Estado NCCN derivado: <strong style="color:var(--clinical-info);">${escapeForUI(body.hypothetical_state)}</strong></div>` : ''}
+                ${nv.dominant_blocker ? `<div style="margin-top:10px;font-size:.72rem;color:var(--pn-text-muted);">Bloqueo dominante: <strong style="color:var(--clinical-info);">${escapeForUI(nv.dominant_blocker)}</strong></div>` : ''}
+                ${body.options_changed_count ? `<div style="margin-top:6px;font-size:.72rem;color:var(--clinical-info);">Opciones con cambio: ${body.options_changed_count}</div>` : ''}
                 ${body.gates_changed_count ? `<div style="margin-top:6px;font-size:.72rem;color:var(--clinical-warning);">Gates afectados: ${body.gates_changed_count}</div>` : ''}
-                ${body.compass_keys_changed_count ? `<div style="margin-top:6px;font-size:.72rem;color:var(--pn-text-muted);">Compass keys que cambiarían: ${body.compass_keys_changed_count}</div>` : ''}
+                ${body.trials_changed_count ? `<div style="margin-top:6px;font-size:.72rem;color:var(--pn-text-muted);">Trials afectados: ${body.trials_changed_count}</div>` : ''}
                 <div style="margin-top:8px;font-size:.66rem;color:var(--pn-text-soft);font-style:italic;">${body.audit_note || ''}</div>
             `;
         } catch (err) {
