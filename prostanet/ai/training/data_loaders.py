@@ -30,9 +30,14 @@ class StateTransitionDataset(Dataset):
         max_length: int = 256,
     ) -> None:
         from prostanet.ai.tokenizer.clinical_tokenizer import ClinicalEventTokenizer
+        from prostanet.ai.tokenizer.vocabulary import ClinicalVocabulary
         from prostanet.ai.config import STATE_TO_IDX
 
         self.tokenizer = ClinicalEventTokenizer(max_length=max_length)
+        # EPIC 16: instantiate vocabulary once; token_ids(vocab) requires it.
+        # Pre-EPIC 16 bug: data_loaders.py llamaba `tokenized.token_ids()` sin
+        # vocab, fallando con TypeError. Bloqueaba el training run completo.
+        self.vocab = ClinicalVocabulary()
         self.max_length = max_length
         self.samples: list[dict[str, Any]] = []
 
@@ -45,7 +50,7 @@ class StateTransitionDataset(Dataset):
             if len(tokenized.tokens) < 2:
                 continue
 
-            token_ids = tokenized.token_ids()
+            token_ids = tokenized.token_ids(self.vocab)
             time_pos = tokenized.time_positions()
 
             # Pad / truncate

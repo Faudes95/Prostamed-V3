@@ -1,0 +1,43 @@
+{
+  "config": {
+    "patients": 1000,
+    "epochs": 10,
+    "batch_size": 32,
+    "lr": 0.0001,
+    "seed": 42,
+    "output_dir": "output/models",
+    "skip_state": true,
+    "skip_treatment": false,
+    "skip_surv": false
+  },
+  "generation": {
+    "patients": 1000,
+    "time_seconds": 0.1,
+    "state_distribution": {
+      "localized_initial": 251,
+      "post_prostatectomy": 241,
+      "mcspc_oligo_metachronous": 48,
+      "m1_crpc": 148,
+      "mcspc_low_volume_sync_oligo": 65,
+      "recurrence_bcr": 114,
+      "mcspc_high_volume_sync": 79,
+      "m0_crpc": 54
+    }
+  },
+  "treatment_response": {
+    "model_path": "output/models/treatment_response/best.pt",
+    "epochs": 10,
+    "samples": 1202,
+    "best_val_loss": 0.6885,
+    "training_time_seconds": 1.6
+  },
+  "deep_surv_os": {
+    "model_path": "output/models/deep_surv_OS/best.pt",
+    "endpoint": "OS",
+    "epochs": 10,
+    "samples": 1000,
+    "best_loss": 83.3978,
+    "training_time_seconds": 0.3
+  },
+  "total_time_seconds": 2.1
+}

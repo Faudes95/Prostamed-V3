@@ -170,24 +170,27 @@ class ModelRegistry:
     def _instantiate_model(model_id: str) -> Any | None:
         """Create a new (untrained) model instance by ID."""
         try:
+            # EPIC 16 bugfix: model constructors tienen primer arg distinto a
+            # config (vocab_size, input_dim, etc.). Usar kwarg config=... para
+            # disambiguar y evitar `empty() got NoneType` errors.
             if model_id == "state_transition":
                 from prostanet.ai.config import StateTransitionConfig
                 from prostanet.ai.models.state_transition import (
                     StateTransitionTransformer,
                 )
-                return StateTransitionTransformer(StateTransitionConfig())
+                return StateTransitionTransformer(config=StateTransitionConfig())
 
             elif model_id == "treatment_response":
                 from prostanet.ai.config import TreatmentResponseConfig
                 from prostanet.ai.models.treatment_response import (
                     TreatmentResponsePredictor,
                 )
-                return TreatmentResponsePredictor(TreatmentResponseConfig())
+                return TreatmentResponsePredictor(config=TreatmentResponseConfig())
 
             elif model_id == "deep_surv":
                 from prostanet.ai.config import DeepSurvConfig
                 from prostanet.ai.models.deep_surv import DeepSurvNet
-                return DeepSurvNet(DeepSurvConfig())
+                return DeepSurvNet(config=DeepSurvConfig())
 
             elif model_id == "anomaly_detector":
                 from prostanet.ai.config import AnomalyDetectorConfig

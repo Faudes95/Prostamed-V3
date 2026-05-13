@@ -45,7 +45,10 @@ def train_state_transition(
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Dataset
-    dataset = StateTransitionDataset(records, max_length=cfg.max_seq_length)
+    # EPIC 16: bugfix — StateTransitionConfig declara `max_sequence_length`
+    # (no `max_seq_length`). Naming inconsistency pre-EPIC 16 que bloqueaba
+    # el training run completo.
+    dataset = StateTransitionDataset(records, max_length=cfg.max_sequence_length)
     if len(dataset) < 10:
         return {"error": "Insufficient training data", "samples": len(dataset)}
 
@@ -57,7 +60,10 @@ def train_state_transition(
     val_loader = DataLoader(val_ds, batch_size=batch_size)
 
     # Model
-    model = StateTransitionTransformer(cfg).to(device)
+    # EPIC 16 bugfix: StateTransitionTransformer signature is (vocab_size, config).
+    # Passing cfg positionally falls into vocab_size → TypeError empty().
+    # Use kwarg to disambiguate.
+    model = StateTransitionTransformer(config=cfg).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
@@ -76,12 +82,17 @@ def train_state_transition(
             mask = batch["attention_mask"].to(device)
             target_state = batch["target_state"].to(device)
 
-            optimizer.zero_grad()
-            state_logits, time_params, conf = model(token_ids, time_pos, mask)
+            optimizer.zero_grad(set_to_none=True)
+            # EPIC 16 bugfix: StateTransitionTransformer.forward returns dict
+            # with keys {state_logits, state_probs, time_mu, time_log_sigma,
+            # confidence}. Pre-EPIC 16 trainer unpacked a 3-tuple → ValueError.
+            output = model(token_ids, time_pos, mask)
+            state_logits = output["state_logits"]
+            mu = output["time_mu"]
+            log_sigma = output["time_log_sigma"]
 
             loss_state = state_criterion(state_logits, target_state)
             # Time loss with log-normal parameters
-            mu, log_sigma = time_params[:, 0], time_params[:, 1]
             target_time = batch["time_to_transition"].to(device)
             var = torch.exp(2 * log_sigma)
             loss_time = time_criterion(mu, target_time, var)
@@ -106,7 +117,8 @@ def train_state_transition(
                 mask = batch["attention_mask"].to(device)
                 target_state = batch["target_state"].to(device)
 
-                state_logits, time_params, conf = model(token_ids, time_pos, mask)
+                output = model(token_ids, time_pos, mask)
+                state_logits = output["state_logits"]
                 loss_state = state_criterion(state_logits, target_state)
                 val_loss += loss_state.item()
 
@@ -171,7 +183,10 @@ def train_treatment_response(
     val_size = len(dataset) - train_size
     train_ds, val_ds = random_split(dataset, [train_size, val_size])
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    # EPIC 16 bugfix: drop_last=True evita BatchNorm crash con batch_size=1
+    # cuando el último batch tiene un solo sample. Per pytorch-patterns
+    # DataLoader idiom: "drop_last=True para consistencia con BatchNorm".
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True)
     val_loader = DataLoader(val_ds, batch_size=batch_size)
 
     model = TreatmentResponsePredictor(cfg).to(device)
@@ -189,11 +204,16 @@ def train_treatment_response(
             features = batch["patient_features"].to(device)
             regimen = batch["regimen_id"].to(device)
 
-            optimizer.zero_grad()
-            psa_resp, rpfs_params, tox, resp_cat = model(features, regimen)
+            optimizer.zero_grad(set_to_none=True)
+            # EPIC 16 bugfix: TreatmentResponsePredictor.forward returns dict
+            # with keys {psa_response, rpfs_params, toxicity, response_logits,
+            # response_probs}. Pre-EPIC 16 unpacking 4-tuple → ValueError 5 got.
+            output = model(features, regimen)
+            psa_resp = output["psa_response"]
+            resp_logits = output["response_logits"]
 
             loss_psa = bce(psa_resp[:, 0], batch["psa50"].to(device))
-            loss_resp = ce(resp_cat, batch["response_category"].to(device))
+            loss_resp = ce(resp_logits, batch["response_category"].to(device))
             loss = loss_psa + loss_resp
             loss.backward()
             optimizer.step()
@@ -204,7 +224,8 @@ def train_treatment_response(
             for batch in val_loader:
                 features = batch["patient_features"].to(device)
                 regimen = batch["regimen_id"].to(device)
-                psa_resp, _, _, resp_cat = model(features, regimen)
+                output = model(features, regimen)
+                psa_resp = output["psa_response"]
                 loss_psa = bce(psa_resp[:, 0], batch["psa50"].to(device))
                 val_loss += loss_psa.item()
 
@@ -247,9 +268,12 @@ def train_deep_surv(
     val_size = len(dataset) - train_size
     train_ds, val_ds = random_split(dataset, [train_size, val_size])
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    # EPIC 16 bugfix: drop_last=True por consistencia BatchNorm + pytorch-patterns.
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True)
 
-    model = DeepSurvNet(cfg).to(device)
+    # EPIC 16 bugfix: DeepSurvNet signature is (input_dim, config).
+    # Use kwarg config=cfg to avoid positional collision with input_dim.
+    model = DeepSurvNet(config=cfg).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     best_loss = float("inf")
@@ -262,7 +286,7 @@ def train_deep_surv(
             time = batch["time"].to(device)
             event = batch["event"].to(device)
 
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             log_hr = model.risk_network(features).squeeze(-1)
             loss = cox_ph_loss(log_hr, time, event)
             if torch.isnan(loss):
@@ -357,7 +381,7 @@ def train_anomaly_detector(
         epoch_loss = 0.0
         for (batch_x,) in train_loader:
             batch_x = batch_x.to(device)
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             output = model(batch_x)
             loss = vae_loss(
                 output["reconstructed"], batch_x,

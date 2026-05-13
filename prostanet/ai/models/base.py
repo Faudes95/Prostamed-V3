@@ -87,7 +87,12 @@ class ProstaNetModel(ABC, nn.Module):
         )
 
     def load(self, path: str, device: str = "cpu") -> None:
-        """Load model weights from path."""
-        checkpoint = torch.load(path, map_location=device, weights_only=False)
+        """Load model weights from path.
+
+        EPIC 16 / pytorch-patterns: weights_only=True bloquea ejecución de
+        pickle arbitrario al deserializar checkpoints. Safe porque save()
+        guarda solo state_dict (dict[str, Tensor]) + model_version (str).
+        """
+        checkpoint = torch.load(path, map_location=device, weights_only=True)
         self.load_state_dict(checkpoint["state_dict"])
         self.model_version = checkpoint.get("model_version", self.model_version)

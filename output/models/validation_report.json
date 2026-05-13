@@ -1,0 +1,88 @@
+{
+  "state_transition": {
+    "accuracy": 0.622,
+    "total_samples": 500,
+    "per_class": {
+      "diagnostic_workup": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 0
+      },
+      "post_negative_biopsy_followup": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 0
+      },
+      "localized_initial": {
+        "precision": 0.9362,
+        "recall": 0.9851,
+        "f1": 0.96,
+        "support": 134
+      },
+      "post_prostatectomy": {
+        "precision": 0.8134,
+        "recall": 1.0,
+        "f1": 0.8971,
+        "support": 109
+      },
+      "recurrence_bcr": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 48
+      },
+      "adt_progression_verification": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 0
+      },
+      "mcspc_oligo_metachronous": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 35
+      },
+      "mcspc_low_volume_sync_oligo": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 36
+      },
+      "mcspc_high_volume_sync": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 42
+      },
+      "mcspc_high_volume_metachronous": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 0
+      },
+      "mcspc_high_volume": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 0
+      },
+      "m0_crpc": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 23
+      },
+      "m1_crpc": {
+        "precision": 0.3111,
+        "recall": 0.9589,
+        "f1": 0.4698,
+        "support": 73
+      }
+    },
+    "evaluated": 500,
+    "errors": 0
+  }
+}

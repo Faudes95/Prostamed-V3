@@ -36,6 +36,27 @@ logging.basicConfig(
 logger = logging.getLogger("train_all_models")
 
 
+def set_seed(seed: int) -> None:
+    """Full reproducibility setup per anthropic-skills:pytorch-patterns.
+
+    EPIC 16: garantiza que `python3 scripts/train_all_models.py --seed=42`
+    es reproducible bit-a-bit entre runs (modulo non-determinism CUDA en
+    operaciones no-cudnn-deterministic).
+    """
+    import random
+
+    import numpy as np
+    import torch
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ProstaNet AI Model Training")
     parser.add_argument("--patients", type=int, default=10000, help="Number of synthetic patients")
@@ -52,6 +73,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    # EPIC 16: set_seed before ANY tensor/dataset creation per pytorch-patterns
+    # reproducibility principle. random + numpy + torch seeded uniformly.
+    set_seed(args.seed)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
