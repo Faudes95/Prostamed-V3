@@ -39,7 +39,16 @@ POST_RT_FOLLOWUP_SCHEMA = module_schema(
             clinical_role="required",
             evidence_tags=["RTOG 9408", "DART01/05"],
         ),
-        FieldSpec("adt_duration_months", "Duración total ADT (meses)", "number", default=0, group="Contexto del tratamiento RT", group_order=1, clinical_role="decision_refiner", unit="meses"),
+        # EPIC 14b smart-form: adt_duration_months solo aplica si paciente
+        # recibió ADT alguna vez. ADT con prior_rt_intent="Definitive" en
+        # Low risk RT-only típicamente NO recibe ADT. Mostrar duration solo
+        # si adt_active=1 OR (intent diferente a Low risk Definitive sola).
+        # Para simplicidad y seguridad clínica: visible si adt_active=1
+        # (caso obvio) — duración 0 sigue capturable manualmente por entrada
+        # histórica completada.
+        # Beneficio clínico: reduce form fatigue en RT-only low risk donde
+        # ADT no se ofreció; preserva captura para todos los demás escenarios.
+        FieldSpec("adt_duration_months", "Duración total ADT (meses)", "number", default=0, group="Contexto del tratamiento RT", group_order=1, clinical_role="decision_refiner", unit="meses", conditional_visibility={"adt_active": ["1"]}),
         FieldSpec("adt_active", "ADT activo en este momento", "select", required=True, options=["0", "1"], default="0", group="Contexto del tratamiento RT", group_order=1, clinical_role="required"),
         FieldSpec(
             "risk_group_at_treatment",

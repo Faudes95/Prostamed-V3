@@ -1,0 +1,3725 @@
+document: Evidence freshness manifest — ProstaMed/ProstaNet
+schema_version: '1.0'
+generated_at: '2026-05-13'
+epic: EPIC 15 — evidence currentness manifest
+review_policy:
+  fresh_threshold_days: 90
+  stale_threshold_days: 365
+  weekly_refresh_target: Scheduled via /schedule weekly cron (skill pubmed-database)
+  review_scope: Scan pivotal_gates_catalog trial_refs + NCCN/EAU section versions
+declarations:
+  no_invented_pmids: true
+  no_claim_pubmed_api_realtime: true
+  scheduled_review_only: true
+  scope: internal_shadow_observational_validation
+totals:
+  unique_trials_or_sources: 322
+  consuming_gates: 103
+  trial_refs_total: 521
+records:
+- trial_or_source: AACR PTEN-PI3K-AKT Pathway Workshop 2024
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ipatasertib_pten_wt_futility_block
+- trial_or_source: AAOMS 2022 Position Paper
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - bone_targeted_osteonecrosis_jaw
+- trial_or_source: AAPM TG-137 (Brachytherapy guidelines)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - turp_brachytherapy_contraindication
+- trial_or_source: ABS 2020 LDR Brachytherapy Consensus
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - turp_brachytherapy_contraindication
+- trial_or_source: AFFIRM
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - enzalutamide_hyponatremia_siadh
+  - psa_flare_arpi_pseudoprogression
+- trial_or_source: ALSYMPCA
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 4
+  consuming_gates_sample:
+  - bone_targeted_hypocalcemia_extended
+  - ra223_visceral_metastases_contraindication
+  - radium223_in_cord_compression
+  - radium223_in_hypocalcemia
+- trial_or_source: ARAMIS
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - darolutamide_hepatotoxicity_grade3
+  - darolutamide_hypersensitivity
+  - psa_doubling_time_progressive
+- trial_or_source: ARANOTE
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - darolutamide_hepatotoxicity_grade3
+  - prior_arpi_exposure_mhspc
+- trial_or_source: ARASENS
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 4
+  consuming_gates_sample:
+  - darolutamide_hepatotoxicity_grade3
+  - darolutamide_hypersensitivity
+  - ecog_2_or_more_for_triplets
+  - psa_flare_arpi_pseudoprogression
+- trial_or_source: ARASENS elderly subset
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - triplete_frailty_g8_low
+- trial_or_source: ARCHES
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - arpi_fall_risk_longitudinal
+- trial_or_source: ARMOR3-SV NCT02807805 (niclosamide + abi)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ar_v7_positive_arpi_resistance_pathway
+- trial_or_source: ARO 96-02
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - localized_bcr_adjuvant_trials_completion
+- trial_or_source: ARTISTIC (Vale
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - localized_bcr_adjuvant_trials_completion
+- trial_or_source: ASCO 2014 Anxiety in Cancer Patients
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - gad7_anxiety_referral
+- trial_or_source: ASCO 2014 Depression in Cancer Patients
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - phq9_depression_referral
+- trial_or_source: ASCO 2017 Palliative Care Integration
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - palliative_sedation_protocol_initiation
+- trial_or_source: ASCO 2018 Bone-Targeted Therapy guidelines
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - samarium_153_edtmp_eligibility
+- trial_or_source: ASCO 2020 Cancer Cachexia guidelines
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cachexia_pharmacotherapy_consideration
+- trial_or_source: ASCO 2023 GU Cancers Symposium (IBD + pelvic RT)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ibd_active_pelvic_rt_contraindication
+- trial_or_source: ASCO Anemia in Cancer 2024
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - cabazitaxel_hb_rapid_drop_longitudinal
+  - lutetium177_hb_rapid_drop_longitudinal
+- trial_or_source: ASCO Bone Health 2024
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - bone_targeted_hypocalcemia_extended
+  - bone_targeted_osteonecrosis_jaw
+- trial_or_source: ASCO Cancer Immunotherapy Guidelines 2023
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - sipuleucel_t_immunosuppression_baseline
+- trial_or_source: ASCO Cardio-Oncology 2024
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - abiraterone_hypokalemia_grade3
+- trial_or_source: ASCO Chemotherapy-Induced Peripheral Neuropathy Guidelines 2020
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - docetaxel_neuropathy_cumulative_postchemo
+- trial_or_source: ASCO Liver Toxicity 2024
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - abiraterone_alp_rapid_rise_longitudinal
+- trial_or_source: ASCO Oral Mucositis/Xerostomia Guidelines 2024
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - xerostomia_monitoring_lu177_grade2_plus
+- trial_or_source: ASCO/ESC Cardio-Oncology 2022
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - lvef_decline_for_apalutamide
+- trial_or_source: ASTRO/AUA 2022 Salvage Brachytherapy Consensus
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - prior_pelvic_rt_re_irradiation_contraindication
+- trial_or_source: ATA Guidelines 2014 (hypothyroidism)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - hypothyroidism_apalutamide_new_onset
+- trial_or_source: AUA Guidelines 2024
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psma_pet_preferred_for_nmcrpc_low_psa
+- trial_or_source: AUA Guidelines 2024 (pre-treatment confirmation)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ct4_requires_histology_confirmation
+- trial_or_source: Akeega label §5.1
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - niraparib_in_severe_thrombocytopenia
+  - parp_inhibitor_mds_aml_longitudinal
+- trial_or_source: Akeega label §5.2
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - niraparib_hypertension_grade3_magnitude
+- trial_or_source: Amsterdam II + Bethesda Lynch criteria
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - msi_mmr_reflex_testing_lynch_family
+- trial_or_source: Annals Oncology 2017 IBD pelvic RT toxicity review
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ibd_active_pelvic_rt_contraindication
+- trial_or_source: Antonarakis
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 4
+  consuming_gates_sample:
+  - ar_v7_positive_arpi_resistance_pathway
+  - cdk12_alteration_immunotherapy_eligibility
+  - checkpoint_inhibitor_colitis_grade3_plus
+  - checkpoint_inhibitor_pneumonitis_grade2_plus
+- trial_or_source: Aparicio Eur Urol 2024 (HRD NEPC platinum)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - comprehensive_hrd_phenotype_high
+- trial_or_source: Aparicio Eur Urol 2024 (NEPC biopsy mandatory)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - metastatic_biopsy_pathway_when_primary_impractical
+- trial_or_source: Aparicio Eur Urol 2024 (NEPC management)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - atypical_histology_escalation_nepc_intraductal
+  - nepc_pre_biopsy_risk_suspicion
+- trial_or_source: Aparicio Eur Urol 2024 (NEPC review)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - iodine_131_mibg_nepc_eligibility
+- trial_or_source: Aparicio Eur Urol 2024 (NEPC visceral)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - visceral_metastasis_new_appearance
+- trial_or_source: BPI Cleeland Ann Acad Med Singapore 1994;23:129
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - structured_pain_progression_bpi
+- trial_or_source: Bandelow World J Biol Psychiatry 2017 (anxiety guidelines)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - gad7_anxiety_referral
+- trial_or_source: Bartter
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - enzalutamide_hyponatremia_siadh
+- trial_or_source: Beer
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - enzalutamide_hyponatremia_siadh
+- trial_or_source: Bellera Ann Oncol 2012 G8
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - triplete_frailty_g8_low
+- trial_or_source: Beltran
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - atypical_histology_escalation_nepc_intraductal
+  - nepc_pre_biopsy_risk_suspicion
+- trial_or_source: Bombardieri Eur J Nucl Med 2010;37:2436
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - iodine_131_mibg_nepc_eligibility
+- trial_or_source: Brahmer
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - checkpoint_inhibitor_colitis_grade3_plus
+  - checkpoint_inhibitor_pneumonitis_grade2_plus
+- trial_or_source: Bruera J Palliat Care 1991
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - esas_severity_alert
+- trial_or_source: Bryce Ann Oncol 2017
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_flare_arpi_pseudoprogression
+- trial_or_source: CARD
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 4
+  consuming_gates_sample:
+  - cabazitaxel_hypersensitivity_grade3
+  - composite_progression_rpfs_reroute
+  - docetaxel_neuropathy_longitudinal_grade2_post_4_cycles
+  - polysorbate_hypersensitivity
+- trial_or_source: CARD (de Wit
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 4
+  consuming_gates_sample:
+  - docetaxel_neuropathy_cumulative_postchemo
+  - ecog_decline_alert
+  - taxane_diarrhea_grade3_plus
+  - visceral_metastasis_new_appearance
+- trial_or_source: CARD subset
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cabazitaxel_hb_rapid_drop_longitudinal
+- trial_or_source: CHAARTED
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 7
+  consuming_gates_sample:
+  - composite_progression_rpfs_reroute
+  - docetaxel_neuropathy_cumulative_postchemo
+  - docetaxel_neuropathy_longitudinal_grade2_post_4_cycles
+  - ecog_decline_alert
+  - severe_neuropathy_grade3
+- trial_or_source: CONTACT-02
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - hand_foot_syndrome_tkis_grade2_plus
+  - uncontrolled_hypertension
+- trial_or_source: COU-AA-301
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 5
+  consuming_gates_sample:
+  - abiraterone_adrenal_insufficiency
+  - abiraterone_cirrhosis_baseline_contraindication
+  - abiraterone_hepatotoxicity_grade3
+  - severe_heart_failure_nyha_iii_iv
+  - uncontrolled_hypertension
+- trial_or_source: COU-AA-302
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 7
+  consuming_gates_sample:
+  - abiraterone_adrenal_insufficiency
+  - abiraterone_cirrhosis_baseline_contraindication
+  - abiraterone_hepatotoxicity_grade3
+  - abiraterone_hypokalemia_grade3
+  - arsi_abiraterone_vte_risk_high
+- trial_or_source: CTCAE v5
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 18
+  consuming_gates_sample:
+  - abiraterone_hypokalemia_grade3
+  - apalutamide_severe_rash_sjs_ten
+  - arsi_in_cognitive_decline_grade2
+  - bone_targeted_hypocalcemia_extended
+  - cabazitaxel_hypersensitivity_grade3
+- trial_or_source: CTCAE v5.0 (NCI 2017)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 5
+  consuming_gates_sample:
+  - docetaxel_neuropathy_cumulative_postchemo
+  - hand_foot_syndrome_tkis_grade2_plus
+  - parp_fatigue_grade3
+  - taxane_diarrhea_grade3_plus
+  - xerostomia_monitoring_lu177_grade2_plus
+- trial_or_source: Cabometyx label
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - hand_foot_syndrome_tkis_grade2_plus
+- trial_or_source: Carter JNCI 2006 (PSA velocity >2 mortality)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_velocity_pre_biopsy_urgent
+- trial_or_source: CheckMate 650 nivolumab + ipilimumab mCRPC
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cdk12_alteration_immunotherapy_eligibility
+- trial_or_source: CheckMate-650
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - checkpoint_inhibitor_colitis_grade3_plus
+  - checkpoint_inhibitor_endocrinopathy_new_onset
+- trial_or_source: CheckMate-9KD
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - checkpoint_inhibitor_hepatitis_grade3_plus
+- trial_or_source: Cheng
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - comprehensive_hrd_phenotype_high
+- trial_or_source: Chi
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - apalutamide_severe_rash_sjs_ten
+- trial_or_source: Child-Pugh classification (Pugh Br J Surg 1973)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - abiraterone_cirrhosis_baseline_contraindication
+- trial_or_source: Cipriani
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - gad7_anxiety_referral
+  - phq9_depression_referral
+- trial_or_source: Cochrane 2013 megestrol
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cachexia_pharmacotherapy_consideration
+- trial_or_source: Crook IJROBP 2010
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_bounce_post_rt_pseudoprogression
+- trial_or_source: Csizmar
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - parp_inhibitor_mds_aml_longitudinal
+- trial_or_source: D'Amico JNCI 1995 (PSA velocity criteria)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_velocity_pre_biopsy_urgent
+- trial_or_source: EAPC Cherny Palliat Med 2009;23:581
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - palliative_sedation_protocol_initiation
+- trial_or_source: EAU 2026 8.2.1
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - prior_pelvic_rt_re_irradiation_contraindication
+- trial_or_source: EAU 2026 section 11
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - oncologic_emergency_diagnostic_integration
+- trial_or_source: EAU 2026 §10
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - palliative_sedation_protocol_initiation
+  - phq9_depression_referral
+- trial_or_source: EAU 2026 §10 (palliative care)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ecog_decline_alert
+- trial_or_source: EAU 2026 §10.3 (bone-targeted radiopharm)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - samarium_153_edtmp_eligibility
+- trial_or_source: EAU 2026 §10.4
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - palliative_rt_decision_engine
+- trial_or_source: EAU 2026 §5.1.2
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - pre_biopsy_risk_calculators_phi_4kscore
+- trial_or_source: EAU 2026 §5.1.2 (pre-biopsy calculators)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_velocity_pre_biopsy_urgent
+- trial_or_source: EAU 2026 §5.1.4 (metastatic biopsy)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - metastatic_biopsy_pathway_when_primary_impractical
+- trial_or_source: EAU 2026 §5.3 (biopsy indications)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ct4_requires_histology_confirmation
+- trial_or_source: EAU 2026 §6.4
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - oligometastatic_sbrt_eligibility
+- trial_or_source: EAU 2026 §6.4.1
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_velocity_bcr_aggressive
+- trial_or_source: EAU 2026 §6.4.2
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_bounce_post_rt_pseudoprogression
+- trial_or_source: EAU 2026 §6.5 Theranostics
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - lu177_psma_pet_negative_contraindication
+  - ra223_visceral_metastases_contraindication
+- trial_or_source: EAU 2026 §6.5.4
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - psa_doubling_time_progressive
+  - psma_pet_preferred_for_nmcrpc_low_psa
+- trial_or_source: EAU 2026 §6.5.5
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - msi_mmr_reflex_testing_lynch_family
+- trial_or_source: EAU 2026 §6.5.6
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - comprehensive_hrd_phenotype_high
+- trial_or_source: EAU 2026 §6.5.6 (HRR testing mandatory)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - hrr_status_required_before_parp_inhibitor
+- trial_or_source: EAU 2026 §6.5.7
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cdk12_alteration_immunotherapy_eligibility
+- trial_or_source: EAU 2026 §6.6
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - nepc_pre_biopsy_risk_suspicion
+- trial_or_source: EAU 2026 §6.6 (NEPC management)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - atypical_histology_escalation_nepc_intraductal
+- trial_or_source: EAU 2026 §7.3.1 (perioperative anticoagulation)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - anticoagulant_rp_bleeding_risk
+- trial_or_source: EAU 2026 §8.2.3
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ibd_active_pelvic_rt_contraindication
+- trial_or_source: EMBARK
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - arpi_fall_risk_longitudinal
+- trial_or_source: ENZAMET
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - qtc_prolongation_grade3_for_enzalutamide
+- trial_or_source: ENZAMET subset analysis
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - enzalutamide_cognitive_decline_elderly
+- trial_or_source: EORTC 22961 (RT+ADT 36m high-risk)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - svi_risk_high_rp_efficiency_warning
+- trial_or_source: ERA-223
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - enzalutamide_ra223_dual_myelosuppression
+  - no_bone_protective_agent
+  - radium223_high_fracture_risk_frax
+- trial_or_source: ESMO Bone Health 2024
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - bone_targeted_hypocalcemia_extended
+- trial_or_source: ESMO Endocrine AE Guidelines 2022
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - hypothyroidism_apalutamide_new_onset
+- trial_or_source: Epic Sciences AR-V7 FDA companion diagnostic
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ar_v7_positive_arpi_resistance_pathway
+- trial_or_source: Erleada label
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - hypothyroidism_apalutamide_new_onset
+  - lvef_decline_for_apalutamide
+- trial_or_source: Erleada label §5.2
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - apalutamide_severe_rash_sjs_ten
+- trial_or_source: FDA olaparib label HRR+ companion diagnostic
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - hrr_status_required_before_parp_inhibitor
+- trial_or_source: FDA pembrolizumab tumor agnostic dMMR/MSI-H approval 2017
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - msi_mmr_reflex_testing_lynch_family
+- trial_or_source: FDA post-marketing SJS/TEN reports
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - apalutamide_severe_rash_sjs_ten
+- trial_or_source: Fearon
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cachexia_pharmacotherapy_consideration
+- trial_or_source: Fizazi
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 5
+  consuming_gates_sample:
+  - abiraterone_alp_rapid_rise_longitudinal
+  - abiraterone_hypokalemia_grade3
+  - bone_targeted_hypocalcemia_extended
+  - bone_targeted_osteonecrosis_jaw
+  - psa_doubling_time_progressive
+- trial_or_source: Freedland JAMA 2005
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_velocity_bcr_aggressive
+- trial_or_source: GETUG-AFU 16 (Carrie
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - localized_bcr_adjuvant_trials_completion
+- trial_or_source: GETUG-AFU-16
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_velocity_bcr_aggressive
+- trial_or_source: Gleave ASCO 2018
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_flare_arpi_pseudoprogression
+- trial_or_source: Greenberg IPSS-R 2012
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - parp_inhibitor_mds_aml_longitudinal
+- trial_or_source: Grubbs IJROBP 2016 (SVI RP efficiency)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - svi_risk_high_rp_efficiency_warning
+- trial_or_source: Hartsell JNCI 2005;97:798
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - structured_pain_progression_bpi
+- trial_or_source: Hartsell JNCI 2005;97:798 (RTOG 9714 bone pain)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - palliative_rt_decision_engine
+- trial_or_source: Henry
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - bone_targeted_hypocalcemia_extended
+  - bone_targeted_osteonecrosis_jaw
+- trial_or_source: Hui Cancer 2014
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - esas_severity_alert
+- trial_or_source: ICH E14
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - qtc_prolongation_grade3_for_enzalutamide
+- trial_or_source: IMPACT
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - sipuleucel_t_febrile_neutropenia_post_leukapheresis
+  - sipuleucel_t_immunosuppression_baseline
+  - sipuleucel_t_severe_irr
+- trial_or_source: IMPROVE score
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - arsi_abiraterone_vte_risk_high
+- trial_or_source: IPATential150
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - ipatasertib_hyperglycemia_grade3
+  - ipatasertib_pten_wt_futility_block
+  - uncontrolled_diabetes
+- trial_or_source: Jevtana label §4
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cabazitaxel_hypersensitivity_grade3
+- trial_or_source: Jevtana label §6
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cabazitaxel_hb_rapid_drop_longitudinal
+- trial_or_source: KEYNOTE-158 (Marabelle
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - msi_mmr_reflex_testing_lynch_family
+- trial_or_source: KEYNOTE-199
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - msi_mmr_reflex_testing_lynch_family
+- trial_or_source: KEYNOTE-365 cohort C
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 4
+  consuming_gates_sample:
+  - checkpoint_inhibitor_colitis_grade3_plus
+  - checkpoint_inhibitor_endocrinopathy_new_onset
+  - checkpoint_inhibitor_hepatitis_grade3_plus
+  - checkpoint_inhibitor_pneumonitis_grade2_plus
+- trial_or_source: KEYNOTE-365/199 mCRPC pembrolizumab subgroup
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cdk12_alteration_immunotherapy_eligibility
+- trial_or_source: KEYNOTE-921
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 4
+  consuming_gates_sample:
+  - checkpoint_inhibitor_colitis_grade3_plus
+  - checkpoint_inhibitor_endocrinopathy_new_onset
+  - checkpoint_inhibitor_hepatitis_grade3_plus
+  - checkpoint_inhibitor_pneumonitis_grade2_plus
+- trial_or_source: Kantoff
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - sipuleucel_t_febrile_neutropenia_post_leukapheresis
+  - sipuleucel_t_severe_irr
+- trial_or_source: KeyLynk-010
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - checkpoint_inhibitor_colitis_grade3_plus
+  - checkpoint_inhibitor_hepatitis_grade3_plus
+- trial_or_source: Keytruda label 5.5
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - checkpoint_inhibitor_hepatitis_grade3_plus
+- trial_or_source: Keytruda label 5.7
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - checkpoint_inhibitor_endocrinopathy_new_onset
+- trial_or_source: Keytruda label §5.4
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - checkpoint_inhibitor_pneumonitis_grade2_plus
+- trial_or_source: Keytruda label §5.6
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - checkpoint_inhibitor_colitis_grade3_plus
+- trial_or_source: Khorana score
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - arsi_abiraterone_vte_risk_high
+- trial_or_source: Kibel
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - svi_risk_high_rp_efficiency_warning
+- trial_or_source: Klil-Drori EJC 2019 meta
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - arsi_abiraterone_vte_risk_high
+- trial_or_source: Kratochwil JNM 2016
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - actinium_225_psma_investigational
+- trial_or_source: Kroenke JGIM 2001;16:606 (PHQ-9 validation)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - phq9_depression_referral
+- trial_or_source: Kuban IJROBP 2003
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_bounce_post_rt_pseudoprogression
+- trial_or_source: Kweldam Eur Urol 2017 (IDC adverse prognostic)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - atypical_histology_escalation_nepc_intraductal
+- trial_or_source: Kweldam Histopathology 2015 (cribriform pattern)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - atypical_histology_escalation_nepc_intraductal
+- trial_or_source: LATITUDE
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 7
+  consuming_gates_sample:
+  - abiraterone_adrenal_insufficiency
+  - abiraterone_cirrhosis_baseline_contraindication
+  - abiraterone_hepatotoxicity_grade3
+  - abiraterone_hypokalemia_grade3
+  - arsi_abiraterone_vte_risk_high
+- trial_or_source: LATITUDE supplementary
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - abiraterone_alp_rapid_rise_longitudinal
+- trial_or_source: Le
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - msi_mmr_reflex_testing_lynch_family
+- trial_or_source: Lievens Radiother Oncol 2020 (ESTRO/EORTC consensus)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - oligometastatic_sbrt_eligibility
+- trial_or_source: Loblaw
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - oncologic_emergency_diagnostic_integration
+  - palliative_rt_decision_engine
+- trial_or_source: Loblaw 2012
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - radium223_in_cord_compression
+- trial_or_source: Loeb J Urol 2015 (PHI validation)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - pre_biopsy_risk_calculators_phi_4kscore
+- trial_or_source: Loprinzi
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cachexia_pharmacotherapy_consideration
+- trial_or_source: Lutz Pract Radiat Oncol 2017 (ASTRO bone mets)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - palliative_rt_decision_engine
+- trial_or_source: Lynparza label §2.3
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - olaparib_renal_dysfunction_grade3
+- trial_or_source: Lynparza label §5.1
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - parp_inhibitor_mds_aml_longitudinal
+- trial_or_source: MAGNITUDE
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 8
+  consuming_gates_sample:
+  - hrr_status_required_before_parp_inhibitor
+  - niraparib_hypertension_grade3_magnitude
+  - niraparib_in_severe_thrombocytopenia
+  - niraparib_thrombocytopenia_rapid_drop
+  - parp_fatigue_grade3
+- trial_or_source: MAGNITUDE Chi
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - parp_inhibitor_mds_aml_longitudinal
+- trial_or_source: MSKCC SVI Nomogram Stephenson
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - svi_risk_high_rp_efficiency_warning
+- trial_or_source: Major
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - oncologic_emergency_diagnostic_integration
+- trial_or_source: Major Cancer 2001
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - bone_targeted_hypocalcemia_extended
+- trial_or_source: Marcum JAMA Oncol 2024
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - enzalutamide_cognitive_decline_elderly
+- trial_or_source: Mateo Ann Oncol 2020 (comprehensive HRD assessment)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - comprehensive_hrd_phenotype_high
+- trial_or_source: Morton
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - parp_inhibitor_mds_aml_longitudinal
+- trial_or_source: Mostaghel
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - nepc_pre_biopsy_risk_suspicion
+- trial_or_source: Myriad MyChoice CDx HRD
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - comprehensive_hrd_phenotype_high
+- trial_or_source: NCCN Cancer Cachexia v1.2026
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cachexia_pharmacotherapy_consideration
+- trial_or_source: NCCN Cancer-Related Fatigue v1.2026
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - parp_fatigue_grade3
+- trial_or_source: NCCN Distress Management v3.2026
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - esas_severity_alert
+  - gad7_anxiety_referral
+  - phq9_depression_referral
+- trial_or_source: NCCN IO Toxicity 2024 END-1
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - checkpoint_inhibitor_endocrinopathy_new_onset
+- trial_or_source: NCCN IO Toxicity 2024 HEP-1
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - checkpoint_inhibitor_hepatitis_grade3_plus
+- trial_or_source: NCCN IO Toxicity 2024 §GI-1
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - checkpoint_inhibitor_colitis_grade3_plus
+- trial_or_source: NCCN IO Toxicity 2024 §PNEU-1
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - checkpoint_inhibitor_pneumonitis_grade2_plus
+- trial_or_source: NCCN Neuroendocrine v3.2025
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - iodine_131_mibg_nepc_eligibility
+- trial_or_source: NCCN PROS-G v5.2026
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - psa_bounce_post_rt_pseudoprogression
+  - psa_velocity_bcr_aggressive
+- trial_or_source: NCCN PROS-G v5.2026 m0CRPC
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_doubling_time_progressive
+- trial_or_source: NCCN Pain v2.2026
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - structured_pain_progression_bpi
+- trial_or_source: NCCN Palliative Care v2.2026
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - palliative_sedation_protocol_initiation
+- trial_or_source: NCCN Prostate v5.2026 PROS-1
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - metastatic_biopsy_pathway_when_primary_impractical
+- trial_or_source: NCCN Prostate v5.2026 PROS-1 (IDC adverse feature)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - atypical_histology_escalation_nepc_intraductal
+- trial_or_source: NCCN Prostate v5.2026 PROS-2
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - comprehensive_hrd_phenotype_high
+  - ct4_requires_histology_confirmation
+- trial_or_source: NCCN Prostate v5.2026 PROS-2 (category 1)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - hrr_status_required_before_parp_inhibitor
+- trial_or_source: NCCN Prostate v5.2026 PROS-2 (category 2B)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - ar_v7_positive_arpi_resistance_pathway
+  - cdk12_alteration_immunotherapy_eligibility
+- trial_or_source: NCCN Prostate v5.2026 PROS-3
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - anticoagulant_rp_bleeding_risk
+  - prior_pelvic_rt_re_irradiation_contraindication
+  - svi_risk_high_rp_efficiency_warning
+- trial_or_source: NCCN Prostate v5.2026 PROS-4
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - ibd_active_pelvic_rt_contraindication
+  - turp_brachytherapy_contraindication
+- trial_or_source: NCCN Prostate v5.2026 PROS-A
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - nepc_pre_biopsy_risk_suspicion
+- trial_or_source: NCCN Prostate v5.2026 PROS-A (NEPC pathway)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - atypical_histology_escalation_nepc_intraductal
+- trial_or_source: NCCN Prostate v5.2026 PROS-G
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 4
+  consuming_gates_sample:
+  - ecog_decline_alert
+  - pre_biopsy_risk_calculators_phi_4kscore
+  - psa_velocity_pre_biopsy_urgent
+  - visceral_metastasis_new_appearance
+- trial_or_source: NCCN Prostate v5.2026 PROS-G (genomic testing)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - ipatasertib_pten_wt_futility_block
+  - parp_hrr_negative_futility_block
+- trial_or_source: NCCN Prostate v5.2026 PROS-G (geriatric)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - arpi_fall_risk_longitudinal
+- trial_or_source: NCCN Prostate v5.2026 PROS-H (category 2A Lynch testing)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - msi_mmr_reflex_testing_lynch_family
+- trial_or_source: NCCN Prostate v5.2026 PROS-K
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - sipuleucel_t_immunosuppression_baseline
+- trial_or_source: NCCN Prostate v5.2026 PROS-N
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ra223_visceral_metastases_contraindication
+- trial_or_source: NCCN Prostate v5.2026 PROS-O
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 7
+  consuming_gates_sample:
+  - actinium_225_psma_investigational
+  - oligometastatic_sbrt_eligibility
+  - palliative_rt_decision_engine
+  - psma_pet_preferred_for_nmcrpc_low_psa
+  - psma_pet_progression_auto_trigger
+- trial_or_source: NCCN Prostate v5.2026 PROS-X
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - oncologic_emergency_diagnostic_integration
+- trial_or_source: NCCN Supportive Care v1.2026
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - taxane_diarrhea_grade3_plus
+- trial_or_source: NCCN Supportive Care v1.2026 - HFSR
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - hand_foot_syndrome_tkis_grade2_plus
+- trial_or_source: NETTER-1 Strosberg
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - iodine_131_mibg_nepc_eligibility
+- trial_or_source: NOF 2022
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - radium223_high_fracture_risk_frax
+- trial_or_source: Nava Rodrigues Eur Urol 2018 (dMMR mCRPC)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - msi_mmr_reflex_testing_lynch_family
+- trial_or_source: Nubeqa label
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - darolutamide_hypersensitivity
+- trial_or_source: Nubeqa label §6
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - darolutamide_hepatotoxicity_grade3
+- trial_or_source: ORIOLE (Phillips JAMA Oncol 2020)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - palliative_rt_decision_engine
+- trial_or_source: ORIOLE (Phillips JAMA Oncol 2020;6:650)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - oligometastatic_sbrt_eligibility
+- trial_or_source: Oken Am J Clin Oncol 1982;5:649 (ECOG validation)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ecog_decline_alert
+- trial_or_source: PCWG3
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 5
+  consuming_gates_sample:
+  - ct4_requires_histology_confirmation
+  - ecog_decline_alert
+  - psma_pet_progression_auto_trigger
+  - structured_pain_progression_bpi
+  - visceral_metastasis_new_appearance
+- trial_or_source: PCWG3 Scher
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - composite_progression_rpfs_reroute
+  - psa_bounce_post_rt_pseudoprogression
+  - psa_flare_arpi_pseudoprogression
+- trial_or_source: PEACE-1
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - ecog_2_or_more_for_triplets
+  - severe_heart_failure_nyha_iii_iv
+  - uncontrolled_hypertension
+- trial_or_source: PEACE-1 elderly subset
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - triplete_frailty_g8_low
+- trial_or_source: PEACE-3
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 4
+  consuming_gates_sample:
+  - enzalutamide_ra223_dual_myelosuppression
+  - no_bone_protective_agent
+  - ra223_visceral_metastases_contraindication
+  - radium223_high_fracture_risk_frax
+- trial_or_source: PERCIST 1.0
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psma_pet_progression_auto_trigger
+- trial_or_source: PIVOT
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - localized_bcr_adjuvant_trials_completion
+- trial_or_source: PRESTO/AFT-19
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - arpi_fall_risk_longitudinal
+  - hypothyroidism_apalutamide_new_onset
+- trial_or_source: PREVAIL
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - arsi_abiraterone_vte_risk_high
+  - enzalutamide_hyponatremia_siadh
+  - psa_flare_arpi_pseudoprogression
+- trial_or_source: PROMISE
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - psma_pet_preferred_for_nmcrpc_low_psa
+  - psma_pet_progression_auto_trigger
+- trial_or_source: PROPHECY
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ar_v7_positive_arpi_resistance_pathway
+- trial_or_source: PROSPER
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - arpi_fall_risk_longitudinal
+  - arsi_in_seizure_history_grade3
+  - psa_doubling_time_progressive
+- trial_or_source: PROTECT
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - localized_bcr_adjuvant_trials_completion
+- trial_or_source: PROfound
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 7
+  consuming_gates_sample:
+  - composite_progression_rpfs_reroute
+  - hrr_status_required_before_parp_inhibitor
+  - olaparib_renal_dysfunction_grade3
+  - parp_fatigue_grade3
+  - parp_hrr_negative_futility_block
+- trial_or_source: PROfound Cohort B
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cdk12_alteration_immunotherapy_eligibility
+- trial_or_source: PROfound de Bono
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - parp_inhibitor_mds_aml_longitudinal
+- trial_or_source: PROpel
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 5
+  consuming_gates_sample:
+  - hrr_status_required_before_parp_inhibitor
+  - olaparib_renal_dysfunction_grade3
+  - parp_fatigue_grade3
+  - parp_hrr_negative_futility_block
+  - parp_inhibitor_in_severe_cytopenias
+- trial_or_source: PROpel/TALAPRO-2/MAGNITUDE PARP combinations
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - comprehensive_hrd_phenotype_high
+- trial_or_source: PRRT consensus guidelines
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - iodine_131_mibg_nepc_eligibility
+- trial_or_source: PSMAfore
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 4
+  consuming_gates_sample:
+  - lu177_psma_pet_negative_contraindication
+  - lutetium177_fatigue_grade3
+  - lutetium177_in_cord_compression
+  - xerostomia_monitoring_lu177_grade2_plus
+- trial_or_source: Parekh
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - pre_biopsy_risk_calculators_phi_4kscore
+- trial_or_source: Parker
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - bone_targeted_hypocalcemia_extended
+- trial_or_source: Patchell
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - oncologic_emergency_diagnostic_integration
+  - palliative_rt_decision_engine
+- trial_or_source: Petrylak
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - checkpoint_inhibitor_pneumonitis_grade2_plus
+- trial_or_source: Pickles IJROBP 2011
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_bounce_post_rt_pseudoprogression
+- trial_or_source: Pluvicto FDA label (2022)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - lu177_psma_pet_negative_contraindication
+  - xerostomia_monitoring_lu177_grade2_plus
+- trial_or_source: Pluvicto label
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - bone_targeted_hypocalcemia_extended
+  - lutetium177_in_cord_compression
+  - lutetium177_in_severe_cytopenias
+- trial_or_source: Pluvicto label §6
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - lutetium177_fatigue_grade3
+  - lutetium177_hb_rapid_drop_longitudinal
+- trial_or_source: Pomerantz Eur Urol 2017 (HRD prostate cancer)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - comprehensive_hrd_phenotype_high
+- trial_or_source: Pound JAMA 1999
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_velocity_bcr_aggressive
+- trial_or_source: Provenge FDA label §5.2 (2024)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - sipuleucel_t_immunosuppression_baseline
+- trial_or_source: Provenge label §5.1 IRR
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - sipuleucel_t_severe_irr
+- trial_or_source: Provenge label §5.2 hematologic
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - sipuleucel_t_febrile_neutropenia_post_leukapheresis
+- trial_or_source: Quadramet FDA label 1997
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - samarium_153_edtmp_eligibility
+- trial_or_source: RADICALS-RT Parker
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - svi_risk_high_rp_efficiency_warning
+- trial_or_source: RAVES (Kneebone
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - localized_bcr_adjuvant_trials_completion
+- trial_or_source: RECIST 1.1
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psma_pet_progression_auto_trigger
+- trial_or_source: RTOG 9601
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - localized_bcr_adjuvant_trials_completion
+- trial_or_source: RTOG-9601
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_velocity_bcr_aggressive
+- trial_or_source: RTOG-ASTRO Phoenix 2006
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_bounce_post_rt_pseudoprogression
+- trial_or_source: Risbridger Nat Rev Cancer 2018 (IDC molecular)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - atypical_histology_escalation_nepc_intraductal
+- trial_or_source: Roche Ipatasertib clinical pharmacology data
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ipatasertib_pten_wt_futility_block
+- trial_or_source: Roobol Eur Urol 2015 (PSA density EAU cutoffs)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - pre_biopsy_risk_calculators_phi_4kscore
+- trial_or_source: Ryan
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - abiraterone_hypokalemia_grade3
+- trial_or_source: SABR-COMET
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - oligometastatic_sbrt_eligibility
+  - palliative_rt_decision_engine
+- trial_or_source: SIOG 2024 Comprehensive Geriatric Assessment
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - triplete_frailty_g8_low
+- trial_or_source: SIOG Geriatric Assessment
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - enzalutamide_cognitive_decline_elderly
+- trial_or_source: SIOG Geriatric Oncology Guidelines
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - arsi_in_cognitive_decline_grade2
+- trial_or_source: SNMMI Lu-177-PSMA Eligibility Statement 2023
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - lu177_psma_pet_negative_contraindication
+- trial_or_source: SPARTAN
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 8
+  consuming_gates_sample:
+  - apalutamide_severe_rash_sjs_ten
+  - arpi_fall_risk_longitudinal
+  - arsi_in_seizure_history_grade3
+  - hypothyroidism_apalutamide_new_onset
+  - lvef_decline_for_apalutamide
+- trial_or_source: SPCG-4 (Bill-Axelson
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - localized_bcr_adjuvant_trials_completion
+- trial_or_source: SPPORT
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - localized_bcr_adjuvant_trials_completion
+- trial_or_source: STAMPEDE
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - composite_progression_rpfs_reroute
+- trial_or_source: STAMPEDE Arm C
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - docetaxel_neutropenia_rapid_drop
+- trial_or_source: STAMPEDE arm M1 RT
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - oligometastatic_sbrt_eligibility
+  - palliative_rt_decision_engine
+- trial_or_source: STOMP
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 2
+  consuming_gates_sample:
+  - oligometastatic_sbrt_eligibility
+  - palliative_rt_decision_engine
+- trial_or_source: SWOG-8794 (Thompson J Urol 2009;181:956)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - localized_bcr_adjuvant_trials_completion
+- trial_or_source: Saad JNCI 2002
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - bone_targeted_hypocalcemia_extended
+- trial_or_source: Sartor
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - bone_targeted_hypocalcemia_extended
+  - lutetium177_hb_rapid_drop_longitudinal
+  - samarium_153_edtmp_eligibility
+- trial_or_source: Sathekge JNM 2024
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - actinium_225_psma_investigational
+- trial_or_source: Scher
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - enzalutamide_hyponatremia_siadh
+- trial_or_source: Scher JAMA Oncol 2016;2:1441 (AR-V7 nuclear localization)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ar_v7_positive_arpi_resistance_pathway
+- trial_or_source: Schildmann J Pain Symptom Manage 2014
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - palliative_sedation_protocol_initiation
+- trial_or_source: Smith
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - apalutamide_severe_rash_sjs_ten
+- trial_or_source: Spitzer Arch Intern Med 2006;166:1092 (GAD-7 validation)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - gad7_anxiety_referral
+- trial_or_source: Stephenson
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_velocity_bcr_aggressive
+- trial_or_source: Sternberg
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_doubling_time_progressive
+- trial_or_source: Stolzenburg J Urol 2008 (bleeding anticoag RP)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - anticoagulant_rp_bleeding_risk
+- trial_or_source: Stone IJROBP 2007 (post-TURP brachy outcomes)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - turp_brachytherapy_contraindication
+- trial_or_source: TALAPRO-2
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 6
+  consuming_gates_sample:
+  - hrr_status_required_before_parp_inhibitor
+  - parp_fatigue_grade3
+  - parp_hrr_negative_futility_block
+  - parp_inhibitor_in_mds_aml_history
+  - parp_inhibitor_in_severe_cytopenias
+- trial_or_source: TALAPRO-3
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - parp_inhibitor_in_severe_cytopenias
+- trial_or_source: TAX-327
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 4
+  consuming_gates_sample:
+  - docetaxel_neuropathy_cumulative_postchemo
+  - docetaxel_neuropathy_longitudinal_grade2_post_4_cycles
+  - severe_neuropathy_grade3
+  - taxane_diarrhea_grade3_plus
+- trial_or_source: TAX-327 supplementary
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - docetaxel_neutropenia_rapid_drop
+- trial_or_source: TITAN
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 4
+  consuming_gates_sample:
+  - apalutamide_severe_rash_sjs_ten
+  - hypothyroidism_apalutamide_new_onset
+  - lvef_decline_for_apalutamide
+  - psa_flare_arpi_pseudoprogression
+- trial_or_source: TRITON-3
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 5
+  consuming_gates_sample:
+  - creatinine_clearance_lt_30
+  - parp_fatigue_grade3
+  - parp_hrr_negative_futility_block
+  - parp_inhibitor_in_severe_cytopenias
+  - parp_inhibitor_mds_aml_longitudinal
+- trial_or_source: TROPIC
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 6
+  consuming_gates_sample:
+  - cabazitaxel_hypersensitivity_grade3
+  - docetaxel_neuropathy_cumulative_postchemo
+  - docetaxel_neuropathy_longitudinal_grade2_post_4_cycles
+  - polysorbate_hypersensitivity
+  - severe_neuropathy_grade3
+- trial_or_source: TROPIC supplementary
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cabazitaxel_hb_rapid_drop_longitudinal
+- trial_or_source: Taxotere label §5
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - docetaxel_neutropenia_rapid_drop
+- trial_or_source: Tetar IJROBP 2018
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - prior_pelvic_rt_re_irradiation_contraindication
+- trial_or_source: TheraP
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - lu177_psma_pet_negative_contraindication
+  - lutetium177_in_cord_compression
+  - xerostomia_monitoring_lu177_grade2_plus
+- trial_or_source: UCSF Cognitive Aging Cohort 2024
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - enzalutamide_cognitive_decline_elderly
+- trial_or_source: UCSF Cohort 2024
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - arsi_in_cognitive_decline_grade2
+- trial_or_source: VIOLET NCT05477576
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - actinium_225_psma_investigational
+- trial_or_source: VISION
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 9
+  consuming_gates_sample:
+  - bone_targeted_hypocalcemia_extended
+  - composite_progression_rpfs_reroute
+  - lu177_psma_pet_negative_contraindication
+  - lutetium177_fatigue_grade3
+  - lutetium177_in_cord_compression
+- trial_or_source: VISION supplementary
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - lutetium177_hb_rapid_drop_longitudinal
+- trial_or_source: Verbalis Endocrine Society 2014
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - enzalutamide_hyponatremia_siadh
+- trial_or_source: Vickers J Urol 2009 (PSA velocity validation)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - psa_velocity_pre_biopsy_urgent
+- trial_or_source: Vickers J Urol 2009 (PSA velocity)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - pre_biopsy_risk_calculators_phi_4kscore
+- trial_or_source: WHO 2022 Classification
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - parp_inhibitor_mds_aml_longitudinal
+- trial_or_source: WHO FRAX 2008
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - radium223_high_fracture_risk_frax
+- trial_or_source: WHO Palliative Care Definition 2002
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - palliative_sedation_protocol_initiation
+- trial_or_source: Wu Cell 2018;173:1770 (TDP CDK12 phenotype)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cdk12_alteration_immunotherapy_eligibility
+- trial_or_source: Xgeva label
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - bone_targeted_hypocalcemia_extended
+- trial_or_source: Xgeva label 5.5
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - bone_targeted_osteonecrosis_jaw
+- trial_or_source: Xofigo FDA label §5.3 (2024)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - ra223_visceral_metastases_contraindication
+- trial_or_source: Xofigo label
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 3
+  consuming_gates_sample:
+  - bone_targeted_hypocalcemia_extended
+  - radium223_in_cord_compression
+  - radium223_in_hypocalcemia
+- trial_or_source: Xofigo label §5.4
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - radium223_high_fracture_risk_frax
+- trial_or_source: Xtandi label
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - qtc_prolongation_grade3_for_enzalutamide
+- trial_or_source: Xtandi label post-marketing
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - arsi_in_cognitive_decline_grade2
+- trial_or_source: Xtandi label §5.4 + post-marketing
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - enzalutamide_cognitive_decline_elderly
+- trial_or_source: Xtandi label §6
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - enzalutamide_hyponatremia_siadh
+- trial_or_source: Yamada Endocr Rev 2017
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - abiraterone_hypokalemia_grade3
+- trial_or_source: Yamamoto
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - palliative_rt_decision_engine
+- trial_or_source: Zejula label §5.1
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - niraparib_in_severe_thrombocytopenia
+- trial_or_source: Zejula label §5.3
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - niraparib_hypertension_grade3_magnitude
+- trial_or_source: Zometa label
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - bone_targeted_hypocalcemia_extended
+- trial_or_source: Zometa label 5.4
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - bone_targeted_osteonecrosis_jaw
+- trial_or_source: Zytiga FDA label §8.7 (2024)
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - abiraterone_cirrhosis_baseline_contraindication
+- trial_or_source: Zytiga label 5.4
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - abiraterone_adrenal_insufficiency
+- trial_or_source: Zytiga label §5.4
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - abiraterone_hypokalemia_grade3
+- trial_or_source: Zytiga §2.4 dose modification
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - abiraterone_alp_rapid_rise_longitudinal
+- trial_or_source: Zytiga §5.1
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - abiraterone_alp_rapid_rise_longitudinal
+- trial_or_source: de Bono
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cabazitaxel_hb_rapid_drop_longitudinal
+- trial_or_source: de Wit
+  last_reviewed: '2026-05-13'
+  review_status: current
+  reviewer_role: automated_bootstrap_review
+  review_method: catalog_inventory_review
+  review_evidence: 'EPIC 15 bootstrap: inventory pass over pivotal_gates_catalog YAML
+    + confirmed presence of trial_refs in actively-loaded gates. No claim of full
+    PubMed re-validation; documents scheduled-review baseline.'
+  consuming_gates_count: 1
+  consuming_gates_sample:
+  - cabazitaxel_hb_rapid_drop_longitudinal

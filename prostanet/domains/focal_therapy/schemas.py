@@ -127,6 +127,14 @@ FOCAL_THERAPY_SCHEMA = module_schema(
             clinical_role="required",
             evidence_tags=["mpmri", "focal_eligibility"],
         ),
+        # EPIC 14b smart-form: lesion_maxdim_mm solo es elegibilidad-determinante
+        # para terapia focal cuando hay lesión índice identificada (unilateral
+        # o multifocal localizada). Si lateralidad es Desconocido o no procede,
+        # capturar el diámetro es ruido. Per NCCN PROS-C: focal therapy
+        # requiere lesión índice claramente identificada por mpMRI.
+        # Beneficio clínico: ahorra captura cuando la elegibilidad ya está
+        # comprometida por lateralidad indeterminada (drive hacia evaluación
+        # completa antes de discutir focal).
         FieldSpec(
             "lesion_maxdim_mm",
             "Diámetro máximo de la lesión índice",
@@ -137,6 +145,7 @@ FOCAL_THERAPY_SCHEMA = module_schema(
             clinical_role="required",
             unit="mm",
             evidence_tags=["mpmri", "focal_eligibility"],
+            conditional_visibility={"lesion_unilateral": ["Unilateral (afecta un solo lóbulo)", "Bilateral"]},
         ),
         FieldSpec(
             "mri_psa_density",

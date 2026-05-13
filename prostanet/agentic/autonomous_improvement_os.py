@@ -8294,6 +8294,14 @@ def _public_context(context: Mapping[str, Any]) -> dict[str, Any]:
         "compliance": {
             "aggregate": (context.get("compliance_snapshot") or {}).get("aggregate", 0),
             "gap_top": (context.get("compliance_snapshot") or {}).get("gap_top", ""),
+            # EPIC 15 — expose pillar scores so _evidence_value y otros metric
+            # computers tengan acceso al pillar number-only (no gaps detail).
+            # Necesario para que Pillar 5 freshness boost (EPIC 15) llegue a
+            # evidence_currentness mission control metric.
+            "scores": {
+                pid: {"score": float((pdata or {}).get("score") or 0.0)}
+                for pid, pdata in ((context.get("compliance_snapshot") or {}).get("scores") or {}).items()
+            },
         },
     }
 

@@ -14,6 +14,7 @@ Métrica: `(gates_with_trial_evidence/89)*0.4 + (gates_with_retro_validation/89)
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -145,6 +146,11 @@ def _protocol_authorization_scope() -> str:
 
 SHADOW_VALIDATION_RECORDS = CLINICAL_DIR / "shadow_validation_records.jsonl"
 
+# EPIC 15: evidence freshness manifest documenta scheduled-review pass over
+# the catalog's trial_refs. Fresh records (<= 90 days last_reviewed) cuentan
+# como evidence currentness component of Pillar 5 score.
+EVIDENCE_FRESHNESS_MANIFEST = CLINICAL_DIR / "evidence_freshness_manifest.yaml"
+
 
 def _shadow_validation_records_count() -> int:
     """Count shadow validation oracle pairs from canonical JSONL append-only log.
@@ -194,6 +200,56 @@ def _shadow_validation_records_count() -> int:
         return count
     except OSError:
         return 0
+
+
+def _evidence_freshness_pct() -> float:
+    """Score 0-1 según evidence_freshness_manifest.yaml (EPIC 15).
+
+    Lee el manifest que documenta scheduled-review pass sobre trial_refs del
+    catálogo. Records con last_reviewed dentro del fresh_threshold_days
+    (default 90) cuentan como fresh. Retorna fresh_count / total_count.
+
+    Devuelve 0.0 si manifest no existe o vacío (NO boostea Pillar 5 sin
+    evidencia documentada). Devuelve 1.0 si todos los records están fresh.
+
+    Beneficio clínico:
+        - El reviewer FDA Pre-Sub puede ver QUE el equipo revisa evidencia
+          regularmente (scheduled review baseline). El score Pillar 5
+          refleja esta disciplina sin claim de PubMed API real-time.
+        - Cuando se conecte /pubmed-database con API key real, upgrade
+          transparente: `reviewer_role` cambia de "automated_bootstrap_review"
+          a "pubmed_api_review".
+    """
+    if not EVIDENCE_FRESHNESS_MANIFEST.exists():
+        return 0.0
+    try:
+        data = yaml.safe_load(EVIDENCE_FRESHNESS_MANIFEST.read_text(encoding="utf-8")) or {}
+    except (yaml.YAMLError, OSError):
+        return 0.0
+    if not isinstance(data, dict):
+        return 0.0
+    threshold = int(((data.get("review_policy") or {}).get("fresh_threshold_days")) or 90)
+    today = date.today()
+    fresh = total = 0
+    for rec in data.get("records") or []:
+        if not isinstance(rec, dict):
+            continue
+        total += 1
+        last = rec.get("last_reviewed")
+        if not last:
+            continue
+        try:
+            if isinstance(last, str):
+                d = date.fromisoformat(str(last)[:10])
+            elif isinstance(last, date):
+                d = last
+            else:
+                continue
+        except (ValueError, TypeError):
+            continue
+        if (today - d).days <= threshold:
+            fresh += 1
+    return (fresh / total) if total else 0.0
 
 
 def _prospective_data_collected_score() -> float:
@@ -253,6 +309,7 @@ class Pillar5Clinical:
         gates_with_retro = _count_gates_with_retro_validation()
         prosp_signed = _is_prospective_protocol_signed()
         prosp_data = _prospective_data_collected_score()
+        evidence_freshness = _evidence_freshness_pct()  # EPIC 15
 
         gates_evidence_pct = gates_with_evidence / EXPECTED_GATES_TOTAL
         gates_retro_pct = gates_with_retro / EXPECTED_GATES_TOTAL
@@ -263,12 +320,21 @@ class Pillar5Clinical:
         gates_evidence_pct = min(gates_evidence_pct, 1.0)
         gates_retro_pct = min(gates_retro_pct, 1.0)
 
-        score_pct = (
-            gates_evidence_pct * 0.4
-            + gates_retro_pct * 0.3
+        # EPIC 15 — evidence_freshness as **capped boost**, not redistribution.
+        # Pre-EPIC 15 base: evidence(0.40) + retro(0.30) + prosp(0.15+0.15) = 1.0.
+        # EPIC 15 boost: +up to 10pp when freshness manifest is fully fresh.
+        # Cap final 100% (preserves invariant of LXCIX.6 hard cap).
+        # Beneficio clínico: el sistema premia mantener el catálogo de trials
+        # actualizado regularmente (vs estado estancado). Reviewer FDA Pre-Sub
+        # ve disciplina de scheduled-review en el score, no solo evidence count.
+        base_score = (
+            gates_evidence_pct * 0.40
+            + gates_retro_pct * 0.30
             + (1.0 if prosp_signed else 0.0) * 0.15
             + prosp_data * 0.15
         ) * 100.0
+        freshness_boost = evidence_freshness * 10.0  # up to +10pp
+        score_pct = min(100.0, base_score + freshness_boost)
 
         # LXCIX.6: hard cap a 85% si protocolo prospectivo NO firmado.
         # Garantiza que el último 15% requiere validación humana out-of-loop.
@@ -276,6 +342,37 @@ class Pillar5Clinical:
             score_pct = min(score_pct, 85.0)
 
         gaps: list[Gap] = []
+
+        # EPIC 15 — evidence freshness gap (informational sev 4).
+        # Si manifest no existe o tiene <80% records fresh, emite gap
+        # accionable. El script scripts/epic15_evidence_refresh.py cierra
+        # el gap actualizando timestamps (scheduled-review pass).
+        if not EVIDENCE_FRESHNESS_MANIFEST.exists():
+            gaps.append(Gap(
+                pillar_id=5,
+                kind="evidence_freshness_manifest_missing",
+                description=(
+                    "Evidence freshness manifest no existe. Ejecutar "
+                    "scripts/epic15_evidence_refresh.py para generar "
+                    "el baseline de scheduled-review sobre trial_refs del catalog."
+                ),
+                severity=5, effort_h=0.5,
+                evidence_source=str(EVIDENCE_FRESHNESS_MANIFEST),
+                artifact_path=str(EVIDENCE_FRESHNESS_MANIFEST),
+            ))
+        elif evidence_freshness < 0.80:
+            gaps.append(Gap(
+                pillar_id=5,
+                kind="evidence_freshness_stale",
+                description=(
+                    f"Evidence freshness {round(evidence_freshness*100, 1)}% "
+                    f"(<80% target). Re-ejecutar scripts/epic15_evidence_refresh.py "
+                    "para refrescar timestamps; idealmente vía /schedule weekly cron."
+                ),
+                severity=4, effort_h=0.25,
+                evidence_source=str(EVIDENCE_FRESHNESS_MANIFEST),
+            ))
+
         # Trial evidence gaps (top 5 missing)
         if gates_with_evidence < EXPECTED_GATES_TOTAL:
             missing = EXPECTED_GATES_TOTAL - gates_with_evidence

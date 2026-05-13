@@ -119,6 +119,12 @@ SCREENING_SCHEMA = module_schema(
             clinical_role="required",
             evidence_tags=["family_history", "nccn_early_detection_v2_2026"],
         ),
+        # EPIC 14b smart-form: germline_known_status solo es clínicamente
+        # determinante cuando hay family history hereditario (cluster relevante
+        # o ≥1 familiar primer grado). Sin family history, el test germinal
+        # no se ordena rutinariamente per NCCN PROS-H. Beneficio clínico:
+        # reduce captura irrelevante en pacientes screening sin historial
+        # familiar, foco en pacientes que sí requieren genetic counseling.
         FieldSpec(
             "germline_known_status",
             "Resultado germinal conocido",
@@ -129,6 +135,14 @@ SCREENING_SCHEMA = module_schema(
             group_order=2,
             clinical_role="required",
             evidence_tags=["germline", "nccn_pros_h"],
+            conditional_visibility={
+                "family_history_cluster": [
+                    "1 familiar de primer grado con cáncer de próstata",
+                    "≥ 2 familiares de primer grado con cáncer de próstata",
+                    "Familiar con cáncer de próstata metastásico o muerto < 60a",
+                    "Cluster familiar BRCA / Lynch / cáncer de mama-ovario",
+                ],
+            },
         ),
         FieldSpec(
             "psa_baseline_ng_ml",
