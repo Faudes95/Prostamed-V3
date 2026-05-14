@@ -778,7 +778,28 @@ def _classify_oligometastatic_refinement(facts: Mapping[str, Any]) -> ClinicalSt
 
 
 def _classify_special_populations(facts: Mapping[str, Any]) -> ClinicalStateClassification | None:
-    """NCCN 2026 PROS-K + AUA — Special populations gating drug choice."""
+    """NCCN 2026 PROS-K + AUA — Special populations gating drug choice.
+
+    EPIC 22c.fix: special_populations applies to patients WITH a confirmed PCa
+    diagnosis (gating drug/treatment choice). For pre-diagnostic patients,
+    the pre_diagnostic.suspected_elevated_psa_watchful_wait rule should fire
+    instead. We DO allow special_populations even without explicit diagnosis
+    flag IF other treatment-decision context is present (active_adt_context,
+    line_of_therapy_number, etc.).
+    """
+    # If patient is clearly pre-diagnostic, defer to pre_diagnostic classifier
+    known_dx = facts.get("known_cancer_diagnosis")
+    explicit_no_dx = known_dx in (False, "false", "0", 0, "no")
+    has_tx_context = bool(
+        facts.get("current_adt_context")
+        or facts.get("line_of_therapy_number")
+        or facts.get("drug_scheme")
+        or facts.get("prior_local_treatment_modality")
+        or facts.get("metastasis_count")
+    )
+    if explicit_no_dx and not has_tx_context:
+        return None  # Let pre_diagnostic fire instead
+
     age = facts.get("age") or facts.get("age_years")
     try:
         age_num = int(age) if age is not None else None
@@ -807,18 +828,23 @@ def _classify_special_populations(facts: Mapping[str, Any]) -> ClinicalStateClas
     except (TypeError, ValueError):
         pass
 
-    # Young onset (<55y at Dx)
-    age_at_dx = facts.get("age_at_diagnosis") or age_num
-    try:
-        if age_at_dx is not None and int(age_at_dx) < 55:
-            return _build_classification(
-                state="young_onset_pca",
-                confidence=0.90,
-                rationale=f"Age at diagnosis {age_at_dx} (<55) — universal germline testing + fertility + aggressive biology",
-                discriminators_matched=[f"age_at_dx={age_at_dx}"],
-            )
-    except (TypeError, ValueError):
-        pass
+    # Young onset (<55y at Dx) — ONLY if confirmed PCa diagnosis; pre-diagnostic
+    # patients with age<55 should NOT trigger this (they may have no cancer).
+    # EPIC 22c.fix: explicit known_cancer_diagnosis check prevents collision with
+    # pre_diagnostic.negative_biopsy_age_lt_45 (whose precondition is no diagnosis).
+    has_pca_diagnosis = facts.get("known_cancer_diagnosis") in (True, "true", "1", 1, "yes")
+    age_at_dx = facts.get("age_at_diagnosis")  # strict: only true age_at_diagnosis
+    if has_pca_diagnosis or age_at_dx is not None:
+        try:
+            if age_at_dx is not None and int(age_at_dx) < 55:
+                return _build_classification(
+                    state="young_onset_pca",
+                    confidence=0.90,
+                    rationale=f"Age at diagnosis {age_at_dx} (<55) — universal germline testing + fertility + aggressive biology",
+                    discriminators_matched=[f"age_at_dx={age_at_dx}"],
+                )
+        except (TypeError, ValueError):
+            pass
 
     # Severe CV — avoid abiraterone
     cv_severe = (
