@@ -476,6 +476,20 @@ def create_app(config=None):
                 f"{type(exc).__name__}: {exc}"
             )
 
+        # EPIC 21 — Voice longitudinal Cortana (micro-form intake, patient lookup,
+        # patient Q&A grounded). Registers /api/voice/epic21/* endpoints.
+        try:
+            from prostanet.voice.epic21_endpoints import register_epic21_endpoints
+
+            register_epic21_endpoints(app)
+        except Exception as exc:
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                f"EPIC 21 endpoints registration failed (continuing): "
+                f"{type(exc).__name__}: {exc}"
+            )
+
         # ──────────────────────────────────────────────────────────────────────
         # Faubot LXXXIII #audit-cde-v2 — Cache-busting middleware HTML responses
         # Resuelve bug del usuario "parece que estamos cargando una UI previa"
