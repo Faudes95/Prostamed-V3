@@ -185,6 +185,10 @@ def epic21_health() -> Any:
         "fase_2_patient_lookup_by_voice": True,
         "fase_3_patient_qa_grounded": True,
         "fase_4_population_qa": False,  # deferred to EPIC 21b
+        "unified_extractor": True,  # /voice-update skill
+        "clinical_vocabulary_boost": True,  # /voice-ai-engine-development skill
+        "tts_phrasing_validator": True,  # /writing-voice skill
+        "agents_md_documented": True,  # /voice-agents skill
     }
     # Module health checks
     modules = {}
@@ -192,6 +196,9 @@ def epic21_health() -> Any:
         ("micro_form_extractor", "prostanet.voice.micro_form_extractor"),
         ("patient_name_resolver", "prostanet.voice.patient_name_resolver"),
         ("patient_qa_grounding", "prostanet.voice.patient_qa_grounding"),
+        ("unified_extractor", "prostanet.voice.unified_extractor"),
+        ("clinical_vocabulary_boost", "prostanet.voice.clinical_vocabulary_boost"),
+        ("tts_phrasing", "prostanet.voice.tts_phrasing"),
         ("anthropic_provider", "prostanet.voice.llm_providers.anthropic_provider"),
     ]:
         try:
@@ -206,8 +213,109 @@ def epic21_health() -> Any:
         "phase": 1,
         "capabilities": capabilities,
         "modules": modules,
+        "skills_applied": [
+            "/voice",
+            "/voice-agents",
+            "/voice-update",
+            "/voice-note-ingest",
+            "/voice-ai-development",
+            "/voice-ai-engine-development",
+            "/writing-voice",
+        ],
         "scope": "internal_shadow_observational_validation",
     }), 200
+
+
+# ─────────────────── Skills integration endpoints ───────────────────
+
+
+@epic21_bp.route("/api/voice/epic21/stt-vocabulary-prompt", methods=["GET"])
+def epic21_stt_vocabulary_prompt() -> Any:
+    """/voice-ai-engine-development — Return clinical vocabulary boost prompt
+    for faster-whisper STT initialization. Query params:
+      - language (es|en, default es)
+      - max_chars (default 1024)
+      - categories (comma-separated, optional)
+    """
+    try:
+        from prostanet.voice.clinical_vocabulary_boost import (
+            get_stt_initial_prompt,
+            get_vocabulary_stats,
+        )
+    except ImportError as e:
+        return jsonify({"available": False, "error": f"module_unavailable: {e}"}), 503
+
+    language = (request.args.get("language") or "es").lower()
+    try:
+        max_chars = int(request.args.get("max_chars") or 1024)
+    except ValueError:
+        max_chars = 1024
+    cats_str = request.args.get("categories") or ""
+    categories = [c.strip() for c in cats_str.split(",") if c.strip()] or None
+
+    prompt = get_stt_initial_prompt(
+        language=language,
+        max_chars=max_chars,
+        include_categories=categories,
+    )
+    stats = get_vocabulary_stats()
+    return jsonify({
+        "available": True,
+        "prompt": prompt,
+        "prompt_length_chars": len(prompt),
+        "language": language,
+        "vocabulary_stats": stats,
+    }), 200
+
+
+@epic21_bp.route("/api/voice/epic21/unified-extract", methods=["POST"])
+def epic21_unified_extract() -> Any:
+    """/voice-update — Unified extraction combining legacy + EPIC 20 micro-forms.
+
+    POST body: {"transcript": "...", "moment": "bcr_detection" (optional)}
+    """
+    try:
+        from prostanet.voice.unified_extractor import (
+            extract_all_candidates,
+            get_extractor_capabilities,
+        )
+    except ImportError as e:
+        return jsonify({"available": False, "error": f"module_unavailable: {e}"}), 503
+
+    payload = request.get_json(silent=True) or {}
+    transcript = str(payload.get("transcript") or "").strip()
+    moment = payload.get("moment")
+    if not transcript:
+        return jsonify({"available": False, "error": "transcript_required"}), 400
+
+    candidates = extract_all_candidates(transcript, moment=moment)
+    return jsonify({
+        "available": True,
+        "moment": moment,
+        "total_candidates": len(candidates),
+        "legacy_source_count": sum(1 for c in candidates if c.get("source") == "legacy"),
+        "micro_form_source_count": sum(1 for c in candidates if c.get("source") == "micro_form"),
+        "candidates": candidates,
+        "capabilities": get_extractor_capabilities(),
+    }), 200
+
+
+@epic21_bp.route("/api/voice/epic21/tts-validate", methods=["POST"])
+def epic21_tts_validate() -> Any:
+    """/writing-voice — Validate TTS text against safety phrasing rules.
+
+    POST body: {"text": "...", "max_sentences": 2 (optional)}
+    """
+    try:
+        from prostanet.voice.tts_phrasing import validate_tts_text
+    except ImportError as e:
+        return jsonify({"available": False, "error": f"module_unavailable: {e}"}), 503
+
+    payload = request.get_json(silent=True) or {}
+    text = str(payload.get("text") or "")
+    max_sentences = int(payload.get("max_sentences") or 2)
+    result = validate_tts_text(text, max_sentences=max_sentences)
+    return jsonify({"available": True, **result}), 200
 
 
 def register_epic21_endpoints(app) -> None:
