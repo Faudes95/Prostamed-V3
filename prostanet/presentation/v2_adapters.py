@@ -625,6 +625,103 @@ def _survivorship_5y_summary(
     }
 
 
+def _decision_fusion_summary(
+    profile_view: Mapping[str, Any],
+    patient: Mapping[str, Any],
+) -> dict[str, Any]:
+    """EPIC 23 — Arbitrate Cortana card recommendations + Patient Twin ranking.
+
+    Detects conflicts between independently-emitted recommendations:
+      - CV/hepatic safety contraindications vs Twin abiraterone ranking
+      - BRCA2 PARP-first timing (only valid in mCRPC)
+      - Metastatic stage data contradictions (M0 vs M1b)
+
+    Returns a dict consumed by `pm2DecisionFusionSummary` template section.
+    When no conflict found, returns {has_conflicts: False} → UI hides the banner.
+
+    The arbiter is decision SUPPORT only. The clinician sees the conflict +
+    proposed resolution + the resolved ranking, but makes the final call.
+    """
+    pv = profile_view or {}
+    pt = patient or {}
+    try:
+        from prostanet.domains.decision_arbiter import (
+            arbitrate_recommendations, CardRecommendation,
+        )
+    except Exception as exc:
+        logger.debug("arbiter import failed: %s", exc)
+        return {"has_conflicts": False, "available": False, "error": str(exc)}
+
+    # Collect CardRecommendation from already-built EPIC 22c summaries
+    # (we re-read what bundle_to_v2_profile_full will populate so the arbiter
+    # sees the same data the cards do).
+    cards: list = []
+    cv_summary = _comorbidity_cv_summary(pv, pt)
+    if cv_summary.get("available"):
+        cards.append(CardRecommendation(
+            source_card="comorbidity_cv",
+            state_required="",
+            preferred_action=cv_summary.get("therapeutic_preferred", ""),
+            not_recommended=list(cv_summary.get("not_recommended") or []),
+            contraindicated_drugs=["abiraterone"],
+            nccn_reference=cv_summary.get("nccn_reference", "PROS-K_v2026"),
+            severity_if_violated="critical",
+        ))
+    brca2_summary = _brca2_carrier_summary(pv, pt)
+    if brca2_summary.get("available"):
+        cards.append(CardRecommendation(
+            source_card="brca2_carrier",
+            state_required="mcrpc",
+            preferred_action=brca2_summary.get("therapeutic_preferred", ""),
+            nccn_reference=brca2_summary.get("nccn_reference", "PROS-A_v2026"),
+            severity_if_violated="moderate",
+        ))
+
+    # Patient Twin OS ranking (built upstream and stored on profile_view)
+    twin_data = pv.get("patient_twin") or {}
+    twin_ranking_raw = (
+        twin_data.get("regimen_rankings_personalized")
+        or twin_data.get("rankings")
+        or []
+    )
+
+    # Flatten facts from clinical_facts list
+    facts: dict[str, Any] = {}
+    for f in (pt.get("clinical_facts") or []):
+        if isinstance(f, Mapping):
+            key = str(f.get("fact_key") or "").strip()
+            if key:
+                facts[key] = f.get("value") or f.get("normalized_value_text") or ""
+    # Also overlay baseline fields
+    for k, v in (pt.get("baseline") or {}).items():
+        facts.setdefault(k, v)
+
+    decision = arbitrate_recommendations(cards, twin_ranking_raw, facts)
+    return {
+        "available": True,
+        "has_conflicts": decision.has_conflicts,
+        "severity_max": decision.severity_max,
+        "conflicts": [
+            {
+                "id": c.conflict_id,
+                "severity": c.severity,
+                "title": c.title,
+                "description": c.description,
+                "affected_sources": c.affected_sources,
+                "resolution": c.resolution,
+                "clinical_rationale": c.clinical_rationale,
+                "requires_clinician_review": c.requires_clinician_review,
+            }
+            for c in decision.conflicts
+        ],
+        "arbitrated_ranking": decision.arbitrated_ranking[:5],  # top-5 for UI
+        "excluded_regimens": decision.excluded_regimens,
+        "timing_warnings": decision.timing_warnings,
+        "data_integrity_flags": decision.data_integrity_flags,
+        "arbiter_version": decision.arbiter_version,
+    }
+
+
 def _comorbidity_cv_summary(
     profile_view: Mapping[str, Any],
     patient: Mapping[str, Any],
@@ -2709,6 +2806,8 @@ def bundle_to_v2_profile(profile_view: Mapping[str, Any],
         "survivorship_5y": _survivorship_5y_summary(pv, pt),
         # EPIC 22c — Comorbidity severe CV card (drug-selection safety)
         "comorbidity_cv": _comorbidity_cv_summary(pv, pt),
+        # EPIC 23 — Clinical Recommendation Arbiter (fusion banner)
+        "decision_fusion": _decision_fusion_summary(pv, pt),
         # raw passthroughs para tabs avanzadas
         "profile_view_raw": pv,
         "patient_raw": pt,

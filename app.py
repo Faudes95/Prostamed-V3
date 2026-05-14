@@ -1196,10 +1196,24 @@ def patient_profile(nss):
             patient_for_v2["dob"] = data["identity"].get("dob")
             patient_for_v2["diagnosis_date"] = data["identity"].get("diagnosis_date")
             patient_for_v2["clinical_baseline"] = data.get("baseline") or {}
+            patient_for_v2["baseline"] = data.get("baseline") or {}  # EPIC 22c — needed by _geriatric_frail_summary
             patient_for_v2["baseline_psa"] = (data.get("baseline") or {}).get("baseline_psa")
             patient_for_v2["consent"] = data.get("consent") or {}
             patient_for_v2["treatments"] = data.get("treatments") or []
             patient_for_v2["biomarker_longitudinal"] = data.get("biomarker_longitudinal") or []
+            # EPIC 22c — expose clinical_facts + structured biopsy data so v2 adapter
+            # helpers (_brca2_carrier_summary, _lynch_carrier_summary, _geriatric_frail_summary,
+            # _adt_long_term_summary, _survivorship_5y_summary, _comorbidity_cv_summary,
+            # _biopsy_summary, _young_onset_summary) can read trigger facts.
+            try:
+                import tracking_db as _td22c
+                patient_for_v2["clinical_facts"] = _td22c.get_patient_clinical_facts(
+                    data.get("identity", {}).get("id"), active_only=True
+                )
+            except Exception:
+                patient_for_v2["clinical_facts"] = []
+            patient_for_v2["structured_biopsy_sessions"] = data.get("structured_biopsy_sessions") or []
+            patient_for_v2["biopsies"] = data.get("biopsies") or []
             v2_ctx = bundle_to_v2_profile_full(profile_view, patient_for_v2)
             # EPIC 19: Patient Twin OS — also expose to v2 template
             try:

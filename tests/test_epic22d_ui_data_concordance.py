@@ -70,6 +70,12 @@ STATIC_NO_DATA_BINDING: set[str] = {
     "adt-lt-preferred-therapy",  # nested element under adt-long-term-card
     "survivorship-5y-preferred",  # nested element under survivorship-5y-card
     "comorbidity-cv-preferred",   # nested element under comorbidity-cv-card
+    # EPIC 23 — Arbiter banner nested elements
+    "fusion-severity-badge",
+    "fusion-conflict-1", "fusion-conflict-2", "fusion-conflict-3", "fusion-conflict-4",
+    "fusion-resolution-1", "fusion-resolution-2", "fusion-resolution-3", "fusion-resolution-4",
+    "arbitrated-rank-1", "arbitrated-rank-2", "arbitrated-rank-3",
+    "arbitrated-rank-4", "arbitrated-rank-5",
     "patient-twin-low-capture",  # nested chip under patient-twin-os-card
     "patient-twin-readiness-pct",  # nested chip under patient-twin-os-card
     "risk-strat-preferred-therapy",  # nested label under risk-stratified card
@@ -97,6 +103,7 @@ CARD_TO_BUNDLE_KEY: dict[str, str] = {
     "patient-twin-os-card": "patient_twin",
     "post-rt-bcr-card": "post_rt_bcr",
     "risk-stratified-localized-card": "risk_stratified",
+    "decision-fusion-summary": "decision_fusion",  # EPIC 23 — recommendation arbiter
 }
 
 
