@@ -928,13 +928,35 @@ def _decision_fusion_summary(
             severity_if_violated="moderate",
         ))
 
-    # Patient Twin OS ranking (built upstream and stored on profile_view)
+    # Patient Twin OS ranking (built upstream and stored on profile_view).
+    # EPIC 23.fix bug 2026-05-13: canonical key is `regimen_rankings` (per
+    # _twin_to_dict output) — the legacy alias `regimen_rankings_personalized`
+    # was never produced. Without this fix the arbiter saw an empty ranking
+    # so the CV vs abi conflict never fired even when abi was actually #1.
     twin_data = pv.get("patient_twin") or {}
     twin_ranking_raw = (
-        twin_data.get("regimen_rankings_personalized")
+        twin_data.get("regimen_rankings")
+        or twin_data.get("regimen_rankings_personalized")  # legacy alias
         or twin_data.get("rankings")
         or []
     )
+    # Normalize each ranking entry: add `primary_drug` derived from
+    # `regimen_name` when absent (arbiter conflict detector pattern-matches
+    # by primary_drug substring).
+    twin_ranking_normalized = []
+    for r in twin_ranking_raw:
+        if not isinstance(r, Mapping):
+            continue
+        item = dict(r)
+        if not item.get("primary_drug") and item.get("regimen_name"):
+            # docetaxel | abiraterone | enzalutamide | apalutamide |
+            # darolutamide_docetaxel → take first token before "_"
+            item["primary_drug"] = str(item["regimen_name"]).split("_")[0].lower()
+        if not item.get("rank"):
+            item["rank"] = len(twin_ranking_normalized) + 1
+        item.setdefault("expected_os_gain_mo", item.get("predicted_os_gain_mo"))
+        twin_ranking_normalized.append(item)
+    twin_ranking_raw = twin_ranking_normalized
 
     # Flatten facts from clinical_facts list
     facts: dict[str, Any] = {}

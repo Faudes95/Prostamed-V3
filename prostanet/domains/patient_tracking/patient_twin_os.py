@@ -284,14 +284,67 @@ def extract_preferences(patient_record: Mapping[str, Any]) -> PatientPreferenceP
 
 
 def _find_fact(facts: list[Mapping[str, Any]], key: str) -> Any:
-    """Scan clinical_facts list for a fact whose key matches."""
+    """Scan clinical_facts list for a fact whose key matches.
+
+    EPIC 23.fix — bug discovered 2026-05-13: this function was looking for
+    `key`/`field`/`name` attributes but the canonical fact rows from
+    `patient_clinical_facts` use `fact_key` (column name from tracking_db).
+    Result: Twin OS was reading None for ALL preferences and silently
+    falling back to defaults (0.5/0.5) — preferences capture was visually
+    persisting but never affecting the ranking.
+
+    Also: if multiple active rows exist for the same fact_key (regression
+    from EPIC 22e.2 dedup miss), return the value from the MOST RECENT
+    row by source_date / observed_at — not the first scan match.
+
+    Also: parse JSON string values into dicts when the value_type is
+    a dict (decision_tradeoff, toxicity_tolerance, redecision_threshold,
+    baseline_pro).
+    """
+    import json as _json
+    matches: list[Mapping[str, Any]] = []
     for fact in facts or []:
         if not isinstance(fact, Mapping):
             continue
-        fkey = str(fact.get("key") or fact.get("field") or fact.get("name") or "").lower()
+        # EPIC 23.fix: check ALL the alias keys (canonical + legacy)
+        fkey = str(
+            fact.get("fact_key")
+            or fact.get("key")
+            or fact.get("field")
+            or fact.get("name")
+            or ""
+        ).lower()
         if fkey == key.lower():
-            return fact.get("value") or fact.get("data") or fact.get("payload")
-    return None
+            matches.append(fact)
+    if not matches:
+        return None
+    # Pick the most recent by observed_at, falling back to source_date, then id
+    def _sort_key(f: Mapping[str, Any]) -> str:
+        return str(
+            f.get("observed_at")
+            or f.get("source_date")
+            or f.get("updated_at")
+            or f.get("id")
+            or ""
+        )
+    matches.sort(key=_sort_key, reverse=True)
+    latest = matches[0]
+    raw = (
+        latest.get("value")
+        if latest.get("value") is not None
+        else (
+            latest.get("normalized_value_text")
+            or latest.get("data")
+            or latest.get("payload")
+        )
+    )
+    # If it's a JSON string representing a dict, parse it
+    if isinstance(raw, str) and raw.strip().startswith("{"):
+        try:
+            return _json.loads(raw)
+        except Exception:
+            return raw
+    return raw
 
 
 # ─────────────────── Regimen scoring ───────────────────
