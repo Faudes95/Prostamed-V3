@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>EPIC 20 — exemplar_11_mcrpc_arsi_naive — mcrpc_arsi_naive</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 20px; color: #1e293b; }
+  h1 { font-size: 1.4rem; }
+  h2 { font-size: 1.1rem; color: #475569; margin-top: 24px; }
+  .badge { display: inline-block; padding: 4px 10px; border-radius: 6px; color: white; font-weight: bold; font-size: 0.85rem; }
+  .card { border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin: 12px 0; background: #f8fafc; }
+  .expected { border-left: 4px solid #3b82f6; }
+  .actual { border-left: 4px solid #22c55e; }
+  .review { border-left: 4px solid #a855f7; background: #faf5ff; }
+  ul { padding-left: 22px; }
+  li { margin: 4px 0; }
+  code { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 0.9rem; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e2e8f0; }
+  .checklist { background: #fef3c7; padding: 10px 16px; border-radius: 6px; border: 1px solid #f59e0b; }
+  .meta { color: #64748b; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+
+<h1>EPIC 20 Visual Validation · exemplar_11_mcrpc_arsi_naive</h1>
+<p class="meta">Generated 2026-05-13T18:06:58 · NCCN Prostate Cancer v2026</p>
+
+<div class="card expected">
+  <h2>Expected (clínico)</h2>
+  <p><strong>State:</strong> <code>mcrpc_arsi_naive</code></p>
+  <p><strong>Demographics:</strong> Hombre 71 años</p>
+  <p><strong>Clinical summary:</strong> CRPC confirmado (testosterona <50, PSA progresivo). Bone mets sin ARSI previo en mCSPC (solo ADT).</p>
+  <p><strong>NCCN expected action:</strong> ARSI first-line: abiraterone o enzalutamide (AFFIRM/PREVAIL)</p>
+</div>
+
+<div class="card actual">
+  <h2>Actual classification (sistema) <span class="badge" style="background:#22c55e">✅ MATCH</span></h2>
+  <table>
+    <tr><th>State</th><td><code>mcrpc_arsi_naive</code></td></tr>
+    <tr><th>Confidence</th><td>0.78</td></tr>
+    <tr><th>Rationale</th><td>mCRPC without prior ARSI in mCSPC phase (first-line ARSI eligible)</td></tr>
+    <tr><th>Therapeutic preferred</th><td>arsi_first_line_abiraterone_or_enzalutamide</td></tr>
+    <tr><th>NCCN reference</th><td><code>PROS-J_v2026</code></td></tr>
+  </table>
+</div>
+
+<div class="card review">
+  <h2>Clinical review focus</h2>
+  <p>¿Sistema reconoce ARSI-naive? Standard first-line ARSI</p>
+</div>
+
+<div class="card">
+  <h2>Input facts</h2>
+  <ul>
+    <li><strong>castration_resistance_confirmed</strong>: true</li>
+    <li><strong>bone_lesion_count_total</strong>: 3</li>
+    <li><strong>prior_arsi_in_mcspc</strong>: false</li>
+  </ul>
+</div>
+
+<div class="checklist">
+  <h2 style="margin-top:0;">Clinical reviewer checklist</h2>
+  <ul>
+    <li>[✅] State name matches expected</li>
+    <li>[ ] Therapeutic alternative is clinically appropriate per NCCN 2026</li>
+    <li>[ ] Rationale is clinically sound (no overfit to spurious features)</li>
+    <li>[ ] Evidence reference cites correct NCCN section</li>
+    <li>[ ] No safety regression (would NOT lead urólogo to inferior decision)</li>
+  </ul>
+</div>
+
+</body>
+</html>
