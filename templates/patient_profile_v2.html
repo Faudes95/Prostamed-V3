@@ -735,7 +735,15 @@
             {% if patient_twin.preferences and patient_twin.preferences.capture_completeness_pct < 30 %}
             <div style="margin-top:12px; padding:10px 14px; background:rgba(245,158,11,0.10); border:1px solid rgba(245,158,11,0.32); border-radius:8px;" data-testid="patient-twin-low-capture">
                 <div style="color:rgb(252,211,77); font-size:.85rem; font-weight:600;">⚠ Captura de preferencias incompleta ({{ '%.0f' % patient_twin.preferences.capture_completeness_pct }}%)</div>
-                <p style="margin:4px 0 0; color:var(--pn-text-muted); font-size:.78rem;">El ranking usa pesos default 0.5 OS / 0.5 QoL. Completa <a href="/longitudinal-capture/{{ identity.nss }}?decision_lane=patient_twin_readiness" style="color:rgb(34,211,238); text-decoration:underline;">patient_values + tradeoff + tolerance</a> para personalización completa.</p>
+                <p style="margin:4px 0 0; color:var(--pn-text-muted); font-size:.78rem;">El ranking usa pesos default 0.5 OS / 0.5 QoL. Completa preferencias del paciente para personalización real.</p>
+                {# EPIC 22e.2 — Inline preferences capture form (resuelve documented gap EPIC22a audit línea 167-170) #}
+                <button type="button"
+                        class="pm2-btn pm2-btn--primary"
+                        style="margin-top:10px; font-size:.78rem;"
+                        onclick="pm2OpenPreferencesCapture('{{ identity.nss }}')"
+                        data-testid="patient-twin-open-prefs-form">
+                    + Capturar preferencias del paciente
+                </button>
             </div>
             {% endif %}
 
@@ -3870,5 +3878,164 @@ function renderFullPSA() {
     };
 })();
 </script>
+
+{# EPIC 22e.2 — Patient Twin Preferences Capture Modal #}
+{# Resuelve gap documentado en ui_data_concordance_audit.yaml línea 167-170:    #}
+{# "pm2PatientTwinOS preferences capture form missing". Permite capturar las 4  #}
+{# dimensiones SDM (goal_of_care, OS/QoL tradeoff, redecision threshold,        #}
+{# toxicity tolerances). Persiste via POST /api/patient/<nss>/preferences.      #}
+<div id="pm2PreferencesModal"
+     style="display:none; position:fixed; top:0; left:0; right:0; bottom:0;
+            background:rgba(15,23,42,0.85); z-index:9999; align-items:center;
+            justify-content:center;"
+     data-testid="preferences-capture-modal">
+    <div style="background:linear-gradient(135deg, rgba(168,85,247,0.18), rgba(15,23,42,0.96));
+                border:2px solid rgb(168,85,247); border-radius:14px; padding:24px;
+                max-width:680px; width:90%; max-height:88vh; overflow-y:auto; color:#f8fafc;
+                font-family:var(--pm-font-system, system-ui);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:18px;">
+            <div>
+                <div style="font-size:.7rem; color:rgb(216,180,254); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Patient Twin OS · Preferences capture · EPIC 22e</div>
+                <h3 style="font-family:var(--pm-font-display); font-size:1.25rem; margin:5px 0 0; color:#f8fafc;">Decisión compartida del paciente</h3>
+                <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem;">Estas preferencias personalizan el ranking de regímenes del Patient Twin OS.</p>
+            </div>
+            <button type="button" onclick="pm2ClosePreferencesCapture()" style="background:transparent; border:0; color:#f8fafc; font-size:1.5rem; cursor:pointer;">×</button>
+        </div>
+
+        <form id="pm2PreferencesForm" onsubmit="pm2SubmitPreferences(event); return false;">
+            <input type="hidden" name="nss" id="pm2PrefNss" value="">
+
+            {# 1. Goal of care #}
+            <div style="margin-bottom:18px;">
+                <label style="display:block; font-size:.78rem; color:rgb(216,180,254); font-weight:700; text-transform:uppercase; letter-spacing:.12em; margin-bottom:8px;">1. Goal of care (objetivo principal)</label>
+                <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">
+                    <label style="padding:10px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.3); border-radius:6px; cursor:pointer;">
+                        <input type="radio" name="goal_of_care" value="max_os" required style="margin-right:6px;"> Max supervivencia (OS)
+                    </label>
+                    <label style="padding:10px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.3); border-radius:6px; cursor:pointer;">
+                        <input type="radio" name="goal_of_care" value="balanced" checked style="margin-right:6px;"> Balanceado
+                    </label>
+                    <label style="padding:10px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.3); border-radius:6px; cursor:pointer;">
+                        <input type="radio" name="goal_of_care" value="max_qol" style="margin-right:6px;"> Max calidad de vida (QoL)
+                    </label>
+                </div>
+            </div>
+
+            {# 2. OS/QoL tradeoff sliders #}
+            <div style="margin-bottom:18px;">
+                <label style="display:block; font-size:.78rem; color:rgb(216,180,254); font-weight:700; text-transform:uppercase; letter-spacing:.12em; margin-bottom:8px;">2. Peso OS vs QoL en la decisión (suman 1.0)</label>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+                    <div>
+                        <div style="font-size:.74rem; color:var(--pn-text-muted); margin-bottom:4px;">OS weight</div>
+                        <input type="number" name="os_weight" min="0" max="1" step="0.05" value="0.5"
+                               style="width:100%; padding:8px; background:rgba(15,23,42,0.7); border:1px solid rgba(148,163,184,0.3); border-radius:6px; color:#f8fafc;">
+                    </div>
+                    <div>
+                        <div style="font-size:.74rem; color:var(--pn-text-muted); margin-bottom:4px;">QoL weight</div>
+                        <input type="number" name="qol_weight" min="0" max="1" step="0.05" value="0.5"
+                               style="width:100%; padding:8px; background:rgba(15,23,42,0.7); border:1px solid rgba(148,163,184,0.3); border-radius:6px; color:#f8fafc;">
+                    </div>
+                </div>
+            </div>
+
+            {# 3. Toxicity tolerances #}
+            <div style="margin-bottom:18px;">
+                <label style="display:block; font-size:.78rem; color:rgb(216,180,254); font-weight:700; text-transform:uppercase; letter-spacing:.12em; margin-bottom:8px;">3. Tolerancia a toxicidades (umbrales aceptables del paciente)</label>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:.78rem;">
+                    <label><span style="color:var(--pn-text-muted);">Hematológica G3+ ≤</span>
+                        <input type="number" name="tolerance_hematologic_g3_plus_pct" min="0" max="100" placeholder="20"
+                               style="width:60px; padding:4px; margin-left:6px; background:rgba(15,23,42,0.7); border:1px solid rgba(148,163,184,0.3); border-radius:4px; color:#f8fafc;"> %
+                    </label>
+                    <label><span style="color:var(--pn-text-muted);">Neuropatía G2+ ≤</span>
+                        <input type="number" name="tolerance_neuropathy_g2_plus_pct" min="0" max="100" placeholder="15"
+                               style="width:60px; padding:4px; margin-left:6px; background:rgba(15,23,42,0.7); border:1px solid rgba(148,163,184,0.3); border-radius:4px; color:#f8fafc;"> %
+                    </label>
+                    <label><span style="color:var(--pn-text-muted);">Hepática G3+ ≤</span>
+                        <input type="number" name="tolerance_hepatic_g3_plus_pct" min="0" max="100" placeholder="5"
+                               style="width:60px; padding:4px; margin-left:6px; background:rgba(15,23,42,0.7); border:1px solid rgba(148,163,184,0.3); border-radius:4px; color:#f8fafc;"> %
+                    </label>
+                    <label><span style="color:var(--pn-text-muted);">Cognitiva G2+ ≤</span>
+                        <input type="number" name="tolerance_cognitive_g2_plus_pct" min="0" max="100" placeholder="10"
+                               style="width:60px; padding:4px; margin-left:6px; background:rgba(15,23,42,0.7); border:1px solid rgba(148,163,184,0.3); border-radius:4px; color:#f8fafc;"> %
+                    </label>
+                </div>
+            </div>
+
+            {# 4. Re-decision threshold #}
+            <div style="margin-bottom:18px;">
+                <label style="display:block; font-size:.78rem; color:rgb(216,180,254); font-weight:700; text-transform:uppercase; letter-spacing:.12em; margin-bottom:8px;">4. Umbral de re-decisión (cuándo reevaluar)</label>
+                <label style="font-size:.78rem; color:var(--pn-text-muted);">PSA doubling time mínimo (meses) que dispara reconsiderar terapia:</label>
+                <input type="number" name="redecision_psadt_threshold_months" min="0" max="48" step="0.5" placeholder="6"
+                       style="width:120px; padding:6px; margin-left:10px; background:rgba(15,23,42,0.7); border:1px solid rgba(148,163,184,0.3); border-radius:4px; color:#f8fafc;">
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:24px; padding-top:14px; border-top:1px solid rgba(148,163,184,0.2);">
+                <button type="button" onclick="pm2ClosePreferencesCapture()" class="pm2-btn pm2-btn--ghost" style="font-size:.82rem;">Cancelar</button>
+                <button type="submit" class="pm2-btn pm2-btn--primary" style="font-size:.82rem;" data-testid="preferences-submit">
+                    Guardar preferencias
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+window.pm2OpenPreferencesCapture = function(nss) {
+    if (!nss) return;
+    document.getElementById('pm2PrefNss').value = nss;
+    document.getElementById('pm2PreferencesModal').style.display = 'flex';
+};
+window.pm2ClosePreferencesCapture = function() {
+    document.getElementById('pm2PreferencesModal').style.display = 'none';
+};
+window.pm2SubmitPreferences = async function(event) {
+    event.preventDefault();
+    const form = document.getElementById('pm2PreferencesForm');
+    const fd = new FormData(form);
+    const nss = fd.get('nss');
+    if (!nss) { window.pm2Toast && window.pm2Toast('warn', 'NSS faltante'); return; }
+    const payload = {
+        goal_of_care: fd.get('goal_of_care'),
+        decision_tradeoff: {
+            os_weight: parseFloat(fd.get('os_weight') || '0.5'),
+            qol_weight: parseFloat(fd.get('qol_weight') || '0.5'),
+        },
+        toxicity_tolerance: {
+            hematologic_g3_plus_max_pct: parseFloat(fd.get('tolerance_hematologic_g3_plus_pct') || '') || null,
+            neuropathy_g2_plus_max_pct: parseFloat(fd.get('tolerance_neuropathy_g2_plus_pct') || '') || null,
+            hepatic_g3_plus_max_pct: parseFloat(fd.get('tolerance_hepatic_g3_plus_pct') || '') || null,
+            cognitive_g2_plus_max_pct: parseFloat(fd.get('tolerance_cognitive_g2_plus_pct') || '') || null,
+        },
+        redecision_threshold: {
+            psadt_threshold_months: parseFloat(fd.get('redecision_psadt_threshold_months') || '') || null,
+        },
+    };
+    // Drop null values
+    Object.keys(payload.toxicity_tolerance).forEach(k => {
+        if (payload.toxicity_tolerance[k] === null) delete payload.toxicity_tolerance[k];
+    });
+    if (payload.redecision_threshold.psadt_threshold_months === null) {
+        delete payload.redecision_threshold.psadt_threshold_months;
+    }
+    try {
+        const res = await fetch(`/api/patient/${encodeURIComponent(nss)}/preferences`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body.success === false) {
+            window.pm2Toast && window.pm2Toast('error', body.error || 'Error guardando preferencias');
+            return;
+        }
+        window.pm2Toast && window.pm2Toast('success', `✓ Preferencias guardadas (${body.facts_persisted || '?'} facts) · Twin recompute triggered`);
+        pm2ClosePreferencesCapture();
+        setTimeout(() => window.location.reload(), 1200);
+    } catch (err) {
+        window.pm2Toast && window.pm2Toast('error', `Network: ${err && err.message ? err.message : err}`);
+    }
+};
+</script>
+
 </body>
 </html>

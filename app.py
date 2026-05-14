@@ -4147,17 +4147,175 @@ def api_save_genomics(patient_id):
 # ── Biopsias ─────────────────────────────────────────────────────────────────
 @app.route('/api/biopsy/<int:patient_id>', methods=['POST'])
 def api_save_biopsy(patient_id):
-    """Registra una biopsia detallada."""
+    """DEPRECATED — Registra biopsia (legacy endpoint).
+
+    EPIC 22e.4 — esta ruta queda como legacy con warning + 308 redirect en
+    Deprecation header. La UI usa el path canónico via
+    `/api/longitudinal/<nss>/append` con `kind=biopsy` desde EPIC 22b.1.
+
+    Inconsistencia legacy: route firma con patient_id (int) mientras el resto
+    del sistema usa NSS (string). Conservado por backward-compat con clientes
+    antiguos pero NUEVO código debe usar /api/longitudinal/<nss>/append.
+    """
     try:
         from tracking_db import save_biopsy
         data = request.get_json()
         success = save_biopsy(patient_id, data)
         if success:
-            return jsonify({"success": True})
+            resp = jsonify({
+                "success": True,
+                "deprecated": True,
+                "deprecation_warning": (
+                    "DEPRECATED: /api/biopsy/<patient_id> está deprecado en EPIC 22e.4. "
+                    "Use /api/longitudinal/<nss>/append con kind='biopsy' "
+                    "(canonical NSS-based, EPIC 22b.1)."
+                ),
+                "preferred_endpoint": "/api/longitudinal/<nss>/append",
+                "preferred_payload_example": {
+                    "kind": "biopsy",
+                    "payload": {
+                        "biopsy_date": "YYYY-MM-DD",
+                        "biopsy_type": "systematic",
+                        "gleason_primary": 3,
+                        "gleason_secondary": 4,
+                        "isup_grade": 2,
+                        "total_cores": 12,
+                        "positive_cores": 4,
+                    },
+                },
+            })
+            # Deprecation HTTP headers per RFC 8594
+            resp.headers["Deprecation"] = "version=epic22e.4"
+            resp.headers["Sunset"] = "2026-12-31"  # Date when this endpoint is removed
+            resp.headers["Link"] = (
+                '</api/longitudinal/{nss}/append>; rel="successor-version"'
+            )
+            logger.warning(
+                "DEPRECATED endpoint /api/biopsy/%s called — clients should migrate to "
+                "/api/longitudinal/<nss>/append (EPIC 22b.1)",
+                patient_id,
+            )
+            return resp
         return jsonify({"success": False, "error": "Error guardando biopsia"}), 400
     except Exception as e:
         logger.error(f"Error en biopsy: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ── EPIC 22e.2 — Patient Twin Preferences capture endpoint ────────────────
+@app.route('/api/patient/<nss>/preferences', methods=['POST'])
+@require_clinical_session(scope="phi:write", redirect_to_login=False)
+def api_patient_preferences(nss):
+    """EPIC 22e.2 — Persist Patient Twin SDM preferences.
+
+    Closes documented gap (ui_data_concordance_audit.yaml line 167-170):
+    'pm2PatientTwinOS preferences capture form missing'. The Twin OS reads
+    `goal_of_care`, `decision_tradeoff` (os_weight/qol_weight),
+    `toxicity_tolerance`, `redecision_threshold` to personalize regimen
+    ranking; before EPIC 22e.2 there was NO capture surface so the ranking
+    always used default 0.5/0.5 weights.
+
+    Persists each preference dimension as a `patient_clinical_facts` row
+    (so the facts feed the existing Twin OS extract_preferences() function
+    + the EPIC 22b.7 twin_recompute_triggered lineage event fires).
+
+    Body JSON:
+        {
+            "goal_of_care": "max_os" | "balanced" | "max_qol",
+            "decision_tradeoff": {"os_weight": float, "qol_weight": float},
+            "toxicity_tolerance": {<ae_token>: <max_pct>, ...},
+            "redecision_threshold": {<key>: <value>, ...}
+        }
+    """
+    import tracking_db
+    import json as _json
+    payload = request.get_json(silent=True) or {}
+
+    conn = tracking_db._connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = tracking_db._resolve_identity_row(cursor, nss)
+        if not identity:
+            return jsonify({"success": False, "error": "patient_not_found", "nss": nss}), 404
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+
+        # Insert each preference dimension as a fact (active_only replace pattern)
+        facts_to_persist = []
+        if payload.get("goal_of_care"):
+            facts_to_persist.append(("goal_of_care", str(payload["goal_of_care"]).lower()))
+        if isinstance(payload.get("decision_tradeoff"), dict):
+            facts_to_persist.append(("decision_tradeoff", _json.dumps(payload["decision_tradeoff"])))
+        if isinstance(payload.get("toxicity_tolerance"), dict) and payload["toxicity_tolerance"]:
+            facts_to_persist.append(("toxicity_tolerance", _json.dumps(payload["toxicity_tolerance"])))
+        if isinstance(payload.get("redecision_threshold"), dict) and payload["redecision_threshold"]:
+            facts_to_persist.append(("redecision_threshold", _json.dumps(payload["redecision_threshold"])))
+
+        if not facts_to_persist:
+            return jsonify({"success": False, "error": "no_preferences_provided"}), 400
+
+        persisted = 0
+        for key, value in facts_to_persist:
+            # Deactivate prior active fact
+            cursor.execute(
+                "UPDATE patient_clinical_facts SET is_active=0 WHERE patient_id=? AND fact_key=? AND is_active=1",
+                (patient_id, key),
+            )
+            cursor.execute(
+                """
+                INSERT INTO patient_clinical_facts (
+                    patient_id, fact_key, value_json, normalized_value_text, source_type,
+                    source_record_type, source_record_id, source_date, observed_at,
+                    state_context, management_track, certainty_tier, freshness_status,
+                    clinician_verified, verification_note, is_active
+                ) VALUES (?, ?, ?, ?, 'wizard_or_intake', 'patient_twin_preferences_form',
+                          ?, ?, ?, 'preferences_capture', '', 'wizard_or_intake', 'fresh',
+                          1, 'Captured via pm2PreferencesModal (EPIC 22e.2)', 1)
+                """,
+                (
+                    patient_id,
+                    key,
+                    value if value.startswith("{") else _json.dumps(value),
+                    str(value),
+                    patient_id,
+                    datetime.now().strftime("%Y-%m-%d"),
+                    datetime.now().strftime("%Y-%m-%d"),
+                ),
+            )
+            persisted += 1
+        # EPIC 22b.7 — emit twin_recompute_triggered lineage event
+        try:
+            tracking_db._append_patient_fact_lineage_event(
+                cursor,
+                patient_id,
+                fact_key=",".join(k for k, _ in facts_to_persist),
+                event_type="twin_recompute_triggered",
+                event_note="Preferences capture (EPIC 22e.2 form) → Twin recompute.",
+                payload={"source": "pm2PreferencesModal", "facts_count": persisted},
+            )
+            import time as _t
+            tracking_db._PATIENT_TWIN_RECOMPUTE_MARKERS[int(patient_id)] = _t.time()
+        except Exception as exc:
+            logger.debug("twin_recompute event failed: %s", exc)
+
+        conn.commit()
+        return jsonify({
+            "success": True,
+            "nss": nss,
+            "patient_id": patient_id,
+            "facts_persisted": persisted,
+            "preference_dimensions": [k for k, _ in facts_to_persist],
+            "twin_recompute_triggered": True,
+            "audit_note": "Preferences captured via EPIC 22e.2 form · Patient Twin OS will re-rank on next render.",
+        })
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logger.error("Error persisting preferences: %s", exc)
+        return jsonify({"success": False, "error": str(exc)}), 500
+    finally:
+        conn.close()
 
 
 # ── Vigilancia Activa ────────────────────────────────────────────────────────
