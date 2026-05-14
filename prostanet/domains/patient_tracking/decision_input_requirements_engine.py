@@ -217,12 +217,69 @@ STATE_RULES = {
         "focus": "official_diagnosis",
     },
     "localized_initial": {
+        # NOTE: percent_positive_cores + psa_density NOT blocking at localized_initial
+        # (preserves backward-compat for existing intake flows). However the
+        # 6-tier sub-state classifier (clinical_state_classifier._classify_risk_stratified_localized)
+        # WILL emit `data_insufficient_flags=["percent_positive_cores_missing"]`
+        # when very_low_risk_localized eligibility cannot be confirmed.
+        # The very_low_risk_localized + low_risk_localized state-specific entries
+        # below add the stricter blocking for AS eligibility decision.
         "blocking_inputs": ["gleason_primary", "gleason_secondary", "isup_grade", "psa"],
-        "optional_context_inputs": ["clinical_tstage", "num_cores_positive", "total_cores", "max_core_involvement", "prior_mpmri_pirads_score"],
+        "optional_context_inputs": [
+            "clinical_tstage", "num_cores_positive", "total_cores",
+            "max_core_involvement", "prior_mpmri_pirads_score",
+            # EPIC 22b.6 — additive AS eligibility discriminators
+            "percent_positive_cores", "psa_density", "percent_pattern_4",
+        ],
         "decision_domains_blocked": ["risk_stratification", "local_therapy_selection", "active_surveillance"],
         "why": "La estratificación localizada y la selección entre vigilancia activa, cirugía o RT requieren patología y carga tumoral basal.",
         "capture_target": "intake",
         "focus": "official_diagnosis",
+    },
+    # EPIC 22b.6 — Very-low-risk localized: AS strongly preferred per NCCN 2026 PROS-3.
+    # Requires the stricter Epstein criteria discriminators to be present, otherwise
+    # the AS recommendation is downgraded and the patient is reclassified to
+    # `low_risk_localized` with `data_insufficient_flags`. This entry surfaces
+    # the discriminators so the Clinical Readiness Tower can route capture.
+    "very_low_risk_localized": {
+        "blocking_inputs": [
+            "gleason_primary", "gleason_secondary", "isup_grade", "psa",
+            "clinical_tstage",
+            "percent_positive_cores",  # <34% required for very-low (Epstein)
+            "psa_density",              # <0.15 required for very-low
+        ],
+        "optional_context_inputs": [
+            "num_cores_positive", "total_cores", "max_core_involvement",
+            "prior_mpmri_pirads_score", "percent_pattern_4",
+            "genomic_classifier_result",
+        ],
+        "decision_domains_blocked": ["active_surveillance_eligibility", "local_therapy_selection"],
+        "why": (
+            "Very-low-risk localized (NCCN 2026 PROS-3) exige Epstein criteria: "
+            "PSA<10 + GS6 + cT1c + <34% cores positivos + PSA density <0.15. "
+            "Sin estos 5 discriminators no se puede confirmar AS strongly preferred."
+        ),
+        "capture_target": "intake",
+        "focus": "active_surveillance_eligibility",
+        "nccn_reference": "PROS-3 v2026",
+    },
+    "low_risk_localized": {
+        "blocking_inputs": [
+            "gleason_primary", "gleason_secondary", "isup_grade", "psa", "clinical_tstage",
+        ],
+        "optional_context_inputs": [
+            "percent_positive_cores", "psa_density", "num_cores_positive",
+            "total_cores", "max_core_involvement", "percent_pattern_4",
+            "genomic_classifier_result",
+        ],
+        "decision_domains_blocked": ["active_surveillance_eligibility", "local_therapy_selection"],
+        "why": (
+            "Low-risk localized (NCCN 2026 PROS-3): AS preferred; RP/RT alternatives. "
+            "Discriminators adicionales necesarios para distinguir very-low-risk."
+        ),
+        "capture_target": "intake",
+        "focus": "active_surveillance_eligibility",
+        "nccn_reference": "PROS-3 v2026",
     },
     "post_prostatectomy": {
         "blocking_inputs": ["psa_postop", "pathologic_stage"],

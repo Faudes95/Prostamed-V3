@@ -1266,11 +1266,41 @@ def _status_reason(status: str, missing: list[str]) -> str:
     return "No aplica al estado clinico actual."
 
 
+# EPIC 22b.8 — Lane → micro-form moment mapping.
+# When a readiness lane reports missing data, route the clinician straight to
+# the specific moment form (instead of the generic capture wizard). Closes the
+# "Clinical Readiness Tower marca 'missing data' pero NO routea a form de
+# captura" gap documented in the UI-data concordance audit.
+LANE_PRIMARY_MOMENT = {
+    "diagnostic_biopsy_readiness": "biopsy_capture",
+    "active_surveillance_readiness": "biopsy_capture",
+    "localized_treatment_readiness": "biopsy_capture",  # 6-tier risk needs path data
+    "bcr_salvage_readiness": "bcr_detection",
+    "patient_twin_readiness": None,  # uses Patient Twin OS preferences capture
+    "mhspc_precision_readiness": "adt_init",
+    "crpc_confirmation_readiness": "crpc_transition",
+    "m0crpc_arpi_readiness": "adt_init",
+    "m1crpc_sequence_readiness": "crpc_transition",
+    "parp_hrr_readiness": None,  # uses HRR-specific capture
+    "psma_rlt_readiness": None,  # uses imaging capture
+    "adt_arpi_safety_readiness": "adt_init",
+    "supportive_palliative_readiness": None,
+}
+
+
 def _capture_url(*, lane_key: str, state: str, patient_ref: str) -> str:
     phase = LANE_PHASES.get(lane_key, "longitudinal_followup")
     if phase == "initial_wizard":
         return f"/wizard/{state or 'localized_initial'}?readiness_lane={lane_key}"
     if patient_ref:
+        # EPIC 22b.8 — append &moment=<form> so the capture page auto-opens
+        # the micro-form instead of dropping the user on a generic wizard.
+        moment = LANE_PRIMARY_MOMENT.get(lane_key)
+        if moment:
+            return (
+                f"/longitudinal-capture/{patient_ref}"
+                f"?readiness_lane={lane_key}&moment={moment}"
+            )
         return f"/longitudinal-capture/{patient_ref}?readiness_lane={lane_key}"
     return f"/clinical-hub#pm2OfficialClassifier"
 

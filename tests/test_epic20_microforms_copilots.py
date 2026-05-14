@@ -28,14 +28,23 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 
 def test_epic20_fase_b_six_microforms_registered():
-    """MOMENT_CAPTURE_SCHEMAS debe tener exactamente 6 micro-forms."""
+    """MOMENT_CAPTURE_SCHEMAS includes the original 6 EPIC 20 micro-forms.
+
+    EPIC 22b.2 added `biopsy_capture` (7th moment) to close the documented
+    histopathology capture gap. The contract is now "at least 6, must include
+    the original EPIC 20 moments" so future micro-forms can be appended
+    without breaking this regression gate.
+    """
     from prostanet.shared.moment_capture_schemas import MOMENT_CAPTURE_SCHEMAS
-    expected_moments = {
+    original_six = {
         "bcr_detection", "oligoprogression", "crpc_transition",
         "adt_init", "rt_nadir", "salvage_eligibility",
     }
     actual = set(MOMENT_CAPTURE_SCHEMAS.keys())
-    assert actual == expected_moments, f"Expected {expected_moments}, got {actual}"
+    assert original_six.issubset(actual), (
+        f"EPIC 20 original moments lost: missing={original_six - actual}"
+    )
+    assert len(actual) >= 6
 
 
 def test_epic20_fase_b_field_counts_clinically_validated():

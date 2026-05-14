@@ -271,8 +271,56 @@ def _record_patient_fact_conflict(
     )
 
 
+# EPIC 22b.7 — Patient Twin OS recompute triggers.
+# Fact keys that materially change personalized regimen rankings, AS eligibility,
+# or salvage decision. When ANY of these is persisted (created or superseded),
+# we emit a `twin_recompute_triggered` lineage event AND bump the in-memory
+# marker so build_patient_profile_view_model can short-circuit cached entries
+# and force a fresh patient_twin_os build on the next render.
+TWIN_RECOMPUTE_TRIGGER_KEYS: frozenset[str] = frozenset({
+    # Precision pathway (drives PARP / immunotherapy ranking)
+    "hrr_status", "hrr_gene", "msi_status",
+    "germline_pathogenic_variant", "somatic_pathogenic_variant",
+    # SDM preferences (drives regimen ranking weights)
+    "goal_of_care", "decision_tradeoff",
+    # PRO baseline (drives toxicity tolerance ranking)
+    "baseline_pro", "epic26_urinary_domain", "epic26_sexual_domain",
+    "epic26_bowel_domain", "epic26_hormonal_domain",
+    # Post-RP pathology (drives salvage timing)
+    "gleason_at_rp", "margin_status", "tumor_stage_at_rp",
+    # Risk stratification discriminators (drives 6-tier localized routing)
+    "percent_positive_cores", "percent_pattern_4",
+    # NEPC differentiation (drives platinum vs ARSI routing)
+    "small_cell_morphology", "synaptophysin_biopsy_positive",
+    "chromogranin_a_value",
+})
+
+# Module-level in-memory marker keyed by patient_id → last critical fact mtime
+# (epoch seconds). Patient Twin OS readers can compare this against their
+# cached view's build timestamp and force rebuild if stale.
+# NOT cross-process (single Flask worker) — safe degradation: if marker
+# missing, downstream rebuilds anyway on each render.
+_PATIENT_TWIN_RECOMPUTE_MARKERS: dict[int, float] = {}
+
+
+def get_patient_twin_recompute_marker(patient_id: int) -> float:
+    """EPIC 22b.7 — return last twin recompute trigger timestamp for patient.
+
+    Returns 0.0 if never triggered. Patient Twin OS uses this to invalidate
+    cached regimen rankings when a critical clinical fact arrives.
+    """
+    try:
+        return float(_PATIENT_TWIN_RECOMPUTE_MARKERS.get(int(patient_id), 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _persist_patient_clinical_facts(cursor, patient_id, fact_candidates):
     persisted = []
+    # EPIC 22b.7 — track if any critical key was persisted in this batch
+    # so we emit a single twin_recompute_triggered event at the end (avoids
+    # event spam when a multi-field intake form persists 20+ facts at once).
+    critical_keys_persisted: list[str] = []
     for candidate in list(fact_candidates or []):
         fact_key = str(candidate.get("fact_key") or "").strip()
         if not fact_key:
@@ -423,6 +471,40 @@ def _persist_patient_clinical_facts(cursor, patient_id, fact_candidates):
                     target_fact_id=candidate_row["id"],
                     event_note="El nuevo fact canónico desplazó la versión previa.",
                 )
+
+        # EPIC 22b.7 — accumulate Patient Twin recompute trigger
+        if incoming_is_active and fact_key in TWIN_RECOMPUTE_TRIGGER_KEYS:
+            critical_keys_persisted.append(fact_key)
+
+    # EPIC 22b.7 — emit a single twin_recompute_triggered event + bump marker
+    # after the full batch finishes. Allows Patient Twin OS to detect that
+    # personalized regimen rankings need rebuild on next render.
+    if critical_keys_persisted:
+        try:
+            _append_patient_fact_lineage_event(
+                cursor,
+                patient_id,
+                fact_key=",".join(sorted(set(critical_keys_persisted))),
+                event_type="twin_recompute_triggered",
+                event_note=(
+                    "Critical clinical fact(s) persisted → Patient Twin OS "
+                    "regimen ranking + AS eligibility + salvage decision recompute."
+                ),
+                payload={
+                    "critical_keys": sorted(set(critical_keys_persisted)),
+                    "count": len(set(critical_keys_persisted)),
+                },
+            )
+        except Exception as exc:
+            logger.debug("twin_recompute_triggered lineage event failed: %s", exc)
+        # Bump in-memory marker for the patient. Patient Twin OS readers
+        # can compare against their cached view's build_at to invalidate.
+        try:
+            import time as _t22
+            _PATIENT_TWIN_RECOMPUTE_MARKERS[int(patient_id)] = _t22.time()
+        except Exception:
+            pass
+
     return persisted
 
 
@@ -6257,6 +6339,143 @@ def append_treatment_line_update(nss_or_id, payload):
         "start_date": start_date,
         "end_date": end_date,
     }
+
+
+# EPIC 22b — Structured biopsy longitudinal append (histopath capture gap fix)
+def append_structured_biopsy_session(nss_or_id, payload):
+    """Persist a structured biopsy session from the v2 longitudinal append UI.
+
+    Public write path for `kind=biopsy` on /api/longitudinal/<nss>/append.
+
+    Reuses `_save_structured_biopsy_session` (the canonical writer used by
+    intake + stage visits) so all biopsy sessions land in `biopsy_sessions`
+    table and feed `structured_biopsy_sessions` in patient_record derivatives.
+
+    Also canonicalizes biopsy facts via `_persist_canonical_facts_from_payload`
+    so downstream consumers (clinical_state_classifier, post_rp_salvage_copilot,
+    risk_stratified_localized_copilot) read the new facts immediately without
+    relying on legacy intake snapshots.
+
+    Args:
+        nss_or_id: patient NSS or patient_id
+        payload: {
+            biopsy_date (required, ISO date),
+            biopsy_type ("systematic" | "mri_targeted" | "fusion" | "saturation"),
+            biopsy_route ("transperineal" | "transrectal"),
+            biopsy_context ("diagnostic" | "confirmatory_as" | "followup_as" | "rebiopsy"),
+            gleason_primary (1-5), gleason_secondary (1-5), isup_grade (1-5),
+            total_cores (int), positive_cores (int),
+            percent_pattern_4 (0-100),
+            margin_status ("negative" | "positive_focal" | "positive_extensive"),
+            perineural_invasion (bool),
+            mri_pirads_at_biopsy (1-5),
+            systematic_cores (list[BiopsyCore]) — optional, computed from
+                total/positive if absent,
+            targeted_cores (list[BiopsyCore]) — optional,
+            complications (list[str]),
+            ...
+        }
+
+    Returns:
+        {success:true, biopsy_session_id, biopsy_date, facts_persisted}
+        or {success:false, error:"<...>"}
+    """
+    data = dict(payload or {})
+    biopsy_date = str(data.get("biopsy_date") or data.get("date") or "")[:10]
+    if not biopsy_date:
+        return {"success": False, "error": "missing_biopsy_date"}
+    try:
+        datetime.strptime(biopsy_date, "%Y-%m-%d")
+    except ValueError:
+        return {"success": False, "error": "invalid_biopsy_date"}
+
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return {"success": False, "error": "patient_not_found", "nss": nss_or_id}
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+
+        # Anti-duplicación: misma fecha + biopsy_type → 409 (returns existing_id)
+        biopsy_type_norm = (data.get("biopsy_type") or "systematic").strip()
+        biopsy_context_norm = (data.get("biopsy_context") or "diagnostic").strip()
+        session_key_candidate = _make_session_key(
+            "bx", patient_id, biopsy_date, biopsy_type_norm, biopsy_context_norm
+        )
+        cursor.execute(
+            "SELECT id FROM biopsy_sessions WHERE session_key = ? LIMIT 1",
+            (session_key_candidate,),
+        )
+        existing = cursor.fetchone()
+        if existing:
+            existing_id = existing["id"] if hasattr(existing, "__getitem__") else existing[0]
+            return {
+                "success": False,
+                "error": "duplicate",
+                "existing_id": existing_id,
+                "session_key": session_key_candidate,
+            }
+
+        # Persist biopsy_sessions + biopsy_cores rows (reuses canonical writer)
+        session_id = _save_structured_biopsy_session(
+            cursor,
+            patient_id,
+            data,
+            source_type="longitudinal_capture_v2",
+            source_record_id=None,
+        )
+
+        # Canonicalize biopsy facts so classifiers + copilots read them.
+        # `extract_canonical_fact_candidates` already knows about:
+        #   gleason_primary, gleason_secondary, isup_grade, biopsy_date,
+        #   histology_subtype, confirmatory_biopsy_done, ...
+        # EPIC 22b.5 adds gleason_at_rp, margin_status, percent_pattern_4,
+        # perineural_invasion, etc. into FACT_SPECS so they also persist here.
+        facts_payload = {
+            **data,
+            "biopsy_date": biopsy_date,
+        }
+        # If post-RP context, also normalize the "gleason at RP" alias so
+        # FactSpec("gleason_at_rp") picks it up (EPIC 22b.5).
+        if biopsy_context_norm in ("rp_specimen", "post_rp"):
+            if data.get("gleason_primary") and data.get("gleason_secondary"):
+                facts_payload.setdefault(
+                    "gleason_at_rp",
+                    f"{int(data['gleason_primary']) + int(data['gleason_secondary'])}"
+                    f"({data['gleason_primary']}+{data['gleason_secondary']})",
+                )
+
+        facts_persisted = _persist_canonical_facts_from_payload(
+            cursor,
+            patient_id,
+            facts_payload,
+            source_type="wizard_or_intake",
+            source_record_type="biopsy_session_v2",
+            source_record_id=session_id,
+            source_date=biopsy_date,
+            observed_at=biopsy_date,
+            state_context="biopsy_capture",
+            management_track=str(data.get("management_track") or ""),
+            certainty_tier="wizard_or_intake",
+        )
+
+        conn.commit()
+        return {
+            "success": True,
+            "biopsy_session_id": session_id,
+            "biopsy_date": biopsy_date,
+            "facts_persisted": int(facts_persisted or 0),
+            "session_key": session_key_candidate,
+        }
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"success": False, "error": f"persist_failed: {exc}"}
+    finally:
+        conn.close()
 
 
 def _persist_psa_series_points(cursor, patient_id, points):

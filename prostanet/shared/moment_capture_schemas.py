@@ -481,6 +481,121 @@ SALVAGE_ELIGIBILITY_FORM = FormSchema(
 )
 
 
+# ─────────────────── 7. Biopsy Capture Form (11 fields) — EPIC 22b.2 ───────────────────
+# Closes the documented "histopathology UI requests data but no capture form exists" gap.
+# Replaces the full structured_biopsy schema (~30 fields) at the moment of the diagnostic
+# encounter where the clinician needs to type the report into ProstaMed.
+
+BIOPSY_CAPTURE_FORM = FormSchema(
+    name="biopsy_capture",
+    trigger_moment="diagnostic.histopath_report",
+    description=(
+        "Pathology report entry after biopsy or after prostatectomy specimen review. "
+        "Replaces the full structured_biopsy schema (~30 fields) at the report-entry "
+        "moment. Persists to biopsy_sessions table and canonicalizes facts read by "
+        "clinical_state_classifier + risk_stratified_localized_copilot + "
+        "post_rp_salvage_copilot."
+    ),
+    fields=[
+        FieldSpec(name="biopsy_date", label="Fecha de la biopsia",
+                  type="date", required=True,
+                  voice_required_confidence=0.9,
+                  must_capture_rationale="Anchor temporal; ordena risk stratification + AS/triage."),
+        FieldSpec(name="biopsy_route", label="Vía de la biopsia",
+                  type="select", required=True,
+                  options=["transperineal", "transrectal", "fusion", "saturation"],
+                  voice_required_confidence=0.85,
+                  must_capture_rationale="Transperineal reduce infection rate y cambia AS protocol."),
+        FieldSpec(name="biopsy_context", label="Contexto clínico",
+                  type="select", required=True,
+                  options=["diagnostic", "confirmatory_as", "followup_as",
+                           "rebiopsy", "rp_specimen"],
+                  voice_required_confidence=0.85,
+                  must_capture_rationale=(
+                      "Diagnostic vs confirmatory_as vs rp_specimen determinan qué "
+                      "Gleason canonicaliza (gleason_at_rp vs gleason_primary diagnostic)."
+                  )),
+        FieldSpec(name="gleason_primary", label="Gleason primario",
+                  type="select", required=True,
+                  options=["3", "4", "5"],
+                  voice_required_confidence=0.9,
+                  must_capture_rationale=(
+                      "Patrón ≥4 saca AS eligibility off; patrón 5 = high-risk independiente."
+                  )),
+        FieldSpec(name="gleason_secondary", label="Gleason secundario",
+                  type="select", required=True,
+                  options=["3", "4", "5"],
+                  voice_required_confidence=0.9,
+                  must_capture_rationale="Gleason 4+3 ≠ 3+4 — favorable vs unfavorable intermediate."),
+        FieldSpec(name="isup_grade", label="ISUP grade group",
+                  type="select", required=True,
+                  options=["1", "2", "3", "4", "5"],
+                  voice_required_confidence=0.9,
+                  must_capture_rationale="ISUP es discriminator primario en NCCN 2026 PROS-2."),
+        FieldSpec(name="total_cores", label="Total de cilindros tomados",
+                  type="number", required=True,
+                  voice_required_confidence=0.85,
+                  must_capture_rationale="Denominador para percent_positive_cores (AS eligibility)."),
+        FieldSpec(name="positive_cores", label="Cilindros positivos",
+                  type="number", required=True,
+                  voice_required_confidence=0.85,
+                  must_capture_rationale=(
+                      "Numerador para percent_positive_cores. <34% + GS6 = very_low_risk; "
+                      ">50% high-risk per NCCN 2026."
+                  )),
+        FieldSpec(name="percent_pattern_4", label="% patrón 4 (en piezas Gleason 7)",
+                  type="number", required=False, unit="%",
+                  voice_required_confidence=0.8,
+                  must_capture_rationale=(
+                      "<10% pattern 4 favorable intermediate (AS aceptable); "
+                      "≥10% unfavorable (tx recomendado)."
+                  )),
+        FieldSpec(name="perineural_invasion", label="¿Invasión perineural?",
+                  type="boolean", required=False,
+                  voice_required_confidence=0.8,
+                  must_capture_rationale="PNI+ aumenta BCR risk post-RT; cambia ADT duration."),
+        FieldSpec(name="margin_status", label="Estado de márgenes (sólo si rp_specimen)",
+                  type="select", required=False,
+                  options=["negative", "positive_focal", "positive_extensive",
+                           "not_applicable"],
+                  voice_required_confidence=0.85,
+                  must_capture_rationale=(
+                      "Solo aplica si biopsy_context=rp_specimen. Margen+ es indicación "
+                      "primaria para salvage RT temprana per NCCN PROS-D."
+                  )),
+    ],
+    capture_surface="/longitudinal-capture/<nss>?moment=biopsy_capture",
+    consumer=(
+        "tracking_db.append_structured_biopsy_session → biopsy_sessions table; "
+        "clinical_fact_registry.extract_canonical_fact_candidates canonicalizes "
+        "gleason_at_rp + margin_status + percent_pattern_4 + percent_positive_cores."
+    ),
+    schema_completo_link=(
+        "/longitudinal-capture/<nss>?moment=biopsy_capture&full_schema=true "
+        "(includes per-core sextant detail + MRI concordance + complications)"
+    ),
+    clinical_validation={
+        "must_capture_rationale": (
+            "Gleason + ISUP + % cores positivos + % pattern 4 son los discriminators "
+            "primarios entre las 6 categorías de riesgo localizado (NCCN 2026 PROS-2). "
+            "biopsy_context discrimina diagnostic Gleason vs RP specimen Gleason — "
+            "previene el bug histórico donde post_rp_salvage_copilot leía diagnostic "
+            "Gleason en lugar de RP piece Gleason."
+        ),
+        "deferred_fields_safe_because": (
+            "Per-core sextant detail + MRI target concordance + complications "
+            "capturables en schema completo si clinician necesita registro forense; "
+            "NO afectan la 6-tier risk stratification decision."
+        ),
+        "nccn_2026_reference": "PROS-2 (risk stratification) + PROS-3 (AS) + PROS-D (salvage)",
+        "fixes_documented_gaps": (
+            "UI-data concordance audit BROKEN_INTEGRATION_1 + BROKEN_INTEGRATION_2 "
+            "+ BROKEN_INTEGRATION_3 (RP Gleason + margin + percent cores)."
+        ),
+    },
+)
+
+
 # ─────────────────── Registry + helpers ───────────────────
 
 
@@ -491,6 +606,7 @@ MOMENT_CAPTURE_SCHEMAS: dict[str, FormSchema] = {
     "adt_init": ADT_INIT_FORM,
     "rt_nadir": RT_NADIR_FORM,
     "salvage_eligibility": SALVAGE_ELIGIBILITY_FORM,
+    "biopsy_capture": BIOPSY_CAPTURE_FORM,  # EPIC 22b.2
 }
 
 
@@ -508,6 +624,7 @@ def get_field_count_reduction(moment: str) -> dict[str, int]:
         "adt_init": 45,
         "rt_nadir": 68,
         "salvage_eligibility": 58,
+        "biopsy_capture": 30,  # EPIC 22b.2 — full structured_biopsy schema
     }
     form = MOMENT_CAPTURE_SCHEMAS.get(moment)
     if not form:

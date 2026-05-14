@@ -123,6 +123,89 @@ FACT_SPECS: dict[str, FactSpec] = {
     "family_history_cancer": FactSpec("family_history_cancer", "precision", "boolean", (), False, ("precision_pathway", "profile")),
     # ── EPIC 2 — Medicación estructurada ──────────────────────────────────
     "medication_list": FactSpec("medication_list", "supportive", "text", ("current_medications",), False, ("governance", "profile")),
+    # ── EPIC 22b.5 — Post-RP pathology canonical facts ─────────────────────
+    # These close the documented integration gaps:
+    #   (1) RP Gleason never canonicalized → post_rp_salvage_copilot
+    #       was reading diagnostic Gleason instead of RP piece Gleason.
+    #   (2) Surgical margin status never in fact registry → salvage copilot
+    #       was reading hardcoded fallback.
+    #   (3) Percent pattern 4 capturable but not canonical → very-low-risk
+    #       AS eligibility could not be enforced.
+    # All declared `blocking=False` (additive only) per EPIC 22 constraint:
+    # NO regression on existing classifications until EPIC 22d gates enable.
+    "gleason_at_rp": FactSpec(
+        "gleason_at_rp", "pathology", "text",
+        ("gleason_score_at_rp", "rp_specimen_gleason", "gleason_pieza_rp"),
+        False,
+        ("decision_input_requirements", "post_rp_salvage_copilot",
+         "risk_stratified_localized_copilot", "profile"),
+    ),
+    "gleason_primary_pattern_at_rp": FactSpec(
+        "gleason_primary_pattern_at_rp", "pathology", "number",
+        ("rp_gleason_primary", "gleason_primary_rp"),
+        False,
+        ("decision_input_requirements", "post_rp_salvage_copilot", "profile"),
+    ),
+    "gleason_secondary_pattern_at_rp": FactSpec(
+        "gleason_secondary_pattern_at_rp", "pathology", "number",
+        ("rp_gleason_secondary", "gleason_secondary_rp"),
+        False,
+        ("decision_input_requirements", "post_rp_salvage_copilot", "profile"),
+    ),
+    "tumor_stage_at_rp": FactSpec(
+        "tumor_stage_at_rp", "pathology", "text",
+        ("pT_stage", "pathologic_t_stage", "rp_pT"),
+        False,
+        ("decision_input_requirements", "post_rp_salvage_copilot", "profile"),
+    ),
+    "margin_status": FactSpec(
+        "margin_status", "pathology", "text",
+        ("surgical_margin_status", "rp_margin_status", "estado_margenes"),
+        False,
+        ("decision_input_requirements", "post_rp_salvage_copilot",
+         "risk_stratified_localized_copilot", "profile"),
+    ),
+    "percent_pattern_4": FactSpec(
+        "percent_pattern_4", "pathology", "number",
+        ("pattern_4_pct", "pct_pattern_4", "porcentaje_patron_4"),
+        False,
+        ("decision_input_requirements", "risk_stratified_localized_copilot",
+         "active_surveillance_eligibility", "profile"),
+    ),
+    "perineural_invasion": FactSpec(
+        "perineural_invasion", "pathology", "boolean",
+        ("pni", "invasion_perineural"),
+        False,
+        ("decision_input_requirements", "post_rp_salvage_copilot", "profile"),
+    ),
+    "percent_positive_cores": FactSpec(
+        "percent_positive_cores", "pathology", "number",
+        ("pct_positive_cores", "core_positive_pct", "porcentaje_cores_positivos"),
+        False,
+        ("decision_input_requirements", "risk_stratified_localized_copilot",
+         "active_surveillance_eligibility", "profile"),
+    ),
+    # ── EPIC 22b.5 — NEPC / Aggressive variant biomarkers (rare but decision-changing) ──
+    # NEPC differentiation triples 1-year mortality risk versus typical mCRPC and
+    # routes to platinum-based chemotherapy (not ARSI). Capturing these as
+    # canonical facts lets the nepc_differentiation copilot (EPIC 22c) read them.
+    "chromogranin_a_value": FactSpec(
+        "chromogranin_a_value", "pathology", "number", ("cga",),
+        False, ("nepc_differentiation_copilot", "profile"),
+    ),
+    "synaptophysin_biopsy_positive": FactSpec(
+        "synaptophysin_biopsy_positive", "pathology", "boolean", (),
+        False, ("nepc_differentiation_copilot", "profile"),
+    ),
+    "small_cell_morphology": FactSpec(
+        "small_cell_morphology", "pathology", "boolean", (),
+        False, ("nepc_differentiation_copilot", "profile"),
+    ),
+    "nse_value": FactSpec(
+        "nse_value", "pathology", "number",
+        ("neuron_specific_enolase",),
+        False, ("nepc_differentiation_copilot", "profile"),
+    ),
 }
 
 
@@ -343,6 +426,20 @@ def extract_canonical_fact_candidates(
         "biopsy_proven_local_recurrence",
         "mpmri_done",
         "mpmri_localized_recurrence",
+        # ── EPIC 22b.5 — Post-RP pathology + AS eligibility canonical facts ──
+        "gleason_at_rp",
+        "gleason_primary_pattern_at_rp",
+        "gleason_secondary_pattern_at_rp",
+        "tumor_stage_at_rp",
+        "margin_status",
+        "percent_pattern_4",
+        "perineural_invasion",
+        "percent_positive_cores",
+        # ── EPIC 22b.5 — NEPC differentiation biomarkers ──
+        "chromogranin_a_value",
+        "synaptophysin_biopsy_positive",
+        "small_cell_morphology",
+        "nse_value",
     ):
         _extract_simple_fact(
             payload,

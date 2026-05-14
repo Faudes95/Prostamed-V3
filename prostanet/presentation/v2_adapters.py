@@ -384,6 +384,161 @@ def _consent_status(patient: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _biopsy_summary(
+    profile_view: Mapping[str, Any],
+    patient: Mapping[str, Any],
+) -> dict[str, Any]:
+    """EPIC 22b.4 — Biopsy summary for the new patient_profile_v2.html card.
+
+    Pulls from (in order of preference):
+      1. profile_view["copilots"]["structured_biopsy"] (already parsed)
+      2. patient["structured_biopsy_sessions"] (raw biopsy_sessions rows)
+      3. patient["biopsies"] (legacy intake snapshot)
+
+    Returns keys consumed by the `pm2BiopsyDiagnostics` card in
+    `templates/patient_profile_v2.html`:
+      - has_biopsy (bool)
+      - biopsy_date (ISO date or "")
+      - gleason_score (e.g. "7 (4+3)" or "6")
+      - isup_grade (1-5 or None)
+      - cores_summary ("6/12 positivos" or "")
+      - percent_positive_cores (float 0-100 or None)
+      - margin_status (str or "")
+      - canonicalized_facts (list[str] — fact_keys persisted)
+
+    Defensive: if no biopsy at all, returns {has_biopsy: False} so the
+    template renders the "Captura el reporte" CTA without crashing.
+    """
+    pv = profile_view or {}
+    pt = patient or {}
+
+    # Helper to first-non-empty
+    def _first(*candidates):
+        for c in candidates:
+            if c not in (None, "", 0, []):
+                return c
+        return None
+
+    copilots = pv.get("copilots") if isinstance(pv, Mapping) else None
+    structured = (copilots or {}).get("structured_biopsy") or {}
+    structured_sessions = (pt.get("structured_biopsy_sessions") or []) if pt else []
+    legacy_biopsies = (pt.get("biopsies") or []) if pt else []
+
+    latest_session = (structured_sessions[-1] if structured_sessions else None) or {}
+    latest_legacy = (legacy_biopsies[-1] if legacy_biopsies else None) or {}
+
+    # Determine if we have ANY biopsy signal
+    has_biopsy = bool(
+        (structured and structured.get("has_data"))
+        or latest_session.get("biopsy_date")
+        or latest_legacy.get("biopsy_date")
+    )
+
+    if not has_biopsy:
+        return {
+            "has_biopsy": False,
+            "biopsy_date": "",
+            "gleason_score": "",
+            "isup_grade": None,
+            "cores_summary": "",
+            "percent_positive_cores": None,
+            "margin_status": "",
+            "canonicalized_facts": [],
+        }
+
+    biopsy_date = (
+        latest_session.get("biopsy_date")
+        or latest_legacy.get("biopsy_date")
+        or (structured.get("biopsy_date") if isinstance(structured, Mapping) else "")
+        or ""
+    )
+
+    # Gleason: prefer post-RP if context indicates rp_specimen
+    g_primary = _first(
+        latest_session.get("highest_gleason_primary"),
+        latest_legacy.get("gleason_primary"),
+        structured.get("gleason_primary") if isinstance(structured, Mapping) else None,
+    )
+    g_secondary = _first(
+        latest_session.get("highest_gleason_secondary"),
+        latest_legacy.get("gleason_secondary"),
+        structured.get("gleason_secondary") if isinstance(structured, Mapping) else None,
+    )
+    gleason_sum = None
+    if g_primary is not None and g_secondary is not None:
+        try:
+            gleason_sum = int(g_primary) + int(g_secondary)
+            gleason_score = f"{gleason_sum} ({g_primary}+{g_secondary})"
+        except (TypeError, ValueError):
+            gleason_score = ""
+    elif latest_session.get("highest_gleason_sum"):
+        gleason_score = str(latest_session.get("highest_gleason_sum"))
+    else:
+        gleason_score = ""
+
+    isup_grade = _first(
+        latest_session.get("highest_isup"),
+        latest_legacy.get("isup_grade"),
+        structured.get("isup_grade") if isinstance(structured, Mapping) else None,
+    )
+
+    total_cores = _first(
+        latest_session.get("total_cores"),
+        latest_legacy.get("total_cores_biopsied"),
+        latest_legacy.get("total_cores"),
+    )
+    total_positive = _first(
+        latest_session.get("total_positive"),
+        latest_legacy.get("positive_cores_count"),
+        latest_legacy.get("positive_cores"),
+    )
+    cores_summary = ""
+    pct_positive = None
+    if total_cores and total_positive is not None:
+        try:
+            cores_summary = f"{int(total_positive)}/{int(total_cores)}"
+            pct_positive = round((float(total_positive) / float(total_cores)) * 100, 1)
+        except (TypeError, ValueError, ZeroDivisionError):
+            cores_summary = ""
+
+    # Margin status (only meaningful if post-RP context)
+    margin_status = _first(
+        latest_legacy.get("margin_status"),
+        latest_legacy.get("surgical_margin_status"),
+        (structured.get("margin_status") if isinstance(structured, Mapping) else None),
+    ) or ""
+
+    # Which canonical facts were persisted? Read from patient.clinical_facts
+    canonicalized_facts: list[str] = []
+    facts = pt.get("clinical_facts") or pt.get("patient_clinical_facts") or []
+    fact_keys_of_interest = {
+        "gleason_primary", "gleason_secondary", "isup_grade",
+        "gleason_at_rp", "gleason_primary_pattern_at_rp",
+        "gleason_secondary_pattern_at_rp", "tumor_stage_at_rp",
+        "margin_status", "percent_pattern_4", "perineural_invasion",
+        "percent_positive_cores", "biopsy_date",
+    }
+    seen: set[str] = set()
+    for f in facts:
+        if not isinstance(f, Mapping):
+            continue
+        key = str(f.get("fact_key") or "").strip()
+        if key in fact_keys_of_interest and key not in seen:
+            seen.add(key)
+            canonicalized_facts.append(key)
+
+    return {
+        "has_biopsy": True,
+        "biopsy_date": biopsy_date,
+        "gleason_score": gleason_score,
+        "isup_grade": isup_grade,
+        "cores_summary": cores_summary,
+        "percent_positive_cores": pct_positive,
+        "margin_status": margin_status,
+        "canonicalized_facts": canonicalized_facts,
+    }
+
+
 def _surface_consistency(profile_view: Mapping[str, Any]) -> dict[str, Any]:
     flags = [
         str(item.get("message") or item.get("reason") or item).strip()
@@ -2186,6 +2341,8 @@ def bundle_to_v2_profile(profile_view: Mapping[str, Any],
         "clinical_memory_os": pv.get("clinical_memory_os", {}),
         "autodrive": pv.get("autodrive", {}),
         "decision_today_fusion_kernel": pv.get("decision_today_fusion_kernel", {}),
+        # EPIC 22b.4 — Biopsy summary for pm2BiopsyDiagnostics card
+        "biopsy_summary": _biopsy_summary(pv, pt),
         # raw passthroughs para tabs avanzadas
         "profile_view_raw": pv,
         "patient_raw": pt,

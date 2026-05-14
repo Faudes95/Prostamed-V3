@@ -5144,6 +5144,38 @@ def api_longitudinal_append(nss: str):
         )
         return jsonify({**result, "kind": kind, "nss": nss}), status_code
 
+    # EPIC 22b.1 — Structured biopsy longitudinal append (histopath capture gap fix)
+    # Closes the documented UI/data concordance gap:
+    #   patient_profile_v2.html requests histopathology report → button now
+    #   POSTs here → biopsy_sessions table populated → facts canonicalized →
+    #   clinical_state_classifier + post_rp_salvage_copilot read fresh data.
+    # Persists via tracking_db.append_structured_biopsy_session (defense
+    # in depth: anti-dup, canonical facts, recompute trigger).
+    if kind == "biopsy":
+        result = tracking_db.append_structured_biopsy_session(nss, body)
+        if result.get("success"):
+            recompute_delta = _recompute_after_append(nss, kind=kind)
+            return jsonify({
+                **result,
+                "kind": kind,
+                "nss": nss,
+                "appended_at": datetime.now().isoformat(),
+                "decision_changed": recompute_delta.get("decision_changed", False),
+                "delta": recompute_delta.get("delta") or {},
+                "alerts_count": recompute_delta.get("alerts_count", 0),
+                "recompute_success": recompute_delta.get("success", False),
+                "recompute_error": recompute_delta.get("recompute_error"),
+                "source": "longitudinal_v2_biopsy",
+                "audit_note": (
+                    "Structured biopsy persisted → canonical facts updated → "
+                    "classifier + copilots re-read fresh data · EPIC 22b.1"
+                ),
+            })
+        status_code = 404 if result.get("error") == "patient_not_found" else (
+            409 if result.get("error") == "duplicate" else 400
+        )
+        return jsonify({**result, "kind": kind, "nss": nss}), status_code
+
     if kind == "treatment_change":
         result = tracking_db.append_treatment_line_update(nss, body)
         if result.get("success"):

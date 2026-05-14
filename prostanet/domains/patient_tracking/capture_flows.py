@@ -57,6 +57,20 @@ FOLLOWUP_PREFERRED_FIELDS = {
     "vitamin_d_level",
     "height_cm",
     "weight_loss_6m_kg",
+    # EPIC 22b.8 — biopsy/pathology capture fields (route to moment=biopsy_capture)
+    "gleason_primary",
+    "gleason_secondary",
+    "isup_grade",
+    "gleason_at_rp",
+    "margin_status",
+    "surgical_margin_status",
+    "percent_pattern_4",
+    "percent_positive_cores",
+    "perineural_invasion",
+    "tumor_stage_at_rp",
+    "biopsy_date",
+    "biopsy_context",
+    "biopsy_route",
 }
 
 FIELD_GROUP_HINTS = {

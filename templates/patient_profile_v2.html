@@ -1498,6 +1498,101 @@
         </section>
         {% endif %}
 
+        {# ── EPIC 22b.3 — Biopsy Diagnostics card (histopathology capture + display) ── #}
+        {# Cierra el gap documentado en UI-data concordance audit: el perfil pedía  #}
+        {# reporte histopatológico pero no había forma de capturarlo. Esta card     #}
+        {# (a) muestra los datos canonicalizados si ya fueron capturados, y         #}
+        {# (b) siempre ofrece el CTA "Capturar reporte" → moment=biopsy_capture.    #}
+        {# NO elimina ningún campo existente; sólo añade superficie de captura.     #}
+        <section id="pm2BiopsyDiagnostics" class="pm2-biopsy-panel"
+                 style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(244,114,182,0.08), rgba(15,23,42,0.6)); border: 1px solid rgba(244,114,182,0.30); border-left: 6px solid rgb(244,114,182); border-radius: 14px;"
+                 aria-label="Biopsy diagnostics and capture surface"
+                 data-testid="biopsy-diagnostics-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(251,207,232); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Diagnóstico histopatológico · EPIC 22b</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        {% if biopsy_summary and biopsy_summary.has_biopsy %}
+                            Reporte histopatológico capturado
+                        {% else %}
+                            Reporte histopatológico pendiente
+                        {% endif %}
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        {% if biopsy_summary and biopsy_summary.has_biopsy %}
+                            Gleason + ISUP + % cores positivos canonicalizados — alimentan risk stratification + AS eligibility + salvage decision
+                        {% else %}
+                            Captura el reporte para activar 6-tier risk stratification (very low → very high) + AS eligibility + salvage decision
+                        {% endif %}
+                    </p>
+                </div>
+                <a href="/longitudinal-capture/{{ identity.nss }}?moment=biopsy_capture"
+                   class="pm2-btn pm2-btn--primary"
+                   style="text-decoration:none; font-size:.82rem; white-space:nowrap;"
+                   data-testid="biopsy-capture-cta">
+                    {% if biopsy_summary and biopsy_summary.has_biopsy %}
+                        + Actualizar reporte
+                    {% else %}
+                        + Capturar reporte histopatológico
+                    {% endif %}
+                </a>
+            </div>
+
+            {% if biopsy_summary and biopsy_summary.has_biopsy %}
+            <div style="margin-top:14px; display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px;">
+                {% if biopsy_summary.biopsy_date %}
+                <div style="padding:10px 12px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18); border-radius:8px;">
+                    <div style="font-size:.62rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em;">Fecha biopsia</div>
+                    <div style="color:#f8fafc; font-weight:600; margin-top:3px;">{{ biopsy_summary.biopsy_date }}</div>
+                </div>
+                {% endif %}
+                {% if biopsy_summary.gleason_score %}
+                <div style="padding:10px 12px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18); border-radius:8px;">
+                    <div style="font-size:.62rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em;">Gleason</div>
+                    <div style="color:#f8fafc; font-weight:600; margin-top:3px;" data-testid="biopsy-gleason-display">{{ biopsy_summary.gleason_score }}</div>
+                </div>
+                {% endif %}
+                {% if biopsy_summary.isup_grade %}
+                <div style="padding:10px 12px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18); border-radius:8px;">
+                    <div style="font-size:.62rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em;">ISUP grade</div>
+                    <div style="color:#f8fafc; font-weight:600; margin-top:3px;">{{ biopsy_summary.isup_grade }}</div>
+                </div>
+                {% endif %}
+                {% if biopsy_summary.cores_summary %}
+                <div style="padding:10px 12px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18); border-radius:8px;">
+                    <div style="font-size:.62rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em;">Cores positivos</div>
+                    <div style="color:#f8fafc; font-weight:600; margin-top:3px;">{{ biopsy_summary.cores_summary }}</div>
+                </div>
+                {% endif %}
+                {% if biopsy_summary.percent_positive_cores is not none %}
+                <div style="padding:10px 12px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18); border-radius:8px;">
+                    <div style="font-size:.62rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em;">% cores positivos</div>
+                    <div style="color:#f8fafc; font-weight:600; margin-top:3px;">{{ biopsy_summary.percent_positive_cores }}%</div>
+                </div>
+                {% endif %}
+                {% if biopsy_summary.margin_status %}
+                <div style="padding:10px 12px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18); border-radius:8px;">
+                    <div style="font-size:.62rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em;">Márgenes (RP)</div>
+                    <div style="color:#f8fafc; font-weight:600; margin-top:3px;" data-testid="biopsy-margin-display">{{ biopsy_summary.margin_status }}</div>
+                </div>
+                {% endif %}
+            </div>
+            {% if biopsy_summary.canonicalized_facts %}
+            <div style="margin-top:10px; padding:8px 12px; background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.30); border-radius:6px; font-size:.72rem; color:rgb(187,247,208);">
+                ✓ Facts canonicalizadas alimentando: {{ biopsy_summary.canonicalized_facts|join(' · ') }}
+            </div>
+            {% endif %}
+            {% else %}
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(148,163,184,0.06); border:1px dashed rgba(148,163,184,0.30); border-radius:8px; font-size:.78rem; color:var(--pn-text-muted);">
+                Sin biopsia capturada. El registro estructurado feeds:
+                <strong>clinical_state_classifier</strong> (6-tier risk),
+                <strong>active_surveillance_eligibility</strong> (Epstein criteria),
+                <strong>post_rp_salvage_copilot</strong> (margin + Gleason at RP),
+                <strong>risk_stratified_localized_copilot</strong>.
+            </div>
+            {% endif %}
+        </section>
+
         {# ── Tumor Board OS — What-if simulator card ── #}
         <section style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(168,85,247,0.06), rgba(15,23,42,0.5)); border: 1px solid rgba(168,85,247,0.3); border-left: 4px solid rgb(168,85,247); border-radius: 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3);">

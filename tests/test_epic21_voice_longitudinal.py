@@ -337,8 +337,13 @@ def test_epic21_endpoints_intake_invalid_moment_400():
     assert resp.status_code == 400
 
 
-def test_epic21_endpoints_list_moments_returns_6():
-    """GET /api/voice/epic21/intake-moments returns 6 moments."""
+def test_epic21_endpoints_list_moments_returns_at_least_6():
+    """GET /api/voice/epic21/intake-moments returns ≥6 moments.
+
+    EPIC 22b.2 added `biopsy_capture` (7th moment) — the contract is now
+    "at least 6" so future micro-forms can be appended without breaking
+    this regression gate.
+    """
     import flask
     from prostanet.voice.epic21_endpoints import epic21_bp
     app = flask.Flask("test_app")
@@ -348,7 +353,14 @@ def test_epic21_endpoints_list_moments_returns_6():
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["available"] is True
-    assert len(data["moments"]) == 6
+    assert len(data["moments"]) >= 6
+    # EPIC 21 original 6 moments must remain present
+    original_six = {"bcr_detection", "oligoprogression", "crpc_transition",
+                    "adt_init", "rt_nadir", "salvage_eligibility"}
+    moment_names = {m.get("moment") for m in data["moments"] if isinstance(m, dict)}
+    assert original_six.issubset(moment_names), (
+        f"EPIC 21 original moments lost: missing={original_six - moment_names}"
+    )
 
 
 def test_epic21_endpoints_health_reports_capabilities():
