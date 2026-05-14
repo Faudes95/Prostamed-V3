@@ -202,6 +202,242 @@
         {% set _tumor_board = tumor_board_os or profile_view_raw.get('tumor_board_os', {}) %}
         {% set _tb_summary = _tumor_board.get('summary', {}) if _tumor_board else {} %}
         {% set _tb_options = _tumor_board.get('options', []) if _tumor_board else [] %}
+        {# EPIC 20 — Clinical Trajectory Recognition Cards (5 new copilots) #}
+        {# Renders only when copilot bundle .available=True for that patient #}
+
+        {# 20.1 Risk-Stratified Localized Card (6 sub-tiers) #}
+        {% if risk_stratified_localized and risk_stratified_localized.available %}
+        <section id="pm2RiskStratifiedLocalized" class="pm2-risk-strat-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(56,189,248,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(56,189,248,0.32); border-left: 6px solid rgb(56,189,248); border-radius: 14px;" aria-label="Risk-stratified localized" data-testid="risk-stratified-localized-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(186,230,253); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Risk-stratified localized · EPIC 20</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        {{ risk_stratified_localized.risk_tier|replace('_', ' ')|title }} Risk Localized Prostate Cancer
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        Clasificación según NCCN {{ risk_stratified_localized.nccn_reference }} · {{ risk_stratified_localized.rationale }}
+                    </p>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em;">Confidence</div>
+                    <div style="font-size:1.5rem; color:rgb(186,230,253); font-weight:700;">{{ (risk_stratified_localized.confidence * 100)|round|int }}%</div>
+                </div>
+            </div>
+
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(16,185,129,0.10); border:1px solid rgba(16,185,129,0.30); border-radius:8px;" data-testid="risk-strat-preferred-therapy">
+                <div style="font-size:.65rem; color:rgb(110,231,183); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Terapia preferida (NCCN 2026)</div>
+                <div style="color:#f8fafc; font-weight:600;">{{ risk_stratified_localized.therapeutic_preferred }}</div>
+            </div>
+
+            {% if risk_stratified_localized.therapeutic_acceptable %}
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18); border-radius:8px;">
+                <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">Alternativas aceptables</div>
+                <ul style="margin:0; padding-left:18px; font-size:.82rem; color:var(--pn-text-muted); list-style:disc;">
+                    {% for option in risk_stratified_localized.therapeutic_acceptable %}<li>{{ option }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% if risk_stratified_localized.therapeutic_not_recommended %}
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(252,165,165); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">NO recomendado</div>
+                <ul style="margin:0; padding-left:18px; font-size:.82rem; color:rgb(252,165,165); list-style:disc;">
+                    {% for option in risk_stratified_localized.therapeutic_not_recommended %}<li>{{ option }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% if risk_stratified_localized.surveillance_protocol %}
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(15,23,42,0.4); border:1px solid rgba(148,163,184,0.14); border-radius:8px;">
+                <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Protocolo de vigilancia</div>
+                {% for key, value in risk_stratified_localized.surveillance_protocol.items() %}
+                <div style="font-size:.82rem; color:var(--pn-text-muted); margin-top:2px;"><strong>{{ key }}:</strong> {{ value }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if risk_stratified_localized.pivotal_trials_supporting %}
+            <div style="margin-top:10px; font-size:.75rem; color:var(--pn-text-muted);">
+                Trials de referencia: {{ risk_stratified_localized.pivotal_trials_supporting|join(', ') }}
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {# 20.2 mCRPC Subtype Card (5 subtypes) #}
+        {% if mcrpc_subtype and mcrpc_subtype.available %}
+        <section id="pm2McrpcSubtype" class="pm2-mcrpc-subtype-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(244,63,94,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(244,63,94,0.32); border-left: 6px solid rgb(244,63,94); border-radius: 14px;" aria-label="mCRPC subtype" data-testid="mcrpc-subtype-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(252,165,165); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">mCRPC subtype · EPIC 20</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        {{ mcrpc_subtype.subtype_state|replace('_', ' ')|title }}
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        {{ mcrpc_subtype.rationale }} · NCCN {{ mcrpc_subtype.nccn_reference }}
+                    </p>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em;">Confidence</div>
+                    <div style="font-size:1.5rem; color:rgb(252,165,165); font-weight:700;">{{ (mcrpc_subtype.confidence * 100)|round|int }}%</div>
+                </div>
+            </div>
+
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(16,185,129,0.10); border:1px solid rgba(16,185,129,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(110,231,183); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Terapia preferida</div>
+                <div style="color:#f8fafc; font-weight:600;">{{ mcrpc_subtype.therapeutic_preferred }}</div>
+            </div>
+
+            {% if mcrpc_subtype.clinical_caveats %}
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(251,191,36,0.08); border:1px solid rgba(251,191,36,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(253,224,71); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">Caveats clínicos</div>
+                <ul style="margin:0; padding-left:18px; font-size:.82rem; color:rgb(253,224,71); list-style:disc;">
+                    {% for caveat in mcrpc_subtype.clinical_caveats %}<li>{{ caveat }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% if mcrpc_subtype.biomarker_requirements %}
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18); border-radius:8px;">
+                <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">Biomarkers requeridos / recomendados</div>
+                {% for key, value in mcrpc_subtype.biomarker_requirements.items() %}
+                <div style="font-size:.78rem; color:var(--pn-text-muted); margin-top:2px;"><strong>{{ key }}:</strong> {{ value }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if mcrpc_subtype.pivotal_trials_supporting %}
+            <div style="margin-top:10px; font-size:.75rem; color:var(--pn-text-muted);">
+                Trials soporte: {{ mcrpc_subtype.pivotal_trials_supporting|join(', ') }}
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {# 20.3 Hereditary Germline Card #}
+        {% if hereditary_germline and hereditary_germline.available %}
+        <section id="pm2HereditaryGermline" class="pm2-hereditary-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(34,197,94,0.08), rgba(15,23,42,0.66)); border: 1px solid rgba(34,197,94,0.30); border-left: 6px solid rgb(34,197,94); border-radius: 14px;" aria-label="Hereditary germline pathway" data-testid="hereditary-germline-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(134,239,172); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Hereditary germline pathway · EPIC 20</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        Germline testing {{ 'completed' if hereditary_germline.testing_status == 'completed' else 'indicated' }}
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        NCCN {{ hereditary_germline.nccn_reference }} — universal germline testing trigger detected
+                    </p>
+                </div>
+            </div>
+
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(16,185,129,0.10); border:1px solid rgba(16,185,129,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(110,231,183); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Acción preferida</div>
+                <div style="color:#f8fafc; font-weight:600;">{{ hereditary_germline.therapeutic_preferred }}</div>
+            </div>
+
+            {% if hereditary_germline.triggers_matched %}
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18); border-radius:8px;">
+                <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">Triggers detectados</div>
+                <ul style="margin:0; padding-left:18px; font-size:.82rem; color:var(--pn-text-muted); list-style:disc;">
+                    {% for trigger in hereditary_germline.triggers_matched %}<li>{{ trigger|replace('_', ' ') }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% if hereditary_germline.surveillance_if_carrier %}
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(186,230,253); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">Surveillance si carrier identified</div>
+                {% for gene, plan in hereditary_germline.surveillance_if_carrier.items() %}
+                <div style="font-size:.78rem; color:var(--pn-text-muted); margin-top:2px;"><strong>{{ gene }}:</strong> {{ plan }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {# 20.4 Post-RT BCR Card #}
+        {% if post_rt_bcr and post_rt_bcr.available %}
+        <section id="pm2PostRtBcr" class="pm2-post-rt-bcr-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(245,158,11,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(245,158,11,0.32); border-left: 6px solid rgb(245,158,11); border-radius: 14px;" aria-label="Post-RT BCR" data-testid="post-rt-bcr-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(252,211,77); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Post-RT BCR (Phoenix) · EPIC 20</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        Bioquímica recurrence post-radioterapia confirmada
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45;">
+                        PSA actual {{ post_rt_bcr.current_psa }} ng/mL ≥ nadir ({{ post_rt_bcr.nadir_psa }}) + 2 · NCCN {{ post_rt_bcr.nccn_reference }}
+                    </p>
+                </div>
+            </div>
+
+            {% if post_rt_bcr.workup_required %}
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(56,189,248,0.10); border:1px solid rgba(56,189,248,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(186,230,253); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">Work-up requerido ANTES de salvage</div>
+                <ul style="margin:0; padding-left:18px; font-size:.82rem; color:var(--pn-text-muted); list-style:disc;">
+                    {% for step in post_rt_bcr.workup_required %}<li>{{ step }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% if post_rt_bcr.therapeutic_local_failure %}
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(16,185,129,0.10); border:1px solid rgba(16,185,129,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(110,231,183); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">Si local failure</div>
+                <ul style="margin:0; padding-left:18px; font-size:.82rem; color:var(--pn-text-muted); list-style:disc;">
+                    {% for option in post_rt_bcr.therapeutic_local_failure %}<li>{{ option }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% if post_rt_bcr.therapeutic_not_recommended %}
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(252,165,165); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">NO recomendado (peligros conocidos)</div>
+                <ul style="margin:0; padding-left:18px; font-size:.82rem; color:rgb(252,165,165); list-style:disc;">
+                    {% for option in post_rt_bcr.therapeutic_not_recommended %}<li>{{ option }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {# 20.5 Oligoprogression Card #}
+        {% if oligoprogression and oligoprogression.available %}
+        <section id="pm2Oligoprogression" class="pm2-oligo-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(20,184,166,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(20,184,166,0.32); border-left: 6px solid rgb(20,184,166); border-radius: 14px;" aria-label="Oligoprogression" data-testid="oligoprogression-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(94,234,212); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Oligoprogression on therapy · EPIC 20</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        {{ oligoprogression.new_lesion_count }} new lesions on systemic therapy
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45;">
+                        {% if oligoprogression.eligible_for_mdt %}STOMP/ORIOLE candidate — MDT preferred{% else %}NO oligo: class switch evaluation{% endif %} · NCCN {{ oligoprogression.nccn_reference }}
+                    </p>
+                </div>
+            </div>
+
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(16,185,129,0.10); border:1px solid rgba(16,185,129,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(110,231,183); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Acción preferida</div>
+                <div style="color:#f8fafc; font-weight:600;">{{ oligoprogression.therapeutic_preferred }}</div>
+            </div>
+
+            {% if oligoprogression.mdt_feasibility_checks %}
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18); border-radius:8px;">
+                <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">MDT feasibility checks</div>
+                <ul style="margin:0; padding-left:18px; font-size:.82rem; color:var(--pn-text-muted); list-style:disc;">
+                    {% for check in oligoprogression.mdt_feasibility_checks %}<li>{{ check }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% if oligoprogression.clinical_caveats %}
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(251,191,36,0.08); border:1px solid rgba(251,191,36,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(253,224,71); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">Caveats clínicos</div>
+                <ul style="margin:0; padding-left:18px; font-size:.82rem; color:rgb(253,224,71); list-style:disc;">
+                    {% for caveat in oligoprogression.clinical_caveats %}<li>{{ caveat }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
         {# EPIC 19 — Patient Twin OS card (v2 layout): preference-personalized regimen rankings + redecision alerts #}
         {% if patient_twin and patient_twin.available %}
         <section id="pm2PatientTwinOS" class="pm2-patient-twin-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(168,85,247,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(168,85,247,0.32); border-left: 6px solid rgb(168,85,247); border-radius: 14px;" aria-label="Patient Twin OS" data-testid="patient-twin-os-card">

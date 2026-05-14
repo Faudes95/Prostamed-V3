@@ -1194,6 +1194,50 @@ def patient_profile(nss):
             except Exception as e:
                 logger.warning(f"EPIC 19 v2 twin build failed: {e}")
                 v2_ctx["patient_twin"] = {"available": False}
+
+            # EPIC 20: Clinical Trajectory Recognition — 5 copilot bundles
+            # Each copilot self-gates via available=False when patient doesn't qualify
+            v2_ctx["risk_stratified_localized"] = {"available": False}
+            v2_ctx["mcrpc_subtype"] = {"available": False}
+            v2_ctx["hereditary_germline"] = {"available": False}
+            v2_ctx["post_rt_bcr"] = {"available": False}
+            v2_ctx["oligoprogression"] = {"available": False}
+            try:
+                from prostanet.domains.patient_tracking.risk_stratified_localized_copilot_service import (
+                    build_risk_stratified_localized_bundle,
+                )
+                v2_ctx["risk_stratified_localized"] = build_risk_stratified_localized_bundle(data)
+            except Exception as e:
+                logger.debug(f"EPIC 20 risk_stratified bundle: {e}")
+            try:
+                from prostanet.domains.patient_tracking.mcrpc_subtype_copilot_service import (
+                    build_mcrpc_subtype_bundle,
+                )
+                v2_ctx["mcrpc_subtype"] = build_mcrpc_subtype_bundle(data)
+            except Exception as e:
+                logger.debug(f"EPIC 20 mcrpc_subtype bundle: {e}")
+            try:
+                from prostanet.domains.patient_tracking.hereditary_germline_copilot_service import (
+                    build_hereditary_germline_bundle,
+                )
+                v2_ctx["hereditary_germline"] = build_hereditary_germline_bundle(data)
+            except Exception as e:
+                logger.debug(f"EPIC 20 hereditary_germline bundle: {e}")
+            try:
+                from prostanet.domains.patient_tracking.post_rt_bcr_copilot_service import (
+                    build_post_rt_bcr_bundle,
+                )
+                v2_ctx["post_rt_bcr"] = build_post_rt_bcr_bundle(data)
+            except Exception as e:
+                logger.debug(f"EPIC 20 post_rt_bcr bundle: {e}")
+            try:
+                from prostanet.domains.patient_tracking.oligoprogression_copilot_service import (
+                    build_oligoprogression_bundle,
+                )
+                v2_ctx["oligoprogression"] = build_oligoprogression_bundle(data)
+            except Exception as e:
+                logger.debug(f"EPIC 20 oligoprogression bundle: {e}")
+
             return render_template("patient_profile_v2.html", **v2_ctx, page_chrome=page_chrome)
 
         # EPIC 19: Patient Twin OS — personalized regimen rankings + AI predictions
