@@ -13187,3 +13187,37 @@ Si OML terms cambian, weights se retiran, o test de safety routing falla:
 ### Quarterly review schedule
 
 Next review: **2026-08-13** (FDA Pre-Sub Q-Sub cadence)
+
+---
+
+## EPIC 22 roadmap — completed sub-EPICs (2026-05-13)
+
+| Sub-EPIC | Commit | Scope |
+|----------|--------|-------|
+| **22a** | `d90ff06` | PersonaPlex full activation + NVIDIA OML acceptance + UI-data audit baseline |
+| **22b** | `2227121` | Histopath capture fix + 5 broken clinical integrations (RP Gleason canonicalization, margin status FactSpec, percent_pattern_4, Patient Twin recompute triggers, Readiness Tower fill endpoint) |
+| **22c part 1** | `22ef5fd` | 22 new NCCN 2026 v2 trajectories (CLINICAL_STATES 31→53): pre-diagnostic, post-local modality, hereditary carriers, oligomet refinement, special populations, survivorship |
+| **22d** | `6ed5542` | UI ↔ data concordance pytest gates (7 passing + 1 xfail for legacy) |
+| **22c part 2** | pending | state_transition Transformer retrain artifact (running with PYTORCH_ENABLE_MPS_FALLBACK=1) + EPIC 22c Cortana cards |
+
+### Skills aplicadas EPIC 22
+
+- /anthropic-skills:ultrathink-detective (22a — 3 parallel Explore agents)
+- /anthropic-skills:pytorch-patterns (22c.7 — device-agnostic + set_seed + grad_clip)
+- /pytorch-training (22c.7 — training loop + AMP + checkpoint patterns)
+- /pytorch-lightning (22c.7 — reserved for >30min retrain migration)
+- /deep-research (22c — NCCN 2026 v2 + EAU 2025 evidence-tagged per state)
+- /faubot (22a/22b/22c — Phase 2 concordance + Phase 6 data integrity)
+- /backend-patterns + /api-design (22b/22d — endpoint patterns + gates)
+- /voice-note-ingest (22b.2 — biopsy_capture as voice target)
+- /our-autoskills + /ultrareview (22a-22d — auto-discovery + final review)
+
+### Clinical benefit EPIC 22 (overall)
+
+- Localized: 6 risk tiers + 4 post-local modalities con NCCN 2026 evidence-tagged routing AS vs tx vs surveillance.
+- Hereditary: 5 specific carrier states (BRCA2, BRCA1, ATM, Lynch, HOXB13) → PARP-first / pembrolizumab / family counseling.
+- Special populations: geriatric_frail_limited, young_onset_pca, comorbidity_limited_severe_cv/hepatic — drug-selection safety.
+- Survivorship: 5+y NED + second_primary_surveillance + adt_long_term_complications surveillance.
+- UI-data concordance: histopathology gap cerrado end-to-end (form → biopsy_sessions table → canonical facts → classifier + copilots → patient_profile_v2 card render).
+- 8 CI gates prevent future "pretty placeholder" pattern accumulation.
+
