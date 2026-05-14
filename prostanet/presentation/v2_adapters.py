@@ -587,6 +587,76 @@ def _adt_long_term_summary(
     }
 
 
+def _survivorship_5y_summary(
+    profile_view: Mapping[str, Any],
+    patient: Mapping[str, Any],
+) -> dict[str, Any]:
+    """EPIC 22c — Summary for pm2Survivorship5y card.
+
+    Triggers when years_since_curative_tx ≥ 5 (NED — no evidence of disease).
+    """
+    pt = patient or {}
+    lookup = _fact_lookup(pt)
+    baseline = pt.get("baseline") or {}
+
+    years = (
+        lookup.get("years_since_curative_tx")
+        or lookup.get("years_NED")
+        or baseline.get("years_since_curative_tx")
+    )
+    try:
+        y_num = float(years) if years is not None else None
+    except (TypeError, ValueError):
+        y_num = None
+
+    if y_num is None or y_num < 5:
+        return {"available": False}
+
+    entry = _load_therapeutic_entry("survivorship_post_curative_5y_plus")
+    return {
+        "available": True,
+        "years_ned": round(y_num, 1),
+        "therapeutic_preferred": str(
+            entry.get("preferred")
+            or "Annual PSA + late effects surveillance + quality of life"
+        ),
+        "acceptable_alternatives": list(entry.get("acceptable") or []),
+        "nccn_reference": str(entry.get("nccn_reference") or "SURV-1_v2026"),
+    }
+
+
+def _comorbidity_cv_summary(
+    profile_view: Mapping[str, Any],
+    patient: Mapping[str, Any],
+) -> dict[str, Any]:
+    """EPIC 22c — Summary for pm2ComorbidityCv card.
+
+    Triggers when severe_cv_disease OR cv_risk_band=high OR active_cardiac_disease.
+    """
+    lookup = _fact_lookup(patient or {})
+    cv_severe = (
+        str(lookup.get("severe_cv_disease") or "").lower() in ("true", "1", "yes")
+        or str(lookup.get("cv_risk_band") or "").lower() == "high"
+        or str(lookup.get("active_cardiac_disease") or "").lower() in ("true", "1", "yes")
+    )
+    if not cv_severe:
+        return {"available": False}
+
+    entry = _load_therapeutic_entry("comorbidity_limited_severe_cv")
+    return {
+        "available": True,
+        "therapeutic_preferred": str(
+            entry.get("preferred")
+            or "Enzalutamide/Apalutamide + cardiology co-management"
+        ),
+        "acceptable_alternatives": list(entry.get("acceptable") or []),
+        "not_recommended": list(entry.get("not_recommended") or [
+            "abiraterone_prednisone_with_active_cv_disease"
+        ]),
+        "nccn_reference": str(entry.get("nccn_reference") or "PROS-K_v2026"),
+    }
+
+
 def _brca2_carrier_summary(
     profile_view: Mapping[str, Any],
     patient: Mapping[str, Any],
@@ -2635,6 +2705,10 @@ def bundle_to_v2_profile(profile_view: Mapping[str, Any],
         "young_onset": _young_onset_summary(pv, pt),
         # EPIC 22c — ADT long-term card (multi-organ surveillance)
         "adt_long_term": _adt_long_term_summary(pv, pt),
+        # EPIC 22c — Survivorship 5y+ card (long-term outcome tracking)
+        "survivorship_5y": _survivorship_5y_summary(pv, pt),
+        # EPIC 22c — Comorbidity severe CV card (drug-selection safety)
+        "comorbidity_cv": _comorbidity_cv_summary(pv, pt),
         # raw passthroughs para tabs avanzadas
         "profile_view_raw": pv,
         "patient_raw": pt,

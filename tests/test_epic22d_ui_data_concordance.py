@@ -68,6 +68,8 @@ STATIC_NO_DATA_BINDING: set[str] = {
     "geriatric-preferred-therapy",  # nested element under geriatric-frail-card
     "young-onset-preferred-therapy",  # nested element under young-onset-card
     "adt-lt-preferred-therapy",  # nested element under adt-long-term-card
+    "survivorship-5y-preferred",  # nested element under survivorship-5y-card
+    "comorbidity-cv-preferred",   # nested element under comorbidity-cv-card
     "patient-twin-low-capture",  # nested chip under patient-twin-os-card
     "patient-twin-readiness-pct",  # nested chip under patient-twin-os-card
     "risk-strat-preferred-therapy",  # nested label under risk-stratified card
@@ -87,6 +89,8 @@ CARD_TO_BUNDLE_KEY: dict[str, str] = {
     "geriatric-frail-card": "geriatric_frail",    # EPIC 22c — treatment de-escalation
     "young-onset-card": "young_onset",            # EPIC 22c — universal germline + fertility
     "adt-long-term-card": "adt_long_term",        # EPIC 22c — multi-organ surveillance
+    "survivorship-5y-card": "survivorship_5y",    # EPIC 22c — long-term outcome tracking
+    "comorbidity-cv-card": "comorbidity_cv",      # EPIC 22c — drug-selection safety
     "hereditary-germline-card": "hereditary_germline",  # EPIC 20
     "mcrpc-subtype-card": "mcrpc_subtype",
     "oligoprogression-card": "oligoprogression",

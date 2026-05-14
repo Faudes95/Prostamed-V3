@@ -456,6 +456,52 @@
         </section>
         {% endif %}
 
+        {# 22c.6 Survivorship Post-Curative 5y+ Card — long-term outcome tracking — NCCN 2026 SURV-1 #}
+        {% if survivorship_5y and survivorship_5y.available %}
+        <section id="pm2Survivorship5y" class="pm2-survivorship-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(34,197,94,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(34,197,94,0.32); border-left: 6px solid rgb(34,197,94); border-radius: 14px;" aria-label="Survivorship post-curative 5y+" data-testid="survivorship-5y-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(134,239,172); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Survivorship 5y+ NED · EPIC 22c · NCCN SURV-1</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        {{ survivorship_5y.years_ned }} años sin evidencia de enfermedad
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        PSA anual + late effects surveillance + quality of life screening. Considerar shared care with primary care provider.
+                    </p>
+                </div>
+            </div>
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(34,197,94,0.10); border:1px solid rgba(34,197,94,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(134,239,172); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Acción preferida</div>
+                <div style="color:#f8fafc; font-weight:600;" data-testid="survivorship-5y-preferred">{{ survivorship_5y.therapeutic_preferred or 'Annual PSA + late effects surveillance' }}</div>
+            </div>
+        </section>
+        {% endif %}
+
+        {# 22c.7 Comorbidity Severe CV Card — drug selection safety — NCCN 2026 PROS-K #}
+        {% if comorbidity_cv and comorbidity_cv.available %}
+        <section id="pm2ComorbidityCv" class="pm2-comorbid-cv-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(220,38,38,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(220,38,38,0.32); border-left: 6px solid rgb(220,38,38); border-radius: 14px;" aria-label="Severe cardiovascular comorbidity" data-testid="comorbidity-cv-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(252,165,165); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Severe CV comorbidity · EPIC 22c · NCCN PROS-K</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        Drug selection con cardiology co-management
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        Active cardiac disease detectada → ARSI choice modificado. GnRH antagonist preferido sobre agonist si CV risk band high.
+                    </p>
+                </div>
+            </div>
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(220,38,38,0.10); border:1px solid rgba(220,38,38,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(252,165,165); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Acción preferida</div>
+                <div style="color:#f8fafc; font-weight:600;" data-testid="comorbidity-cv-preferred">{{ comorbidity_cv.therapeutic_preferred or 'Enzalutamide/Apalutamide + cardiology co-management' }}</div>
+            </div>
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(252,165,165); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">NO recomendado</div>
+                <div style="color:#fecaca; font-size:.82rem;">Abiraterone + prednisone with active CV disease — alto riesgo descompensación</div>
+            </div>
+        </section>
+        {% endif %}
+
         {# 22c.1 BRCA2 Carrier Card — highest clinical impact (PARP-first) — NCCN 2026 PROS-A #}
         {% if brca2_carrier and brca2_carrier.available %}
         <section id="pm2Brca2Carrier" class="pm2-brca2-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(217,119,6,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(217,119,6,0.32); border-left: 6px solid rgb(217,119,6); border-radius: 14px;" aria-label="BRCA2 carrier — PARP-first" data-testid="brca2-carrier-card">
