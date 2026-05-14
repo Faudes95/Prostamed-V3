@@ -7,9 +7,9 @@
     "seed": 42,
     "output_dir": "output/models",
     "skip_state": false,
-    "skip_treatment": false,
-    "skip_surv": false,
-    "skip_anomaly": false
+    "skip_treatment": true,
+    "skip_surv": true,
+    "skip_anomaly": true
   },
   "generation": {
     "patients": 1000,
@@ -29,112 +29,71 @@
     "model_path": "output/models/state_transition/best.pt",
     "epochs": 10,
     "samples": 1000,
-    "best_val_loss": 0.88,
-    "final_accuracy": 0.645,
+    "best_val_loss": 1.0785,
+    "final_accuracy": 0.63,
     "history": [
       {
         "epoch": 1,
-        "train_loss": 37.2408,
-        "val_loss": 1.8879,
+        "train_loss": 30.3173,
+        "val_loss": 2.2888,
         "val_accuracy": 0.24
       },
       {
         "epoch": 2,
-        "train_loss": 4.0932,
-        "val_loss": 1.8448,
-        "val_accuracy": 0.275
+        "train_loss": 4.2504,
+        "val_loss": 1.9597,
+        "val_accuracy": 0.24
       },
       {
         "epoch": 3,
-        "train_loss": 4.0426,
-        "val_loss": 1.8311,
-        "val_accuracy": 0.285
+        "train_loss": 4.0949,
+        "val_loss": 1.8515,
+        "val_accuracy": 0.24
       },
       {
         "epoch": 4,
-        "train_loss": 3.8762,
-        "val_loss": 1.5411,
-        "val_accuracy": 0.435
+        "train_loss": 4.0238,
+        "val_loss": 1.8452,
+        "val_accuracy": 0.345
       },
       {
         "epoch": 5,
-        "train_loss": 3.6082,
-        "val_loss": 1.3612,
-        "val_accuracy": 0.475
+        "train_loss": 3.9849,
+        "val_loss": 1.7058,
+        "val_accuracy": 0.405
       },
       {
         "epoch": 6,
-        "train_loss": 3.3886,
-        "val_loss": 1.1302,
-        "val_accuracy": 0.6
+        "train_loss": 3.7728,
+        "val_loss": 1.5005,
+        "val_accuracy": 0.445
       },
       {
         "epoch": 7,
-        "train_loss": 3.0902,
-        "val_loss": 0.9599,
-        "val_accuracy": 0.64
+        "train_loss": 3.5481,
+        "val_loss": 1.3269,
+        "val_accuracy": 0.57
       },
       {
         "epoch": 8,
-        "train_loss": 2.9247,
-        "val_loss": 0.9223,
-        "val_accuracy": 0.64
+        "train_loss": 3.3095,
+        "val_loss": 1.1836,
+        "val_accuracy": 0.59
       },
       {
         "epoch": 9,
-        "train_loss": 2.8549,
-        "val_loss": 0.8874,
-        "val_accuracy": 0.645
+        "train_loss": 3.1459,
+        "val_loss": 1.0974,
+        "val_accuracy": 0.625
       },
       {
         "epoch": 10,
-        "train_loss": 2.8343,
-        "val_loss": 0.88,
-        "val_accuracy": 0.645
+        "train_loss": 3.0636,
+        "val_loss": 1.0785,
+        "val_accuracy": 0.63
       }
     ],
-    "training_time_seconds": 1198.0
+    "training_time_seconds": 1329.3
   },
-  "treatment_response": {
-    "model_path": "output/models/treatment_response/best.pt",
-    "epochs": 10,
-    "samples": 1202,
-    "best_val_loss": 0.6868,
-    "training_time_seconds": 1.7
-  },
-  "deep_surv_os": {
-    "model_path": "output/models/deep_surv_OS/best.pt",
-    "endpoint": "OS",
-    "epochs": 10,
-    "samples": 1000,
-    "best_loss": 3.1607,
-    "training_time_seconds": 0.3
-  },
-  "anomaly_detector": {
-    "model_path": "output/models/anomaly_detector/best.pt",
-    "normalization_stats_path": "output/models/anomaly_detector/normalization_stats.pt",
-    "epochs": 10,
-    "samples": 1000,
-    "best_val_loss": 0.139,
-    "threshold_per_feature": {
-      "psa": 0.0337,
-      "testosterone": 0.0038,
-      "alp": 0.002,
-      "ldh": 0.0014,
-      "albumin": 0.0144,
-      "hemoglobin": 1.1714,
-      "creatinine": 0.0181,
-      "ecog": 1.18,
-      "pain_score": 0.0036
-    },
-    "train_losses": [
-      0.3432,
-      0.3274,
-      0.4057,
-      0.3832,
-      0.2692
-    ],
-    "training_time_seconds": 2.4
-  },
-  "total_time_seconds": 1202.6
+  "total_time_seconds": 1329.6
 }
