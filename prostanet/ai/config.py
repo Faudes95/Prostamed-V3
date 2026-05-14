@@ -29,9 +29,10 @@ def _detect_device() -> str:
 # ── Clinical States (mirrors StateClassifierService) ─────────────────────
 
 CLINICAL_STATES: list[str] = [
+    # ── Pre-diagnostic / general localized backbone (13 existing) ──
     "diagnostic_workup",
     "post_negative_biopsy_followup",
-    "localized_initial",
+    "localized_initial",  # kept for backward-compat; new code prefers risk-tier subtypes
     "post_prostatectomy",
     "recurrence_bcr",
     "adt_progression_verification",
@@ -41,7 +42,32 @@ CLINICAL_STATES: list[str] = [
     "mcspc_high_volume_metachronous",
     "mcspc_high_volume",
     "m0_crpc",
-    "m1_crpc",
+    "m1_crpc",  # kept for backward-compat; new code prefers mcrpc_* subtypes
+    # ── EPIC 20 Phase 1 — Risk-stratified localized (6) NCCN 2026 PROS-3/4/5 ──
+    "very_low_risk_localized",
+    "low_risk_localized",
+    "favorable_intermediate_risk_localized",
+    "unfavorable_intermediate_risk_localized",
+    "high_risk_localized",
+    "very_high_risk_localized",
+    # ── EPIC 20 Phase 1 — Recurrence refinement (1) NCCN 2026 PROS-D ──
+    "post_rt_bcr",  # Phoenix-defined BCR post-RT (distinct from post-RP BCR)
+    # ── EPIC 20 Phase 1 — mCSPC refinements (3) NCCN 2026 PROS-G ──
+    "mcspc_latitude_high_risk",  # LATITUDE criteria ≠ CHAARTED
+    "mcspc_visceral_only_m1c",   # ARASENS-targeted population
+    "mcspc_psma_only_metastatic",  # M0 conventional + M1 PSMA-PET
+    # ── EPIC 20 Phase 1 — mCRPC subtypes (5) NCCN 2026 PROS-J ──
+    "mcrpc_arsi_naive",          # No prior ARSI in mCSPC
+    "mcrpc_post_arsi",           # Had ARSI in mCSPC, now progressing (cross-resistance ~80%)
+    "mcrpc_hrr_positive_parp_naive",  # PARP-first eligible (PROfound/PROpel)
+    "mcrpc_psma_eligible_lu177", # VISION/TheraP eligible
+    "mcrpc_msi_h_dmmr",          # Pembrolizumab tumor-agnostic eligible
+    # ── EPIC 20 Phase 1 — Aggressive variant (1) NCCN 2026 PROS-J ──
+    "nepc_differentiation",      # Neuroendocrine — platinum sequencing, NOT ARSI
+    # ── EPIC 20 Phase 1 — Special pathway umbrella (1) NCCN 2026 PROS-A ──
+    "hereditary_germline_pathway_umbrella",  # Universal germline testing trigger
+    # ── EPIC 20 Phase 1 — Oligometastatic refinement (1) NCCN 2026 PROS-G ──
+    "oligo_progressive_on_therapy",  # STOMP/ORIOLE-driven decision
 ]
 
 STATE_TO_IDX: dict[str, int] = {s: i for i, s in enumerate(CLINICAL_STATES)}

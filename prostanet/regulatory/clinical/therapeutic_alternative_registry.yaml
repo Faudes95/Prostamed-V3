@@ -1,0 +1,315 @@
+document: EPIC 20 — Therapeutic alternatives per clinical state
+schema_version: '1.0'
+generated_at: '2026-05-13'
+epic: EPIC 20 Phase 1 — Clinical Trajectory Recognition System
+nccn_reference_version: NCCN Prostate Cancer v2026
+eau_reference_version: EAU 2025
+declarations:
+  evidence_source: NCCN_PROS_v2026 + EAU_2025_pca_guidelines
+  authorization_scope: internal_shadow_observational_validation
+  not_clinical_decision_maker: true  # Decision SUPPORT only; clinical team decides
+  registry_format: state → (preferred, acceptable, not_recommended, nccn_ref, grade)
+
+states:
+
+# ─────────────────── EXISTING 13 STATES (preserve mappings) ───────────────────
+
+  diagnostic_workup:
+    preferred: complete_diagnostic_workup
+    acceptable: [mri_first_strategy, psa_density_calc, repeat_psa_3mo]
+    not_recommended: [empirical_treatment_pre_biopsy, observation_for_significant_elevation]
+    nccn_reference: PROS-1_v2026
+    evidence_grade: I
+
+  post_negative_biopsy_followup:
+    preferred: psa_surveillance_repeat_biopsy_if_indicated
+    acceptable: [mri_targeted_biopsy, transperineal_biopsy_if_rising]
+    not_recommended: [annual_psa_only_if_pirads_4_5_persistent]
+    nccn_reference: PROS-1_v2026
+    evidence_grade: II
+
+  localized_initial:
+    preferred: risk_stratification_required_first
+    acceptable: []  # Must reclassify to specific risk-tier state
+    not_recommended: [treatment_without_risk_stratification]
+    nccn_reference: PROS-2_v2026
+    evidence_grade: I
+    notes: Generic state - new code prefers risk-tier subtypes
+
+  post_prostatectomy:
+    preferred: psa_surveillance_q3mo_x2y_then_q6mo
+    acceptable: [adjuvant_rt_if_pT3_positive_margins, early_salvage_if_bcr]
+    not_recommended: [observation_without_psa_monitoring]
+    nccn_reference: PROS-D_v2026
+    evidence_grade: I
+
+  recurrence_bcr:
+    preferred: salvage_rt_to_fossa_if_eligible
+    acceptable: [adt_if_psadt_short_or_high_burden, salvage_rt_+_short_adt]
+    not_recommended: [observation_if_psadt_short, immediate_chemotherapy]
+    nccn_reference: PROS-D_v2026
+    evidence_grade: I
+
+  adt_progression_verification:
+    preferred: confirm_castration_resistance_via_psa_imaging
+    acceptable: [serial_psa_q4_8w, testosterone_confirmation_lt_50, imaging_restaging]
+    not_recommended: [change_systemic_therapy_without_crpc_confirmation]
+    nccn_reference: PROS-J_v2026
+    evidence_grade: I
+
+  mcspc_oligo_metachronous:
+    preferred: adt_arsi_intensification_or_mdt_sbrt
+    acceptable: [adt_alone_if_unfit, adt_+_local_consolidation]
+    not_recommended: [observation_alone]
+    nccn_reference: PROS-G_v2026
+    evidence_grade: II
+    pivotal_trials: [STOMP, ORIOLE]
+
+  mcspc_low_volume_sync_oligo:
+    preferred: adt_arsi_intensification
+    acceptable: [adt_docetaxel_if_aggressive_features, adt_alone_if_unfit]
+    not_recommended: [observation_alone]
+    nccn_reference: PROS-G_v2026
+    evidence_grade: I
+
+  mcspc_high_volume_sync:
+    preferred: adt_docetaxel_+_arsi_arasens_triplet
+    acceptable: [adt_docetaxel_chaarted, adt_abiraterone_latitude, adt_apalutamide_titan]
+    not_recommended: [adt_alone_unless_contraindication, single_arsi_no_chemo]
+    nccn_reference: PROS-G_v2026
+    evidence_grade: I
+    pivotal_trials: [ARASENS, CHAARTED, PEACE_1, TITAN]
+
+  mcspc_high_volume_metachronous:
+    preferred: adt_arsi_intensification
+    acceptable: [adt_docetaxel_if_fit_high_burden, adt_arasens_if_aggressive]
+    not_recommended: [adt_alone]
+    nccn_reference: PROS-G_v2026
+    evidence_grade: I
+
+  mcspc_high_volume:
+    preferred: see_subtype_specific_high_volume_state
+    acceptable: []
+    not_recommended: []
+    nccn_reference: PROS-G_v2026
+    evidence_grade: I
+    notes: Generic state - new code prefers high_volume_sync vs metachronous distinction
+
+  m0_crpc:
+    preferred: arsi_apalutamide_darolutamide_enzalutamide
+    acceptable: [psa_doubling_time_based_selection]
+    not_recommended: [adt_alone, chemotherapy_m0_without_imaging_confirmed_progression]
+    nccn_reference: PROS-J_v2026
+    evidence_grade: I
+    pivotal_trials: [SPARTAN, ARAMIS, PROSPER]
+
+  m1_crpc:
+    preferred: see_subtype_specific_mcrpc_state
+    acceptable: []
+    not_recommended: []
+    nccn_reference: PROS-J_v2026
+    evidence_grade: I
+    notes: Generic state - new code prefers mcrpc_* subtypes for therapy divergence
+
+# ─────────────────── EPIC 20 PHASE 1 - 18 NEW STATES ───────────────────
+
+# Risk-stratified localized (6)
+
+  very_low_risk_localized:
+    preferred: active_surveillance
+    acceptable: []  # NCCN 2026 strongly recommends AS only
+    not_recommended: [radical_prostatectomy_first_line, ebrt_first_line, adt, chemotherapy, ablation]
+    nccn_reference: PROS-3_v2026
+    evidence_grade: I
+    pivotal_trials: [PRIAS_AS_cohort, Klotz_Toronto_AS]
+    surveillance_protocol:
+      psa_interval: q6_mo_x2y_then_q12mo
+      mri_interval: at_baseline_then_q1_2y_if_stable
+      biopsy_interval: q1_3y_or_per_trigger
+    notes: AS strongly preferred unless patient explicitly chooses treatment
+
+  low_risk_localized:
+    preferred: active_surveillance
+    acceptable: [radical_prostatectomy, ebrt_alone, brachytherapy_ldr_alone]
+    not_recommended: [adt_alone, chemotherapy, ebrt_+_adt_for_low_risk_alone]
+    nccn_reference: PROS-3_v2026
+    evidence_grade: I
+    surveillance_protocol:
+      psa_interval: q6_mo
+      mri_interval: q1_2y
+      biopsy_interval: per_trigger
+
+  favorable_intermediate_risk_localized:
+    preferred: patient_choice_active_surveillance_or_radical_treatment
+    acceptable: [active_surveillance_select_cases, rp_eplnd_if_chosen, ebrt_short_adt_4_6mo, brachy_ldr_or_hdr_monotherapy]
+    not_recommended: [chemotherapy_alone, observation_without_psa]
+    nccn_reference: PROS-3_v2026
+    evidence_grade: II
+    notes: Patient choice driven; AS acceptable in selected low-burden disease
+
+  unfavorable_intermediate_risk_localized:
+    preferred: radical_treatment_required
+    acceptable: [rp_eplnd, ebrt_+_adt_4_6mo, ebrt_+_brachy_boost_+_short_adt]
+    not_recommended: [active_surveillance, brachy_alone, focal_therapy_alone, adt_alone]
+    nccn_reference: PROS-3_v2026
+    evidence_grade: I
+    pivotal_trials: [PROTECT, ProtecT_followup]
+
+  high_risk_localized:
+    preferred: ebrt_+_adt_18_36mo
+    acceptable: [rp_eplnd_+_likely_adjuvant_or_salvage_rt, ebrt_+_brachy_boost_+_adt_18_36mo]
+    not_recommended: [active_surveillance, brachy_alone, surgery_alone_high_risk, focal_therapy]
+    nccn_reference: PROS-4_v2026
+    evidence_grade: I
+    pivotal_trials: [DART_01_05, EORTC_22863, RTOG_8531, ASCENDE_RT]
+
+  very_high_risk_localized:
+    preferred: ebrt_+_brachy_boost_+_adt_2_3y
+    acceptable: [triple_modality_rp_+_adjuvant_rt_+_adt, ebrt_+_adt_long_term_2_3y, consider_systemic_intensification_arsi]
+    not_recommended: [active_surveillance, focal_therapy, surgery_alone, brachy_alone, single_modality_localized]
+    nccn_reference: PROS-5_v2026
+    evidence_grade: I
+    pivotal_trials: [STAMPEDE_arm_g, ASCENDE_RT, GETUG_AFU_18]
+    notes: Consider STAMPEDE-arm-g abiraterone intensification if very high risk + node positive
+
+# Recurrence (1)
+
+  post_rt_bcr:
+    preferred: depends_on_local_vs_distant_failure_pattern
+    acceptable_local_failure: [salvage_cryoablation, salvage_hifu, salvage_sbrt, salvage_brachy_if_eligible, adt_if_systemic_concerns]
+    acceptable_distant_failure: [adt_arsi_intensification, systemic_therapy_per_metastatic_state]
+    not_recommended: [salvage_rt_to_fossa_post_rt, repeat_full_dose_rt_to_prostate, observation_without_workup]
+    nccn_reference: PROS-D_v2026
+    evidence_grade: II
+    pivotal_trials: [RADICALS-RT]
+    diagnostic_workup_first: [psma_pet_or_choline_pet, mri_prostate, fossa_biopsy_if_local_only_suspected]
+    notes: Phoenix-defined BCR post-RT requires biopsy + imaging FIRST to distinguish local vs distant failure
+
+# mCSPC refinements (3)
+
+  mcspc_latitude_high_risk:
+    preferred: adt_+_abiraterone_2_3y
+    acceptable: [adt_+_docetaxel_chaarted, adt_+_arasens_triplet_if_visceral, adt_+_apalutamide_titan]
+    not_recommended: [adt_alone_unless_contraindication]
+    nccn_reference: PROS-G_v2026
+    evidence_grade: I
+    pivotal_trials: [LATITUDE, STAMPEDE_arm_g]
+    notes: LATITUDE high risk eligible for abiraterone even without CHAARTED high volume
+
+  mcspc_visceral_only_m1c:
+    preferred: adt_+_arasens_triplet_darolutamide_docetaxel
+    acceptable: [adt_+_docetaxel_chaarted, adt_+_abiraterone_if_chemo_contraindicated]
+    not_recommended: [adt_alone, single_arsi_no_chemo_unless_unfit, observation]
+    nccn_reference: PROS-G_v2026
+    evidence_grade: I
+    pivotal_trials: [ARASENS, PEACE_1]
+
+  mcspc_psma_only_metastatic:
+    preferred: depends_on_psma_site_pattern
+    acceptable_nodal_only: [arsi_monotherapy, local_pelvic_rt_+_adt_intensification, clinical_trial]
+    acceptable_distant: [adt_+_arsi_intensification_per_metastatic_volume]
+    not_recommended: [systemic_chemo_initial_for_psma_only_nodal, observation]
+    nccn_reference: PROS-G_v2026
+    evidence_grade: II_emerging
+    pivotal_trials: [PROMETHEUS]
+    notes: PSMA-only metastatic (conventional M0 + PSMA M1) — emerging data, often de-escalation appropriate
+
+# mCRPC subtypes (5)
+
+  mcrpc_arsi_naive:
+    preferred: arsi_first_line_abiraterone_or_enzalutamide
+    acceptable: [docetaxel_if_visceral_aggressive, sipuleucel_t_if_asymptomatic_us, radium223_if_bone_only_symptomatic, clinical_trial]
+    not_recommended: [parp_first_unless_hrr_positive, lu177_first_unless_psma_high, second_chemo_first_line]
+    nccn_reference: PROS-J_v2026
+    evidence_grade: I
+    pivotal_trials: [AFFIRM, PREVAIL, COU-AA-301, COU-AA-302]
+
+  mcrpc_post_arsi:
+    preferred: cabazitaxel_or_docetaxel_chemo
+    acceptable: [parp_if_hrr_positive, lu177_if_psma_eligible, second_arsi_only_if_long_prior_response_gt_12mo]
+    not_recommended: [second_arsi_default_cross_resistance_80pct, observation_if_progressing]
+    nccn_reference: PROS-J_v2026
+    evidence_grade: I
+    pivotal_trials: [CARD, FIRSTANA, TROPIC]
+    notes: Cross-resistance abi↔enza ~80% — chemo or alternative MOA strongly preferred
+
+  mcrpc_hrr_positive_parp_naive:
+    preferred: parp_olaparib_or_rucaparib_brca_focused
+    acceptable: [parp_+_arsi_combo_propel_magnitude_talapro2, platinum_chemo_if_brca, clinical_trial_brca_subset]
+    not_recommended: [arsi_post_arsi_failure_alone, skip_parp_trial_window]
+    nccn_reference: PROS-J_v2026
+    evidence_grade: I
+    pivotal_trials: [PROfound, TRITON-3, PROpel, MAGNITUDE, TALAPRO-2]
+
+  mcrpc_psma_eligible_lu177:
+    preferred: lutetium_177_psma_617
+    acceptable: [cabazitaxel_if_lu177_unavailable, parp_if_hrr_positive_added, clinical_trial_psmafore_subset]
+    not_recommended: [arsi_post_arsi_failure_alone_if_psma_eligible]
+    nccn_reference: PROS-J_v2026
+    evidence_grade: I
+    pivotal_trials: [VISION, TheraP, PSMAfore]
+
+  mcrpc_msi_h_dmmr:
+    preferred: pembrolizumab_tumor_agnostic
+    acceptable: [dostarlimab_if_lynch_pms2_specific, nivolumab_ipilimumab_combo_clinical_trials]
+    not_recommended: [skip_immunotherapy_window, defer_immunotherapy_for_later_lines]
+    nccn_reference: PROS-J_v2026
+    evidence_grade: II
+    pivotal_trials: [KEYNOTE-365, KEYNOTE-199]
+    notes: 3-5% of mCRPC are immunotherapy hyper-responders — MUST not miss identification
+
+# Aggressive variant (1)
+
+  nepc_differentiation:
+    preferred: platinum_etoposide_or_platinum_taxane
+    acceptable: [carboplatin_cabazitaxel_combo, topotecan, atezolizumab_clinical_trial]
+    not_recommended: [arsi_sequencing_alone, parp_unless_hrr_concurrent, single_taxane_without_platinum]
+    nccn_reference: PROS-J_v2026
+    evidence_grade: II
+    pivotal_trials: [CARLHA]
+    diagnostic_confirmation_required: [chromogranin_a, synaptophysin_biopsy, nse, small_cell_morphology_review]
+    notes: NEPC 5-10% mCRPC — platinum identification improves OS from ~8mo to ~18mo
+
+# Special pathway (1)
+
+  hereditary_germline_pathway_umbrella:
+    preferred: germline_panel_testing_with_genetic_counseling
+    acceptable: [single_gene_brca_panel_if_resource_limited, cascade_testing_family_members]
+    not_recommended: [skip_germline_in_metastatic_pca, skip_brca_in_high_risk_localized]
+    nccn_reference: PROS-A_v2026
+    evidence_grade: I
+    universal_testing_triggers:
+      - any_metastatic_prostate_cancer
+      - high_risk_or_very_high_risk_localized
+      - family_history_first_degree_pca_lt_60y
+      - family_history_breast_ovary_pancreas
+      - ashkenazi_ancestry
+    sub_pathways_if_carrier_detected:
+      brca2: psa_q6mo_from_40y_+_mri_pelvis_q2y
+      brca1: psa_q12mo_from_45y
+      lynch_mlh1_msh2_msh6_pms2: pembrolizumab_eligibility_+_colorectal_surveillance
+      atm: parp_response_variable_consider_clinical_trial
+      hoxb13_g84e: standard_surveillance_+_intensified_psa
+    notes: Umbrella state — sub-states for specific carriers in EPIC 22
+
+# Oligoprogression (1)
+
+  oligo_progressive_on_therapy:
+    preferred: continue_systemic_therapy_+_local_consolidation_sbrt_mdt
+    acceptable: [continue_current_arsi_+_radiotherapy_to_oligo_lesions, class_switch_only_if_widespread_progression_emerges]
+    not_recommended: [class_switch_for_oligo_alone, abandon_systemic_therapy, escalate_to_chemo_without_attempting_local_consolidation]
+    nccn_reference: PROS-G_v2026
+    evidence_grade: II
+    pivotal_trials: [STOMP, ORIOLE]
+    decision_criteria:
+      - new_lesion_count_le_3
+      - response_in_remaining_lesions_continued_or_stable
+      - mdt_anatomically_feasible
+    notes: Limited progression on systemic therapy + MDT to oligo lesions can defer class switch with OS benefit
+
+registry_summary:
+  total_states_registered: 31  # 13 existing + 18 EPIC 20 Phase 1 new
+  states_with_class_I_evidence: 18
+  states_with_class_II_evidence: 13
+  states_with_emerging_evidence: 1  # mcspc_psma_only_metastatic
+  pivotal_trials_referenced: 42_unique

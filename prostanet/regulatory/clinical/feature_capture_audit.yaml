@@ -1,0 +1,215 @@
+document: EPIC 20 — Feature capture audit per clinical trajectory
+schema_version: '1.0'
+generated_at: '2026-05-13'
+epic: EPIC 20 Phase 1 — Clinical Trajectory Recognition System
+nccn_reference_version: NCCN Prostate Cancer v2026
+eau_reference_version: EAU 2025
+declarations:
+  source_of_truth: NCCN_PROS_v2026 + EAU_2025_pca_guidelines
+  scope: 17 EPIC 20 Phase 1 priority trajectories
+  data_capture_status_values: [captured, partial, gap]
+trajectories:
+
+# ─────────────────── B.2 — RISK-STRATIFIED LOCALIZED (6) ───────────────────
+
+- trajectory: very_low_risk_localized
+  nccn_reference: PROS-2_v2026
+  discriminators:
+    - field: baseline_psa, type: number, status: captured, source: localized_initial schema
+    - field: gleason_score, type: select, status: captured, source: localized_initial schema
+    - field: clinical_t_stage, type: select, status: captured, source: localized_initial schema (cT1c required)
+    - field: percent_positive_cores, type: number, status: gap, action: add to localized_initial micro-form (computed from total_cores_biopsied + positive_cores_count)
+    - field: total_cores_biopsied, type: number, status: gap, action: add to biopsy_results sub-schema
+    - field: positive_cores_count, type: number, status: gap, action: add to biopsy_results sub-schema
+    - field: psa_density, type: number, status: gap, action: compute from baseline_psa / prostate_volume (or capture directly)
+    - field: prostate_volume_cc, type: number, status: partial, action: ensure surfaced
+  capture_gaps_to_fix:
+    - psa_density (compute helper if not directly captured)
+    - percent_positive_cores (computed)
+    - total_cores_biopsied + positive_cores_count surfaced
+    - prostate_volume_cc surfaced
+
+- trajectory: low_risk_localized
+  nccn_reference: PROS-2_v2026
+  discriminators:
+    - field: baseline_psa, status: captured (PSA <10)
+    - field: gleason_score, status: captured (GS 6)
+    - field: clinical_t_stage, status: captured (cT1-T2a)
+    - field: exclusions_flag, type: derived, status: gap, action: rule out 'very_low' exclusions
+
+- trajectory: favorable_intermediate_risk_localized
+  nccn_reference: PROS-2_v2026 (intermediate stratification)
+  discriminators:
+    - field: baseline_psa, status: captured (10-20)
+    - field: gleason_score, status: captured (GS 3+4=7)
+    - field: clinical_t_stage, status: captured (cT2b)
+    - field: gleason_primary_pattern, type: select, status: gap, action: split GS into primary+secondary pattern fields
+    - field: percent_pattern_4, type: number, status: gap, action: capture %4 component
+  capture_gaps_to_fix:
+    - gleason_primary_pattern, gleason_secondary_pattern split
+    - percent_pattern_4
+
+- trajectory: unfavorable_intermediate_risk_localized
+  nccn_reference: PROS-2_v2026
+  discriminators:
+    - field: gleason_score, status: captured (GS 4+3=7)
+    - field: gleason_primary_pattern, status: gap (need to detect 4+3 vs 3+4)
+    - field: multifactorial_intermediate_features, type: derived, status: gap
+
+- trajectory: high_risk_localized
+  nccn_reference: PROS-2_v2026
+  discriminators:
+    - field: baseline_psa, status: captured (PSA >20)
+    - field: gleason_score, status: captured (GS 8-10)
+    - field: clinical_t_stage, status: captured (cT2c-T3a)
+
+- trajectory: very_high_risk_localized
+  nccn_reference: PROS-2_v2026
+  discriminators:
+    - field: clinical_t_stage, status: captured (cT3b-T4)
+    - field: gleason_primary_pattern, status: gap (primary GS 5 detection)
+    - field: high_risk_feature_count, type: derived, status: gap, action: count high-risk features ≥2
+
+# ─────────────────── B.4 — RECURRENCE (1) ───────────────────
+
+- trajectory: post_rt_bcr
+  nccn_reference: PROS-D_v2026 (Phoenix criteria)
+  discriminators:
+    - field: prior_rt_received, type: boolean, status: captured
+    - field: nadir_psa_post_rt, type: number, status: partial, action: ensure surfaced in post_radiotherapy_followup
+    - field: current_psa, status: captured
+    - field: phoenix_bcr_threshold_met, type: derived, status: gap, action: compute current_psa >= nadir + 2
+    - field: imaging_post_rt_bcr, type: select, status: gap, action: add (MRI fossa, PSMA-PET, bone scan, biopsy)
+    - field: salvage_modality_candidacy, type: derived, status: gap
+
+# ─────────────────── B.5 — mCSPC REFINEMENTS (3) ───────────────────
+
+- trajectory: mcspc_latitude_high_risk
+  nccn_reference: LATITUDE_trial_criteria (≥2 of GS≥8, ≥3 bone, visceral)
+  discriminators:
+    - field: gleason_score, status: captured (≥8 trigger)
+    - field: bone_lesion_count_total, status: captured (≥3 trigger)
+    - field: visceral_metastasis_present, status: captured (visceral trigger)
+    - field: latitude_high_risk_criteria_count, type: derived, status: gap, action: count criteria
+  notes: ProstaMed currently uses CHAARTED only; LATITUDE permite abiraterone aunque no sea CHAARTED high volume
+
+- trajectory: mcspc_visceral_only_m1c
+  nccn_reference: NCCN PROS-G + ARASENS criteria
+  discriminators:
+    - field: visceral_metastasis_present, status: captured
+    - field: visceral_site_entries, status: captured (lung, liver, brain, peritoneal)
+    - field: bone_lesion_count_total, status: captured (0 confirms visceral_only)
+    - field: nonregional_nodal_count, status: captured
+
+- trajectory: mcspc_psma_only_metastatic
+  nccn_reference: PROMETHEUS_trial + NCCN_PROS_2026 PSMA-PET
+  discriminators:
+    - field: conventional_imaging_m0, type: boolean, status: gap, action: add field "imaging_M_stage_conventional"
+    - field: psma_pet_positive, type: boolean, status: gap, action: add field "psma_pet_result"
+    - field: psma_pet_sites, type: select_multi, status: gap, action: add (nodal_pelvic, nodal_distant, bone, visceral)
+  capture_gaps_to_fix:
+    - imaging_M_stage_conventional (M0 vs M1 by CT/bone scan)
+    - psma_pet_result (negative, positive_pelvic, positive_distant)
+    - psma_pet_sites detail
+
+# ─────────────────── B.6 — mCRPC SUBTYPES (5) ───────────────────
+
+- trajectory: mcrpc_arsi_naive
+  nccn_reference: PROS-J_v2026 first-line mCRPC
+  discriminators:
+    - field: castration_resistance_confirmed, type: boolean, status: captured (via adt_progression_verification)
+    - field: prior_arsi_in_mcspc, type: boolean, status: gap, action: add field
+    - field: prior_arsi_drugs, type: select_multi, status: gap, action: add (abiraterone, enzalutamide, apalutamide, darolutamide)
+    - field: line_of_therapy, status: captured
+
+- trajectory: mcrpc_post_arsi
+  nccn_reference: PROS-J_v2026 second-line mCRPC
+  discriminators:
+    - field: prior_arsi_in_mcspc, status: gap (same as above)
+    - field: prior_arsi_response_duration_months, type: number, status: gap
+
+- trajectory: mcrpc_hrr_positive_parp_naive
+  nccn_reference: PROfound_trial + PROpel_trial (BRCA1/2/ATM)
+  discriminators:
+    - field: hrr_status, type: select, status: captured (positive/negative/unknown)
+    - field: hrr_gene_specific, type: select_multi, status: partial, action: ensure BRCA1, BRCA2, ATM, CHEK2, CDK12, PALB2 etc. captured
+    - field: parp_inhibitor_received, type: boolean, status: gap, action: add to identify parp-naive
+  capture_gaps_to_fix:
+    - hrr_gene_specific (multi-select with all HRR genes)
+    - parp_inhibitor_received history
+
+- trajectory: mcrpc_psma_eligible_lu177
+  nccn_reference: VISION_trial criteria + PSMAfore_trial
+  discriminators:
+    - field: psma_pet_positive, status: gap (same as PSMA-only)
+    - field: psma_pet_uptake_intensity, type: select, status: gap, action: add (negative, faint, moderate, intense)
+    - field: prior_chemo_received, type: boolean, status: captured (treatments history)
+    - field: gfr_baseline, type: number, status: gap, action: add for VISION renal eligibility (>50)
+    - field: salivary_xerostomia_baseline, type: select, status: gap
+
+- trajectory: mcrpc_msi_h_dmmr
+  nccn_reference: KEYNOTE-365_trial + pembrolizumab tumor-agnostic
+  discriminators:
+    - field: msi_status, type: select, status: partial, action: ensure msi_h, msi_stable, untested options
+    - field: dmmr_status, type: select, status: gap, action: add (deficient, proficient, untested)
+    - field: tmb_high, type: boolean, status: partial, action: ensure tmb_score numeric field exists with threshold ≥10 mut/Mb
+
+- trajectory: nepc_differentiation
+  nccn_reference: PROS-J_v2026 NEPC + CARLHA_trial
+  discriminators:
+    - field: chromogranin_a_value, type: number, status: gap, action: add lab field
+    - field: synaptophysin_biopsy_positive, type: boolean, status: gap, action: add biopsy IHC field
+    - field: small_cell_morphology, type: boolean, status: gap, action: add biopsy morphology field
+    - field: nse_value, type: number, status: gap, action: add neuron-specific enolase lab field
+    - field: liver_mets_predominant, type: boolean, status: gap (visceral signal)
+  capture_gaps_to_fix:
+    - chromogranin_A, NSE labs
+    - synaptophysin IHC biopsy field
+    - small_cell_morphology biopsy field
+
+# ─────────────────── B.7 — HEREDITARY UMBRELLA (1) ───────────────────
+
+- trajectory: hereditary_germline_pathway_umbrella
+  nccn_reference: PROS-A_v2026 universal germline testing
+  discriminators:
+    - field: family_history_prostate_cancer, type: select, status: partial, action: ensure first-degree, age at dx
+    - field: family_history_breast_ovary_pancreas, type: boolean, status: gap, action: add (Lynch + BRCA family pattern)
+    - field: ashkenazi_ancestry, type: boolean, status: gap
+    - field: germline_testing_done, type: boolean, status: gap, action: trigger flag
+    - field: germline_testing_indicated, type: derived, status: gap, action: derive from any high-risk family/ancestry trigger
+    - field: germline_panel_result_status, type: select, status: gap, action: add (pending, completed, declined, not_indicated)
+  capture_gaps_to_fix:
+    - Universal germline testing trigger rules
+    - Family history detailed (first-degree, second-degree, ages)
+
+# ─────────────────── B.8 — OLIGOPROGRESSION (1) ───────────────────
+
+- trajectory: oligo_progressive_on_therapy
+  nccn_reference: PROS-G_v2026 + STOMP/ORIOLE trials
+  discriminators:
+    - field: progressing_on_systemic_therapy, type: boolean, status: gap, action: add (currently on tx + new lesions detected)
+    - field: new_lesion_count_since_last_imaging, type: number, status: gap, action: add (≤3 for oligo)
+    - field: response_in_existing_lesions, type: select, status: gap, action: add (continued_response, stable, mixed_progression)
+    - field: time_on_current_systemic_tx_months, type: number, status: gap
+    - field: local_consolidation_candidate, type: derived, status: gap
+  capture_gaps_to_fix:
+    - new_lesion_count + sites since last imaging
+    - response_in_existing_lesions field (heterogeneity signal)
+
+audit_summary:
+  total_priority_trajectories: 17
+  trajectories_with_full_capture: 0  # none fully covered, all have some gaps
+  trajectories_with_partial_capture: 8  # major fields exist but some gaps
+  trajectories_with_major_gaps: 9  # many discriminators missing
+  total_unique_field_gaps_identified: 35
+  high_priority_gaps_to_fix_in_phase_b:
+    - hrr_gene_specific (BRCA1/2/ATM/CHEK2/CDK12 multi-select)
+    - psma_pet_result + uptake intensity
+    - imaging_M_stage_conventional
+    - prior_arsi_in_mcspc + drug list
+    - germline_testing_indicated trigger + universal testing rules
+    - chromogranin_A, synaptophysin, small_cell_morphology (NEPC triad)
+    - gleason_primary_pattern + percent_pattern_4
+    - psa_density compute helper
+    - phoenix_bcr_threshold_met derived
+    - new_lesion_count_since_last_imaging
