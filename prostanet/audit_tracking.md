@@ -13221,3 +13221,33 @@ Next review: **2026-08-13** (FDA Pre-Sub Q-Sub cadence)
 - UI-data concordance: histopathology gap cerrado end-to-end (form → biopsy_sessions table → canonical facts → classifier + copilots → patient_profile_v2 card render).
 - 8 CI gates prevent future "pretty placeholder" pattern accumulation.
 
+### EPIC 22c.7 — Transformer retrain (NUM_STATES 31 → 53) — 2026-05-13
+
+**Retraining executed locally**:
+- Script: `scripts/train_all_models.py --patients 1500 --epochs 12 --batch-size 32 --lr 1e-4 --seed 42 --skip-treatment --skip-surv --skip-anomaly`
+- Env: Mac CPU dev (`PYTORCH_ENABLE_MPS_FALLBACK=1` for `aten::_nested_tensor_from_mask_left_aligned` op missing on MPS)
+- Skills aplicadas: `/anthropic-skills:pytorch-patterns` (device-agnostic, set_seed=42 across random+numpy+torch, deterministic cudnn, gradient_clip max_norm=1.0, optimizer.zero_grad(set_to_none=True), AdamW + CosineAnnealingLR scheduler) + `/pytorch-training` (training loop conventions) + `/pytorch-lightning` (reserved for future migration if retrain >60min)
+
+**Output artifact** (gitignored per `output/models/**/best.pt`):
+- Path: `output/models/state_transition/best.pt`
+- Head: `next_state_head.3.weight` shape `(53, 128)` ✓ matches CLINICAL_STATES count
+- Load: secure via `torch.load(..., weights_only=True)` ✓
+- model_id: `state_transition`, model_version: `0.1.0`
+
+**Reproducibility**:
+- Set seed 42 via `set_seed()` at startup before any tensor/dataset creation
+- Re-running the same command on same hardware produces identical weights modulo non-deterministic CUDA ops (MPS fallback to CPU is deterministic)
+
+**Continuous Improvement**:
+- Future retrains can pass `--patients 5000 --epochs 30` for higher accuracy
+- `INITIAL_STATE_DISTRIBUTION` (synthetic_generator.py) covers 50/53 states — 3 baseline states retain legacy coverage from inherited intake data
+- Synthetic generator produces ~10-20 exemplars per 1000 patients for each new EPIC 22c state — Transformer learns decision boundaries
+
+**Visual validation**: 22/22 exemplars classified correctly (PASS) via `scripts/epic22c_visual_validation_harness.py`. Output: `output/epic22c_visual_validation/CHECKLIST.md`.
+
+**Tests**: 58 EPIC 22c unit + integration tests pass:
+- `tests/test_epic22c_classifiers.py` (30 tests — each classifier function exercised with positive + negative cases)
+- `tests/test_epic22c_v2_adapter_integration.py` (21 tests — v2 adapter helpers + bundle integration)
+- `tests/test_epic22d_ui_data_concordance.py` (7 passing + 1 xfail legacy)
+
+
