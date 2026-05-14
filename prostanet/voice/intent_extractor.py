@@ -337,21 +337,34 @@ def extract_intake_classifier_candidates(
             )
         )
 
+    # EPIC 23.fix bug — `sospechoso` in "tacto rectal sospechoso" must NOT
+    # trigger negative_diagnosis_match (it's a DRE finding, not a diagnosis-
+    # suspicion modifier). We add a negative lookbehind for "rectal\s+".
     negative_diagnosis_match = _first_match(
         text,
         r"\b(?:sin|no(?:\s+(?:tiene|hay|cuenta\s+con))?|a[uú]n\s+sin)\s+(?:(?:diagn[oó]stico|c[aá]ncer)(?:\s+de\s+pr[oó]stata)?\s+)?(?:oncol[oó]gico\s+)?confirmad[oa]\b",
         r"\b(?:diagn[oó]stico|c[aá]ncer)(?:\s+de\s+pr[oó]stata)?\s+no\s+confirmad[oa]\b",
         r"\b(?:sin|no)\s+confirmar\b",
-        r"\b(?:sospecha|sospechoso|workup|evaluaci[oó]n diagn[oó]stica)\b",
+        # `sospecha/sospechoso` only counts as negative-diagnosis if NOT
+        # preceded by "tacto rectal" (then it's a DRE finding).
+        r"(?<!rectal\s)\b(?:sospecha|workup|evaluaci[oó]n diagn[oó]stica)\b",
     )
     screening_match = _first_match(text, r"\b(screening|tamizaje|detecci[oó]n temprana)\b")
     negative_biopsy_match = _first_match(text, r"\bbiopsia\s+(?:previa\s+)?(?:negativa|benigna)\b")
+    # EPIC 23.fix bug — recognize "adenocarcinoma intraductal" as a confirmed
+    # diagnosis. Intraductal carcinoma IS a confirmed pathology subtype
+    # (aggressive marker), NOT a "suspicion". Without this match the entire
+    # downstream cascade (histology + diagnosis_date + PSA classification)
+    # silently fails on this VERY common dictation pattern.
     positive_diagnosis_match = _first_match(
         text,
         r"\bbiopsia\s+(?:positiva|confirmatoria|confirmada)\b",
-        r"\badenocarcinoma\s+(?:confirmado|por\s+biopsia)\b",
-        r"\bc[aá]ncer\s+(?:de\s+pr[oó]stata\s+)?confirmado\b",
+        r"\badenocarcinoma\s+(?:confirmado|por\s+biopsia|intraductal|ductal|acinar|de\s+pr[oó]stata)\b",
+        r"\badenocarcinoma\b(?=\s*[,\.]?\s*(?:con|de|en))",  # "adenocarcinoma, con ..." / "adenocarcinoma de"
+        r"\bcarcinoma\s+intraductal\b",
+        r"\bc[aá]ncer\s+(?:de\s+pr[oó]stata\s+)?(?:confirmado|intraductal)\b",
         r"\bdiagn[oó]stico\s+(?:oncol[oó]gico\s+)?confirmado\b",
+        r"\bingresar(?:emos|é)\s+(?:a\s+)?un\s+paciente\s+con\b",  # explicit clinician phrasing
     )
 
     if screening_match:
@@ -367,23 +380,66 @@ def extract_intake_classifier_candidates(
         add("biopsy_scheduled", "1", "Biopsia programada", None, 0.82)
     if positive_diagnosis_match and not negative_diagnosis_match and not negative_biopsy_match and not screening_match:
         add("known_cancer_diagnosis", "1", "Diagnóstico confirmado", positive_diagnosis_match, 0.86)
-    if _has(text, r"\badenocarcinoma\s+ductal\b"):
+    # EPIC 23.fix — recognize intraductal as a distinct histology subtype
+    # BEFORE the generic adenocarcinoma fallback. Intraductal carcinoma
+    # has aggressive prognosis + may indicate cribriform pattern + germline
+    # BRCA2 association (NCCN 2026 PROS-A).
+    if _has(text, r"\b(?:adenocarcinoma|carcinoma)\s+intraductal\b"):
+        add("histology_subtype", "Adenocarcinoma intraductal", "Subtipo histológico", None, 0.88)
+        add("histology_aggressive_variant", "1", "Variante histológica agresiva", None, 0.85)
+    elif _has(text, r"\badenocarcinoma\s+ductal\b"):
         add("histology_subtype", "Adenocarcinoma ductal", "Subtipo histológico", None, 0.82)
     elif _has(text, r"\badenocarcinoma\b") and not negative_diagnosis_match:
         add("histology_subtype", "Adenocarcinoma acinar", "Subtipo histológico", None, 0.72)
 
-    psa_pattern = re.compile(r"\b(?:psa|ape)\s*(?:basal|actual|diagn[oó]stico|de|=|:)?\s*(?P<value>\d+(?:[\.,]\d+)?)", re.I)
+    # EPIC 23.fix — "antígeno" is the clinical Spanish synonym for PSA.
+    # Pre-EPIC23 the regex only matched "psa"/"ape". Common clinician
+    # dictation says "antígeno prostático específico de X" or
+    # "antígeno prebiopsia de Y", both unhandled. Adds "antigeno"
+    # alias + pre-biopsia/post-biopsia context normalization.
+    # EPIC 23.fix — Capture the MODIFIER as a named group so we know which
+    # variant the clinician dictated (baseline vs current vs bcr) without
+    # relying on a wide excerpt that may contain both contexts.
+    psa_pattern = re.compile(
+        r"\b(?:psa|ape|ant[ií]geno(?:\s+prost[aá]tico(?:\s+espec[ií]fico)?)?)\b"
+        r"(?:\s+(?P<modifier>"
+        r"basal|actual|reciente|hoy|al\s+diagn[oó]stico|diagn[oó]stico|"
+        r"pre[-\s]?biopsia|prebiopsia|post[-\s]?biopsia|bcr|"
+        r"recurrencia\s+bioqu[ií]mica"
+        r"))?"
+        r"(?:\s+(?:de|en|fue|es|=|:))*"
+        r"\s*(?P<value>\d+(?:[\.,]\d+)?)",
+        re.I,
+    )
     for match in psa_pattern.finditer(text):
         value = _num(match.group("value"))
         if value is None:
             continue
-        excerpt = _excerpt(text, match.start(), match.end(), radius=70)
-        if _has(excerpt, r"\b(basal|diagn[oó]stico|biopsia)\b") or positive_diagnosis_match or _has(text, r"\badenocarcinoma\b"):
-            add("psa_baseline_ng_ml", value, "PSA basal al diagnóstico", match, 0.86)
+        modifier = (match.group("modifier") or "").lower().strip()
+        # Classify by the modifier token captured immediately after PSA alias.
+        if any(tok in modifier for tok in ("pre-biopsia", "prebiopsia", "pre biopsia",
+                                            "basal", "diagn", "al diagn")):
+            add("psa_baseline_ng_ml", value, "PSA basal pre-biopsia / al diagnóstico", match, 0.88)
+        elif any(tok in modifier for tok in ("actual", "reciente", "hoy")):
+            add("psa", value, "PSA actual", match, 0.86)
+        elif any(tok in modifier for tok in ("bcr", "recurrencia")):
+            add("bcr_psa", value, "PSA al momento de BCR", match, 0.86)
+        elif modifier == "":
+            # No modifier — disambiguate by surrounding context (tight window).
+            # EPIC 23.fix: require POSITIVE diagnosis AND NOT negative match
+            # so "paciente sin cáncer confirmado, PSA 6.5" routes PSA to
+            # `psa` (current sospecha), not `psa_baseline_ng_ml`.
+            confirmed_dx = bool(positive_diagnosis_match) and not bool(negative_diagnosis_match)
+            if confirmed_dx or (
+                _has(text, r"\badenocarcinoma\b")
+                and not _has(text, r"\b(?:sin|no(?:\s+(?:tiene|hay))?)\s+adenocarcinoma\b")
+            ):
+                # Patient has confirmed Dx → unmodified PSA is baseline
+                add("psa_baseline_ng_ml", value, "PSA basal al diagnóstico", match, 0.80)
+            else:
+                add("psa", value, "PSA actual de sospecha", match, 0.78)
         else:
-            add("psa", value, "PSA actual de sospecha", match, 0.82)
-        if _has(excerpt, r"\b(bcr|recurrencia bioqu[ií]mica)\b"):
-            add("bcr_psa", value, "PSA al momento de BCR", match, 0.78)
+            add("psa", value, "PSA actual", match, 0.78)
 
     testosterone_pattern = re.compile(r"\btestosterona\s*(?:actual|de|=|:)?\s*(?P<value>\d+(?:[\.,]\d+)?)", re.I)
     for match in testosterone_pattern.finditer(text):
@@ -398,6 +454,35 @@ def extract_intake_classifier_candidates(
         value = _num(match.group("value"))
         if value is not None:
             add("psad", value, "Densidad de PSA", match, 0.82)
+
+    # EPIC 23.fix — DRE / tacto rectal capture (completely missing pre-EPIC23).
+    # Patterns:
+    #   "tacto rectal sospechoso" / "tacto rectal anormal"      → suspicious=true
+    #   "tacto rectal normal" / "DRE normal" / "tacto rectal sin alteraciones" → suspicious=false
+    #   "exploración digital rectal" / "DRE" stand-alone with adjective.
+    dre_suspicious_pattern = re.compile(
+        r"\b(?:tacto\s+rectal|dre|exploraci[oó]n\s+digital\s+rectal|examen\s+rectal\s+digital)\s+"
+        r"(?:con\s+|presenta\s+|muestra\s+|revela\s+)?"  # EPIC 23.fix: optional connector
+        r"(?P<finding>sospechos[oa]|anormal|positiv[oa]|n[oó]dulo|nodular|induraci[oó]n|indurad[oa]|asim[eé]tric[oa]|positivo|firme|dur[oa]|p[eé]treo)",
+        re.I,
+    )
+    dre_normal_pattern = re.compile(
+        r"\b(?:tacto\s+rectal|dre|exploraci[oó]n\s+digital\s+rectal|examen\s+rectal\s+digital)\s+"
+        r"(?P<finding>normal|negativ[oa]|sin\s+alteraciones|sin\s+hallazgos|liso|simetric[oa])",
+        re.I,
+    )
+    for match in dre_suspicious_pattern.finditer(text):
+        finding = match.group("finding")
+        add("dre_suspicious", "1", "Tacto rectal sospechoso", match, 0.92)
+        add("dre_finding_description", finding.lower(), "Hallazgo DRE", match, 0.88)
+    for match in dre_normal_pattern.finditer(text):
+        # Only record if no suspicious match already fired in same dictation
+        already_suspicious = any(
+            (c.get("field_name") == "dre_suspicious" and str(c.get("value")) == "1") for c in candidates
+        )
+        if not already_suspicious:
+            add("dre_suspicious", "0", "Tacto rectal normal", match, 0.92)
+            add("dre_finding_description", match.group("finding").lower(), "Hallazgo DRE", match, 0.88)
 
     pirads_pattern = re.compile(r"\bpi[- ]?rads\s*(?P<value>[2-5])\b", re.I)
     for match in pirads_pattern.finditer(text):
