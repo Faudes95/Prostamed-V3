@@ -64,6 +64,10 @@ STATIC_NO_DATA_BINDING: set[str] = {
     "biopsy-gleason-display",    # nested element under biopsy-diagnostics-card
     "biopsy-margin-display",     # nested element under biopsy-diagnostics-card
     "brca2-preferred-therapy",   # nested element under brca2-carrier-card
+    "lynch-preferred-therapy",   # nested element under lynch-carrier-card
+    "geriatric-preferred-therapy",  # nested element under geriatric-frail-card
+    "young-onset-preferred-therapy",  # nested element under young-onset-card
+    "adt-lt-preferred-therapy",  # nested element under adt-long-term-card
     "patient-twin-low-capture",  # nested chip under patient-twin-os-card
     "patient-twin-readiness-pct",  # nested chip under patient-twin-os-card
     "risk-strat-preferred-therapy",  # nested label under risk-stratified card
@@ -79,6 +83,10 @@ STATIC_NO_DATA_BINDING: set[str] = {
 CARD_TO_BUNDLE_KEY: dict[str, str] = {
     "biopsy-diagnostics-card": "biopsy_summary",  # EPIC 22b.4
     "brca2-carrier-card": "brca2_carrier",        # EPIC 22c — highest clinical impact (PARP-first)
+    "lynch-carrier-card": "lynch_carrier",        # EPIC 22c — pembrolizumab eligible
+    "geriatric-frail-card": "geriatric_frail",    # EPIC 22c — treatment de-escalation
+    "young-onset-card": "young_onset",            # EPIC 22c — universal germline + fertility
+    "adt-long-term-card": "adt_long_term",        # EPIC 22c — multi-organ surveillance
     "hereditary-germline-card": "hereditary_germline",  # EPIC 20
     "mcrpc-subtype-card": "mcrpc_subtype",
     "oligoprogression-card": "oligoprogression",

@@ -354,6 +354,108 @@
         </section>
         {% endif %}
 
+        {# 22c.2 Lynch Syndrome Carrier Card — pembrolizumab eligible (rare but high impact) — NCCN 2026 PROS-A #}
+        {% if lynch_carrier and lynch_carrier.available %}
+        <section id="pm2LynchCarrier" class="pm2-lynch-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(99,102,241,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(99,102,241,0.32); border-left: 6px solid rgb(99,102,241); border-radius: 14px;" aria-label="Lynch syndrome carrier — pembrolizumab" data-testid="lynch-carrier-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(165,180,252); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Lynch syndrome carrier · EPIC 22c · NCCN PROS-A</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        Mismatch repair deficiency (MLH1 / MSH2 / MSH6 / PMS2 / EPCAM)
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        Pembrolizumab eligible (tumor-agnostic per KEYNOTE-158). Surveillance colorectal + endometrial + urotelial obligatoria. Family cascade testing prioritaria.
+                    </p>
+                </div>
+            </div>
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(99,102,241,0.10); border:1px solid rgba(99,102,241,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(165,180,252); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Acción preferida (NCCN PROS-A v2026 + KEYNOTE-158)</div>
+                <div style="color:#f8fafc; font-weight:600;" data-testid="lynch-preferred-therapy">{{ lynch_carrier.therapeutic_preferred or 'Pembrolizumab en advanced setting + surveillance colorectal' }}</div>
+            </div>
+            {% if lynch_carrier.pivotal_trials %}
+            <div style="margin-top:10px; font-size:.75rem; color:var(--pn-text-muted);">
+                Trials pivotales: {{ lynch_carrier.pivotal_trials|join(' · ') }}
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {# 22c.3 Geriatric Frail Limited Card — treatment safety (~15% of cases) — NCCN 2026 PROS-K #}
+        {% if geriatric_frail and geriatric_frail.available %}
+        <section id="pm2GeriatricFrail" class="pm2-geriatric-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(100,116,139,0.12), rgba(15,23,42,0.66)); border: 1px solid rgba(100,116,139,0.32); border-left: 6px solid rgb(100,116,139); border-radius: 14px;" aria-label="Geriatric frail — treatment de-escalation" data-testid="geriatric-frail-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(203,213,225); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Geriatric frail · EPIC 22c · NCCN PROS-K</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        Treatment de-escalation indicada
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        Edad &gt;75y + G8 ≤14 OR frailty documentado. Toxicity tolerance reducida → priorizar supportive care + dose modifications.
+                    </p>
+                </div>
+            </div>
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(100,116,139,0.10); border:1px solid rgba(100,116,139,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(203,213,225); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Acción preferida</div>
+                <div style="color:#f8fafc; font-weight:600;" data-testid="geriatric-preferred-therapy">{{ geriatric_frail.therapeutic_preferred or 'Treatment de-escalation + supportive care priority' }}</div>
+            </div>
+            {% if geriatric_frail.not_recommended %}
+            <div style="margin-top:10px; padding:10px 14px; background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(252,165,165); text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;">NO recomendado en este perfil</div>
+                <ul style="margin:0; padding-left:18px; font-size:.78rem; color:rgb(252,165,165); list-style:disc;">
+                    {% for item in geriatric_frail.not_recommended %}<li>{{ item|replace('_', ' ') }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {# 22c.4 Young Onset PCa Card — universal germline + fertility + aggressive biology — NCCN 2026 PROS-A + AYA #}
+        {% if young_onset and young_onset.available %}
+        <section id="pm2YoungOnset" class="pm2-young-onset-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(236,72,153,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(236,72,153,0.32); border-left: 6px solid rgb(236,72,153); border-radius: 14px;" aria-label="Young onset prostate cancer" data-testid="young-onset-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(251,207,232); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">Young onset PCa · EPIC 22c · NCCN PROS-A + AYA</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        Diagnóstico antes de los 55 años
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        Universal germline testing mandatorio. Discutir preservación fertilidad ANTES de iniciar tratamiento. Biología agresiva más probable.
+                    </p>
+                </div>
+            </div>
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(236,72,153,0.10); border:1px solid rgba(236,72,153,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(251,207,232); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Acción preferida</div>
+                <div style="color:#f8fafc; font-weight:600;" data-testid="young-onset-preferred-therapy">{{ young_onset.therapeutic_preferred or 'Germline testing + fertility preservation + aggressive biology workup' }}</div>
+            </div>
+        </section>
+        {% endif %}
+
+        {# 22c.5 ADT Long-Term Complications Card — chronic care surveillance — NCCN 2026 PROS-K + supportive #}
+        {% if adt_long_term and adt_long_term.available %}
+        <section id="pm2AdtLongTerm" class="pm2-adt-lt-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(14,165,233,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(14,165,233,0.32); border-left: 6px solid rgb(14,165,233); border-radius: 14px;" aria-label="ADT long-term complications" data-testid="adt-long-term-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(186,230,253); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">ADT long-term · EPIC 22c · NCCN PROS-K</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        Surveillance multi-órgano (≥2y ADT)
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        Bone health (DXA anual) · CV optimization aggressive · Metabolic monitoring · Cognitive screening · Lipid panel q6mo.
+                    </p>
+                </div>
+            </div>
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(14,165,233,0.10); border:1px solid rgba(14,165,233,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(186,230,253); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Acción preferida</div>
+                <div style="color:#f8fafc; font-weight:600;" data-testid="adt-lt-preferred-therapy">{{ adt_long_term.therapeutic_preferred or 'Multi-organ surveillance bone + CV + metabolic + cognitive' }}</div>
+            </div>
+            {% if adt_long_term.adt_duration_months %}
+            <div style="margin-top:10px; font-size:.75rem; color:var(--pn-text-muted);">
+                Duración ADT: <strong style="color:#f8fafc">{{ adt_long_term.adt_duration_months }} meses</strong>
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
         {# 22c.1 BRCA2 Carrier Card — highest clinical impact (PARP-first) — NCCN 2026 PROS-A #}
         {% if brca2_carrier and brca2_carrier.available %}
         <section id="pm2Brca2Carrier" class="pm2-brca2-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(217,119,6,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(217,119,6,0.32); border-left: 6px solid rgb(217,119,6); border-radius: 14px;" aria-label="BRCA2 carrier — PARP-first" data-testid="brca2-carrier-card">

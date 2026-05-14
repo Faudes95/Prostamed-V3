@@ -384,6 +384,209 @@ def _consent_status(patient: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _load_therapeutic_entry(state_name: str) -> dict[str, Any]:
+    """EPIC 22c — Lazy-load therapeutic alternative entry for a state.
+
+    Shared helper used by the EPIC 22c Cortana card summaries
+    (BRCA2, Lynch, geriatric_frail, young_onset, adt_long_term, etc.).
+    Returns {} if YAML cannot be loaded.
+    """
+    try:
+        import yaml
+        from pathlib import Path as _P
+        reg_path = (
+            _P(__file__).resolve().parent.parent
+            / "regulatory" / "clinical" / "therapeutic_alternative_registry.yaml"
+        )
+        if not reg_path.exists():
+            return {}
+        reg = yaml.safe_load(reg_path.read_text(encoding="utf-8")) or {}
+        return dict(((reg.get("states") or {}).get(state_name) or {}))
+    except Exception:
+        return {}
+
+
+def _fact_lookup(patient: Mapping[str, Any]) -> dict[str, Any]:
+    """Build a fact_key → value dict from patient.clinical_facts."""
+    facts = patient.get("clinical_facts") or patient.get("patient_clinical_facts") or []
+    out: dict[str, Any] = {}
+    for f in facts:
+        if not isinstance(f, Mapping):
+            continue
+        key = str(f.get("fact_key") or "").strip()
+        if key:
+            out[key] = f.get("value") or f.get("normalized_value_text") or ""
+    return out
+
+
+def _lynch_carrier_summary(
+    profile_view: Mapping[str, Any],
+    patient: Mapping[str, Any],
+) -> dict[str, Any]:
+    """EPIC 22c — Summary for the pm2LynchCarrier card.
+
+    Detects Lynch via hrr_gene ∈ {MLH1, MSH2, MSH6, PMS2, EPCAM} OR
+    germline_pathogenic_variant containing any of those gene tokens OR
+    msi_status == high (somatic MSI-H/dMMR also triggers pembrolizumab).
+    """
+    lookup = _fact_lookup(patient or {})
+    gene = str(lookup.get("hrr_gene") or lookup.get("germline_gene") or "").upper()
+    variant = str(lookup.get("germline_pathogenic_variant") or "").upper()
+    msi = str(lookup.get("msi_status") or "").lower()
+
+    LYNCH_GENES = {"MLH1", "MSH2", "MSH6", "PMS2", "EPCAM"}
+    is_lynch = (
+        gene in LYNCH_GENES
+        or any(g in variant for g in LYNCH_GENES)
+        or msi in ("high", "msi_high", "msi-h", "dmmr")
+    )
+    if not is_lynch:
+        return {"available": False}
+
+    entry = _load_therapeutic_entry("lynch_carrier")
+    return {
+        "available": True,
+        "gene": gene,
+        "variant": variant,
+        "msi_status": msi,
+        "therapeutic_preferred": str(entry.get("preferred") or "Pembrolizumab + colorectal surveillance"),
+        "acceptable_alternatives": list(entry.get("acceptable") or []),
+        "pivotal_trials": list(entry.get("pivotal_trials") or ["KEYNOTE-158"]),
+        "nccn_reference": str(entry.get("nccn_reference") or "PROS-A_v2026"),
+    }
+
+
+def _geriatric_frail_summary(
+    profile_view: Mapping[str, Any],
+    patient: Mapping[str, Any],
+) -> dict[str, Any]:
+    """EPIC 22c — Summary for the pm2GeriatricFrail card.
+
+    Triggers when age > 75 AND (g8_score ≤ 14 OR frailty_status ∈ {frail, severely_frail}).
+    """
+    pt = patient or {}
+    lookup = _fact_lookup(pt)
+    baseline = pt.get("baseline") or {}
+
+    age = baseline.get("age") or lookup.get("age") or lookup.get("age_years")
+    try:
+        age_num = int(age) if age is not None else None
+    except (TypeError, ValueError):
+        age_num = None
+
+    g8 = lookup.get("g8_score") or baseline.get("g8_score")
+    try:
+        g8_num = float(g8) if g8 is not None else None
+    except (TypeError, ValueError):
+        g8_num = None
+
+    frailty = str(lookup.get("frailty_status") or "").lower()
+    is_frail = frailty in ("frail", "severely_frail") or (g8_num is not None and g8_num <= 14)
+
+    if age_num is None or age_num <= 75 or not is_frail:
+        return {"available": False}
+
+    entry = _load_therapeutic_entry("geriatric_frail_limited")
+    return {
+        "available": True,
+        "age": age_num,
+        "g8_score": g8_num,
+        "frailty_status": frailty,
+        "therapeutic_preferred": str(entry.get("preferred") or "Treatment de-escalation + supportive care"),
+        "acceptable_alternatives": list(entry.get("acceptable") or []),
+        "not_recommended": list(entry.get("not_recommended") or []),
+        "nccn_reference": str(entry.get("nccn_reference") or "PROS-K_v2026"),
+    }
+
+
+def _young_onset_summary(
+    profile_view: Mapping[str, Any],
+    patient: Mapping[str, Any],
+) -> dict[str, Any]:
+    """EPIC 22c — Summary for the pm2YoungOnset card.
+
+    Triggers when age_at_diagnosis < 55.
+    """
+    pt = patient or {}
+    lookup = _fact_lookup(pt)
+    baseline = pt.get("baseline") or {}
+    identity = pt.get("identity") or {}
+
+    age_at_dx = (
+        lookup.get("age_at_diagnosis")
+        or identity.get("age_at_diagnosis")
+        or baseline.get("age_at_diagnosis")
+    )
+    try:
+        age_num = int(age_at_dx) if age_at_dx is not None else None
+    except (TypeError, ValueError):
+        age_num = None
+
+    if age_num is None or age_num >= 55:
+        return {"available": False}
+
+    entry = _load_therapeutic_entry("young_onset_pca")
+    return {
+        "available": True,
+        "age_at_diagnosis": age_num,
+        "therapeutic_preferred": str(
+            entry.get("preferred")
+            or "Universal germline testing + fertility preservation + aggressive biology workup"
+        ),
+        "acceptable_alternatives": list(entry.get("acceptable") or []),
+        "nccn_reference": str(entry.get("nccn_reference") or "PROS-A_v2026 + AYA_2025"),
+    }
+
+
+def _adt_long_term_summary(
+    profile_view: Mapping[str, Any],
+    patient: Mapping[str, Any],
+) -> dict[str, Any]:
+    """EPIC 22c — Summary for the pm2AdtLongTerm card.
+
+    Triggers when adt_total_duration_months ≥ 24 (or adt_start_date implies it).
+    """
+    pt = patient or {}
+    lookup = _fact_lookup(pt)
+    baseline = pt.get("baseline") or {}
+
+    duration = (
+        lookup.get("adt_total_duration_months")
+        or lookup.get("adt_duration_months")
+        or baseline.get("adt_total_duration_months")
+    )
+    try:
+        duration_num = float(duration) if duration is not None else None
+    except (TypeError, ValueError):
+        duration_num = None
+
+    # Compute from adt_start_date if explicit duration missing
+    if duration_num is None:
+        adt_start = lookup.get("adt_start_date") or baseline.get("adt_start_date")
+        if adt_start:
+            try:
+                from datetime import datetime as _dt
+                start = _dt.fromisoformat(str(adt_start)[:10])
+                duration_num = (_dt.now() - start).days / 30.0
+            except Exception:
+                duration_num = None
+
+    if duration_num is None or duration_num < 24:
+        return {"available": False}
+
+    entry = _load_therapeutic_entry("adt_long_term_complications")
+    return {
+        "available": True,
+        "adt_duration_months": int(duration_num),
+        "therapeutic_preferred": str(
+            entry.get("preferred")
+            or "Multi-organ surveillance bone + CV + metabolic + cognitive"
+        ),
+        "acceptable_alternatives": list(entry.get("acceptable") or []),
+        "nccn_reference": str(entry.get("nccn_reference") or "PROS-K_v2026"),
+    }
+
+
 def _brca2_carrier_summary(
     profile_view: Mapping[str, Any],
     patient: Mapping[str, Any],
@@ -2424,6 +2627,14 @@ def bundle_to_v2_profile(profile_view: Mapping[str, Any],
         "biopsy_summary": _biopsy_summary(pv, pt),
         # EPIC 22c — BRCA2 carrier card (highest clinical impact: PARP-first)
         "brca2_carrier": _brca2_carrier_summary(pv, pt),
+        # EPIC 22c — Lynch carrier card (pembrolizumab eligible, rare but high impact)
+        "lynch_carrier": _lynch_carrier_summary(pv, pt),
+        # EPIC 22c — Geriatric frail card (treatment de-escalation safety)
+        "geriatric_frail": _geriatric_frail_summary(pv, pt),
+        # EPIC 22c — Young onset card (universal germline + fertility preservation)
+        "young_onset": _young_onset_summary(pv, pt),
+        # EPIC 22c — ADT long-term card (multi-organ surveillance)
+        "adt_long_term": _adt_long_term_summary(pv, pt),
         # raw passthroughs para tabs avanzadas
         "profile_view_raw": pv,
         "patient_raw": pt,
