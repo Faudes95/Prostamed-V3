@@ -63,6 +63,7 @@ STATIC_NO_DATA_BINDING: set[str] = {
     "biopsy-capture-cta",        # link to capture page; no backend data
     "biopsy-gleason-display",    # nested element under biopsy-diagnostics-card
     "biopsy-margin-display",     # nested element under biopsy-diagnostics-card
+    "brca2-preferred-therapy",   # nested element under brca2-carrier-card
     "patient-twin-low-capture",  # nested chip under patient-twin-os-card
     "patient-twin-readiness-pct",  # nested chip under patient-twin-os-card
     "risk-strat-preferred-therapy",  # nested label under risk-stratified card
@@ -77,6 +78,7 @@ STATIC_NO_DATA_BINDING: set[str] = {
 # (forcing the engineer to declare the contract).
 CARD_TO_BUNDLE_KEY: dict[str, str] = {
     "biopsy-diagnostics-card": "biopsy_summary",  # EPIC 22b.4
+    "brca2-carrier-card": "brca2_carrier",        # EPIC 22c — highest clinical impact (PARP-first)
     "hereditary-germline-card": "hereditary_germline",  # EPIC 20
     "mcrpc-subtype-card": "mcrpc_subtype",
     "oligoprogression-card": "oligoprogression",

@@ -384,6 +384,85 @@ def _consent_status(patient: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _brca2_carrier_summary(
+    profile_view: Mapping[str, Any],
+    patient: Mapping[str, Any],
+) -> dict[str, Any]:
+    """EPIC 22c — Summary for the pm2Brca2Carrier card.
+
+    Reads from:
+      1. patient.clinical_facts — if hrr_gene='BRCA2' AND germline_pathogenic_variant != none
+      2. profile_view.precision_pathway — if it surfaces BRCA2 carrier status
+      3. patient.genomics — legacy field convention
+
+    Returns a dict consumed by `pm2Brca2Carrier` section:
+      {available, gene, variant, therapeutic_preferred, acceptable_alternatives,
+       pivotal_trials, nccn_reference}
+
+    If no BRCA2 pathogenic variant is documented, returns {available: False}
+    so the card is hidden cleanly via {% if brca2_carrier.available %}.
+    """
+    pv = profile_view or {}
+    pt = patient or {}
+
+    # Search clinical_facts for hrr_gene + germline_pathogenic_variant
+    facts = pt.get("clinical_facts") or pt.get("patient_clinical_facts") or []
+    fact_lookup = {}
+    for f in facts:
+        if not isinstance(f, Mapping):
+            continue
+        key = str(f.get("fact_key") or "").strip()
+        if key:
+            fact_lookup[key] = f.get("value") or f.get("normalized_value_text") or ""
+
+    gene = str(fact_lookup.get("hrr_gene") or fact_lookup.get("germline_gene") or "").upper()
+    variant = str(fact_lookup.get("germline_pathogenic_variant") or "").upper()
+
+    # Also check the precision pathway in profile_view as fallback
+    if not gene:
+        precision = pv.get("precision_pathway") or {}
+        gene = str(precision.get("hrr_gene") or "").upper()
+        variant = str(precision.get("germline_pathogenic_variant") or variant).upper()
+
+    is_brca2 = (gene == "BRCA2") or ("BRCA2" in variant)
+    if not is_brca2:
+        return {"available": False}
+
+    # Use therapeutic registry for canonical preferred / acceptable text
+    therapeutic_preferred = ""
+    acceptable: list[str] = []
+    pivotal_trials: list[str] = []
+    nccn_reference = "PROS-A_v2026"
+    try:
+        import yaml
+        from pathlib import Path as _P
+        reg_path = (
+            _P(__file__).resolve().parent.parent
+            / "regulatory" / "clinical" / "therapeutic_alternative_registry.yaml"
+        )
+        if reg_path.exists():
+            reg = yaml.safe_load(reg_path.read_text(encoding="utf-8")) or {}
+            entry = ((reg.get("states") or {}).get("brca2_carrier") or {})
+            therapeutic_preferred = str(entry.get("preferred") or "")
+            acc = entry.get("acceptable")
+            if isinstance(acc, list):
+                acceptable = list(acc)
+            pivotal_trials = list(entry.get("pivotal_trials") or [])
+            nccn_reference = str(entry.get("nccn_reference") or nccn_reference)
+    except Exception:
+        pass
+
+    return {
+        "available": True,
+        "gene": gene,
+        "variant": variant,
+        "therapeutic_preferred": therapeutic_preferred or "PARP first-line in mCRPC + family counseling",
+        "acceptable_alternatives": acceptable,
+        "pivotal_trials": pivotal_trials,
+        "nccn_reference": nccn_reference,
+    }
+
+
 def _biopsy_summary(
     profile_view: Mapping[str, Any],
     patient: Mapping[str, Any],
@@ -2343,6 +2422,8 @@ def bundle_to_v2_profile(profile_view: Mapping[str, Any],
         "decision_today_fusion_kernel": pv.get("decision_today_fusion_kernel", {}),
         # EPIC 22b.4 — Biopsy summary for pm2BiopsyDiagnostics card
         "biopsy_summary": _biopsy_summary(pv, pt),
+        # EPIC 22c — BRCA2 carrier card (highest clinical impact: PARP-first)
+        "brca2_carrier": _brca2_carrier_summary(pv, pt),
         # raw passthroughs para tabs avanzadas
         "profile_view_raw": pv,
         "patient_raw": pt,

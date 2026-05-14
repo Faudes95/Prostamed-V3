@@ -354,6 +354,40 @@
         </section>
         {% endif %}
 
+        {# 22c.1 BRCA2 Carrier Card — highest clinical impact (PARP-first) — NCCN 2026 PROS-A #}
+        {% if brca2_carrier and brca2_carrier.available %}
+        <section id="pm2Brca2Carrier" class="pm2-brca2-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(217,119,6,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(217,119,6,0.32); border-left: 6px solid rgb(217,119,6); border-radius: 14px;" aria-label="BRCA2 carrier — PARP-first" data-testid="brca2-carrier-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(252,211,77); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">BRCA2 carrier · EPIC 22c · NCCN PROS-A</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        Pathogenic BRCA2 germline variant confirmado
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        PARP-first eligible en mCRPC (PROfound/PROpel/MAGNITUDE/TALAPRO-2). Counseling familiar universal (≈50% prob hijos heredan BRCA2). Surveillance intensified PSA q6mo desde 40y.
+                    </p>
+                </div>
+            </div>
+            <div style="margin-top:14px; padding:10px 14px; background:rgba(217,119,6,0.10); border:1px solid rgba(217,119,6,0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb(252,211,77); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Acción preferida (NCCN PROS-J + PROS-A v2026)</div>
+                <div style="color:#f8fafc; font-weight:600;" data-testid="brca2-preferred-therapy">{{ brca2_carrier.therapeutic_preferred or 'PARP first-line in mCRPC + family counseling' }}</div>
+            </div>
+            {% if brca2_carrier.pivotal_trials %}
+            <div style="margin-top:10px; font-size:.75rem; color:var(--pn-text-muted);">
+                Trials pivotales: {{ brca2_carrier.pivotal_trials|join(' · ') }}
+            </div>
+            {% endif %}
+            {% if brca2_carrier.acceptable_alternatives %}
+            <div style="margin-top:10px; padding:8px 12px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18); border-radius:6px;">
+                <div style="font-size:.62rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Alternativas aceptables</div>
+                <ul style="margin:0; padding-left:18px; font-size:.78rem; color:var(--pn-text-muted); list-style:disc;">
+                    {% for alt in brca2_carrier.acceptable_alternatives %}<li>{{ alt|replace('_', ' ') }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
         {# 20.4 Post-RT BCR Card #}
         {% if post_rt_bcr and post_rt_bcr.available %}
         <section id="pm2PostRtBcr" class="pm2-post-rt-bcr-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(245,158,11,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(245,158,11,0.32); border-left: 6px solid rgb(245,158,11); border-radius: 14px;" aria-label="Post-RT BCR" data-testid="post-rt-bcr-card">
