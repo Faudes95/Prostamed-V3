@@ -13250,4 +13250,103 @@ Next review: **2026-08-13** (FDA Pre-Sub Q-Sub cadence)
 - `tests/test_epic22c_v2_adapter_integration.py` (21 tests — v2 adapter helpers + bundle integration)
 - `tests/test_epic22d_ui_data_concordance.py` (7 passing + 1 xfail legacy)
 
+---
+
+## EPIC 23 — Clinical Recommendation Arbiter (2026-05-13)
+
+Resuelve la confusión clínica reportada por el especialista al ver el perfil
+del paciente demo donde cards independientes generaban recomendaciones
+contradictorias (CV "evita abi" vs Twin OS "#1 abi" vs BRCA2 "PARP first-line").
+
+**Commit**: `660a1a8 feat(epic23): Clinical Recommendation Arbiter — decision fusion layer`
+
+**Módulo nuevo**: `prostanet/domains/decision_arbiter/recommendation_arbiter.py`
+
+### 4 conflict detectors
+| ID | Severity | Trigger | NCCN ref |
+|----|----------|---------|----------|
+| `cv_abi_override` | CRITICAL | severe_cv_disease + Twin abi top-3 | PROS-K_v2026 |
+| `hepatic_abi_override` | CRITICAL | active_liver / LFTs >3x ULN + abi top-3 | PROS-K + FDA Zytiga |
+| `metastatic_stage_contradiction` | HIGH | M0 + M1* simultáneos | faubot Phase 6 |
+| `brca2_mcspc_timing` | MODERATE | BRCA2 card + paciente NO mCRPC | PROfound 2020 NEJM |
+
+### UI banner
+- `pm2DecisionFusionSummary` renderiza **arriba** de las cards individuales
+- Color-coded por severity (rojo=critical, amber=high, púrpura=moderate)
+- Muestra: conflicts ordenados por severity + resolución del arbiter + clinical_rationale + excluded_regimens + arbitrated ranking re-numerado
+
+### Tests
+- `tests/test_epic23_recommendation_arbiter.py` (20 tests — 4 detectores × positive/negative/edge cases + composite + end-to-end via bundle)
+
+---
+
+## EPIC 22e — Twin preferences capture form + /api/biopsy deprecation (2026-05-13)
+
+**Commit**: `487a4bb feat(epic22e): Patient Twin preferences capture form + /api/biopsy deprecation`
+
+Cierra 2 de los 10 gaps documentados en `ui_data_concordance_audit.yaml`:
+- **Gap #6 (line 167-170)**: pm2PatientTwinOS preferences capture form missing
+- **Gap #10 (line 248-254)**: /api/biopsy/<patient_id> ORPHANED — deprecate
+
+### Preferences capture (gap #6)
+- Modal HTML `pm2PreferencesModal` con 4 secciones SDM (goal_of_care, OS/QoL tradeoff, toxicity tolerance 4 AE classes, redecision threshold)
+- POST endpoint `/api/patient/<nss>/preferences` persiste cada dimensión como patient_clinical_facts + dispara twin_recompute_triggered lineage event
+- Resultado: clínico captura preferencias una vez → ranking Twin OS se personaliza (deja de usar default 0.5/0.5)
+
+### /api/biopsy deprecation (gap #10)
+- HTTP Deprecation header (RFC 8594) + Sunset header (2026-12-31) + Link header → /api/longitudinal/<nss>/append
+- Response body con deprecation_warning + preferred_endpoint + preferred_payload_example
+- Logger WARNING per call para tracking de legacy usage
+
+---
+
+## EPIC 22f — 15 Cortana cards restantes (2026-05-13)
+
+**Commit**: `183a61a feat(epic22f): 15 remaining Cortana cards (complete EPIC 22c state coverage)`
+
+Completa la cobertura UI del set EPIC 22c (22 estados nuevos → 22 cards):
+
+| Categoría | Cards añadidos |
+|-----------|----------------|
+| Safety | comorbidity-hepatic-card |
+| Hereditary | brca1-carrier-card, atm-carrier-card, hoxb13-carrier-card |
+| Post-local modality | post-brachy-ldr-card, post-ebrt-alone-card, post-sbrt-card, post-focal-therapy-card |
+| Oligomet refinement | oligo-synchronous-card, oligo-metach-adt-naive-card, oligo-recurrent-post-def-card |
+| Survivorship | second-primary-card |
+| Pre-diagnostic | suspected-low-psa-card, suspected-elevated-psa-ww-card, neg-biopsy-age-lt45-card |
+
+### Arquitectura
+- `_state_card_summary()` generic builder reduce boilerplate de 15 cards a ~10 líneas cada una
+- Cada predicate lee facts canonicalizados + retorna {available, therapeutic_preferred, ...}
+- Jinja2 macro `pm22f_card` renderiza cada card desde el bundle data (DRY UI)
+- Color-coded por categoría (pink=hepatic, amber=hereditary, cyan=post-local, teal=oligomet, green=survivorship, slate=pre-dx)
+
+### Surface final
+- **41 Cortana surfaces distintas** en `patient_profile_v2.html`:
+  - EPIC 19: patient_twin_os
+  - EPIC 20: 18 cards
+  - EPIC 22b: biopsy_diagnostics
+  - EPIC 22c: 7 cards (BRCA2, Lynch, geriatric, young, ADT-LT, surv-5y, CV)
+  - EPIC 22e: preferences_capture_modal
+  - EPIC 22f: 15 cards
+  - EPIC 23: decision_fusion_summary banner
+
+### Verificación
+- 15/15 predicates fire correctly cuando triggers presentes
+- 15/15 silent (available=False) cuando triggers ausentes — NO false positives
+- 104/104 tests EPIC 22-23 passing + 1 xfail (legacy)
+- Demo en localhost:8080 con paciente 97000000001: hepatic + post-ebrt + second-primary visible
+
+### Final epic stack (commits totales)
+- EPIC 22a: PersonaPlex + UI audit (d90ff06)
+- EPIC 22b: histopath + 5 integrations (2227121)
+- EPIC 22c: 22 trayectorias (22ef5fd, 94805cc, a4a6727, 7779e82, 16b0763, 3716874)
+- EPIC 22d: concordance gates (6ed5542)
+- EPIC 22e: preferences + deprecation (487a4bb)
+- EPIC 22f: 15 cards (183a61a)
+- EPIC 23: recommendation arbiter (660a1a8)
+- audit_tracking + transformer + bug fixes (a8ebcdc, dcdc7ca, 74b2a98)
+
+**Total**: 15 commits, ~3000 líneas añadidas, 0 líneas de lógica clínica eliminadas (constraint del usuario respetado).
+
 
