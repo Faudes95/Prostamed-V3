@@ -300,6 +300,122 @@ def epic21_unified_extract() -> Any:
     }), 200
 
 
+@epic21_bp.route("/api/voice/epic21/cortana", methods=["POST"])
+def epic21_cortana_orchestrator() -> Any:
+    """Phase 2D — Cortana single entry point (intent routing).
+
+    POST body: {
+      "transcript": "...",
+      "patient_nss": "..." (optional),
+      "session_id": "..." (optional),
+      "multi_turn_state": {...} (optional),
+      "language": "es" (default)
+    }
+    """
+    try:
+        from prostanet.voice.cortana_orchestrator import (
+            orchestrate_cortana, orchestration_to_dict,
+        )
+    except ImportError as e:
+        return jsonify({"available": False, "error": f"module_unavailable: {e}"}), 503
+
+    payload = request.get_json(silent=True) or {}
+    transcript = str(payload.get("transcript") or "").strip()
+    if not transcript:
+        return jsonify({"available": False, "error": "transcript_required"}), 400
+
+    result = orchestrate_cortana(
+        transcript,
+        patient_nss=payload.get("patient_nss"),
+        session_id=payload.get("session_id"),
+        multi_turn_state=payload.get("multi_turn_state"),
+        language=payload.get("language", "es"),
+    )
+    return jsonify(orchestration_to_dict(result)), 200
+
+
+@epic21_bp.route("/api/voice/epic21/intake-full", methods=["POST"])
+def epic21_intake_full() -> Any:
+    """Phase 2A — Full intake orchestrator (chronological dictation).
+
+    POST body: {"transcript": "...", "multi_turn_state": {...} (optional)}
+    """
+    try:
+        from prostanet.voice.voice_intake_full_orchestrator import (
+            orchestrate_full_intake, result_to_dict,
+        )
+    except ImportError as e:
+        return jsonify({"available": False, "error": f"module_unavailable: {e}"}), 503
+
+    payload = request.get_json(silent=True) or {}
+    transcript = str(payload.get("transcript") or "").strip()
+    if not transcript:
+        return jsonify({"available": False, "error": "transcript_required"}), 400
+
+    result = orchestrate_full_intake(
+        transcript,
+        multi_turn_state=payload.get("multi_turn_state"),
+        language=payload.get("language", "es"),
+    )
+    return jsonify(result_to_dict(result)), 200
+
+
+@epic21_bp.route("/api/voice/epic21/decision-qa/<nss>", methods=["POST"])
+def epic21_decision_qa(nss: str) -> Any:
+    """Phase 2B — Decision-aware patient Q&A (invokes copilots + Patient Twin).
+
+    POST body: {"question": "¿Cuál sería la mejor opción?"}
+    """
+    if not nss:
+        return jsonify({"available": False, "error": "nss_required"}), 400
+
+    payload = request.get_json(silent=True) or {}
+    question = str(payload.get("question") or "").strip()
+    if not question:
+        return jsonify({"available": False, "error": "question_required"}), 400
+
+    try:
+        import tracking_db
+        record = tracking_db.get_patient_full_record(nss)
+        if not record:
+            return jsonify({"available": False, "error": "patient_not_found", "nss": nss}), 404
+    except Exception as e:
+        return jsonify({"available": False, "error": f"record_load_failed: {e}"}), 500
+
+    try:
+        from prostanet.voice.decision_aware_qa import (
+            build_decision_aware_answer, decision_answer_to_dict,
+        )
+        answer = build_decision_aware_answer(record, question)
+        result = decision_answer_to_dict(answer)
+        result["available"] = True
+        result["nss"] = nss
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"available": False, "error": f"decision_qa_failed: {e}"}), 500
+
+
+@epic21_bp.route("/api/voice/epic21/population-qa", methods=["POST"])
+def epic21_population_qa() -> Any:
+    """Phase 2C — Population Q&A + cohort audits with safe SQL.
+
+    POST body: {"question": "¿Cuántos mCRPC?"}
+    """
+    payload = request.get_json(silent=True) or {}
+    question = str(payload.get("question") or "").strip()
+    if not question:
+        return jsonify({"available": False, "error": "question_required"}), 400
+
+    try:
+        from prostanet.voice.population_query_safe import (
+            answer_population_question, cohort_result_to_dict,
+        )
+        cohort = answer_population_question(question)
+        return jsonify(cohort_result_to_dict(cohort)), 200
+    except Exception as e:
+        return jsonify({"available": False, "error": f"population_qa_failed: {e}"}), 500
+
+
 @epic21_bp.route("/api/voice/epic21/tts-validate", methods=["POST"])
 def epic21_tts_validate() -> Any:
     """/writing-voice — Validate TTS text against safety phrasing rules.
