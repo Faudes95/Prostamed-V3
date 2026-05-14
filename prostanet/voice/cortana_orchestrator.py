@@ -136,6 +136,12 @@ class CortanaOrchestrationResult:
     session_id: str = ""
     multi_turn_state: dict[str, Any] = field(default_factory=dict)
     audit_log_entry: dict[str, Any] = field(default_factory=dict)
+    # EPIC 21 Phase 3 — safety routing metadata
+    safety_class: str = "low"
+    provider_selected: str = ""
+    provider_fallback_reason: str = ""
+    firewall_applied: bool = False
+    firewall_blocked: bool = False
 
 
 # ─────────────────── Main entry point ───────────────────
@@ -148,6 +154,7 @@ def orchestrate_cortana(
     session_id: str | None = None,
     multi_turn_state: dict[str, Any] | None = None,
     language: str = "es",
+    preferred_provider: str | None = None,
 ) -> CortanaOrchestrationResult:
     """Single entry point for Cortana voice intent routing.
 
@@ -157,9 +164,12 @@ def orchestrate_cortana(
         session_id: optional session ID for multi-turn state persistence
         multi_turn_state: optional state from previous turn
         language: TTS language
+        preferred_provider: optional provider name ("whisper" | "personaplex").
+            For HIGH/CRITICAL safety, registry FORCES whisper regardless.
 
     Returns:
-        CortanaOrchestrationResult with handler invoked + tts_response.
+        CortanaOrchestrationResult with handler invoked + tts_response +
+        safety_class + provider_selected metadata.
     """
     intent = classify_cortana_intent(transcript)
     result = CortanaOrchestrationResult(
@@ -170,6 +180,30 @@ def orchestrate_cortana(
         session_id=session_id or "",
         multi_turn_state=dict(multi_turn_state or {}),
     )
+
+    # EPIC 21 Phase 3 — Safety-aware provider routing
+    try:
+        from prostanet.voice.providers import classify_intent_safety, get_registry
+        safety = classify_intent_safety(intent)
+        result.safety_class = safety.value
+        registry = get_registry()
+        provider = registry.select_provider(safety, preferred=preferred_provider)
+        if provider is not None:
+            cap = provider.capability()
+            result.provider_selected = cap.provider_name
+            # If user requested a non-whisper provider but safety FORCED whisper
+            if preferred_provider and preferred_provider != cap.provider_name:
+                result.provider_fallback_reason = (
+                    f"preferred={preferred_provider} but safety_class={safety.value} "
+                    f"requires {cap.provider_name} (firewall mandatory)"
+                )
+        else:
+            result.provider_selected = ""
+            result.provider_fallback_reason = "no_provider_available_for_safety_class"
+    except Exception as exc:
+        logger.debug("Safety routing failed (continuing with default handler): %s", exc)
+        result.provider_selected = "whisper"
+        result.safety_class = "high"  # conservative default
 
     # Dispatch
     if intent == "intake":

@@ -1,0 +1,85 @@
+# EPIC 21 Phase 3D — PersonaPlex Sidecar Container
+#
+# NVIDIA PersonaPlex (Moshi-based) full-duplex speech-to-speech as sidecar.
+# Runs on GPU host (cloud RunPod/Lambda or RTX local).
+#
+# Build:
+#   docker build -f Dockerfile.personaplex-sidecar -t prostamed/personaplex:1.0 .
+#
+# Run (requires NVIDIA Container Toolkit):
+#   docker run -d --gpus all \
+#     -p 8090:8090 \
+#     -e PERSONAPLEX_AUTH_TOKEN=$PROSTAMED_PERSONAPLEX_TOKEN \
+#     -e HF_TOKEN=$HUGGINGFACE_TOKEN \
+#     --name personaplex-sidecar \
+#     prostamed/personaplex:1.0
+#
+# Health check from ProstaMed:
+#   curl http://<gpu-host>:8090/health
+#
+# License: NVIDIA Open Model License for weights, MIT for PersonaPlex code.
+
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+
+LABEL maintainer="ProstaMed Clinical AI Team"
+LABEL purpose="PersonaPlex sidecar for ProstaMed Cortana voice (EPIC 21 Phase 3)"
+LABEL safety_scope="internal_shadow_observational_validation"
+
+# Avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# System deps for PersonaPlex
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3-pip \
+    python3-dev \
+    git \
+    libopus-dev \
+    libsndfile1 \
+    ffmpeg \
+    curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python 3.11 as default
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+
+# Workdir
+WORKDIR /app
+
+# PyTorch with CUDA 12 (preferred for PersonaPlex; use cu130 if Blackwell GPU)
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+# PersonaPlex from NVIDIA (MIT code, weights via HF)
+# License compliance: clone with explicit OML acceptance documented in audit_tracking.md
+RUN git clone --depth 1 https://github.com/NVIDIA/personaplex.git /app/personaplex
+
+WORKDIR /app/personaplex
+
+# Install PersonaPlex deps
+# (PersonaPlex provides its own setup; if conflicts, use accelerate for CPU offload fallback)
+RUN pip install --no-cache-dir -e . || \
+    pip install --no-cache-dir moshi accelerate transformers
+
+# ProstaMed sidecar adapter (lightweight HTTP wrapper around PersonaPlex)
+COPY prostanet/voice/providers/personaplex_sidecar_adapter.py /app/sidecar_adapter.py
+COPY prostanet/voice/providers/personaplex_persona_cortana.py /app/persona_cortana.py
+RUN pip install --no-cache-dir flask waitress
+
+# Audit + safety: NO PHI in container logs by default
+ENV PERSONAPLEX_LOG_LEVEL=INFO
+ENV PERSONAPLEX_PHI_LOGGING=false
+
+# Sidecar listening port
+EXPOSE 8090
+
+# Health probe
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl --fail http://localhost:8090/health || exit 1
+
+# Run sidecar HTTP adapter (NOT PersonaPlex directly)
+CMD ["python", "/app/sidecar_adapter.py", "--host=0.0.0.0", "--port=8090"]
