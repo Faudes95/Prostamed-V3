@@ -307,9 +307,197 @@ states:
       - mdt_anatomically_feasible
     notes: Limited progression on systemic therapy + MDT to oligo lesions can defer class switch with OS benefit
 
+# ═══════════════════════════════════════════════════════════════════════
+# EPIC 22c — 22 new trajectories (NCCN 2026 v2 + EAU 2025)
+# ═══════════════════════════════════════════════════════════════════════
+
+# ─────────────────── Pre-diagnostic (3) ───────────────────
+
+  suspected_low_psa_no_biopsy:
+    preferred: repeat_psa_q6mo_+_lifestyle_optimization
+    acceptable: [psa_density_calc, mri_if_persistent_elevation, family_history_review]
+    not_recommended: [empirical_biopsy_without_indication, treat_as_high_risk]
+    nccn_reference: PROS-1_v2026
+    evidence_grade: II
+    decision_criteria: [psa_4_to_10, pirads_lt_3, age_lt_70]
+
+  suspected_elevated_psa_watchful_wait:
+    preferred: watchful_waiting_+_symptom_directed_care
+    acceptable: [palliative_adt_if_symptomatic, lifestyle_optimization]
+    not_recommended: [aggressive_diagnostic_workup_low_yield, curative_intent_treatment]
+    nccn_reference: PROS-1_v2026
+    evidence_grade: I
+    decision_criteria: [psa_gt_10, ecog_ge_3_OR_life_expectancy_lt_5y, frail_status]
+
+  negative_biopsy_age_lt_45:
+    preferred: aggressive_mri_targeted_re_biopsy_+_germline_testing
+    acceptable: [transperineal_saturation_biopsy_if_persistent, repeat_psa_3_6mo, hereditary_counseling]
+    not_recommended: [annual_psa_only, observation_without_germline_workup]
+    nccn_reference: PROS-1_v2026 + PROS-A_v2026
+    evidence_grade: II
+    decision_criteria: [age_lt_45, first_degree_relative_pca_lt_60_OR_brca_FH, prior_negative_biopsy]
+
+# ─────────────────── Post-local by modality (4) ───────────────────
+
+  post_brachy_ldr:
+    preferred: psa_q6mo_+_psa_bounce_awareness_18_36mo
+    acceptable: [mri_if_psa_rise_persists, biopsy_if_phoenix_breach_+_local_signs]
+    not_recommended: [phoenix_alarm_in_first_24mo, repeat_brachy_without_workup]
+    nccn_reference: PROS-F_v2026
+    evidence_grade: I
+
+  post_ebrt_alone:
+    preferred: psa_q6mo_+_phoenix_monitoring_+_late_toxicity_surveillance
+    acceptable: [mri_fossa_if_psa_rise, bone_scan_if_distant_signs, transrectal_us_if_local_recur]
+    not_recommended: [observation_without_psa_kinetics]
+    nccn_reference: PROS-F_v2026 + Phoenix_consensus
+    evidence_grade: I
+
+  post_sbrt:
+    preferred: psa_q6mo_+_faster_nadir_expected_+_qol_tracking
+    acceptable: [mri_pelvis_if_psa_rise, rectal_qol_dedicated_screening]
+    not_recommended: [phoenix_alarm_at_3mo_post_sbrt]
+    nccn_reference: PROS-F_v2026
+    evidence_grade: II
+    pivotal_trials: [HYPO-RT-PC, PACE-B]
+
+  post_focal_therapy:
+    preferred: in_field_mri_+_psa_q3_6mo_+_out_of_field_surveillance
+    acceptable: [biopsy_at_12mo_routine, salvage_options_if_in_field_failure]
+    not_recommended: [observation_without_repeat_imaging]
+    nccn_reference: PROS-F_v2026
+    evidence_grade: II
+    notes: HIFU/cryo/IRE — distinct in-field vs out-of-field follow-up patterns
+
+# ─────────────────── Hereditary carriers (5) ───────────────────
+
+  brca2_carrier:
+    preferred: parp_first_line_in_mcrpc_+_universal_family_counseling
+    acceptable: [parp_combo_arsi_if_mcrpc_first_line, intensified_surveillance_age_40_psa_q6mo]
+    not_recommended: [delay_parp_until_post_arsi_failure, ignore_family_counseling]
+    nccn_reference: PROS-A_v2026 + PROS-J_v2026
+    evidence_grade: I
+    pivotal_trials: [PROfound, PROpel, MAGNITUDE, TALAPRO-2]
+    decision_criteria: [germline_brca2_pathogenic_confirmed]
+
+  brca1_carrier:
+    preferred: parp_eligible_+_family_counseling_+_intensified_surveillance
+    acceptable: [parp_in_mcrpc_per_profound_combo, hereditary_panel_extension]
+    not_recommended: [single_gene_only_workup, observation_in_advanced_setting]
+    nccn_reference: PROS-A_v2026
+    evidence_grade: II
+    pivotal_trials: [PROfound]
+
+  atm_carrier:
+    preferred: parp_response_variable_+_consider_clinical_trial
+    acceptable: [parp_per_profound_eligibility, family_counseling]
+    not_recommended: [skip_parp_consideration]
+    nccn_reference: PROS-A_v2026
+    evidence_grade: III
+
+  lynch_carrier:
+    preferred: pembrolizumab_in_advanced_setting_+_colorectal_surveillance
+    acceptable: [msi_ihc_tumor_panel, oncologic_genetics_referral, family_cascade_testing]
+    not_recommended: [ignore_msi_status, withhold_pembrolizumab_if_dmmr_confirmed]
+    nccn_reference: PROS-A_v2026 + KEYNOTE-158
+    evidence_grade: I
+    pivotal_trials: [KEYNOTE-158, KEYNOTE-365]
+
+  hoxb13_carrier:
+    preferred: intensified_surveillance_from_age_40_+_psa_q6mo
+    acceptable: [annual_dre, family_cascade_testing]
+    not_recommended: [delay_screening_until_age_50]
+    nccn_reference: PROS-A_v2026
+    evidence_grade: III
+
+# ─────────────────── Oligometastatic refinement (3) ───────────────────
+
+  oligometastatic_synchronous:
+    preferred: sbrt_to_all_lesions_+_systemic_adt_arsi_intensification
+    acceptable: [mdt_+_systemic_doublet, local_consolidation_prostate]
+    not_recommended: [adt_alone_without_mdt, observation]
+    nccn_reference: PROS-G_v2026
+    evidence_grade: II
+    pivotal_trials: [STOMP, ORIOLE, STAMPEDE-G_arm]
+
+  oligometastatic_metachronous_adt_naive:
+    preferred: mdt_+_short_term_adt_or_arsi
+    acceptable: [sbrt_all_lesions_alone_if_no_adt_indication, observation_short_window]
+    not_recommended: [adt_escalation_without_mdt_attempt]
+    nccn_reference: PROS-G_v2026
+    evidence_grade: II
+    pivotal_trials: [STOMP, ORIOLE]
+
+  oligo_recurrent_post_definitive:
+    preferred: mdt_to_recurrent_sites_+_consider_short_systemic
+    acceptable: [salvage_local_if_in_prostate_fossa, palliative_sbrt_painful_lesions]
+    not_recommended: [systemic_only_without_local_consolidation]
+    nccn_reference: PROS-G_v2026
+    evidence_grade: II
+
+# ─────────────────── Special populations (4) ───────────────────
+
+  geriatric_frail_limited:
+    preferred: treatment_de_escalation_+_supportive_care_priority
+    acceptable: [palliative_adt_if_symptomatic, single_agent_arsi_w_dose_modifications]
+    not_recommended: [chemo_intensification, aggressive_combinations]
+    nccn_reference: PROS-K_v2026
+    evidence_grade: I
+    decision_criteria: [age_gt_75, g8_le_14_OR_frailty_documented]
+
+  young_onset_pca:
+    preferred: universal_germline_testing_+_fertility_preservation_+_aggressive_biology_workup
+    acceptable: [hereditary_genetics_referral, sperm_banking_pre_treatment]
+    not_recommended: [delay_germline_testing, no_fertility_discussion]
+    nccn_reference: PROS-A_v2026 + AYA_2025
+    evidence_grade: I
+    decision_criteria: [age_at_diagnosis_lt_55]
+
+  comorbidity_limited_severe_cv:
+    preferred: enzalutamide_or_apalutamide_+_cardiology_co_management
+    acceptable: [docetaxel_if_cv_safe, gnrh_antagonist_over_agonist_if_cv_risk]
+    not_recommended: [abiraterone_prednisone_with_active_cv_disease]
+    nccn_reference: PROS-K_v2026
+    evidence_grade: II
+    decision_criteria: [active_cardiac_disease_OR_severe_cv_band]
+
+  comorbidity_limited_severe_hepatic:
+    preferred: enzalutamide_or_apalutamide_+_hepatology_monitoring
+    acceptable: [darolutamide_if_arasens_indication, dose_modification_per_LFTs]
+    not_recommended: [abiraterone_contraindicated_active_liver_disease]
+    nccn_reference: PROS-K_v2026
+    evidence_grade: II
+    decision_criteria: [lfts_gt_3x_uln_OR_cirrhosis_OR_active_hepatitis]
+
+# ─────────────────── Survivorship (3) ───────────────────
+
+  survivorship_post_curative_5y_plus:
+    preferred: annual_psa_+_late_effects_surveillance_+_quality_of_life
+    acceptable: [shared_care_with_primary_care_provider, qol_screening_annual]
+    not_recommended: [no_followup_after_5y]
+    nccn_reference: SURV-1_v2026
+    evidence_grade: I
+
+  second_primary_surveillance:
+    preferred: post_rt_secondary_malignancy_surveillance_protocol
+    acceptable: [colonoscopy_if_post_rt_rectal_risk, bladder_imaging_if_hematuria, cbc_for_mds_aml_concern]
+    not_recommended: [ignore_post_rt_second_primary_risk]
+    nccn_reference: SURV-2_v2026
+    evidence_grade: II
+    decision_criteria: [years_post_rt_ge_5]
+
+  adt_long_term_complications:
+    preferred: multi_organ_surveillance_bone_cv_metabolic_cognitive
+    acceptable: [dxa_annual, cv_risk_aggressive_optimization, lipid_panel_q6mo, cognitive_screening]
+    not_recommended: [adt_continuation_without_safety_workup]
+    nccn_reference: PROS-K_v2026 + supportive_care_guidelines
+    evidence_grade: I
+    decision_criteria: [adt_total_duration_ge_24mo]
+
 registry_summary:
-  total_states_registered: 31  # 13 existing + 18 EPIC 20 Phase 1 new
-  states_with_class_I_evidence: 18
-  states_with_class_II_evidence: 13
+  total_states_registered: 53  # 13 existing + 18 EPIC 20 Phase 1 new + 22 EPIC 22c new
+  states_with_class_I_evidence: 26
+  states_with_class_II_evidence: 22
+  states_with_class_III_evidence: 4
   states_with_emerging_evidence: 1  # mcspc_psma_only_metastatic
-  pivotal_trials_referenced: 42_unique
+  pivotal_trials_referenced: 50_unique

@@ -29,11 +29,16 @@ PROJECT_ROOT = Path(__file__).parent.parent
 # ─────────────────── Taxonomy + registry presence ───────────────────
 
 
-def test_epic20_clinical_states_expanded_to_31():
-    """CLINICAL_STATES debe tener 31 states (13 baseline + 18 EPIC 20 Phase 1)."""
+def test_epic20_clinical_states_expanded_to_at_least_31():
+    """CLINICAL_STATES debe tener ≥31 states (13 baseline + 18 EPIC 20 Phase 1).
+
+    EPIC 22c added 22 more (31→53). The contract is now "at least 31 and
+    must include the original EPIC 20 states" so future expansions don't
+    break this regression gate.
+    """
     from prostanet.ai.config import CLINICAL_STATES, NUM_STATES
-    assert NUM_STATES == 31, f"Expected 31 states, got {NUM_STATES}"
-    # New EPIC 20 Phase 1 states must be present
+    assert NUM_STATES >= 31, f"Expected ≥31 states, got {NUM_STATES}"
+    # EPIC 20 Phase 1 states must remain present
     new_states = {
         "very_low_risk_localized", "low_risk_localized",
         "favorable_intermediate_risk_localized", "unfavorable_intermediate_risk_localized",

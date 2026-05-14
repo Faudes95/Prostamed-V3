@@ -68,6 +68,35 @@ CLINICAL_STATES: list[str] = [
     "hereditary_germline_pathway_umbrella",  # Universal germline testing trigger
     # ── EPIC 20 Phase 1 — Oligometastatic refinement (1) NCCN 2026 PROS-G ──
     "oligo_progressive_on_therapy",  # STOMP/ORIOLE-driven decision
+    # ── EPIC 22c — 22 new NCCN 2026 v2 trajectories ──
+    # Category 1 — Pre-diagnostic (3) NCCN 2026 PROS-1
+    "suspected_low_psa_no_biopsy",        # PSA 4-10, no PIRADS≥3, age <70 → repeat PSA q6mo
+    "suspected_elevated_psa_watchful_wait",  # PSA >10, frail, ECOG ≥3, LE <5y → WW
+    "negative_biopsy_age_lt_45",          # <45y, high-risk FH/germline → aggressive re-biopsy
+    # Category 2 — Post-local by modality (4) NCCN 2026 PROS-F + Phoenix consensus
+    "post_brachy_ldr",          # Surveillance: PSA bounce 18-36mo, different cutoffs
+    "post_ebrt_alone",          # Phoenix BCR criteria, late rectal/urinary toxicity
+    "post_sbrt",                # Faster nadir, distinct toxicity profile
+    "post_focal_therapy",       # HIFU/cryo/IRE — in-field vs out-of-field follow-up
+    # Category 3 — Hereditary carriers (5) NCCN 2026 PROS-A
+    "brca2_carrier",            # PARP first-line eligibility (PROfound/PROpel)
+    "brca1_carrier",            # Rarer; similar to BRCA2 but distinct counseling
+    "atm_carrier",              # PARP response variable; trial-preferred
+    "lynch_carrier",            # MLH1/MSH2/MSH6/PMS2/EPCAM → pembrolizumab
+    "hoxb13_carrier",           # G84E → intensified surveillance from 40y
+    # Category 4 — Oligometastatic refinement (3) NCCN 2026 PROS-G
+    "oligometastatic_synchronous",        # de novo ≤3 lesiones → SBRT to all + systemic
+    "oligometastatic_metachronous_adt_naive",  # MDT preferred over ARSI escalation
+    "oligo_recurrent_post_definitive",    # post-RP/RT ≤3 lesiones → MDT to recurrent sites
+    # Category 5 — Special populations (4) NCCN 2026 PROS-K + AUA
+    "geriatric_frail_limited",            # >75y + G8 ≤14 → treatment de-escalation
+    "young_onset_pca",                    # <55y at Dx → universal germline, fertility, aggressive biology
+    "comorbidity_limited_severe_cv",      # avoid abiraterone; prefer enzalutamide w/ cardiac mon
+    "comorbidity_limited_severe_hepatic", # LFTs >3x ULN → abiraterone contraindicated
+    # Category 6 — Survivorship (3) NCCN 2026 SURV
+    "survivorship_post_curative_5y_plus", # 5+y NED → annual PSA + late effects surveillance
+    "second_primary_surveillance",        # post-RT MDS/AML risk + bladder/rectal screening
+    "adt_long_term_complications",        # ≥2y ADT → bone, CV, metabolic, cognitive surveillance
 ]
 
 STATE_TO_IDX: dict[str, int] = {s: i for i, s in enumerate(CLINICAL_STATES)}

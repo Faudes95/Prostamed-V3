@@ -36,13 +36,69 @@ GLEASON_DISTRIBUTION = [
 ]
 
 INITIAL_STATE_DISTRIBUTION = {
-    "localized_initial": 0.55,
-    "recurrence_bcr": 0.10,
-    "mcspc_high_volume_sync": 0.12,
-    "mcspc_low_volume_sync_oligo": 0.08,
-    "mcspc_oligo_metachronous": 0.05,
-    "m0_crpc": 0.04,
-    "m1_crpc": 0.06,
+    # EPIC 22c — Expanded distribution covering 53 states. Weights calibrated
+    # so the most common states (localized + advanced) keep most of the mass,
+    # but every EPIC 20/22c state gets enough exemplars (~10-20 per 1000) for
+    # the Transformer to learn its decision boundary. Total normalized internally.
+    # ─ Baseline states (legacy) ─
+    "localized_initial": 0.30,                  # was 0.55 — reduced; specific risk tiers cover most
+    "recurrence_bcr": 0.07,
+    "post_prostatectomy": 0.04,
+    "mcspc_high_volume_sync": 0.06,
+    "mcspc_low_volume_sync_oligo": 0.04,
+    "mcspc_oligo_metachronous": 0.03,
+    "m0_crpc": 0.03,
+    "m1_crpc": 0.04,
+    "diagnostic_workup": 0.03,
+    "adt_progression_verification": 0.02,
+    # ─ EPIC 20 — 6-tier localized (replaces most of localized_initial) ─
+    "very_low_risk_localized": 0.03,
+    "low_risk_localized": 0.03,
+    "favorable_intermediate_risk_localized": 0.03,
+    "unfavorable_intermediate_risk_localized": 0.025,
+    "high_risk_localized": 0.02,
+    "very_high_risk_localized": 0.015,
+    # ─ EPIC 20 — refinements ─
+    "post_rt_bcr": 0.01,
+    "mcspc_latitude_high_risk": 0.01,
+    "mcspc_visceral_only_m1c": 0.005,
+    "mcspc_psma_only_metastatic": 0.005,
+    "mcrpc_arsi_naive": 0.01,
+    "mcrpc_post_arsi": 0.01,
+    "mcrpc_hrr_positive_parp_naive": 0.005,
+    "mcrpc_psma_eligible_lu177": 0.005,
+    "mcrpc_msi_h_dmmr": 0.003,
+    "nepc_differentiation": 0.003,
+    "hereditary_germline_pathway_umbrella": 0.005,
+    "oligo_progressive_on_therapy": 0.005,
+    # ─ EPIC 22c — Pre-diagnostic (3) ─
+    "suspected_low_psa_no_biopsy": 0.015,
+    "suspected_elevated_psa_watchful_wait": 0.005,
+    "negative_biopsy_age_lt_45": 0.005,
+    # ─ EPIC 22c — Post-local by modality (4) ─
+    "post_brachy_ldr": 0.01,
+    "post_ebrt_alone": 0.015,
+    "post_sbrt": 0.005,
+    "post_focal_therapy": 0.005,
+    # ─ EPIC 22c — Hereditary carriers (5) ─
+    "brca2_carrier": 0.008,
+    "brca1_carrier": 0.003,
+    "atm_carrier": 0.005,
+    "lynch_carrier": 0.003,
+    "hoxb13_carrier": 0.003,
+    # ─ EPIC 22c — Oligomet refinement (3) ─
+    "oligometastatic_synchronous": 0.008,
+    "oligometastatic_metachronous_adt_naive": 0.005,
+    "oligo_recurrent_post_definitive": 0.005,
+    # ─ EPIC 22c — Special populations (4) ─
+    "geriatric_frail_limited": 0.012,
+    "young_onset_pca": 0.008,
+    "comorbidity_limited_severe_cv": 0.008,
+    "comorbidity_limited_severe_hepatic": 0.005,
+    # ─ EPIC 22c — Survivorship (3) ─
+    "survivorship_post_curative_5y_plus": 0.015,
+    "second_primary_surveillance": 0.005,
+    "adt_long_term_complications": 0.008,
 }
 
 # State transition probabilities (simplified Markov)
