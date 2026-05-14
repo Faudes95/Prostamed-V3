@@ -79,12 +79,22 @@ def test_voice_update_unified_no_moment_runs_legacy_only():
 
 
 def test_voice_update_capabilities_reports_both():
+    """EPIC 22b.2 added `biopsy_capture` (7th moment). Contract relaxed to
+    ≥6 + must include the 6 original EPIC 20 moments so future micro-forms
+    can be appended without breaking this regression gate.
+    """
     from prostanet.voice.unified_extractor import get_extractor_capabilities
     caps = get_extractor_capabilities()
     assert "legacy_extractor" in caps
     assert "micro_form_extractor" in caps
     assert caps["micro_form_extractor"]["available"] is True
-    assert len(caps["micro_form_extractor"]["moments_covered"]) == 6
+    moments = caps["micro_form_extractor"]["moments_covered"]
+    assert len(moments) >= 6
+    original_six = {"bcr_detection", "oligoprogression", "crpc_transition",
+                    "adt_init", "rt_nadir", "salvage_eligibility"}
+    assert original_six.issubset(set(moments)), (
+        f"EPIC 21 original moments missing: {original_six - set(moments)}"
+    )
 
 
 # ─────────────────── /voice-ai-engine-development ───────────────────
