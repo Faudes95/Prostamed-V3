@@ -549,6 +549,72 @@
         </section>
         {% endif %}
 
+        {# ─────────────── EPIC 22f — Reusable Cortana state card macro ─────────────── #}
+        {%- macro pm22f_card(card_id, testid, header_tag, title, summary, accent_rgb, accent_text_rgb) -%}
+        {%- if summary and summary.available -%}
+        <section id="{{ card_id }}"
+                 class="pm2-{{ testid }}-panel"
+                 style="margin: var(--space-4) var(--space-6); padding: var(--space-4);
+                        background: linear-gradient(135deg, rgba({{ accent_rgb }},0.10), rgba(15,23,42,0.66));
+                        border: 1px solid rgba({{ accent_rgb }},0.32);
+                        border-left: 6px solid rgb({{ accent_rgb }});
+                        border-radius: 14px;"
+                 aria-label="{{ title }}"
+                 data-testid="{{ testid }}">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb({{ accent_text_rgb }}); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">{{ header_tag }} · EPIC 22F</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.12rem; color:#f8fafc; margin:5px 0 0;">{{ title }}</h3>
+                </div>
+            </div>
+            {%- if summary.therapeutic_preferred %}
+            <div style="margin-top:14px; padding:10px 14px; background:rgba({{ accent_rgb }},0.10); border:1px solid rgba({{ accent_rgb }},0.30); border-radius:8px;">
+                <div style="font-size:.65rem; color:rgb({{ accent_text_rgb }}); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Acción preferida (NCCN {{ summary.nccn_reference }})</div>
+                <div style="color:#f8fafc; font-weight:600;" data-testid="{{ testid }}-preferred">{{ summary.therapeutic_preferred }}</div>
+            </div>
+            {%- endif %}
+            {%- if summary.pivotal_trials %}
+            <div style="margin-top:10px; font-size:.75rem; color:var(--pn-text-muted);">
+                Trials: {{ summary.pivotal_trials|join(' · ') }}
+            </div>
+            {%- endif %}
+            {%- if summary.acceptable_alternatives %}
+            <div style="margin-top:10px; padding:8px 12px; background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18); border-radius:6px;">
+                <div style="font-size:.62rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">Alternativas aceptables</div>
+                <ul style="margin:0; padding-left:18px; font-size:.78rem; color:var(--pn-text-muted); list-style:disc;">
+                    {% for alt in summary.acceptable_alternatives %}<li>{{ alt|replace('_', ' ') }}</li>{% endfor %}
+                </ul>
+            </div>
+            {%- endif %}
+            {%- if summary.not_recommended %}
+            <div style="margin-top:10px; padding:8px 12px; background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.30); border-radius:6px;">
+                <div style="font-size:.62rem; color:rgb(252,165,165); text-transform:uppercase; letter-spacing:.12em; margin-bottom:4px;">NO recomendado</div>
+                <ul style="margin:0; padding-left:18px; font-size:.78rem; color:rgb(252,165,165); list-style:disc;">
+                    {% for nr in summary.not_recommended %}<li>{{ nr|replace('_', ' ') }}</li>{% endfor %}
+                </ul>
+            </div>
+            {%- endif %}
+        </section>
+        {%- endif -%}
+        {%- endmacro %}
+
+        {# EPIC 22f cards — render conditionally per patient state #}
+        {{ pm22f_card('pm2ComorbidityHepatic', 'comorbidity-hepatic-card', 'SEVERE HEPATIC · NCCN PROS-K', 'Hepatopatía severa — abi contraindicada', comorbidity_hepatic, '244,114,182', '251,207,232') }}
+        {{ pm22f_card('pm2Brca1Carrier', 'brca1-carrier-card', 'BRCA1 CARRIER · NCCN PROS-A', 'Pathogenic BRCA1 germline variant', brca1_carrier, '217,119,6', '252,211,77') }}
+        {{ pm22f_card('pm2AtmCarrier', 'atm-carrier-card', 'ATM CARRIER · NCCN PROS-A', 'Pathogenic ATM germline variant — PARP response variable', atm_carrier, '180,83,9', '253,186,116') }}
+        {{ pm22f_card('pm2Hoxb13Carrier', 'hoxb13-carrier-card', 'HOXB13 G84E · NCCN PROS-A', 'HOXB13 carrier — surveillance intensificada desde 40y', hoxb13_carrier, '146,64,14', '254,215,170') }}
+        {{ pm22f_card('pm2PostBrachyLdr', 'post-brachy-ldr-card', 'POST-BRACHY LDR · NCCN PROS-F', 'Surveillance post-LDR brachytherapy (PSA bounce 18-36mo)', post_brachy_ldr, '6,182,212', '103,232,249') }}
+        {{ pm22f_card('pm2PostEbrtAlone', 'post-ebrt-alone-card', 'POST-EBRT · PHOENIX', 'Surveillance post-EBRT alone + late toxicity tracking', post_ebrt_alone, '14,116,144', '125,211,252') }}
+        {{ pm22f_card('pm2PostSbrt', 'post-sbrt-card', 'POST-SBRT · NCCN PROS-F', 'Surveillance post-SBRT (nadir más rápido)', post_sbrt, '21,94,117', '186,230,253') }}
+        {{ pm22f_card('pm2PostFocalTherapy', 'post-focal-therapy-card', 'POST-FOCAL THERAPY · NCCN PROS-F', 'Surveillance post-HIFU/cryo/IRE (in-field vs out-of-field)', post_focal_therapy, '6,148,162', '94,234,212') }}
+        {{ pm22f_card('pm2OligoSync', 'oligo-synchronous-card', 'OLIGO SYNCHRONOUS · NCCN PROS-G', 'De novo M1 ≤3 lesiones — SBRT to all + ADT/ARSI', oligometastatic_synchronous, '20,184,166', '94,234,212') }}
+        {{ pm22f_card('pm2OligoMetachAdtNaive', 'oligo-metach-adt-naive-card', 'OLIGO METACHRONOUS · NCCN PROS-G', 'Metachronous oligomet ADT-naïve — MDT preferred', oligometastatic_metachronous_adt_naive, '13,148,136', '110,231,183') }}
+        {{ pm22f_card('pm2OligoRecurrentPostDef', 'oligo-recurrent-post-def-card', 'OLIGO POST-DEFINITIVE · NCCN PROS-G', 'Oligo recurrent post-RP/RT — MDT to recurrent sites', oligo_recurrent_post_definitive, '15,118,110', '153,246,228') }}
+        {{ pm22f_card('pm2SecondPrimary', 'second-primary-card', 'SECOND PRIMARY · NCCN SURV-2', 'Post-RT secondary malignancy surveillance', second_primary_surveillance, '34,197,94', '187,247,208') }}
+        {{ pm22f_card('pm2SuspectedLowPsa', 'suspected-low-psa-card', 'PSA BAJO SOSPECHA · NCCN PROS-1', 'PSA 4-10 sin biopsia — repeat q6mo + lifestyle', suspected_low_psa_no_biopsy, '100,116,139', '203,213,225') }}
+        {{ pm22f_card('pm2SuspectedElevatedPsaWw', 'suspected-elevated-psa-ww-card', 'PSA ELEVADO + WW · NCCN PROS-1', 'PSA >10 + frail/LE limitada — watchful waiting', suspected_elevated_psa_watchful_wait, '71,85,105', '203,213,225') }}
+        {{ pm22f_card('pm2NegBiopsyAgeLt45', 'neg-biopsy-age-lt45-card', 'BIOPSIA NEG + <45y · NCCN PROS-1+A', 'Joven con biopsia neg y FH+ — re-biopsy MRI-targeted + germline', negative_biopsy_age_lt_45, '51,65,85', '186,230,253') }}
+
         {# 22c.6 Survivorship Post-Curative 5y+ Card — long-term outcome tracking — NCCN 2026 SURV-1 #}
         {% if survivorship_5y and survivorship_5y.available %}
         <section id="pm2Survivorship5y" class="pm2-survivorship-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(34,197,94,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(34,197,94,0.32); border-left: 6px solid rgb(34,197,94); border-radius: 14px;" aria-label="Survivorship post-curative 5y+" data-testid="survivorship-5y-card">

@@ -76,6 +76,17 @@ STATIC_NO_DATA_BINDING: set[str] = {
     "fusion-resolution-1", "fusion-resolution-2", "fusion-resolution-3", "fusion-resolution-4",
     "arbitrated-rank-1", "arbitrated-rank-2", "arbitrated-rank-3",
     "arbitrated-rank-4", "arbitrated-rank-5",
+    # EPIC 22e.2 — Preferences capture modal nested elements
+    "preferences-capture-modal", "patient-twin-open-prefs-form", "preferences-submit",
+    # EPIC 22f — Nested -preferred elements per card (rendered by macro)
+    "comorbidity-hepatic-card-preferred", "brca1-carrier-card-preferred",
+    "atm-carrier-card-preferred", "hoxb13-carrier-card-preferred",
+    "post-brachy-ldr-card-preferred", "post-ebrt-alone-card-preferred",
+    "post-sbrt-card-preferred", "post-focal-therapy-card-preferred",
+    "oligo-synchronous-card-preferred", "oligo-metach-adt-naive-card-preferred",
+    "oligo-recurrent-post-def-card-preferred", "second-primary-card-preferred",
+    "suspected-low-psa-card-preferred", "suspected-elevated-psa-ww-card-preferred",
+    "neg-biopsy-age-lt45-card-preferred",
     "patient-twin-low-capture",  # nested chip under patient-twin-os-card
     "patient-twin-readiness-pct",  # nested chip under patient-twin-os-card
     "risk-strat-preferred-therapy",  # nested label under risk-stratified card
@@ -104,6 +115,22 @@ CARD_TO_BUNDLE_KEY: dict[str, str] = {
     "post-rt-bcr-card": "post_rt_bcr",
     "risk-stratified-localized-card": "risk_stratified",
     "decision-fusion-summary": "decision_fusion",  # EPIC 23 — recommendation arbiter
+    # EPIC 22f — 15 remaining Cortana cards (complete the EPIC 22c state set)
+    "comorbidity-hepatic-card": "comorbidity_hepatic",
+    "brca1-carrier-card": "brca1_carrier",
+    "atm-carrier-card": "atm_carrier",
+    "hoxb13-carrier-card": "hoxb13_carrier",
+    "post-brachy-ldr-card": "post_brachy_ldr",
+    "post-ebrt-alone-card": "post_ebrt_alone",
+    "post-sbrt-card": "post_sbrt",
+    "post-focal-therapy-card": "post_focal_therapy",
+    "oligo-synchronous-card": "oligometastatic_synchronous",
+    "oligo-metach-adt-naive-card": "oligometastatic_metachronous_adt_naive",
+    "oligo-recurrent-post-def-card": "oligo_recurrent_post_definitive",
+    "second-primary-card": "second_primary_surveillance",
+    "suspected-low-psa-card": "suspected_low_psa_no_biopsy",
+    "suspected-elevated-psa-ww-card": "suspected_elevated_psa_watchful_wait",
+    "neg-biopsy-age-lt45-card": "negative_biopsy_age_lt_45",
 }
 
 

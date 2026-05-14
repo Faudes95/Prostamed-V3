@@ -625,6 +625,257 @@ def _survivorship_5y_summary(
     }
 
 
+# ─────────────────── EPIC 22f — Generic state card summary builder ───────────────────
+
+
+def _state_card_summary(
+    state_name: str,
+    patient: Mapping[str, Any],
+    trigger_predicate,
+    extras_extractor=None,
+) -> dict[str, Any]:
+    """EPIC 22f — Generic builder for Cortana state cards.
+
+    Reduces boilerplate across the 15 remaining cards (hepatic, BRCA1, ATM,
+    HOXB13, oligomet x3, post-local x4, second-primary, pre-diagnostic x3)
+    by composing a uniform contract:
+      - trigger_predicate(facts) → bool: should card render?
+      - extras_extractor(facts) → dict: additional state-specific keys
+        merged into return payload (gene, modality, months_since, etc).
+      - registry lookup populates therapeutic_preferred / acceptable /
+        not_recommended / nccn_reference / pivotal_trials.
+    """
+    pt = patient or {}
+    facts = _fact_lookup(pt)
+    baseline = pt.get("baseline") or {}
+    identity = pt.get("identity") or {}
+    # Allow predicate to read baseline/identity fields too
+    composite = {**facts, **baseline, **identity}
+
+    if not trigger_predicate(composite):
+        return {"available": False}
+
+    entry = _load_therapeutic_entry(state_name)
+    payload = {
+        "available": True,
+        "therapeutic_preferred": str(entry.get("preferred") or ""),
+        "acceptable_alternatives": list(entry.get("acceptable") or []),
+        "not_recommended": list(entry.get("not_recommended") or []),
+        "pivotal_trials": list(entry.get("pivotal_trials") or []),
+        "nccn_reference": str(entry.get("nccn_reference") or ""),
+        "evidence_grade": str(entry.get("evidence_grade") or ""),
+    }
+    if extras_extractor:
+        try:
+            extras = extras_extractor(composite) or {}
+            payload.update(extras)
+        except Exception:
+            pass
+    return payload
+
+
+def _comorbidity_hepatic_summary(pv, pt):
+    """EPIC 22f — Severe hepatic comorbidity card."""
+    def pred(f):
+        if _truthy_helper(f.get("active_liver_disease")) or _truthy_helper(f.get("cirrhosis_or_portal_hypertension")):
+            return True
+        try:
+            alt = float(f.get("alt_u_l") or f.get("alt") or 0)
+            ast = float(f.get("ast_u_l") or f.get("ast") or 0)
+            return alt > 120 or ast > 120
+        except (TypeError, ValueError):
+            return False
+    return _state_card_summary("comorbidity_limited_severe_hepatic", pt, pred)
+
+
+def _brca1_carrier_summary(pv, pt):
+    """EPIC 22f — BRCA1 carrier card."""
+    def pred(f):
+        gene = str(f.get("hrr_gene") or "").upper()
+        variant = str(f.get("germline_pathogenic_variant") or "").upper()
+        return gene == "BRCA1" or "BRCA1" in variant
+    return _state_card_summary("brca1_carrier", pt, pred)
+
+
+def _atm_carrier_summary(pv, pt):
+    """EPIC 22f — ATM carrier card."""
+    def pred(f):
+        gene = str(f.get("hrr_gene") or "").upper()
+        variant = str(f.get("germline_pathogenic_variant") or "").upper()
+        return gene == "ATM" or "ATM" in variant
+    return _state_card_summary("atm_carrier", pt, pred)
+
+
+def _hoxb13_carrier_summary(pv, pt):
+    """EPIC 22f — HOXB13 G84E carrier card."""
+    def pred(f):
+        gene = str(f.get("hrr_gene") or "").upper()
+        variant = str(f.get("germline_pathogenic_variant") or "").upper()
+        return gene == "HOXB13" or "HOXB13" in variant or "G84E" in variant
+    return _state_card_summary("hoxb13_carrier", pt, pred)
+
+
+def _post_brachy_ldr_summary(pv, pt):
+    """EPIC 22f — Post-LDR brachytherapy surveillance card."""
+    def pred(f):
+        modality = str(f.get("prior_local_treatment_modality") or f.get("rt_modality") or "").lower()
+        return "brachy" in modality and ("ldr" in modality or "low" in modality)
+    def extras(f):
+        return {"months_since_local_treatment": f.get("months_since_local_treatment", "—")}
+    return _state_card_summary("post_brachy_ldr", pt, pred, extras)
+
+
+def _post_ebrt_alone_summary(pv, pt):
+    """EPIC 22f — Post-EBRT alone surveillance card."""
+    def pred(f):
+        modality = str(f.get("prior_local_treatment_modality") or f.get("rt_modality") or "").lower()
+        if not modality:
+            return False
+        if "brachy" in modality or "sbrt" in modality or "focal" in modality:
+            return False
+        return modality in {"ebrt", "imrt", "vmat", "3dcrt", "external_beam"} or "ebrt" in modality
+    return _state_card_summary("post_ebrt_alone", pt, pred)
+
+
+def _post_sbrt_summary(pv, pt):
+    """EPIC 22f — Post-SBRT surveillance card."""
+    def pred(f):
+        modality = str(f.get("prior_local_treatment_modality") or f.get("rt_modality") or "").lower()
+        return "sbrt" in modality or "stereotactic" in modality
+    return _state_card_summary("post_sbrt", pt, pred)
+
+
+def _post_focal_therapy_summary(pv, pt):
+    """EPIC 22f — Post-focal therapy (HIFU/cryo/IRE) surveillance card."""
+    def pred(f):
+        modality = str(f.get("prior_local_treatment_modality") or f.get("rt_modality") or "").lower()
+        return any(tok in modality for tok in ("hifu", "cryo", "ire", "nanoknife", "focal"))
+    return _state_card_summary("post_focal_therapy", pt, pred)
+
+
+def _oligo_synchronous_summary(pv, pt):
+    """EPIC 22f — De novo synchronous oligometastatic (≤3 lesions) card."""
+    def pred(f):
+        try:
+            mc = int(f.get("metastasis_count") or 0)
+        except (TypeError, ValueError):
+            return False
+        if mc == 0 or mc > 3:
+            return False
+        timing = str(f.get("metastatic_timing") or "").lower()
+        return "synchronous" in timing or "de_novo" in timing
+    return _state_card_summary("oligometastatic_synchronous", pt, pred)
+
+
+def _oligo_metach_adt_naive_summary(pv, pt):
+    """EPIC 22f — Metachronous ADT-naive oligomet card."""
+    def pred(f):
+        try:
+            mc = int(f.get("metastasis_count") or 0)
+        except (TypeError, ValueError):
+            return False
+        if mc == 0 or mc > 3:
+            return False
+        timing = str(f.get("metastatic_timing") or "").lower()
+        adt = str(f.get("current_adt_context") or "").lower()
+        adt_naive = adt in ("", "none", "no_adt", "naive")
+        return "metachronous" in timing and adt_naive
+    return _state_card_summary("oligometastatic_metachronous_adt_naive", pt, pred)
+
+
+def _oligo_recurrent_post_def_summary(pv, pt):
+    """EPIC 22f — Oligo recurrent post-definitive local treatment card."""
+    def pred(f):
+        try:
+            mc = int(f.get("metastasis_count") or 0)
+        except (TypeError, ValueError):
+            return False
+        if mc == 0 or mc > 3:
+            return False
+        return _truthy_helper(f.get("prior_local_treatment_done"))
+    return _state_card_summary("oligo_recurrent_post_definitive", pt, pred)
+
+
+def _second_primary_summary(pv, pt):
+    """EPIC 22f — Post-RT second-primary surveillance card."""
+    def pred(f):
+        try:
+            y = float(f.get("years_post_rt") or 0)
+        except (TypeError, ValueError):
+            return False
+        return y >= 5
+    def extras(f):
+        return {"years_post_rt": f.get("years_post_rt", "—")}
+    return _state_card_summary("second_primary_surveillance", pt, pred, extras)
+
+
+def _suspected_low_psa_summary(pv, pt):
+    """EPIC 22f — Suspected low PSA, no biopsy, age <70 card."""
+    def pred(f):
+        if _truthy_helper(f.get("known_cancer_diagnosis")):
+            return False
+        try:
+            psa = float(f.get("baseline_psa") or f.get("psa") or 0)
+            pirads = float(f.get("pirads_score") or 0)
+            age = int(f.get("age") or 0)
+        except (TypeError, ValueError):
+            return False
+        return 4.0 <= psa <= 10.0 and pirads < 3 and (age == 0 or age < 70)
+    return _state_card_summary("suspected_low_psa_no_biopsy", pt, pred)
+
+
+def _suspected_elevated_psa_ww_summary(pv, pt):
+    """EPIC 22f — Suspected elevated PSA + WW (frail/limited LE) card."""
+    def pred(f):
+        if _truthy_helper(f.get("known_cancer_diagnosis")):
+            return False
+        try:
+            psa = float(f.get("baseline_psa") or f.get("psa") or 0)
+        except (TypeError, ValueError):
+            return False
+        if psa <= 10:
+            return False
+        ecog = str(f.get("ecog") or f.get("ecog_score") or "")
+        le = str(f.get("life_expectancy_years") or "").lower()
+        frailty = str(f.get("frailty_status") or "").lower()
+        return (
+            ecog in ("3", "4")
+            or le in ("lt_5y", "<5", "less_than_5")
+            or frailty in ("frail", "severely_frail")
+        )
+    return _state_card_summary("suspected_elevated_psa_watchful_wait", pt, pred)
+
+
+def _neg_biopsy_age_lt45_summary(pv, pt):
+    """EPIC 22f — Negative biopsy + age <45 + high-risk FH card."""
+    def pred(f):
+        if _truthy_helper(f.get("known_cancer_diagnosis")):
+            return False
+        try:
+            age = int(f.get("age") or 0)
+        except (TypeError, ValueError):
+            return False
+        if age == 0 or age >= 45:
+            return False
+        if not _truthy_helper(f.get("prior_negative_biopsy")):
+            return False
+        return (
+            _truthy_helper(f.get("family_history_cancer"))
+            or _truthy_helper(f.get("first_degree_relative_pca_lt60"))
+            or _truthy_helper(f.get("brca_family_history"))
+        )
+    return _state_card_summary("negative_biopsy_age_lt_45", pt, pred)
+
+
+def _truthy_helper(value):
+    """Module-level truthy helper for the EPIC 22f predicates."""
+    if value is True:
+        return True
+    if value is False or value is None:
+        return False
+    return str(value).strip().lower() in {"true", "1", "yes", "si", "sí"}
+
+
 def _decision_fusion_summary(
     profile_view: Mapping[str, Any],
     patient: Mapping[str, Any],
@@ -2806,6 +3057,22 @@ def bundle_to_v2_profile(profile_view: Mapping[str, Any],
         "survivorship_5y": _survivorship_5y_summary(pv, pt),
         # EPIC 22c — Comorbidity severe CV card (drug-selection safety)
         "comorbidity_cv": _comorbidity_cv_summary(pv, pt),
+        # EPIC 22f — 15 remaining Cortana cards (complete the EPIC 22c state set)
+        "comorbidity_hepatic": _comorbidity_hepatic_summary(pv, pt),
+        "brca1_carrier": _brca1_carrier_summary(pv, pt),
+        "atm_carrier": _atm_carrier_summary(pv, pt),
+        "hoxb13_carrier": _hoxb13_carrier_summary(pv, pt),
+        "post_brachy_ldr": _post_brachy_ldr_summary(pv, pt),
+        "post_ebrt_alone": _post_ebrt_alone_summary(pv, pt),
+        "post_sbrt": _post_sbrt_summary(pv, pt),
+        "post_focal_therapy": _post_focal_therapy_summary(pv, pt),
+        "oligometastatic_synchronous": _oligo_synchronous_summary(pv, pt),
+        "oligometastatic_metachronous_adt_naive": _oligo_metach_adt_naive_summary(pv, pt),
+        "oligo_recurrent_post_definitive": _oligo_recurrent_post_def_summary(pv, pt),
+        "second_primary_surveillance": _second_primary_summary(pv, pt),
+        "suspected_low_psa_no_biopsy": _suspected_low_psa_summary(pv, pt),
+        "suspected_elevated_psa_watchful_wait": _suspected_elevated_psa_ww_summary(pv, pt),
+        "negative_biopsy_age_lt_45": _neg_biopsy_age_lt45_summary(pv, pt),
         # EPIC 23 — Clinical Recommendation Arbiter (fusion banner)
         "decision_fusion": _decision_fusion_summary(pv, pt),
         # raw passthroughs para tabs avanzadas
