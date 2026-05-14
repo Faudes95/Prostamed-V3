@@ -77,7 +77,18 @@ class PersonaPlexLazyLoader:
         return info
 
     def load(self) -> bool:
-        """Load PersonaPlex model. Returns True if loaded successfully."""
+        """Load PersonaPlex model. Returns True if loaded successfully.
+
+        EPIC 22a.2: conditional import — gracefully degrades when:
+          - GPU unavailable (Mac CPU dev)
+          - PersonaPlex package not installed
+          - HF_TOKEN missing
+          - NVIDIA OML not accepted
+
+        In production (GPU host with HF_TOKEN), imports real PersonaPlex
+        and loads weights. The sidecar continues to serve /health even
+        when model fails to load (so routing fallback to Whisper works).
+        """
         if self.is_loaded() or self._loading:
             return self.is_loaded()
         self._loading = True
@@ -85,25 +96,41 @@ class PersonaPlexLazyLoader:
             self.gpu_info = self._detect_gpu()
             if not self.gpu_info.get("available"):
                 self.load_error = "no_gpu_available"
-                logger.warning("PersonaPlex load skipped — no GPU detected")
+                logger.warning("PersonaPlex load skipped — no GPU detected (Mac CPU dev mode)")
                 return False
 
-            # NOTE: Actual PersonaPlex import + load happens here when deployed
-            # Placeholder for documentation purposes:
-            #
-            #   from personaplex import PersonaPlexModel
-            #   self.model = PersonaPlexModel.from_pretrained(
-            #       "nvidia/personaplex-base",
-            #       token=HF_TOKEN,
-            #       device="cuda",
-            #       persona="cortana_clinical_es",
-            #   )
-            #
-            # For sidecar STUB without real install:
-            self.model = "STUB_MODEL_NOT_LOADED"  # placeholder; real implementation imports above
-            self.load_error = ""
-            logger.info("PersonaPlex STUB loaded (replace with real import in production)")
-            return True
+            # Conditional import: only succeeds if PersonaPlex installed + HF_TOKEN valid.
+            try:
+                # Real import path (production with HF_TOKEN configured).
+                # Wrapped in try so Mac CPU dev environment doesn't crash on missing package.
+                from personaplex import PersonaPlexModel  # type: ignore[import-not-found]
+                if not HF_TOKEN:
+                    self.load_error = "hf_token_missing"
+                    logger.warning("HF_TOKEN env var required to load nvidia/personaplex-base")
+                    return False
+                self.model = PersonaPlexModel.from_pretrained(
+                    "nvidia/personaplex-base",
+                    token=HF_TOKEN,
+                    device="cuda",
+                    persona="cortana_clinical_es",
+                )
+                self.load_error = ""
+                logger.info("PersonaPlex model loaded (real, GPU=%s, VRAM=%sGB)",
+                            self.gpu_info.get("name"), self.gpu_info.get("vram_gb"))
+                return True
+            except ImportError as exc:
+                # PersonaPlex package not installed → sidecar reports unavailable
+                self.load_error = f"personaplex_package_not_installed: {exc}"
+                logger.warning(
+                    "PersonaPlex package not installed. Install via Dockerfile or "
+                    "pip install -e /app/personaplex per docs/personaplex_install.md"
+                )
+                return False
+            except RuntimeError as exc:
+                # CUDA/GPU runtime errors
+                self.load_error = f"runtime_error: {exc}"
+                logger.error("PersonaPlex runtime error during load: %s", exc)
+                return False
         except Exception as exc:
             self.load_error = f"load_failed: {exc}"
             logger.error("PersonaPlex load failed: %s", exc)

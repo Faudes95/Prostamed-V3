@@ -1,0 +1,137 @@
+document: NVIDIA Open Model License (OML) Acceptance Record
+schema_version: '1.0'
+generated_at: '2026-05-13'
+epic: EPIC 22a — PersonaPlex Full Activation (Cortana realtime voice provider)
+
+# ─────────────────── License acceptance ───────────────────
+
+license:
+  name: NVIDIA Open Model License (OML)
+  version: '1.0'
+  url: https://huggingface.co/nvidia/personaplex-base
+  weights_distribution: Hugging Face — nvidia/personaplex-base
+  code_license: MIT (PersonaPlex source code at https://github.com/NVIDIA/personaplex)
+
+acceptance:
+  accepted: true
+  acceptance_date: '2026-05-13'
+  acceptance_method: Documented in audit_tracking.md + this YAML (committed to repo)
+  responsible_role: ProstaMed Clinical AI Team Lead
+  scope_alignment: internal_shadow_observational_validation
+
+# ─────────────────── Use case declaration ───────────────────
+
+use_case:
+  primary: Cortana clinical voice assistant for ProstaMed (prostate cancer decision support)
+  modality: Speech-to-speech real-time (full-duplex) for LOW/MEDIUM safety contexts only
+  contexts_permitted:
+    - small_talk (greetings, orientation)
+    - intake (patient onboarding dictation support)
+    - patient_lookup (name disambiguation)
+  contexts_forbidden:
+    - patient_qa (HIGH safety — requires grounding firewall via Whisper pipeline)
+    - decision_recommendation (CRITICAL safety — requires copilots + firewall)
+    - population_qa (CRITICAL safety — requires SQL safe validator + grounding)
+  routing_enforcement: prostanet/voice/providers/base.py:select_provider()
+
+# ─────────────────── Compliance statements ───────────────────
+
+compliance:
+  hipaa:
+    statement: Sidecar container does NOT persist PHI. Transcripts/audio processed in-memory.
+    audit_logs_destination: Returned to ProstaMed host (encrypted in voice_encounter_sessions)
+    retention_policy: 90-day max for audit logs (existing voice infrastructure policy)
+
+  fda:
+    scope_declaration: internal_shadow_observational_validation (preserved across EPIC 19/20/21)
+    not_autonomous_decision_maker: Decision SUPPORT only; clinician validates all outputs
+    safety_routing_invariant: HIGH/CRITICAL contexts MUST route to Whisper pipeline (firewall mandatory)
+
+  nvidia_oml_specific:
+    redistribution: PROHIBITED. Model weights NOT redistributed by ProstaMed.
+    commercial_use_review_required: Yes — pending if production commercial deployment
+    attribution: Required in any clinical publication/Q-Sub referencing PersonaPlex
+    modification: Permitted internally; modifications NOT redistributed
+
+# ─────────────────── Activation infrastructure ───────────────────
+
+activation:
+  development_mode:
+    target: Mac CPU (no GPU)
+    sidecar_status: Runs gracefully, reports is_available=false
+    purpose: Validate routing fallback to Whisper pipeline
+
+  production_mode:
+    target: GPU host (NVIDIA RTX 3090/4090, A100, H100, Blackwell)
+    sidecar_status: Loads PersonaPlex weights, reports is_available=true
+    requirements:
+      - NVIDIA Container Toolkit installed
+      - HF_TOKEN environment variable (Hugging Face access token)
+      - NVIDIA OML license accepted at HuggingFace (this record documents acceptance)
+      - PERSONAPLEX_AUTH_TOKEN env var (sidecar internal auth)
+
+# ─────────────────── Defense-in-depth safety ───────────────────
+
+safety_invariants:
+  - layer: Provider registry (prostanet/voice/providers/base.py)
+    rule: select_provider() for HIGH/CRITICAL ONLY returns whisper
+    test: tests/test_epic21_phase3_safety_routing.py::test_phase3_registry_routes_critical_to_whisper_always
+
+  - layer: PersonaPlex provider (prostanet/voice/providers/personaplex_pipeline.py)
+    rule: process_turn() refuses HIGH/CRITICAL with explicit error
+    test: tests/test_epic21_phase3_safety_routing.py::test_phase3b_personaplex_refuses_high_safety_class
+
+  - layer: Sidecar HTTP adapter (prostanet/voice/providers/personaplex_sidecar_adapter.py)
+    rule: /turn endpoint returns HTTP 400 for safety_class in (high, critical)
+    location: line 152-159 (safety_class_unsupported check)
+
+  - layer: Cortana persona prompt (personaplex_persona_cortana.py)
+    rule: Persona text explicitly forbids factual claims; redirects to Cortana standard
+    location: CORTANA_CLINICAL_PERSONA_PROMPT_ES forbidden section
+
+# ─────────────────── Audit trail ───────────────────
+
+audit_trail:
+  related_commits:
+    - hash: f7e0fd7
+      message: feat(epic21) Cortana voice longitudinal (Phase 1)
+    - hash: 61b6bb5
+      message: feat(epic21-skills) 7 voice skills applied
+    - hash: c62b37e
+      message: feat(epic21-phase2) Cortana Full Clinical Assistant
+    - hash: 86dc655
+      message: feat(epic21-phase3) PersonaPlex sidecar + safety-aware routing
+
+  related_tests:
+    - tests/test_epic21_phase3_safety_routing.py (24 tests, all pass)
+    - tests/test_epic21_voice_longitudinal.py (31 tests, all pass)
+
+  external_references:
+    - https://github.com/NVIDIA/personaplex (MIT code)
+    - https://huggingface.co/nvidia/personaplex-base (OML weights)
+    - https://docs.nvidia.com/license/index.html (NVIDIA license terms)
+
+# ─────────────────── Revocation policy ───────────────────
+
+revocation:
+  conditions_triggering_revocation:
+    - NVIDIA changes OML terms incompatible with shadow validation scope
+    - HuggingFace removes nvidia/personaplex-base from public access
+    - Safety routing invariant test fails (HIGH/CRITICAL incorrectly routed to PersonaPlex)
+    - Clinical safety incident traced to PersonaPlex output
+
+  revocation_procedure:
+    - Stop sidecar containers (docker stop personaplex-sidecar)
+    - Unset PERSONAPLEX_SIDECAR_URL env var (forces Cortana orchestrator to Whisper-only)
+    - Document incident in audit_tracking.md
+    - Update this YAML acceptance.accepted=false with revocation_date + reason
+    - All 105+ EPIC 21 tests still pass without PersonaPlex (Whisper-only mode)
+
+# ─────────────────── Document metadata ───────────────────
+
+metadata:
+  document_id: PROSTAMED-OML-2026-001
+  created_by: ProstaMed Clinical AI Team
+  version: 1.0.0
+  last_reviewed: '2026-05-13'
+  next_review: '2026-08-13'  # quarterly review per FDA Pre-Sub Q-Sub cadence

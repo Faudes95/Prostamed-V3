@@ -1,0 +1,307 @@
+document: UI-Data Concordance Audit — Patient Profile (EPIC 22a)
+schema_version: '1.0'
+generated_at: '2026-05-13'
+epic: EPIC 22a — UI-Data Concordance Audit baseline
+audited_templates:
+  - templates/patient_profile.html
+  - templates/patient_profile_v2.html
+audit_methodology:
+  - faubot_phase_6_data_integrity: applied
+  - ultrathink_detective: 3 parallel Explore agents
+  - audit_scope: every CTA → endpoint → DB write → derivative → UI re-render → clinical logic consumer
+
+declarations:
+  no_destructive_changes: true
+  scope: append + repair only (no deletion of existing clinical logic or frontend)
+  status_legend:
+    functional: end-to-end works (UI → DB → derivative → clinical logic)
+    partial: UI exists, partial backend, gaps in clinical logic integration
+    broken: UI references data path but it doesn't work end-to-end
+    placeholder: pretty UI with no real data wiring
+
+# ─────────────────── A. Patient profile CTAs (broad inventory) ───────────────────
+
+ctas_inventory:
+
+  - cta_text: '+ captura longitudinal'
+    template_location: 'patient_profile_v2.html:150'
+    target_endpoint: '/longitudinal-capture/<nss>'
+    endpoint_exists: true
+    backend_route: 'app.py:4758 (GET /longitudinal-capture/<nss>)'
+    data_persistence: 'PSA, testosterone, labs, ECOG via /api/longitudinal/<nss>/append'
+    derivative_consumer: 'build_patient_record_derivatives reads biomarker_longitudinal'
+    clinical_logic_consumer: 'reconciled_state.py + various copilots'
+    status: functional
+    notes: 'Working pipeline for PSA + biomarkers. Histopathology MISSING — see EPIC 22b'
+
+  - cta_text: 'Capturar primer PSA →'
+    template_location: 'patient_profile_v2.html:2417'
+    target_endpoint: '/longitudinal-capture/<nss>'
+    endpoint_exists: true
+    backend_route: 'app.py:4758'
+    status: functional
+
+  - cta_text: 'Capturar línea →'
+    template_location: 'patient_profile_v2.html:2475'
+    target_endpoint: '/longitudinal-capture/<nss>'
+    endpoint_exists: true
+    status: functional
+
+  - cta_text: 'Capturar faltantes'
+    template_location: 'patient_profile_v2.html:193'
+    target_endpoint: 'dynamic ({{ lane.cta_url }})'
+    endpoint_exists: 'depends on lane'
+    status: partial
+    notes: 'Routes to lane-specific capture surfaces; some lanes (germline_carrier) lack capture form'
+
+  - cta_text: 'Use el botón para agregar'
+    template_location: 'patient_profile.html:5910'
+    target_endpoint: 'N/A (text references button)'
+    endpoint_exists: false
+    status: broken
+    issue: 'Template promises a button but no button HTML rendered in conditional block'
+    fix_path: 'EPIC 22d.1 — UI audit: add button or remove dead reference'
+
+  - cta_text: 'Completar reporte histopatológico'
+    template_location: 'patient_profile_v2.html (proposed in EPIC 22b)'
+    target_endpoint: '/longitudinal-capture/<nss>?moment=biopsy_capture (planned)'
+    endpoint_exists: false
+    status: broken
+    issue_root_cause: |
+      4 architectural disconnects:
+      1. /api/longitudinal/<nss>/append (app.py:5020) NO supports kind=biopsy
+      2. /api/biopsy/<patient_id> (app.py:4134) ORPHANED — no UI calls it
+      3. gleason_at_rp defined in moment_capture_schemas.py:105 but NOT in clinical_fact_registry.py FACT_SPECS
+      4. margin_status similarly capturable but not canonicalized
+    fix_path: 'EPIC 22b — primary focus'
+    clinical_impact: HIGH
+    user_complaint_origin: 'Documented in EPIC 22 user request 2026-05-13'
+
+  - cta_text: 'Cortana realtime toggle'
+    template_location: 'patient_profile_v2.html:769 (EPIC 22a.4 NEW)'
+    target_endpoint: '/api/voice/epic21/health + localStorage'
+    endpoint_exists: true
+    status: functional
+    notes: 'Auto-detects PersonaPlex availability; disabled when sidecar unavailable'
+
+# ─────────────────── B. profile_view keys (UI consumption vs derivatives production) ───────────────────
+
+profile_view_key_audit:
+
+  consumed_by_ui_v2:
+    - identity.nss
+    - identity.age
+    - psa_history (multiple positions)
+    - treatment_lines
+    - reconciled_state (latest_assessment)
+    - care_overlays
+    - clinical_signals
+    - next_best_action
+    - patient_twin (EPIC 19)
+    - risk_stratified_localized (EPIC 20c)
+    - mcrpc_subtype (EPIC 20c)
+    - hereditary_germline (EPIC 20c)
+    - post_rt_bcr (EPIC 20c)
+    - oligoprogression (EPIC 20c)
+
+  consumed_but_NOT_populated:
+    - patient_twin.preferences.capture_completeness_pct
+      issue: 'UI renders the value but build_patient_twin_view falls back to defaults; no capture surface for preferences exists'
+      severity: medium
+      fix_path: EPIC 22d.2
+
+  populated_but_NOT_consumed:
+    - histopathology_summary
+      source: 'profile_compass.py:6752 (active_copilot_bundle.get)'
+      issue: 'Field produced but no template section renders it'
+      severity: low
+
+  MISSING_from_derivatives:
+    - biopsy_date
+    - gleason_at_rp
+    - gleason_primary_pattern
+    - gleason_secondary_pattern
+    - isup_grade
+    - cores_positive
+    - cores_total
+    - margin_status
+    - perineural_invasion
+    - chromogranin_a_value (NEPC marker)
+    - synaptophysin_biopsy_positive (NEPC)
+    - small_cell_morphology (NEPC)
+    - nse_value (NEPC)
+    fix_path: 'EPIC 22b.4 — extend build_patient_record_derivatives'
+
+# ─────────────────── C. UI section status (40% placeholder per audit) ───────────────────
+
+ui_sections_status:
+
+  - section_id: pm2DecisionHero
+    status: functional
+    data_path: clear
+
+  - section_id: pm2VoiceClinicalOS
+    status: functional
+    data_path: clear (EPIC 21 wired)
+    epic_22a_extension: cortana_realtime_toggle added
+
+  - section_id: pm2RiskStratifiedLocalized (EPIC 20c)
+    status: functional
+    data_path: clear
+
+  - section_id: pm2McrpcSubtype (EPIC 20c)
+    status: functional
+    data_path: clear
+
+  - section_id: pm2HereditaryGermline (EPIC 20c)
+    status: partial
+    issue: 'Displays testing_indicated but NO capture surface for germline result'
+    fix_path: 'EPIC 22b.5 — add germline result capture'
+
+  - section_id: pm2PostRtBcr (EPIC 20c)
+    status: functional
+
+  - section_id: pm2Oligoprogression (EPIC 20c)
+    status: functional
+
+  - section_id: pm2PatientTwinOS (EPIC 19)
+    status: partial
+    issue: 'capture_completeness_pct never populated; preferences capture form missing'
+    fix_path: EPIC 22b.7 + 22d.2
+
+  - section_id: 'biopsy_diagnostics (line 2060 patient_profile_v2)'
+    status: broken
+    issue: 'Comment only — no actual form surface for biopsy result entry'
+    fix_path: 'EPIC 22b.1-22b.3 — extend longitudinal append + micro-form + UI button'
+
+  - section_id: 'consent_signature'
+    status: partial
+    issue: 'Canvas signature renders but no /api/signature POST handler discovered'
+    fix_path: 'EPIC 22d.3 — backend pattern audit'
+
+  - section_id: 'pm2OpenQuickCapture modal (line 1375 JS reference)'
+    status: broken
+    issue: 'JS function references undefined modal HTML'
+    fix_path: 'EPIC 22d.2 — implement missing modal'
+
+# ─────────────────── D. Clinical logic integration gaps (5 broken) ───────────────────
+
+clinical_logic_integration_gaps:
+
+  - gap_id: BROKEN_INTEGRATION_1
+    title: 'RP Gleason never canonicalized'
+    location_capture: 'moment_capture_schemas.py:105 (gleason_at_rp FieldSpec defined)'
+    location_persist: 'tracking_db._save_structured_biopsy_session writes to biopsy_details'
+    location_canonicalize: '❌ NOT in clinical_fact_registry.py FACT_SPECS'
+    location_consumer: 'clinical_state_classifier reads diagnostic gleason, NOT RP gleason'
+    clinical_impact: 'Post-RP risk stratification uses pre-operative Gleason instead of final pathology'
+    severity: HIGH
+    fix_path: EPIC 22b.5
+
+  - gap_id: BROKEN_INTEGRATION_2
+    title: 'Surgical margin status missing from fact registry'
+    location_capture: 'moment_capture_schemas.py:101-104 (margin_status defined)'
+    location_persist: 'tracking_db writes to biopsy_details.margin_status'
+    location_canonicalize: '❌ NO FactSpec for margin_status or surgical_margin_status'
+    location_consumer: 'post_rp_salvage_copilot reads source.get("surgical_margin") from raw payload'
+    clinical_impact: 'Margin status not longitudinal-stable; salvage decision may use stale data'
+    severity: HIGH
+    fix_path: EPIC 22b.5
+
+  - gap_id: BROKEN_INTEGRATION_3
+    title: 'Percent positive cores not blocking validation'
+    location_capture: 'biopsy_sessions.max_involvement_pct'
+    location_validation: 'decision_input_requirements_engine.py:307 — optional flag, NOT blocking'
+    clinical_impact: 'very_low_risk classification can proceed with missing pct → incorrect AS recommendation'
+    severity: MEDIUM
+    fix_path: EPIC 22b.6
+
+  - gap_id: BROKEN_INTEGRATION_4
+    title: 'Patient Twin OS no recompute triggers'
+    location_read: 'patient_twin_os.py extract_preferences() called on-demand at UI render'
+    location_missing: '❌ No event listener on patient_clinical_facts.insert for hrr_status, goal_of_care'
+    clinical_impact: 'New HRR+ result does not invalidate cached ranking; UI shows stale recommendation'
+    severity: HIGH
+    fix_path: EPIC 22b.7
+
+  - gap_id: BROKEN_INTEGRATION_5
+    title: 'Clinical Readiness Tower → no fill endpoint'
+    location_tracker: 'clinical_readiness_tower.py LANE_REQUIRED_FIELDS:92-188'
+    location_ui: 'Shows "requires_data" with "Complete" button'
+    location_capture: '❌ capture_flows.py FOLLOWUP_PREFERRED_FIELDS missing post-RP/margin fields'
+    clinical_impact: 'UI flags missing data but clicking button does not route to capture form'
+    severity: MEDIUM
+    fix_path: EPIC 22b.8
+
+# ─────────────────── E. Capture endpoints inventory ───────────────────
+
+capture_endpoints:
+
+  - route: '/api/longitudinal/<nss>/append'
+    method: POST
+    accepts: 'PSA, testosterone, HB, ALP, LDH + extended (ECOG, BPI, ESAS, PHQ9, CTCAE, PSMA-PET, etc.)'
+    location: 'app.py:4945-5100'
+    nss_based: true
+    status: functional
+    epic_22b_extension: 'add kind="biopsy" with STRUCTURED_BIOPSY mapping'
+
+  - route: '/api/biopsy/<patient_id>'
+    method: POST
+    status: ORPHANED
+    issue: |
+      Endpoint exists at app.py:4134 but NEVER called from UI.
+      Type mismatch: route expects patient_id (int), UI uses NSS (string).
+    fix_path: 'EPIC 22d.3 — deprecate with 308 redirect to /api/longitudinal append'
+
+  - route: '/api/patients/<id>/documents'
+    method: POST
+    accepts: 'document upload (PDF/image) with OCR extraction'
+    extractor: 'prostanet/domains/patient_tracking/document_ingestion.py'
+    extracts: 'gleason_primary, gleason_secondary, isup_grade, positive_cores, total_cores, perineural_invasion'
+    status: partial
+    issue: 'NSS→patient_id lookup required; not consistent with longitudinal append NSS-based'
+
+  - route: '/longitudinal-capture/<nss>'
+    method: GET
+    purpose: 'Render capture form (route param: ?moment=<schema>)'
+    location: 'app.py:4758'
+    status: functional
+
+# ─────────────────── F. Summary ───────────────────
+
+summary:
+  total_ctas_audited: 8
+  ctas_functional: 4
+  ctas_partial: 2
+  ctas_broken: 2
+
+  total_ui_sections_audited: 11
+  sections_functional: 6
+  sections_partial: 3
+  sections_broken: 2
+
+  clinical_logic_integration_gaps: 5
+  high_severity: 3
+  medium_severity: 2
+
+  estimated_pretty_placeholder_pct: 40
+  estimated_fix_effort_hours: 79  # full EPIC 22 estimate
+
+  user_complaint_addressed: 'EPIC 22b will fix histopathology gap (4 disconnects identified)'
+  no_deletion_constraint: 'Confirmed — all fixes are append + refactor, NO existing logic removed'
+
+# ─────────────────── G. Next steps ───────────────────
+
+next_steps:
+  - phase: EPIC 22b
+    focus: 'Histopath fix + 5 broken integrations'
+    estimated_hours: 15
+    deliverable_commit: 'feat(epic22b): histopath capture + RP gleason canonical + Patient Twin triggers + readiness fill'
+
+  - phase: EPIC 22c
+    focus: '22 nuevas trayectorias NCCN 2026 v2'
+    estimated_hours: 40
+
+  - phase: EPIC 22d
+    focus: 'UI/UX + frontend + backend + API audit + concordance pytest gates'
+    estimated_hours: 12

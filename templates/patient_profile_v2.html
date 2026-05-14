@@ -767,7 +767,105 @@
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
                     <span class="pm2-voice-status" data-voice-status data-tone="idle">sin sesión</span>
                     <span class="pm2-state-chip">sesión: <span data-voice-session-key>sin sesión</span></span>
+                    {# EPIC 22a.4 — Cortana realtime toggle (PersonaPlex provider selector) #}
+                    <div data-testid="cortana-realtime-toggle"
+                         style="display:flex;gap:6px;align-items:center;padding:6px 10px;background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.28);border-radius:8px;font-size:.72rem;color:rgb(216,180,254);">
+                        <label style="display:flex;gap:6px;align-items:center;cursor:pointer;">
+                            <input type="checkbox" id="cortana-realtime-toggle-input"
+                                   data-cortana-provider-toggle
+                                   onchange="toggleCortanaRealtime(this.checked)"
+                                   style="cursor:pointer;">
+                            <span>Cortana realtime <small style="opacity:.7;">(PersonaPlex)</small></span>
+                        </label>
+                        <span data-cortana-realtime-status
+                              style="font-size:.65rem;padding:2px 8px;border-radius:10px;background:rgba(244,63,94,0.18);color:rgb(252,165,165);"
+                              title="Estado disponibilidad sidecar PersonaPlex">
+                            verificando…
+                        </span>
+                    </div>
                 </div>
+
+                <script>
+                /* EPIC 22a.4 — Cortana realtime toggle (PersonaPlex provider selector)
+                   - Auto-detect PersonaPlex availability via /api/voice/epic21/health
+                   - localStorage key: cortana_preferred_provider ∈ {whisper, personaplex, auto}
+                   - HIGH/CRITICAL safety contexts ALWAYS use whisper (safety routing enforced server-side)
+                   - Toggle only enables PersonaPlex for LOW/MEDIUM contexts (intake, small_talk, lookup) */
+                (function () {
+                    'use strict';
+                    const STORAGE_KEY = 'cortana_preferred_provider';
+                    const toggle = document.getElementById('cortana-realtime-toggle-input');
+                    const statusEl = document.querySelector('[data-cortana-realtime-status]');
+                    if (!toggle || !statusEl) return;
+
+                    function setStatus(text, available, accepted) {
+                        statusEl.textContent = text;
+                        if (available && accepted) {
+                            statusEl.style.background = 'rgba(34,197,94,0.18)';
+                            statusEl.style.color = 'rgb(134,239,172)';
+                        } else if (available) {
+                            statusEl.style.background = 'rgba(251,191,36,0.18)';
+                            statusEl.style.color = 'rgb(253,224,71)';
+                        } else {
+                            statusEl.style.background = 'rgba(244,63,94,0.18)';
+                            statusEl.style.color = 'rgb(252,165,165)';
+                        }
+                    }
+
+                    function applyPersistedPreference(personaplexAvailable) {
+                        try {
+                            const saved = localStorage.getItem(STORAGE_KEY);
+                            if (saved === 'personaplex' && personaplexAvailable) {
+                                toggle.checked = true;
+                                setStatus('realtime ON', true, true);
+                            } else {
+                                toggle.checked = false;
+                                if (personaplexAvailable) {
+                                    setStatus('standard activo', true, false);
+                                } else {
+                                    setStatus('no disponible (CPU)', false, false);
+                                    toggle.disabled = true;
+                                    toggle.parentElement.title = 'PersonaPlex requiere infraestructura GPU. Activar despliegue cloud para habilitar.';
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('Cortana toggle localStorage error:', e);
+                        }
+                    }
+
+                    window.toggleCortanaRealtime = function (checked) {
+                        const value = checked ? 'personaplex' : 'whisper';
+                        try {
+                            localStorage.setItem(STORAGE_KEY, value);
+                        } catch (e) {
+                            console.warn('Cortana toggle persist error:', e);
+                        }
+                        if (checked) {
+                            setStatus('realtime ON', true, true);
+                        } else {
+                            setStatus('standard activo', true, false);
+                        }
+                    };
+
+                    // Auto-detect on page load
+                    fetch('/api/voice/epic21/health', { headers: { 'Accept': 'application/json' } })
+                        .then(r => r.json())
+                        .then(d => {
+                            try {
+                                const modules = d.modules || {};
+                                const ppxAvail = modules.personaplex_pipeline === 'available';
+                                applyPersistedPreference(ppxAvail);
+                            } catch (e) {
+                                setStatus('no disponible', false, false);
+                                toggle.disabled = true;
+                            }
+                        })
+                        .catch(() => {
+                            setStatus('no disponible', false, false);
+                            toggle.disabled = true;
+                        });
+                })();
+                </script>
             </div>
             <div class="pm2-voice-grid">
                 <div class="pm2-voice-box">

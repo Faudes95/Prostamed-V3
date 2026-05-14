@@ -13126,3 +13126,64 @@ Reusa pattern stub-detection real clinical_scores import (#67A).
 - Este archivo es actualizado automáticamente por FAUBOT al finalizar cada auditoría
 - Los errores se priorizan por impacto clínico (tratamiento > seguimiento > formato)
 - Referencia de guías: NCCN Prostate v5.2026, EAU Guidelines 2025/2026
+
+---
+
+## EPIC 22a — NVIDIA Open Model License Acceptance (2026-05-13)
+
+**Documento formal:** `prostanet/regulatory/dhf/nvidia_oml_acceptance_record.yaml`
+
+### Resumen ejecutivo
+
+ProstaMed Clinical AI Team acepta la **NVIDIA Open Model License (OML)** v1.0 para
+los weights del modelo PersonaPlex (Moshi-based full-duplex speech-to-speech), usados
+en EPIC 21 como **provider opcional** de Cortana clinical voice assistant.
+
+### Acceptance scope
+
+- **Uso permitido:** internal_shadow_observational_validation
+- **Contexts permitidos en producción:** LOW/MEDIUM safety únicamente
+  - small_talk (orientación/saludos)
+  - intake (acompañamiento de dictation)
+  - patient_lookup (disambiguación de nombre)
+- **Contexts PROHIBIDOS para PersonaPlex** (routing forzado a Whisper pipeline):
+  - patient_qa (HIGH — requires grounding firewall)
+  - decision_recommendation (CRITICAL — requires copilots + firewall)
+  - population_qa (CRITICAL — requires SQL safe validator)
+
+### Compliance enforcement
+
+**Defense-in-depth** safety routing implementado en 4 capas:
+1. `VoiceProviderRegistry.select_provider()` — registry NEVER routes HIGH/CRITICAL to PersonaPlex
+2. `PersonaPlexProvider.process_turn()` — explicit refusal if safety_class ∈ {HIGH, CRITICAL}
+3. `personaplex_sidecar_adapter.py /turn` — HTTP 400 for high/critical
+4. `cortana_clinical_es` persona prompt — redirects factual queries to "Cortana standard"
+
+**Tests verificando invariantes:**
+- `test_phase3_registry_routes_critical_to_whisper_always` ✅
+- `test_phase3b_personaplex_refuses_high_safety_class` ✅
+- `test_phase3b_personaplex_capability_max_safety_medium` ✅
+
+### Activation status
+
+- **Dev mode (Mac CPU):** ✅ Sidecar runs, reports `is_available=false`, routing fallback verified
+- **Production (GPU):** Pendiente HF_TOKEN config + Docker deploy en cloud GPU host
+- **Real PersonaPlex import:** Conditional (graceful degrade Mac CPU vs production)
+
+### Revocation policy
+
+Si OML terms cambian, weights se retiran, o test de safety routing falla:
+1. Stop sidecar containers
+2. Unset `PERSONAPLEX_SIDECAR_URL` env var → Cortana orchestrator a Whisper-only
+3. Update `nvidia_oml_acceptance_record.yaml`: `acceptance.accepted=false` + reason
+4. 105+ EPIC 21 tests siguen pasando sin PersonaPlex
+
+### Audit references
+
+- Commit: pending (EPIC 22a)
+- Detailed record: `prostanet/regulatory/dhf/nvidia_oml_acceptance_record.yaml`
+- Related: 4 commits EPIC 21 (f7e0fd7, 61b6bb5, c62b37e, 86dc655)
+
+### Quarterly review schedule
+
+Next review: **2026-08-13** (FDA Pre-Sub Q-Sub cadence)

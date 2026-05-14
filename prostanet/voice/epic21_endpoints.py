@@ -330,6 +330,7 @@ def epic21_cortana_orchestrator() -> Any:
         session_id=payload.get("session_id"),
         multi_turn_state=payload.get("multi_turn_state"),
         language=payload.get("language", "es"),
+        preferred_provider=payload.get("preferred_provider"),
     )
     return jsonify(orchestration_to_dict(result)), 200
 
