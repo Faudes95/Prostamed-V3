@@ -318,14 +318,22 @@ def _find_fact(facts: list[Mapping[str, Any]], key: str) -> Any:
             matches.append(fact)
     if not matches:
         return None
-    # Pick the most recent by observed_at, falling back to source_date, then id
-    def _sort_key(f: Mapping[str, Any]) -> str:
-        return str(
-            f.get("observed_at")
-            or f.get("source_date")
-            or f.get("updated_at")
-            or f.get("id")
-            or ""
+    # EPIC 23.fix bug C — `is_active` filtering. Pre-fix, _find_fact picked
+    # the most recent by observed_at regardless of is_active state. After
+    # /api/patient/<nss>/preferences was called multiple times, older
+    # inactive rows with newer observed_at dates could shadow the actual
+    # active row, so the Twin OS kept reading stale preferences.
+    # Fix: prefer is_active=True rows first; only fall back to the full
+    # match set if NO active row exists (defensive for legacy data).
+    active_matches = [f for f in matches if f.get("is_active") in (True, 1, "1")]
+    if active_matches:
+        matches = active_matches
+    # Pick the most recent by id (monotonic, more reliable than dates)
+    # falling back to observed_at then source_date.
+    def _sort_key(f: Mapping[str, Any]) -> tuple:
+        return (
+            int(f.get("id") or 0),
+            str(f.get("observed_at") or f.get("source_date") or ""),
         )
     matches.sort(key=_sort_key, reverse=True)
     latest = matches[0]
