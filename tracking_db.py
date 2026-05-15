@@ -12363,6 +12363,20 @@ def store_voice_audio_chunk(nss_or_id, session_key, audio_bytes, *, mime_type=""
 
     stt = LocalSTTEngine()
     if not stt.is_available():
+        # EPIC 24d — granular transcription_status so the UI can show a
+        # specific blocker (sidecar_not_found vs disabled vs other) instead
+        # of the generic "audio cifrado · STT local pendiente" microcopy.
+        diag = stt.diagnose()
+        if diag.get("stt_disable_env"):
+            granular = "requires_local_stt_disabled"
+        elif diag.get("blockers"):
+            blockers_blob = " ".join(diag["blockers"]).lower()
+            if "sidecar venv no encontrado" in blockers_blob:
+                granular = "requires_local_stt_sidecar_not_found"
+            else:
+                granular = "requires_local_stt_other"
+        else:
+            granular = "requires_local_stt"
         bundle = _serialize_voice_session_bundle(patient_id, session_key) or {}
         return True, {
             **bundle,
@@ -12370,8 +12384,16 @@ def store_voice_audio_chunk(nss_or_id, session_key, audio_bytes, *, mime_type=""
                 "stored": True,
                 "encrypted": True,
                 "sha256": audio_sha,
-                "transcription_status": "requires_local_stt",
+                # Legacy key preserved for backward-compat (older UI still
+                # branches on "requires_local_stt").
+                "transcription_status": granular,
+                "transcription_status_legacy": "requires_local_stt",
                 "local_stt_available": False,
+                "stt_diagnose": {
+                    "mode": diag.get("mode"),
+                    "blockers": diag.get("blockers", []),
+                    "next_steps": diag.get("next_steps", []),
+                },
             },
         }
 

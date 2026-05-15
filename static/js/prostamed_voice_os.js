@@ -414,9 +414,25 @@
       } else {
         setStatus(panel, 'audio cifrado recibido', 'warn');
       }
-    } else if (st === 'requires_local_stt') {
+    } else if (st === 'requires_local_stt_sidecar_not_found') {
+      // EPIC 24d/24e — sidecar venv missing
+      setStatus(panel, 'STT no configurado · contactar admin', 'error');
+      toast('error',
+        'STT local no configurado. El audio se cifró pero no se transcribió. ' +
+        'Pide al administrador instalar el módulo de voz (.venv-voice311 con faster-whisper).');
+    } else if (st === 'requires_local_stt_disabled') {
+      setStatus(panel, 'STT deshabilitado por admin', 'error');
+      toast('error',
+        'STT local desactivado por configuración (VOICE_STT_DISABLE). ' +
+        'Pide al administrador habilitarlo si necesitas dictado por voz.');
+    } else if (st === 'requires_local_stt_other' || st === 'requires_local_stt') {
+      // EPIC 24e — legacy + unknown blocker
+      const detail = body.audio?.stt_diagnose?.blockers?.[0] || '';
       setStatus(panel, 'audio cifrado · STT local pendiente', 'warn');
-      toast('warn', 'Audio cifrado guardado. Instala faster-whisper para transcribir localmente.');
+      toast('warn',
+        'Audio cifrado guardado. ' +
+        (detail ? `Diagnóstico: ${detail.slice(0, 100)}` :
+          'Instala faster-whisper para transcribir localmente.'));
     } else if (st === 'partial_audio_buffering') {
       setStatus(panel, 'buffer parcial · esperando más audio', 'warn');
     } else if (st === 'empty_transcript') {

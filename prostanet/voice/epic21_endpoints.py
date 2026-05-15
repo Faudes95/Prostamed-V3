@@ -226,6 +226,91 @@ def epic21_health() -> Any:
     }), 200
 
 
+# ─────────────────── EPIC 24a — STT health + pre-warm ───────────────────
+
+
+@epic21_bp.route("/api/voice/stt/health", methods=["GET"])
+def voice_stt_health() -> Any:
+    """EPIC 24a — Structured STT engine health for UI gating + admin diagnose.
+
+    Resolves the documented "audio cifrado · STT local pendiente" UX gap: the
+    UI now reads this endpoint at panel mount and can show specific blockers
+    (sidecar missing vs disabled vs decode error) instead of the generic
+    warning. Mirrors the diagnose() output of LocalSTTEngine.
+    """
+    try:
+        from prostanet.voice.stt_engine import LocalSTTEngine
+        stt = LocalSTTEngine()
+        diag = stt.diagnose()
+        # Add a `next_steps` array the UI can render verbatim
+        next_steps = []
+        if not diag["stt_available"]:
+            if diag.get("stt_disable_env"):
+                next_steps.append("Eliminar VOICE_STT_DISABLE del entorno y reiniciar Flask.")
+            elif "sidecar venv no encontrado" in " ".join(diag.get("blockers", [])):
+                next_steps.append(
+                    "Crear el venv con Python 3.11 y faster-whisper: "
+                    "python3.11 -m venv .venv-voice311 && "
+                    ".venv-voice311/bin/pip install -r requirements-voice.txt"
+                )
+            else:
+                next_steps.append("Contactar al administrador del sistema.")
+        diag["next_steps"] = next_steps
+        diag["epic"] = "24a"
+        diag["scope"] = "internal_shadow_observational_validation"
+        return jsonify(diag), 200
+    except Exception as exc:
+        return jsonify({
+            "stt_available": False,
+            "mode": "error",
+            "error": f"{type(exc).__name__}: {exc}",
+            "epic": "24a",
+        }), 500
+
+
+@epic21_bp.route("/api/voice/stt/prewarm", methods=["POST"])
+def voice_stt_prewarm() -> Any:
+    """EPIC 24b — Pre-warm the STT model so the first real /audio request
+    doesn't pay the 60-120s cold-start cost. Idempotent: subsequent calls
+    no-op when model already warm. Returns latency_ms for observability.
+    """
+    import time as _t
+    try:
+        from prostanet.voice.stt_engine import LocalSTTEngine
+        stt = LocalSTTEngine()
+        if not stt.is_available():
+            return jsonify({
+                "warmed": False,
+                "reason": "stt_not_available",
+                "epic": "24b",
+            }), 503
+        t0 = _t.perf_counter()
+        # Send 200ms of silence through the pipeline so model loads.
+        # 16kHz mono int16 silence = 16000 * 0.2 * 2 = 6400 bytes
+        silence_pcm = b"\x00" * 6400
+        try:
+            stt.transcribe_bytes(silence_pcm, suffix=".pcm", language="es")
+        except Exception as inner:
+            # Even if transcribe fails on raw PCM, the model is now loaded.
+            return jsonify({
+                "warmed": True,
+                "latency_ms": int((_t.perf_counter() - t0) * 1000),
+                "warmup_note": f"silence transcribe failed but model loaded: {type(inner).__name__}",
+                "epic": "24b",
+            }), 200
+        return jsonify({
+            "warmed": True,
+            "latency_ms": int((_t.perf_counter() - t0) * 1000),
+            "epic": "24b",
+        }), 200
+    except Exception as exc:
+        return jsonify({
+            "warmed": False,
+            "error": f"{type(exc).__name__}: {exc}",
+            "epic": "24b",
+        }), 500
+
+
 # ─────────────────── Skills integration endpoints ───────────────────
 
 

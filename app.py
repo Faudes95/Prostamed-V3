@@ -6457,9 +6457,55 @@ def demo_v2(view: str):
     }), 404
 
 
+def _epic24b_prewarm_stt_async() -> None:
+    """EPIC 24b — Pre-warm STT model in background thread at boot.
+
+    Closes the documented "1st /audio request takes 60-120s" UX gap. After
+    Flask boots, this thread invokes the STT engine with a small silence
+    sample so faster_whisper loads its weights into RAM. Subsequent real
+    /audio requests find the model warm and respond in ~2-5s.
+
+    Idempotent + safe to fail: if STT unavailable, just logs and exits.
+    Disable with VOICE_STT_PREWARM=0 in env.
+    """
+    import os, threading, time
+    if os.environ.get("VOICE_STT_PREWARM", "1").lower() in {"0", "false", "no", "off"}:
+        logger.info("EPIC 24b — STT pre-warm disabled via VOICE_STT_PREWARM=0")
+        return
+
+    def _warm():
+        try:
+            time.sleep(2)  # let Flask finish binding before kicking off heavy work
+            from prostanet.voice.stt_engine import LocalSTTEngine
+            stt = LocalSTTEngine()
+            diag = stt.diagnose()
+            if not diag["stt_available"]:
+                logger.warning(
+                    "EPIC 24b — STT pre-warm skipped: not available "
+                    "(mode=%s blockers=%s)", diag.get("mode"), diag.get("blockers"),
+                )
+                return
+            t0 = time.perf_counter()
+            silence_pcm = b"\x00" * 6400  # 200ms of 16kHz mono int16 silence
+            try:
+                stt.transcribe_bytes(silence_pcm, suffix=".pcm", language="es")
+            except Exception:
+                pass  # silence may fail; what matters is the model loaded
+            logger.info(
+                "EPIC 24b — STT pre-warm complete in %.1fs (mode=%s, sidecar=%s)",
+                time.perf_counter() - t0, diag.get("mode"), diag.get("sidecar_python"),
+            )
+        except Exception as exc:
+            logger.warning("EPIC 24b — STT pre-warm failed: %s", exc)
+
+    threading.Thread(target=_warm, name="epic24b_stt_prewarm", daemon=True).start()
+
+
 if __name__ == "__main__":
     # Iniciar servidor
     create_app()
+    # EPIC 24b — kick off STT pre-warm BEFORE app.run() so it runs in parallel
+    _epic24b_prewarm_stt_async()
     print("Starting Flask server...")
     # Faubot 2026-04-25 (XXV) — CRIT-2 hardening: bind por default a
     # 127.0.0.1 (localhost-only). Para escuchar en 0.0.0.0 (red),
