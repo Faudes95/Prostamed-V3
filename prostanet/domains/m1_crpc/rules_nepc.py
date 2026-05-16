@@ -183,8 +183,26 @@ def evaluate_nepc_pathway(payload: dict, *, m1_context: dict | None = None) -> d
     if neuroendocrine_features:
         suspicion_score += AGGARWAL_CRITERIA["neuroendocrine_features_clinical"]
 
-    # CgA es un soporte adicional, no contribuye al score primario pero se reporta.
-    cga_elevated = cga is not None and cga > CHROMOGRANIN_A_UPPER_LIMIT
+    # EPIC 27.7 (GodiBot G35 MOD) — exclude PPI users from CgA interpretation.
+    # Omeprazol/lansoprazol/pantoprazol elevate CgA 2-5x (Sanduleanu APT 2001),
+    # creating frequent false-positive NEPC suspicions in patients on chronic
+    # PPI. Mark CgA non-interpretable in this case.
+    ppi_use = (
+        _flag(payload, "ppi_chronic_use")
+        or _flag(payload, "omeprazole_use")
+        or _flag(payload, "lansoprazole_use")
+        or _flag(payload, "pantoprazole_use")
+    )
+    # EPIC 27.7 (GodiBot G34 MOD) — actually USE CHROMOGRANIN_A_AGGRESSIVE_LIMIT.
+    # Pre-EPIC27 the constant was declared but never read. Now CgA contributes
+    # to suspicion score when above Aggarwal aggressive cutoff (93 ng/mL).
+    cga_elevated = cga is not None and cga > CHROMOGRANIN_A_UPPER_LIMIT and not ppi_use
+    cga_high_aggressive = cga is not None and cga > CHROMOGRANIN_A_AGGRESSIVE_LIMIT and not ppi_use
+    if cga_high_aggressive:
+        # Aggarwal JCO 2018: CgA >93 ng/mL adds to NEPC suspicion (small but
+        # measurable contribution; not enough alone for biopsy).
+        suspicion_score += 1
+    cga_non_interpretable_reason = "ppi_chronic_use" if (cga is not None and ppi_use) else None
 
     suspected = suspicion_score >= SUSPICION_SCORE_THRESHOLD
     requires_biopsy = suspicion_score >= BIOPSY_TRIGGER_THRESHOLD and not biopsy_performed

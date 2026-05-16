@@ -876,13 +876,16 @@ def _truthy_helper(value):
     return str(value).strip().lower() in {"true", "1", "yes", "si", "sí"}
 
 
-# EPIC 26.7 (GodiBot decision_fusion-LOW) — per-request in-memory cache.
-# decision_fusion runs ~5 detectors + N card adapters per render. With 41
-# Cortana cards in patient_profile_v2, page render could spend >500ms on
-# the arbiter alone. Cache keyed by (patient_id, facts_hash) — invalidates
-# automatically when patient_clinical_facts changes (because hash differs).
-_DECISION_FUSION_CACHE: dict[tuple[int, str], dict[str, Any]] = {}
-_DECISION_FUSION_CACHE_MAX = 256  # bounded — LRU evict oldest
+# EPIC 26.7 + 27.8 (GodiBot G38 LOW) — thread-safe LRU cache for decision_fusion.
+# Pre-EPIC27 the cache was a bare dict with FIFO eviction (popping insertion-
+# order), and no concurrency guard. Fixed: OrderedDict with move_to_end on hit
+# (true LRU) + threading.Lock for multi-threaded gunicorn deployments.
+from collections import OrderedDict
+import threading as _threading_e27
+
+_DECISION_FUSION_CACHE: "OrderedDict[tuple[int, str], dict[str, Any]]" = OrderedDict()
+_DECISION_FUSION_CACHE_LOCK = _threading_e27.Lock()
+_DECISION_FUSION_CACHE_MAX = 256  # bounded — true LRU evict oldest accessed
 
 
 def _cache_key_for_facts(patient: Mapping[str, Any]) -> tuple[int, str]:
@@ -926,12 +929,15 @@ def _decision_fusion_summary(
     """
     pv = profile_view or {}
     pt = patient or {}
-    # EPIC 26.7 — cache check
+    # EPIC 26.7 + 27.8 — thread-safe LRU cache check
     try:
         cache_key = _cache_key_for_facts(pt)
-        cached = _DECISION_FUSION_CACHE.get(cache_key)
-        if cached is not None:
-            return cached
+        with _DECISION_FUSION_CACHE_LOCK:
+            cached = _DECISION_FUSION_CACHE.get(cache_key)
+            if cached is not None:
+                # EPIC 27.8 — true LRU: bump on hit
+                _DECISION_FUSION_CACHE.move_to_end(cache_key)
+                return cached
     except Exception:
         cache_key = None
     try:
@@ -1037,15 +1043,15 @@ def _decision_fusion_summary(
         "data_integrity_flags": decision.data_integrity_flags,
         "arbiter_version": decision.arbiter_version,
     }
-    # EPIC 26.7 — cache write (bounded LRU eviction)
+    # EPIC 26.7 + 27.8 — thread-safe true-LRU cache write
     if cache_key is not None:
-        if len(_DECISION_FUSION_CACHE) >= _DECISION_FUSION_CACHE_MAX:
-            # Evict oldest (FIFO ~LRU; Python dict preserves insertion order)
-            try:
-                _DECISION_FUSION_CACHE.pop(next(iter(_DECISION_FUSION_CACHE)))
-            except StopIteration:
-                pass
-        _DECISION_FUSION_CACHE[cache_key] = result
+        with _DECISION_FUSION_CACHE_LOCK:
+            if cache_key in _DECISION_FUSION_CACHE:
+                _DECISION_FUSION_CACHE.move_to_end(cache_key)
+            _DECISION_FUSION_CACHE[cache_key] = result
+            # Evict oldest least-recently-used entries beyond max size
+            while len(_DECISION_FUSION_CACHE) > _DECISION_FUSION_CACHE_MAX:
+                _DECISION_FUSION_CACHE.popitem(last=False)
     return result
 
 

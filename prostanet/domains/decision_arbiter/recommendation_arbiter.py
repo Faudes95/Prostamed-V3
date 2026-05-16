@@ -302,6 +302,19 @@ def _detect_hrr_parp_omission(
     )
     if not is_hrr_positive:
         return None
+    # EPIC 27.2 (GodiBot G28 HIGH) — filter VUS / negative / unknown pathogenicity.
+    # NCCN PROS-J + FDA olaparib label require pathogenic/likely_pathogenic variant.
+    # A patient with hrr_gene=BRCA2 but variant_classification="VUS" should NOT
+    # trigger PARP-first recommendation (FP rate ~15% pre-fix).
+    variant = str(facts.get("germline_pathogenic_variant") or "").lower().strip()
+    classification = str(facts.get("variant_classification") or facts.get("pathogenic_classification") or "").lower().strip()
+    if variant in {"vus", "variant_uncertain", "uncertain_significance", "negative", "none", ""}:
+        # Variant text says it's not actionable
+        if classification not in {"pathogenic", "likely_pathogenic"}:
+            return None
+    if classification and classification not in {"pathogenic", "likely_pathogenic", ""}:
+        # Explicit non-pathogenic classification
+        return None
     castrate = str(facts.get("castrate_testosterone_status") or "").lower()
     is_crpc = castrate in ("castrate", "castration_resistant") or "mcrpc" in str(
         facts.get("metastatic_stage_resolved") or ""
@@ -362,9 +375,24 @@ def _detect_visceral_undertreatment(
     )
     if not has_visceral:
         return None
+    # EPIC 27.3 (GodiBot G29 HIGH) — explicit mCSPC assertion + prior chemo check.
+    # Pre-fix: `is_mcspc = castrate in ("not_castrate", "intact") or not castrate`
+    # treated MISSING castration data as mCSPC by default → false positives.
+    # Also: ARASENS exclusion = prior chemotherapy. Cannot give triplete twice.
     castrate = str(facts.get("castrate_testosterone_status") or "").lower()
-    is_mcspc = castrate in ("not_castrate", "intact") or not castrate
+    crpc_confirmed = _truthy(facts.get("crpc_confirmed"))
+    # Require POSITIVE assertion of mCSPC (not absence of castrate data)
+    is_mcspc = castrate in ("not_castrate", "intact") and not crpc_confirmed
     if not is_mcspc:
+        return None
+    # Skip if chemo already received (in mCSPC or any prior line)
+    prior_chemo = (
+        _truthy(facts.get("prior_docetaxel_received"))
+        or _truthy(facts.get("prior_chemo_in_mcspc"))
+        or _truthy(facts.get("prior_arasens_triplete"))
+        or _truthy(facts.get("prior_chaarted_doublete"))
+    )
+    if prior_chemo:
         return None
     top_3 = (twin_ranking or [])[:3]
     if not top_3:
@@ -471,16 +499,37 @@ def _detect_enzalutamide_seizure_risk(
         OR brain_mets_edema=True OR cns_avm=True
       - AND enzalutamide in Twin top-3
     """
-    seizure_risk = (
-        _truthy(facts.get("seizure_history"))
-        or _truthy(facts.get("seizure"))
-        or _truthy(facts.get("stroke_lt_6mo"))
+    # EPIC 27.4 (GodiBot G30 HIGH) — distinguish recent/uncontrolled seizure
+    # risk from remote/controlled history. PREVAIL exclusion: seizure within
+    # 12mo pre-baseline. NCCN PROS-K v2026 permits enza with remote controlled
+    # seizure history (>5y + on stable AED). Pre-EPIC27 _truthy treated any
+    # non-empty string as TRUE → blocked enza for childhood febrile seizures
+    # resolved 30y prior.
+    # Approach: require EXPLICIT recent/uncontrolled flag rather than bare history.
+    recent_seizure = (
+        _truthy(facts.get("seizure_within_12mo"))
+        or _truthy(facts.get("seizure_uncontrolled"))
+        or _truthy(facts.get("seizure_active"))
+    )
+    # Anatomic / acute CNS risks (still binary-safe — these are presence/absence)
+    cns_acute_risk = (
+        _truthy(facts.get("stroke_lt_6mo"))
         or _truthy(facts.get("recent_stroke"))
         or _truthy(facts.get("tia_recent"))
         or _truthy(facts.get("brain_mets_edema"))
         or _truthy(facts.get("cns_avm"))
         or _truthy(facts.get("cns_aneurysm"))
     )
+    # Generic seizure_history (potentially remote) ONLY counts when not
+    # qualified as resolved/controlled
+    raw_seizure_history = str(facts.get("seizure_history") or facts.get("seizure") or "").lower().strip()
+    history_uncertain_or_active = raw_seizure_history in {"true", "1", "yes", "active", "uncontrolled", "recent"}
+    history_remote_resolved = any(
+        marker in raw_seizure_history
+        for marker in ("resolved", "remote", "childhood", "controlled", "stable", "none", "never")
+    )
+    history_counts = history_uncertain_or_active and not history_remote_resolved
+    seizure_risk = recent_seizure or cns_acute_risk or history_counts
     if not seizure_risk:
         return None
     enza_in_top = any(

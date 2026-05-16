@@ -75,7 +75,6 @@ CLINICAL_STATES: list[str] = [
     "negative_biopsy_age_lt_45",          # <45y, high-risk FH/germline → aggressive re-biopsy
     # Category 2 — Post-local by modality (4) NCCN 2026 PROS-F + Phoenix consensus
     "post_brachy_ldr",          # Surveillance: PSA bounce 18-36mo, different cutoffs
-    "post_brachy_hdr",          # EPIC 26.4 — HDR distinct kinetics (ASCENDE-RT)
     "post_ebrt_alone",          # Phoenix BCR criteria, late rectal/urinary toxicity
     "post_sbrt",                # Faster nadir, distinct toxicity profile
     "post_focal_therapy",       # HIFU/cryo/IRE — in-field vs out-of-field follow-up
@@ -98,7 +97,21 @@ CLINICAL_STATES: list[str] = [
     "survivorship_post_curative_5y_plus", # 5+y NED → annual PSA + late effects surveillance
     "second_primary_surveillance",        # post-RT MDS/AML risk + bladder/rectal screening
     "adt_long_term_complications",        # ≥2y ADT → bone, CV, metabolic, cognitive surveillance
+    # ── EPIC 27.1 (GodiBot G27 CRITICAL fix) ──
+    # IMPORTANT: append new states ONLY at the END. Inserting mid-list shifts
+    # STATE_TO_IDX positions and renders all pre-existing state_transition
+    # Transformer checkpoints structurally incompatible (size_mismatch on
+    # next_state_head load_state_dict). EPIC 26.4 originally inserted
+    # post_brachy_hdr in position 14, breaking 7 epochs of training.
+    "post_brachy_hdr",          # EPIC 26.4 + 27.1 — HDR distinct kinetics (ASCENDE-RT)
 ]
+
+# EPIC 27.1 (GodiBot G27) — checkpoint vocab guard.
+# Increment this when new states are appended. AI substrate loaders should
+# refuse to load checkpoints whose vocab_version doesn't match (fall back
+# to ai_substrate_status.state_transition=False with clear log message
+# instead of silent runtime mismatch).
+CLINICAL_STATES_VOCAB_VERSION = 2  # v1=53 (pre-EPIC26.4), v2=54 (post-EPIC27.1)
 
 STATE_TO_IDX: dict[str, int] = {s: i for i, s in enumerate(CLINICAL_STATES)}
 IDX_TO_STATE: dict[int, str] = {i: s for i, s in enumerate(CLINICAL_STATES)}

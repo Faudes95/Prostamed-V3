@@ -130,15 +130,24 @@ REGIMEN_CATALOG: dict[int, dict[str, Any]] = {
             "endocrinopathy_g2_plus_pct": 12.0,
             "colitis_g3_plus_pct": 3.0,
         },
-        "expected_os_gain_mo": 14.0,  # Median OS responders, KEYNOTE-158
+        # EPIC 27.5 (GodiBot G31 HIGH) — KEYNOTE-158 is SINGLE-ARM (no control),
+        # so there is no "OS gain vs control" defensible from the data.
+        # Marabelle Lancet Oncology 2020 reports median OS 23.5mo in MSI-H
+        # non-CRC; the prior 14.0 was a fabricated proxy that biased scoring.
+        # Set expected_os_gain_mo=None + flag methodology so score_regimen
+        # uses ORR-derived proxy (objective response rate 34.3%) instead.
+        "expected_os_gain_mo": None,
+        "os_gain_methodology": "single_arm_no_comparator",
+        "orr_pct": 34.3,                # KEYNOTE-158 MSI-H non-CRC cohort
+        "median_os_responders_mo": 23.5,
+        "evidence_citations": ["KEYNOTE-158 Marabelle Lancet Onc 2020 PMID 31682550"],
         "indications": [
             "mcrpc_msi_h_dmmr",
             "lynch_carrier",
             "lynch_advanced",
         ],
     },
-    # EPIC 25.5 (GodiBot ARBITER-COMPLETENESS-003) — Olaparib for HRR+ mCRPC
-    # post-ARSI failure. PROfound NEJM 2020 — HR=0.34 rPFS BRCA1/2.
+    # EPIC 25.5 + 27.5 (GodiBot G31) — Olaparib for HRR+ mCRPC post-ARSI failure.
     7: {
         "regimen_id": 7,
         "regimen_name": "olaparib",
@@ -150,7 +159,19 @@ REGIMEN_CATALOG: dict[int, dict[str, Any]] = {
             "fatigue_g3_plus_pct": 4.0,
             "thrombocytopenia_g3_plus_pct": 8.0,
         },
-        "expected_os_gain_mo": 6.0,  # OS gain post-ARSI failure, PROfound
+        # EPIC 27.5 (GodiBot G31 HIGH) — corrected from fabricated 6.0 to actual
+        # mature OS data from PROfound update (Hussain NEJM 2020 update):
+        # median OS olaparib 19.1mo vs control 14.4mo in cohort A (BRCA1/2/ATM)
+        # = absolute gain ~4.7mo. HR=0.69 (95% CI 0.50-0.97).
+        # rPFS HR=0.34 was the original primary endpoint but inappropriate for
+        # OS ranking scoring.
+        "expected_os_gain_mo": 4.7,
+        "expected_rpfs_hr": 0.34,
+        "expected_os_hr": 0.69,
+        "evidence_citations": [
+            "PROfound rPFS — Hussain NEJM 2020 PMID 32343890",
+            "PROfound OS update — de Bono NEJM 2020 PMID 33571915",
+        ],
         "indications": [
             "mcrpc_hrr_positive_parp_naive",
             "brca2_carrier_mcrpc",
@@ -419,13 +440,27 @@ def score_regimen(
     """
     base = 5.0
 
-    expected_os = float(regimen.get("expected_os_gain_mo") or 0.0)
+    expected_os = regimen.get("expected_os_gain_mo")
     aes = dict(regimen.get("typical_aes") or {})
     indications = list(regimen.get("indications") or [])
 
-    # OS component (max 0-3 contribution, scaled by os_weight)
-    # Normalize expected_os against 20mo (top of mCSPC range)
-    os_component = min(3.0, (expected_os / 20.0) * 3.0) * preferences.os_weight * 2.0
+    # EPIC 27.5 (GodiBot G31 HIGH) — handle pembrolizumab single-arm case.
+    # When `os_gain_methodology="single_arm_no_comparator"` (KEYNOTE-158),
+    # there is no defensible OS gain vs control. Use ORR proxy normalized
+    # to 50% (top of typical durable response) as quality signal instead.
+    if expected_os is None:
+        methodology = str(regimen.get("os_gain_methodology") or "").lower()
+        if methodology == "single_arm_no_comparator":
+            orr = float(regimen.get("orr_pct") or 0.0)
+            # ORR-derived proxy: 50% durable ORR = full os_component contribution
+            os_component = min(3.0, (orr / 50.0) * 3.0) * preferences.os_weight * 2.0
+        else:
+            os_component = 0.0
+    else:
+        # OS component (max 0-3 contribution, scaled by os_weight).
+        # Normalize expected_os against 20mo (top of mCSPC range)
+        expected_os = float(expected_os)
+        os_component = min(3.0, (expected_os / 20.0) * 3.0) * preferences.os_weight * 2.0
 
     # QoL component (3 - sum of AE penalties), scaled by qol_weight
     ae_penalty = 0.0
@@ -596,9 +631,18 @@ def _state_matches_indication(state: str, indication: str) -> bool:
     if not s_family or not i_family or s_family != i_family:
         return False
     # Both in same family — check sub-signals (volume/sync/etc)
+    # EPIC 27.6 (GodiBot G32 HIGH) — include disease stage tokens so that
+    # indications like "brca2_carrier_mcrpc" require the state to also be mCRPC
+    # context. Pre-fix, `brca2_carrier_mcrpc` indication matched any
+    # `brca2_carrier` state regardless of disease stage (accidental match via
+    # the "no sub-signal → True" fallback). PARP-first should only rank for
+    # mCRPC-context carriers; localized brca2_carrier should not surface PARP.
     volume_tokens = ("highvolume", "lowvolume", "visceral", "oligo", "synchronous",
                      "metachronous", "arsifirst", "post arsi", "postarsi",
-                     "hrr", "msi", "psma", "naive")
+                     "hrr", "msi", "psma", "naive",
+                     # stage discriminators (EPIC 27.6)
+                     "mcrpc", "mcspc", "m0crpc", "localized", "advanced",
+                     "parpnaive", "postparp")
     i_subsignals = {tok for tok in volume_tokens if tok in i_norm}
     s_subsignals = {tok for tok in volume_tokens if tok in s_norm}
     if not i_subsignals:

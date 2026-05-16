@@ -547,25 +547,41 @@ def _classify_hereditary_umbrella(facts: Mapping[str, Any]) -> ClinicalStateClas
                     gleason_sum = int(gp) + int(gs)
                 except (TypeError, ValueError):
                     gleason_sum = None
-            # NCCN PROS-2 v2026 — high-risk if PSA>20 OR Gleason 8-10 OR cT2c-T3a
-            # very-high-risk if cT3b-T4 OR primary Gleason 5
+            # EPIC 27.7 (GodiBot G36 MOD) — strict NCCN PROS-2 v2026 definition:
+            #   high-risk        = PSA>20 OR Gleason≥8 OR cT3a
+            #   very-high-risk   = cT3b/T4 OR primary GS5
+            # cT2c is UNFAVORABLE INTERMEDIATE, NOT high-risk → must NOT
+            # trigger germline. Also: substring "t3" matched pT3 (post-RP
+            # pathology stage, different decision lane); use `ct` prefix
+            # to disambiguate clinical from pathologic stage.
+            t_high_risk = (
+                "ct3a" in t_stage
+                or "ct3b" in t_stage
+                or "ct4" in t_stage
+            )
+            primary_gleason_5 = (gp is not None and int(gp) == 5)
             if (
                 (psa is not None and psa > 20)
                 or (gleason_sum is not None and gleason_sum >= 8)
-                or ("ct2c" in t_stage or "ct3" in t_stage or "ct4" in t_stage
-                    or "t3" in t_stage or "t4" in t_stage)
-                or (gp is not None and int(gp) == 5)
+                or t_high_risk
+                or primary_gleason_5
             ):
                 high_risk_localized = True
         except (TypeError, ValueError):
             pass
 
-    # EPIC 26.6 — intraductal carcinoma / aggressive variant histology
+    # EPIC 26.6 — intraductal/ductal carcinoma trigger.
+    # EPIC 27.7 (GodiBot G37 MOD) — REMOVED cribriform_pattern from the
+    # trigger set. NCCN PROS-A v2026 lists ductal adenocarcinoma + intraductal
+    # carcinoma as universal germline triggers; cribriform pattern alone is a
+    # Gleason-4 risk modifier, NOT a germline trigger. Including it caused
+    # resource waste (germline testing on patients without NCCN indication).
     aggressive_histology = (
         _truthy(facts.get("histology_aggressive_variant"))
         or _truthy(facts.get("intraductal_carcinoma"))
+        or _truthy(facts.get("ductal_adenocarcinoma"))
         or "intraductal" in str(facts.get("histology_subtype") or "").lower()
-        or _truthy(facts.get("cribriform_pattern"))
+        or "ductal" in str(facts.get("histology_subtype") or "").lower()
     )
 
     triggers = []
@@ -899,7 +915,10 @@ def _classify_oligometastatic_refinement(facts: Mapping[str, Any]) -> ClinicalSt
             or _truthy(facts.get("bone_appendicular_present"))
             or str(facts.get("bone_distribution") or "").lower() in {"appendicular", "appendicular_+_axial", "diffuse"}
         )
-        if has_appendicular and meta_count >= 3:
+        # EPIC 27.7 (GodiBot G33 MOD) — CHAARTED high-vol threshold is ≥4
+        # bone mets with ≥1 appendicular (Sweeney NEJM 2015 PMID 26244877),
+        # NOT ≥3. Pre-EPIC27 excluded 3-met low-vol patients incorrectly.
+        if has_appendicular and meta_count >= 4:
             return None  # CHAARTED high-vol territory; classified elsewhere
         return _build_classification(
             state="oligometastatic_synchronous",
