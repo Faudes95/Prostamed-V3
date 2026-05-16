@@ -7,10 +7,17 @@ molecular status, or trial eligibility.
 """
 from __future__ import annotations
 
+import logging
 from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any, Iterable, Mapping
 from urllib.parse import quote, urlencode
+
+# EPIC 29.7 (GodiBot G57 HIGH) — module-level logger. Pre-EPIC29 the 4
+# bare `except Exception` blocks silently downgraded sub-builders to {}
+# without any log or audit trace. Now exceptions log + accumulate in
+# `_upstream_failures` for audit visibility.
+logger = logging.getLogger(__name__)
 
 
 DECISION_STATES = (
@@ -407,13 +414,19 @@ def _ensure_source_bundles(patient: Mapping[str, Any], bundle: Mapping[str, Any]
     signals = dict(enriched.get("signals") or patient.get("latest_signal_snapshot") or {})
     enriched["signals"] = signals
 
+    # EPIC 29.7 (GodiBot G57 HIGH) — instrument 4 sub-builder calls with
+    # explicit exception logging + audit upstream_failures collection.
+    upstream_failures: list[dict[str, str]] = []
+
     readiness = dict(enriched.get("clinical_readiness_tower") or patient.get("clinical_readiness_tower") or signals.get("clinical_readiness_tower") or {})
     if not readiness or not readiness.get("lanes"):
         try:
             from prostanet.domains.patient_tracking.clinical_readiness_tower import build_clinical_readiness_tower
 
             readiness = build_clinical_readiness_tower(patient, longitudinal_bundle=enriched, state=state, management_track=management_track, patient_ref=patient_ref)
-        except Exception:
+        except Exception as exc:
+            logger.exception("fusion_kernel: clinical_readiness_tower build failed")
+            upstream_failures.append({"builder": "clinical_readiness_tower", "error": f"{type(exc).__name__}: {exc}"})
             readiness = {}
     enriched["clinical_readiness_tower"] = readiness
 
@@ -423,7 +436,9 @@ def _ensure_source_bundles(patient: Mapping[str, Any], bundle: Mapping[str, Any]
             from prostanet.domains.patient_tracking.tumor_board_os import build_tumor_board_os
 
             tumor_board = build_tumor_board_os(patient, longitudinal_bundle=enriched, state=state, management_track=management_track, patient_ref=patient_ref)
-        except Exception:
+        except Exception as exc:
+            logger.exception("fusion_kernel: tumor_board_os build failed")
+            upstream_failures.append({"builder": "tumor_board_os", "error": f"{type(exc).__name__}: {exc}"})
             tumor_board = {}
     enriched["tumor_board_os"] = tumor_board
 
@@ -433,7 +448,9 @@ def _ensure_source_bundles(patient: Mapping[str, Any], bundle: Mapping[str, Any]
             from prostanet.domains.patient_tracking.care_pathway_os import build_care_pathway_os
 
             care = build_care_pathway_os(patient, longitudinal_bundle=enriched, state=state, management_track=management_track, patient_ref=patient_ref)
-        except Exception:
+        except Exception as exc:
+            logger.exception("fusion_kernel: care_pathway_os build failed")
+            upstream_failures.append({"builder": "care_pathway_os", "error": f"{type(exc).__name__}: {exc}"})
             care = {}
     enriched["care_pathway_os"] = care
 
@@ -443,9 +460,15 @@ def _ensure_source_bundles(patient: Mapping[str, Any], bundle: Mapping[str, Any]
             from prostanet.domains.patient_tracking.clinical_memory_os import build_clinical_memory_os
 
             memory = build_clinical_memory_os(patient, longitudinal_bundle=enriched, state=state, management_track=management_track, patient_ref=patient_ref)
-        except Exception:
+        except Exception as exc:
+            logger.exception("fusion_kernel: clinical_memory_os build failed")
+            upstream_failures.append({"builder": "clinical_memory_os", "error": f"{type(exc).__name__}: {exc}"})
             memory = {}
     enriched["clinical_memory_os"] = memory
+
+    # EPIC 29.7 — surface audit trail
+    if upstream_failures:
+        enriched.setdefault("audit", {})["upstream_failures"] = upstream_failures
     return enriched
 
 

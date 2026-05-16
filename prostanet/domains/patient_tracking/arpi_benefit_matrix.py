@@ -3,6 +3,13 @@ from __future__ import annotations
 
 ARPI_BENEFIT_MATRIX = {
     "m0_crpc": {
+        # EPIC 29.10 (GodiBot G59 MOD) — Los 3 trials pivotales nmCRPC
+        # (ARAMIS/PROSPER/SPARTAN) requirieron PSADT ≤10 meses como
+        # criterio de inclusión. Pacientes con PSADT >10 mo (slow risers)
+        # NO están representados en el evidence y el beneficio MFS/OS NO
+        # se extrapola. `eligibility_gate.psadt_max_months=10` debe
+        # validarse upstream antes de surfacear estas opciones como
+        # preferentes.
         "ADT_DAROLUTAMIDE": {
             "scenario_match": "exact",
             "regulatory_support": "FDA 30-Jul-2019 / ARAMIS",
@@ -17,6 +24,14 @@ ARPI_BENEFIT_MATRIX = {
             "triplet_fit": "not_applicable",
             "doublet_fit": "exact",
             "benefit_score": 14.6,
+            "eligibility_gate": {
+                "psadt_max_months": 10,
+                "rationale_es": (
+                    "ARAMIS reclutó solo pacientes con PSADT ≤10 mo. "
+                    "Beneficio MFS HR 0.41 no se extrapola a slow risers."
+                ),
+                "evidence_pmid": ["30763142"],
+            },
         },
         "ADT_ENZALUTAMIDE": {
             "scenario_match": "exact",
@@ -32,6 +47,14 @@ ARPI_BENEFIT_MATRIX = {
             "triplet_fit": "not_applicable",
             "doublet_fit": "exact",
             "benefit_score": 14.8,
+            "eligibility_gate": {
+                "psadt_max_months": 10,
+                "rationale_es": (
+                    "PROSPER reclutó pacientes con PSADT ≤10 mo. "
+                    "Beneficio MFS HR 0.29 no se extrapola a slow risers."
+                ),
+                "evidence_pmid": ["29949494"],
+            },
         },
         "ADT_APALUTAMIDE": {
             "scenario_match": "exact",
@@ -47,6 +70,14 @@ ARPI_BENEFIT_MATRIX = {
             "triplet_fit": "not_applicable",
             "doublet_fit": "exact",
             "benefit_score": 14.4,
+            "eligibility_gate": {
+                "psadt_max_months": 10,
+                "rationale_es": (
+                    "SPARTAN reclutó pacientes con PSADT ≤10 mo. "
+                    "Beneficio MFS HR 0.28 no se extrapola a slow risers."
+                ),
+                "evidence_pmid": ["29420164"],
+            },
         },
     },
     "mcspc_high_volume_sync": {
@@ -481,6 +512,136 @@ ARPI_BENEFIT_MATRIX = {
             "triplet_fit": "not_applicable",
             "doublet_fit": "exact",
             "benefit_score": 15.8,
+        },
+        # EPIC 29.6 (GodiBot G58 HIGH) — expand m1_crpc matrix beyond ARSI.
+        # Pre-EPIC29 only ADT_ENZA + ADT_ABI populated → PARP/Lu177/chemo
+        # never ranked even when other detectors flagged eligibility (e.g.
+        # G34 HRR card surfaced but ranking returned empty).
+        "OLAPARIB": {
+            "scenario_match": "exact",
+            "regulatory_support": "FDA mCRPC HRR+ post-ARSI / PROfound",
+            "primary_benefit_endpoint": "rPFS",
+            "os_benefit_strength": "moderate",  # cohort A OS HR 0.69
+            "mfs_benefit_strength": "not_applicable",
+            "rpfs_benefit_strength": "high",  # HR 0.34 cohort A
+            "evidence_maturity": "mature",
+            "trial_basis": "PROfound Hussain NEJM 2020 PMID 32343890",
+            "volume_fit": "not_applicable",
+            "temporality_fit": "post_arsi",
+            "triplet_fit": "not_applicable",
+            "doublet_fit": "not_applicable",
+            "benefit_score": 14.5,
+            "eligibility_gate": "hrr_pathogenic_variant_AND_post_arsi",
+        },
+        "TALAZOPARIB_ENZA": {
+            "scenario_match": "exact",
+            "regulatory_support": "FDA mCRPC HRR+ first-line combo / TALAPRO-2",
+            "primary_benefit_endpoint": "rPFS",
+            "os_benefit_strength": "moderate",
+            "mfs_benefit_strength": "not_applicable",
+            "rpfs_benefit_strength": "high",
+            "evidence_maturity": "mature",
+            "trial_basis": "TALAPRO-2 Agarwal Lancet 2023 PMID 37738909",
+            "volume_fit": "not_applicable",
+            "temporality_fit": "first_line",
+            "triplet_fit": "not_applicable",
+            "doublet_fit": "exact",
+            "benefit_score": 15.2,
+            "eligibility_gate": "hrr_pathogenic_variant_first_line",
+        },
+        "LU177_PSMA_617": {
+            "scenario_match": "exact",
+            "regulatory_support": "FDA mCRPC PSMA+ post-ARSI+taxane / VISION",
+            "primary_benefit_endpoint": "OS",
+            "os_benefit_strength": "moderate",  # 15.3 vs 11.3mo HR 0.62
+            "mfs_benefit_strength": "not_applicable",
+            "rpfs_benefit_strength": "high",  # HR 0.40
+            "evidence_maturity": "mature",
+            "trial_basis": "VISION Sartor NEJM 2021 PMID 34161051",
+            "volume_fit": "not_applicable",
+            "temporality_fit": "post_arsi_post_taxane",
+            "triplet_fit": "not_applicable",
+            "doublet_fit": "not_applicable",
+            "benefit_score": 14.0,
+            "eligibility_gate": "psma_positive_AND_post_arsi_post_taxane",
+        },
+        "CABAZITAXEL": {
+            "scenario_match": "exact",
+            "regulatory_support": "FDA mCRPC post-docetaxel / CARD",
+            "primary_benefit_endpoint": "OS",
+            "os_benefit_strength": "moderate",  # CARD: 13.6 vs 11.0mo
+            "mfs_benefit_strength": "not_applicable",
+            "rpfs_benefit_strength": "high",  # 8.0 vs 3.7mo HR 0.54
+            "evidence_maturity": "mature",
+            "trial_basis": "CARD de Wit NEJM 2019 PMID 31566937",
+            "volume_fit": "not_applicable",
+            "temporality_fit": "post_docetaxel_post_arsi",
+            "triplet_fit": "not_applicable",
+            "doublet_fit": "not_applicable",
+            "benefit_score": 13.5,
+        },
+        "RA223": {
+            "scenario_match": "exact",
+            "regulatory_support": "FDA mCRPC bone-only sintomático / ALSYMPCA",
+            "primary_benefit_endpoint": "OS",
+            "os_benefit_strength": "moderate",  # 14.9 vs 11.3mo HR 0.70
+            "mfs_benefit_strength": "not_applicable",
+            "rpfs_benefit_strength": "moderate",
+            "evidence_maturity": "mature",
+            "trial_basis": "ALSYMPCA Parker NEJM 2013 PMID 23863050",
+            "volume_fit": "bone_only",
+            "temporality_fit": "exact",
+            "triplet_fit": "not_applicable",
+            "doublet_fit": "not_applicable",
+            "benefit_score": 13.0,
+            "eligibility_gate": "bone_only_no_visceral_AND_symptomatic_AND_not_concurrent_abi_pred",
+            "contraindication_note": "ERA-223 Smith 2019 PMID 30853531: NO combinar concurrent con abi+pred (fracture HR 1.83)",
+        },
+        "DOCETAXEL": {
+            "scenario_match": "exact",
+            "regulatory_support": "FDA mCRPC primera línea / TAX-327",
+            "primary_benefit_endpoint": "OS",
+            "os_benefit_strength": "high",  # TAX-327: 19.2 vs 16.3mo HR 0.79
+            "mfs_benefit_strength": "not_applicable",
+            "rpfs_benefit_strength": "moderate",
+            "evidence_maturity": "mature",
+            "trial_basis": "TAX-327 Tannock NEJM 2004 PMID 15470213",
+            "volume_fit": "not_applicable",
+            "temporality_fit": "exact",
+            "triplet_fit": "not_applicable",
+            "doublet_fit": "exact",
+            "benefit_score": 14.8,
+        },
+        "PEMBROLIZUMAB": {
+            "scenario_match": "exact",
+            "regulatory_support": "FDA tumor-agnostic MSI-H/dMMR / KEYNOTE-158",
+            "primary_benefit_endpoint": "ORR",
+            "os_benefit_strength": "moderate",  # responders median OS 23.5mo (single-arm)
+            "mfs_benefit_strength": "not_applicable",
+            "rpfs_benefit_strength": "moderate",
+            "evidence_maturity": "moderate",  # single-arm, no comparator
+            "trial_basis": "KEYNOTE-158 Marabelle Lancet Onc 2020 PMID 31682550",
+            "volume_fit": "not_applicable",
+            "temporality_fit": "any_line",
+            "triplet_fit": "not_applicable",
+            "doublet_fit": "not_applicable",
+            "benefit_score": 13.2,
+            "eligibility_gate": "msi_high_OR_dmmr_OR_lynch_carrier",
+        },
+        "SIPULEUCEL_T": {
+            "scenario_match": "exact",
+            "regulatory_support": "FDA mCRPC mínimamente sintomático / IMPACT",
+            "primary_benefit_endpoint": "OS",
+            "os_benefit_strength": "moderate",  # IMPACT: 25.8 vs 21.7mo HR 0.78
+            "mfs_benefit_strength": "not_applicable",
+            "rpfs_benefit_strength": "low",
+            "evidence_maturity": "mature",
+            "trial_basis": "IMPACT Kantoff NEJM 2010 PMID 20818862",
+            "volume_fit": "minimally_symptomatic_only",
+            "temporality_fit": "early_mcrpc",
+            "triplet_fit": "not_applicable",
+            "doublet_fit": "not_applicable",
+            "benefit_score": 12.0,
         },
     },
     "recurrence_bcr": {

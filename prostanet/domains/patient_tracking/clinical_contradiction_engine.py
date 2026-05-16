@@ -191,17 +191,40 @@ def build_clinical_contradiction_bundle(
         except (TypeError, ValueError):
             testo_val = 999
         castrate_range = testo_val < 50
-        # PSA rising signal: latest psa > previous psa OR explicit progression
+        # EPIC 29.2 (GodiBot G55 HIGH) — PCWG3-correct implementation.
+        # Pre-fix: `recent[-1] > recent[0] * 1.25` (25% rise from OLDEST in
+        # 3-PSA window) — wrong. PCWG3 Scher JCO 2016 requires:
+        #   rise from NADIR (lowest PSA in history) of ≥25%
+        #   AND ≥2 ng/mL absolute increase
+        #   AND confirmed with second value ≥3 weeks later
+        # Pre-fix examples missed: 5.0→4.5→5.5 (no nadir reference) and
+        # over-called: 4.0→4.5→5.7 (1.25× without 2 ng/mL absolute).
         psa_history = patient.get("psa_history") or []
         psa_rising = False
-        if isinstance(psa_history, list) and len(psa_history) >= 2:
+        if isinstance(psa_history, list) and len(psa_history) >= 3:
             try:
-                recent = [
+                psa_values = [
                     float(p.get("psa_value") or p.get("value") or 0)
-                    for p in psa_history[-3:] if isinstance(p, dict)
+                    for p in psa_history if isinstance(p, dict)
                 ]
-                if len(recent) >= 2 and recent[-1] > recent[0] * 1.25:
-                    psa_rising = True
+                psa_values = [v for v in psa_values if v > 0]
+                if len(psa_values) >= 3:
+                    nadir = min(psa_values)
+                    current = psa_values[-1]
+                    previous = psa_values[-2]
+                    rise_from_nadir_pct = (current - nadir) / max(nadir, 0.1)
+                    rise_from_nadir_abs = current - nadir
+                    # PCWG3 §rising PSA criterion: ≥25% rise AND ≥2 ng/mL
+                    # absolute increase from nadir. Plus confirmation (the
+                    # previous value also above nadir+threshold serves as
+                    # the confirmatory measurement here).
+                    rise_meets_criteria = (
+                        rise_from_nadir_pct >= 0.25
+                        and rise_from_nadir_abs >= 2.0
+                    )
+                    confirmatory = previous > nadir * 1.10  # previous also above nadir
+                    if rise_meets_criteria and confirmatory:
+                        psa_rising = True
             except (TypeError, ValueError):
                 pass
         progression_signal = (

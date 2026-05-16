@@ -379,6 +379,21 @@ def _persist_patient_clinical_facts(cursor, patient_id, fact_candidates):
         existing_priority = _fact_row_priority(best_existing) if best_existing else None
         incoming_is_active = best_existing is None or incoming_priority >= existing_priority
 
+        # EPIC 29.3 / 29.13 (GodiBot G62 HIGH) — Si el nuevo fact entra como
+        # active, demote TODOS los facts activos previos del mismo (patient,
+        # fact_key) ANTES del INSERT, para no violar el unique partial index
+        # patient_clinical_facts_unique_active.
+        if incoming_is_active and active_rows:
+            cursor.execute(
+                '''
+                UPDATE patient_clinical_facts
+                SET is_active = 0,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE patient_id = ? AND fact_key = ? AND is_active = 1
+                ''',
+                (patient_id, fact_key),
+            )
+
         cursor.execute(
             '''
             INSERT INTO patient_clinical_facts (
@@ -3913,6 +3928,21 @@ def init_tracking_db():
             FOREIGN KEY(patient_id) REFERENCES patient_identity(id),
             FOREIGN KEY(superseded_by_fact_id) REFERENCES patient_clinical_facts(id)
         )
+        '''
+    )
+    # EPIC 29.3 (GodiBot G62 HIGH) — UNIQUE partial index for active rows.
+    # Pre-EPIC29 the dedup logic in `_persist_patient_clinical_facts` did
+    # SELECT-then-INSERT without atomic locking. Under WAL + multi-worker
+    # gunicorn, two simultaneous writes for the same fact_key could BOTH
+    # pass the "no active conflict" check and BOTH insert is_active=1 →
+    # data inconsistency. SQLite partial unique index enforces invariant
+    # at schema level (raises IntegrityError if duplicate active insert
+    # attempted; catch + treat as supersession).
+    c.execute(
+        '''
+        CREATE UNIQUE INDEX IF NOT EXISTS patient_clinical_facts_unique_active
+        ON patient_clinical_facts(patient_id, fact_key)
+        WHERE is_active = 1
         '''
     )
     c.execute(

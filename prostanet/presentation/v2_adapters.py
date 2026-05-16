@@ -725,6 +725,27 @@ def _post_brachy_ldr_summary(pv, pt):
     return _state_card_summary("post_brachy_ldr", pt, pred, extras)
 
 
+def _post_brachy_hdr_summary(pv, pt):
+    """EPIC 29.12 (GodiBot G61 MOD) — Post-HDR brachytherapy surveillance card.
+
+    HDR distinct from LDR (ASCENDE-RT Morris IJROBP 2017 + NRG GU-007):
+    faster nadir, smaller bounce peaks, requires distinct surveillance protocol.
+    Pre-EPIC29: state existed in classifier but no card adapter ⇒ UI silent.
+    """
+    def pred(f):
+        modality = str(f.get("prior_local_treatment_modality") or f.get("rt_modality") or "").lower()
+        return "brachy" in modality and ("hdr" in modality or "high-dose" in modality or "high dose" in modality)
+
+    def extras(f):
+        return {
+            "months_since_local_treatment": f.get("months_since_local_treatment", "—"),
+            "nadir_psa_post_rt": f.get("nadir_psa_post_rt", "—"),
+            "current_psa": f.get("current_psa", "—"),
+            "evidence_reference": "ASCENDE-RT (PMID 28279249) + NRG GU-007 surveillance",
+        }
+    return _state_card_summary("post_brachy_hdr", pt, pred, extras)
+
+
 def _post_ebrt_alone_summary(pv, pt):
     """EPIC 22f — Post-EBRT alone surveillance card."""
     def pred(f):
@@ -874,6 +895,34 @@ def _truthy_helper(value):
     if value is False or value is None:
         return False
     return str(value).strip().lower() in {"true", "1", "yes", "si", "sí"}
+
+
+def _bone_health_ra223_summary(
+    profile_view: Mapping[str, Any],
+    patient: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """EPIC 29.1 (GodiBot G53 HIGH) — surface Ra-223 layer from bone engine.
+
+    Reads `profile_view.bone_health.ra223_recommendation` or
+    `patient.bone_health.ra223_recommendation`. Returns None when patient
+    not eligible (so UI cards hide cleanly via `{% if bone_health_ra223 %}`).
+    Pre-EPIC29 the field was orphan dead code.
+    """
+    pt = patient or {}
+    bone = (profile_view or {}).get("bone_health") or pt.get("bone_health") or {}
+    ra223 = bone.get("ra223_recommendation") if isinstance(bone, dict) else None
+    if not ra223:
+        return None
+    return {
+        "available": True,
+        "agent": ra223.get("agent"),
+        "dose": ra223.get("dose"),
+        "indication": ra223.get("indication"),
+        "rationale": ra223.get("rationale"),
+        "evidence": ra223.get("evidence"),
+        "caveats": ra223.get("caveats", []),
+        "complementary_to_bma": ra223.get("complementary_to_bma", False),
+    }
 
 
 # EPIC 26.7 + 27.8 (GodiBot G38 LOW) — thread-safe LRU cache for decision_fusion.
@@ -3153,6 +3202,8 @@ def bundle_to_v2_profile(profile_view: Mapping[str, Any],
         "atm_carrier": _atm_carrier_summary(pv, pt),
         "hoxb13_carrier": _hoxb13_carrier_summary(pv, pt),
         "post_brachy_ldr": _post_brachy_ldr_summary(pv, pt),
+        # EPIC 29.12 (GodiBot G61 MOD) — HDR adapter wired (was orphan state)
+        "post_brachy_hdr": _post_brachy_hdr_summary(pv, pt),
         "post_ebrt_alone": _post_ebrt_alone_summary(pv, pt),
         "post_sbrt": _post_sbrt_summary(pv, pt),
         "post_focal_therapy": _post_focal_therapy_summary(pv, pt),
@@ -3165,6 +3216,11 @@ def bundle_to_v2_profile(profile_view: Mapping[str, Any],
         "negative_biopsy_age_lt_45": _neg_biopsy_age_lt45_summary(pv, pt),
         # EPIC 23 — Clinical Recommendation Arbiter (fusion banner)
         "decision_fusion": _decision_fusion_summary(pv, pt),
+        # EPIC 29.1 (GodiBot G53 HIGH) — expose bone_health Ra-223 layer so
+        # UI cards can consume the recommendation. Previously orphan field in
+        # bone_health_engine output. Set to None when patient not eligible
+        # (UI templates branch on truthy).
+        "bone_health_ra223": _bone_health_ra223_summary(pv, pt),
         # raw passthroughs para tabs avanzadas
         "profile_view_raw": pv,
         "patient_raw": pt,

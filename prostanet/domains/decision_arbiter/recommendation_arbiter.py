@@ -551,33 +551,54 @@ def _detect_enzalutamide_seizure_risk(
         or _truthy(facts.get("cns_avm"))
         or _truthy(facts.get("cns_aneurysm"))
     )
-    # EPIC 28.2 (GodiBot G40 HIGH) — distinguish TRULY inactive seizure
-    # history from "controlled on AED" (which is active disease under
-    # medication that LOWERS seizure threshold — still a contraindication
-    # per PREVAIL exclusion + Xtandi label §4).
+    # EPIC 28.2 + 29.5 (GodiBot G40 HIGH + G52 HIGH refined) — distinguish:
+    #   (a) TRULY inactive history (resolved, none, never) → don't block
+    #   (b) ACTIVE controlled on AED (still risk per PREVAIL exclude) → block
+    #   (c) Free-text noise ("no epilepsy", "father had seizures") → don't block
+    # Pre-EPIC29 used naive substring `in` matching → "father had epilepsy"
+    # tripped controlled_on_aed → false positive block. Fix: word-boundary
+    # regex + explicit negation detection BEFORE token matching.
+    import re as _re_e29
     raw_seizure_history = str(facts.get("seizure_history") or facts.get("seizure") or "").lower().strip()
     history_uncertain_or_active = raw_seizure_history in {"true", "1", "yes", "active", "uncontrolled", "recent"}
-    # TRULY inactive: no active disease, no AED required
-    truly_inactive_markers = ("resolved", "remote", "childhood", "none", "never")
-    history_truly_inactive = any(m in raw_seizure_history for m in truly_inactive_markers)
-    # ACTIVE but controlled on AED — still counts as risk for enza
-    controlled_on_aed = any(
-        token in raw_seizure_history
-        for token in ("aed", "valproic", "lamotrigine", "levetiracetam", "carbamazepine",
-                      "phenytoin", "controlled with", "stable on", "on medication",
-                      "on anticonvulsant", "epilepsy")
+    # G52: detect negations / family-history first → these should NOT block
+    negation_pattern = _re_e29.compile(
+        r"\b(?:no|sin|negativ[ao]|denies|not\s+aware|never|none|null)\b.*?\b(?:seizure|epileps|convuls)",
+        _re_e29.IGNORECASE,
     )
-    # Explicit structured field
-    aed_use = (
-        _truthy(facts.get("anticonvulsant_use"))
-        or _truthy(facts.get("aed_active"))
-        or _truthy(facts.get("epilepsy_on_treatment"))
+    family_history_pattern = _re_e29.compile(
+        r"\b(?:father|mother|brother|sister|familia|hermano|padre|madre|first[-\s]degree|second[-\s]degree)\b",
+        _re_e29.IGNORECASE,
     )
-    history_counts = (
-        (history_uncertain_or_active and not history_truly_inactive)
-        or controlled_on_aed
-        or aed_use
-    )
+    if negation_pattern.search(raw_seizure_history) or family_history_pattern.search(raw_seizure_history):
+        history_counts = False
+    else:
+        # TRULY inactive: no active disease, no AED required
+        truly_inactive_re = _re_e29.compile(
+            r"\b(?:resolved|remote|childhood\s+febrile|none|never)\b",
+            _re_e29.IGNORECASE,
+        )
+        history_truly_inactive = bool(truly_inactive_re.search(raw_seizure_history))
+        # ACTIVE controlled on AED — word-boundary regex (no false matches in
+        # "no epilepsy" or "father had epilepsy")
+        aed_re = _re_e29.compile(
+            r"\b(?:aed|valproic|lamotrigine|levetiracetam|carbamazepine|"
+            r"phenytoin|controlled\s+with|stable\s+on|on\s+anticonvulsant|"
+            r"epilepsy|epileps[ií]a)\b",
+            _re_e29.IGNORECASE,
+        )
+        controlled_on_aed = bool(aed_re.search(raw_seizure_history))
+        # Explicit structured field
+        aed_use = (
+            _truthy(facts.get("anticonvulsant_use"))
+            or _truthy(facts.get("aed_active"))
+            or _truthy(facts.get("epilepsy_on_treatment"))
+        )
+        history_counts = (
+            (history_uncertain_or_active and not history_truly_inactive)
+            or (controlled_on_aed and not history_truly_inactive)
+            or aed_use
+        )
     seizure_risk = recent_seizure or cns_acute_risk or history_counts
     if not seizure_risk:
         return None
@@ -609,6 +630,74 @@ def _detect_enzalutamide_seizure_risk(
         clinical_rationale=(
             "PREVAIL/AFFIRM exclusion criteria. FDA Xtandi label 2024. "
             "NCCN PROS-K v2026."
+        ),
+        requires_clinician_review=True,
+    )
+
+
+def _detect_ra223_abi_pred_concurrent(
+    cards: list[CardRecommendation],
+    twin_ranking: list[Mapping[str, Any]],
+    facts: Mapping[str, Any],
+) -> ClinicalConflict | None:
+    """EPIC 29.1 (GodiBot G53 HIGH) — Ra-223 + abi+pred concurrent block.
+
+    ERA-223 (Smith Lancet Oncology 2019 PMID 30853531) demonstrated INCREASED
+    fracture rate (HR 1.83) when Ra-223 combined with abi+pred concurrent.
+    FDA + EMA label updates restrict combination. Pre-EPIC29 the Ra-223 layer
+    in bone_health_engine had a caveat string but NO detector enforced it.
+
+    Trigger:
+      - Patient currently on abiraterone + prednisone
+      - Ra-223 recommendation surfaced (`ra223_recommended=True` flag, or
+        the patient profile shows ra223 in current/planned regimens)
+    """
+    current_meds = str(facts.get("current_medications") or facts.get("medication_list") or "").lower()
+    on_abi = (
+        "abiraterone" in current_meds
+        or _truthy(facts.get("on_abiraterone"))
+        or _truthy(facts.get("abi_active"))
+    )
+    on_pred = (
+        "prednisone" in current_meds
+        or "prednisolone" in current_meds
+        or _truthy(facts.get("on_prednisone"))
+        or _truthy(facts.get("prednisone_active"))
+    )
+    if not (on_abi and on_pred):
+        return None
+    ra223_present = (
+        _truthy(facts.get("ra223_recommended"))
+        or _truthy(facts.get("on_radium_223"))
+        or "radium-223" in current_meds
+        or "ra-223" in current_meds
+        or any(
+            "radium" in str(r.get("regimen_name", "")).lower()
+            for r in (twin_ranking or [])[:5]
+        )
+    )
+    if not ra223_present:
+        return None
+    return ClinicalConflict(
+        conflict_id="ra223_abi_pred_concurrent_block",
+        severity="critical",
+        title="Ra-223 + abi+pred concurrente — bloqueante por ERA-223",
+        description=(
+            "Paciente actualmente bajo abiraterona + prednisona y Ra-223 surface "
+            "como recomendación. ERA-223 (Lancet Oncology 2019) demostró aumento "
+            "de fracturas (HR 1.83) con esta combinación. FDA + EMA actualizaron "
+            "label restrictivo. NO combinar concurrente; secuenciar (terminar "
+            "abi+pred → iniciar Ra-223) o elegir alternativa."
+        ),
+        affected_sources=["patient_twin_os", "bone_health_engine.ra223_recommendation"],
+        resolution=(
+            "Ra-223 EXCLUIDO mientras paciente esté on abi+pred concurrent. "
+            "Opciones: (a) terminar abi+pred + esperar 30d antes Ra-223, "
+            "(b) alternativa: Lu-177-PSMA-617 si PSMA+, (c) secuencia cabazitaxel."
+        ),
+        clinical_rationale=(
+            "ERA-223 Smith Lancet Oncology 2019 PMID 30853531: fracture risk "
+            "HR 1.83 (95% CI 1.12-3.00) con Ra-223 + abi+pred vs placebo+abi+pred."
         ),
         requires_clinician_review=True,
     )
@@ -804,6 +893,8 @@ def arbitrate_recommendations(
         _detect_lynch_pembro_omission,         # ARBITER-COMPLETENESS-005
         # EPIC 26 (GodiBot remaining 8 fixes)
         _detect_enzalutamide_seizure_risk,     # ARBITER-COMPLETENESS-006
+        # EPIC 29 (GodiBot pass-4 fixes)
+        _detect_ra223_abi_pred_concurrent,     # G53 — ERA-223 enforcement
     ]
 
     conflicts: list[ClinicalConflict] = []

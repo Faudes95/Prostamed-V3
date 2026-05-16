@@ -728,12 +728,19 @@ class PostRPSalvageCopilotService:
             # processing artifact — not diagnostic of BCR alone.
             # Pre-EPIC28: `latest_psa >= 0.2` alone promoted to BCR → premature
             # salvage planning.
+            # EPIC 29.8 (GodiBot G54 MOD) — añadir cota superior 180 días entre
+            # las dos PSA confirmatorias. Pacientes con >6 meses entre PSAs
+            # representan una trayectoria diferente (persistentemente elevada
+            # vs nuevo episodio bioquímico) y requieren contexto temporal
+            # distinto (re-evaluación de adherencia, posible nueva línea
+            # sistémica, no necesariamente salvage local).
             # Accept promotion if: (a) state already recurrence_bcr (upstream
             # confirmed), OR (b) `bcr_confirmed_by_two_psa=True` explicit flag,
-            # OR (c) ≥2 PSA values in psa_history both ≥0.2 separated ≥21 days.
+            # OR (c) ≥2 PSA values in psa_history both ≥0.2 separated 21-180 días.
             bcr_two_psa_confirmed = bool(safe_state_payload.get("bcr_confirmed_by_two_psa"))
             psa_history = safe_state_payload.get("psa_history") or []
             confirmatory_psa_count = 0
+            bcr_window_audit: dict | None = None
             if not bcr_two_psa_confirmed and isinstance(psa_history, list):
                 # Count consecutive PSAs ≥0.2 (most recent first)
                 elevated = [
@@ -750,12 +757,34 @@ class PostRPSalvageCopilotService:
                     ]
                     elevated_dates.sort(key=lambda x: x[0], reverse=True)
                     if len(elevated_dates) >= 2:
-                        # Check if 2 most recent are both ≥0.2 and separated ≥21 days
                         v1, d1 = elevated_dates[0][1], elevated_dates[0][0]
                         v2, d2 = elevated_dates[1][1], elevated_dates[1][0]
-                        if v1 >= 0.2 and v2 >= 0.2 and (d1 - d2).days >= 21:
+                        gap_days = (d1 - d2).days
+                        if v1 >= 0.2 and v2 >= 0.2 and 21 <= gap_days <= 180:
                             bcr_two_psa_confirmed = True
                             confirmatory_psa_count = 2
+                        elif v1 >= 0.2 and v2 >= 0.2 and gap_days > 180:
+                            # Persistently elevated > 6 months → trayectoria
+                            # distinta. NO promover automáticamente; surfacear
+                            # señal de auditoría para downstream consumers.
+                            bcr_window_audit = {
+                                "status": "psa_window_exceeded",
+                                "gap_days": gap_days,
+                                "max_window_days": 180,
+                                "rationale": (
+                                    "Dos PSAs ≥0.2 pero separados > 180 días "
+                                    "sugiere persistencia bioquímica de larga "
+                                    "data, no episodio nuevo de salvage. "
+                                    "Re-evaluar adherencia ADT y contexto sistémico."
+                                ),
+                                "recommended_action": "obtain_recent_psa_within_window",
+                            }
+                except Exception:
+                    pass
+            # Persist audit for downstream telemetry / UI (no-op if None)
+            if bcr_window_audit is not None:
+                try:
+                    safe_state_payload.setdefault("audit", {})["bcr_psa_window"] = bcr_window_audit
                 except Exception:
                     pass
             promote_to_bcr = (

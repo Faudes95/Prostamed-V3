@@ -154,7 +154,7 @@ FIELD_REGISTRY: dict[str, dict[str, Any]] = {
 
 SCORE_REQUIREMENTS = {
     "erspc": ["psa", "dre_suspicious"],
-    "capra": ["psa", "clinical_tstage", "gleason_primary", "gleason_secondary", "num_cores_positive", "total_cores"],
+    "capra": ["psa", "clinical_tstage", "gleason_primary", "gleason_secondary", "num_cores_positive", "total_cores", "age"],
     "briganti": ["psa", "clinical_tstage", "gleason_primary", "gleason_secondary", "num_cores_positive", "total_cores"],
     "damico": ["psa", "clinical_tstage", "gleason_primary", "gleason_secondary"],
     "predict_prostate": ["psa", "clinical_tstage", "isup_grade", "life_expectancy_years"],

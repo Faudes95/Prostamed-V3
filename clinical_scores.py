@@ -81,6 +81,27 @@ def capra_score(patient: dict[str, Any]) -> dict[str, Any]:
                 missing_inputs.append('total_cores')
         else:
             pct = positive / total
+    # EPIC 29.11 (GodiBot G60 MOD) — Edad es input estructural de CAPRA
+    # (Cooperberg et al. 2005). Pre-EPIC29: si age missing se usaba silently
+    # default=65, generando score completo pero con un componente fabricado.
+    # Para auditoría regulatoria + transparencia clínica: si age missing y
+    # no derivable de dob, marcar INCOMPLETO explícitamente.
+    age_value = patient.get('age')
+    if age_value is None and patient.get('dob'):
+        # Derivación tardía — risk_tools normalmente la hace upstream, pero
+        # blindamos por si llamadas directas a capra_score saltan el merge.
+        from datetime import date as _date_capra
+        try:
+            dob_str = str(patient.get('dob') or '')[:10]
+            year, month, day = map(int, dob_str.split('-'))
+            today = _date_capra.today()
+            derived = today.year - year - ((today.month, today.day) < (month, day))
+            if derived >= 0:
+                age_value = derived
+        except Exception:
+            age_value = None
+    if age_value is None:
+        missing_inputs.append('age')
     if missing_inputs:
         return {
             'score': None,
@@ -97,8 +118,9 @@ def capra_score(patient: dict[str, Any]) -> dict[str, Any]:
     points: dict[str, int] = {}
 
     # — Edad —
-    age = patient.get('age', 65)
-    points['edad'] = 1 if age >= 50 else 0
+    # EPIC 29.11: usar `age_value` derivado en bloque de validación arriba,
+    # NO `patient.get('age', 65)` que enmascaraba ausencia.
+    points['edad'] = 1 if age_value >= 50 else 0
 
     # — PSA (ng/mL) —
     if psa <= 6:

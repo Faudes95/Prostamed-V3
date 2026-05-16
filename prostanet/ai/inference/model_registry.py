@@ -103,13 +103,29 @@ class ModelRegistry:
             logger.info("Loaded model: %s from %s", model_id, artifact_path)
             return True
         except Exception as exc:
-            logger.error("Failed to load model %s: %s", model_id, exc)
+            # EPIC 29.4 (GodiBot G51 HIGH) — preserve IncompatibleCheckpointError
+            # type in metadata so downstream consumers (inference service, UI
+            # banner) can distinguish vocab-mismatch (needs retrain) from
+            # missing-file/corrupt-pickle. Pre-EPIC29 the bare except swallowed
+            # the type info; clinician saw identical "AI substrate offline"
+            # banner for both cases with no signal to retrain.
+            error_type = type(exc).__name__
+            is_vocab_incompatible = error_type == "IncompatibleCheckpointError"
+            if is_vocab_incompatible:
+                logger.error(
+                    "Model %s checkpoint vocab incompatible with runtime — "
+                    "RETRAIN REQUIRED. Detail: %s", model_id, exc,
+                )
+            else:
+                logger.error("Failed to load model %s: %s", model_id, exc)
             self._metadata[model_id] = {
                 **status,
                 "artifact_path": str(artifact_path),
                 "artifact_exists": True,
                 "loaded": False,
                 "load_error": str(exc),
+                "load_error_type": error_type,
+                "incompatible_vocab_version": is_vocab_incompatible,
             }
             return False
 

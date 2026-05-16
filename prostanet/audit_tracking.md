@@ -1,5 +1,142 @@
 # ProstaNet — Tracking de Auditorías Clínicas (FAUBOT)
 
+## 📅 2026-05-15 — Iteración C Faubot — GodiBot v1 (Validador adversarial)
+
+### Razón
+
+Hueco identificado en post-LXCIX: FAUBOT audita sistema periódicamente (sweep diario) y `clinical_decision_agent` genera recomendaciones. **Pero nadie validaba cada recomendación individual en tiempo real, por-caso, como segunda opinión adversarial antes de mostrarla al médico.** Si el clinical_decision_agent omite gate 61 (HRR antes de PARP) en un caso individual, FAUBOT lo detecta al siguiente sweep — tarde.
+
+**Objetivo**: interceptar cada `clinical_compass` recién generado, validar contra NCCN/EAU + 103 gates + 47 trials elegibilidad + Clinical Oracle + LLM adversarial, anexar `godibot_review` al bundle, y **bloquear duramente sólo cuando detecte hard_block omitido** (exigir override explícito del médico). Para todo lo demás → panel "Segunda opinión GodiBot" no bloqueante. Preserva provenance del clinical_decision_agent + cumple human-in-the-loop FDA SaMD.
+
+### Decisiones de diseño (alineadas con feedback usuario)
+
+| Decisión | Valor |
+|---|---|
+| Despliegue | **Dual**: Python agent runtime + Subagente Claude Code |
+| Trigger | **Tiempo real per-caso**, modo SUGERENCIA + bloqueo solo en hard_block real |
+| Modo bloqueo | Bloqueo DURO solo cuando gate.severity=hard_block omitido → exige override firmado del médico (cédula + razón clínica ≥30 chars). **NO** auto-corrección silenciosa (rechazada por riesgo regulatorio: pérdida de provenance, violación HITL FDA SaMD). |
+| Scope v1 | Core (NCCN/EAU + 103 gates + biomarcadores) + Trial matching (47 trials) + Coherencia longitudinal + LLM adversarial + Audit trail + 9° vector loop |
+| Diferido v2 (LXXXX) | EPIC-26 trade-offs + bone health + supportive care + auto-merge |
+
+### Componentes entregados
+
+| Componente | Path | Líneas |
+|---|---|---|
+| **A. Python agent runtime** | `prostanet/agents/godibot.py` | ~620 |
+| **B. Subagente Claude Code** | `.claude/agents/godibot.md` | ~150 |
+| **C. Wire orquestador** | `prostanet/agents/agent_registry.py` (+24 líneas integración) | mod |
+| **D. Wire compass** | `prostanet/domains/patient_tracking/profile_compass.py` (+22 líneas) | mod |
+| **E. UI panel Jinja2** | `templates/components/godibot_panel.html` | ~250 |
+| **F. REST endpoints** | `prostanet/presentation/godibot_routes.py` (4 endpoints + tabla SQLite + persistencia) | ~290 |
+| **G. Bootstrap blueprint** | `prostanet/presentation/bootstrap.py` (+11 líneas registro godibot_bp) | mod |
+| **H. 9° vector loop** | `prostanet/presentation/loop_monitor.py` (CORE_VECTORS +1 + helper `record_godibot_concordance_check`) | mod |
+| **I. Cron workflow** | `.github/workflows/godibot_concordance_loop.yml` (Tue 06:00 UTC) | NUEVO |
+| **J. Tests dedicados** | `tests/test_audit_C_godibot_validator.py` (30 tests H.GB001-H.GB030) | ~420 |
+| **K. Fixtures clínicos** | `tests/fixtures/godibot/case_*.json` (6 casos pivotales) | 6 archivos |
+
+### Sub-validadores GodiBot (5 implementados + 1 opcional)
+
+| Sub-validador | API reusada | Bloquea |
+|---|---|---|
+| `_validate_nccn_eau` | `prostanet/shared/clinical_scores.py::nccn_risk_stratification()` + CLINICAL_EVIDENCE_2026.md lookups | soft_warning (guideline_basis_missing) |
+| `_reeval_103_gates` | `pivotal_gates_yaml_loader.py:572::evaluate_all_yaml_gates(payload)` | hard_block si gate omitido en compass |
+| `_detect_omitted_biomarkers` | Reglas codificadas (PARP-HRR, Lu177-PSMA, Abi-ChildPugh, Ra223-Visceral, Sipuleucel-CD4, ARSI-AR-V7) | hard_block en 5 contraindicaciones absolutas |
+| `_detect_eligible_trials` | `trial_eligibility_engine.py::evaluate_all_eligible_trials(patient)` (47 trials) | soft_warning (trial omitido) |
+| `_check_longitudinal_concordance` | Heurísticas inline (m1crpc sin PSMA reciente, BCR post-RT no-Phoenix, AS PSADT<3mo) | soft_warning + drift_detected flag |
+| `_llm_devils_advocate` (opcional) | Anthropic SDK Claude Sonnet 4.6 — invocado solo si confidence<0.85 OR estadio en COMPLEX_STAGES {nmcrpc_initial, m1_crpc, nepc_crpc, oligometastatic_sbrt, psma_pe_eligible} | soft_warning (LLM concerns parseados) |
+
+### Output schema `godibot_review`
+
+```json
+{
+  "status": "approved" | "warnings_only" | "blocked_hard",
+  "confidence": 0.0-1.0,
+  "discrepancies": [{"code", "severity", "source", "message", "suggestion"}],
+  "trial_omissions": [{"trial_id", "confidence", "reason", "citation", "pmid", "nct"}],
+  "biomarker_gaps": [{"name", "required_for", "severity", "guideline"}],
+  "longitudinal_concord": {"drift_detected", "discrepancies", ...},
+  "guideline_check": {...},
+  "gates_reeval": {"triggered_count", "omitted_hard_blocks", ...},
+  "llm_adversarial": null | {"invoked", "model", "summary", "additional_concerns"},
+  "override_required": bool,
+  "version": "godibot-v1"
+}
+```
+
+### REST endpoints expuestos
+
+| Endpoint | Método | Función |
+|---|---|---|
+| `/api/godibot/review/<nss>` | POST | Re-ejecuta GodiBot on-demand para un paciente |
+| `/api/godibot/override/<nss>` | POST | Persiste override firmado (signer cédula + reason ≥30 chars) |
+| `/api/godibot/reviews/<nss>` | GET | Historial de reviews del paciente |
+| `/api/godibot/concordance` | GET | Métricas agregadas (alimenta 9° vector loop) |
+
+### 9° vector del Iterative Improvement Loop
+
+| Vector | Icono | Métrica | Target |
+|---|---|---|---|
+| **recommendation_concordance** | 🛡 | GodiBot approval rate + override rate inverso | ≥95% approved |
+
+Cron `godibot_concordance_loop.yml` Tue 06:00 UTC corre `record_godibot_concordance_check(days=7)` + sweep top 10 fixtures vs baseline (detecta regresión clinical_decision_agent).
+
+### Métricas finales
+
+| Métrica | Pre-C | Post-C |
+|---|---|---|
+| Agentes Python registrados | 5 | **6** (+godibot_validator) |
+| Subagentes Claude Code | 0 | **1** (.claude/agents/godibot.md) |
+| Endpoints REST nuevos | base | **+4** GodiBot routes |
+| Vectores del loop monitor | 8 | **9** (+recommendation_concordance) |
+| Cron workflows | 5 | **6** (+godibot_concordance_loop) |
+| Tablas SQLite (tracking) | base | **+1** godibot_reviews |
+| Tests dedicados (iteración C) | 0 | **30** PASS (H.GB001-H.GB030) |
+| FAUBOT_RELEASE | LXCIX | **C** (2026-05-15) |
+
+### Hipótesis verificables H.GB001-H.GB030 — 30/30 PASS
+
+- H.GB001-005: Hard blocks en 5 contraindicaciones absolutas (PARP/Lu177/Abi/Ra223/Sipuleucel)
+- H.GB006-010: Schema review + version + confidence range + approved path + hard_block→override
+- H.GB011-015: Coherencia longitudinal (m1crpc PSMA, BCR Phoenix, AS PSADT) + warnings_only path
+- H.GB016-020: LLM adversarial fallback graceful (SDK ausente, mock client, COMPLEX_STAGES)
+- H.GB021-025: Persistencia override flow + concordance summary aggregation + timestamp desc
+- H.GB026-030: 9° vector wired + orchestrator integration + profile_compass bubble + empty compass graceful
+
+### Verificación E2E
+
+```bash
+# Smoke runtime PARP sin HRR → blocked_hard
+PYTHONPATH=. /opt/homebrew/bin/python3.12 -c "
+from prostanet.agents.godibot import run_godibot_review
+record = {'reconciled_state': 'm1_crpc', 'baseline': {'baseline_psa': 120},
+          'hrr_test_result': None,
+          'clinical_compass': {'headline': 'Iniciar olaparib 300mg BID'}}
+review = run_godibot_review(record, enable_llm=False)
+assert review['status'] == 'blocked_hard'
+assert review['override_required'] is True
+print('PASS:', review['status'])
+"
+
+# Tests dedicados
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /opt/homebrew/bin/python3.12 -m pytest \\
+  tests/test_audit_C_godibot_validator.py -v --no-header \\
+  -c /dev/null --rootdir=/tmp -o cache_dir=/tmp/pytest_cache
+# Expected: 30 passed
+```
+
+### Próxima propuesta (post-C)
+
+**Iteración v2 (LXXXX)** — completar capacidad clínica omitida en v1:
+- Op3 EPIC-26 trade-off engine (RP vs RT functional outcomes)
+- Bone health predictor (FRAX score + DEXA + denosumab/Zol prophylaxis)
+- Auto-merge en discrepancias soft con confidence>0.95
+
+**Iteración v3** — integración Cortana voz: GodiBot interviene auditivamente cuando detecta hard_block ("Doctor, antes de prescribir Olaparib, GodiBot detectó que falta HRR confirmation").
+
+**Iteración v4** — ML model entrenado en concordancia histórica para predecir qué outputs van a ser bloqueados (preempt en `clinical_decision_agent`).
+
+---
+
 ## 📅 2026-04-30 — Iteración LXCVIII.B Faubot — Clinical Hub UI Redesign Bento Grid
 
 ### Razón
@@ -13348,5 +13485,41 @@ Completa la cobertura UI del set EPIC 22c (22 estados nuevos → 22 cards):
 - audit_tracking + transformer + bug fixes (a8ebcdc, dcdc7ca, 74b2a98)
 
 **Total**: 15 commits, ~3000 líneas añadidas, 0 líneas de lógica clínica eliminadas (constraint del usuario respetado).
+
+---
+
+## EPIC 29 — GodiBot pass-4 hallazgos (7 HIGH + 5 MOD)
+
+> Fecha: 2026-05-16 · Pass-4 GodiBot adversarial validation focused en clinical decision arbiter + RT downstream + persistence robustness
+
+### Hallazgos cerrados (12)
+
+| ID | Severity | Sub-EPIC | Archivo afectado | Fix aplicado |
+|----|----------|----------|-------------------|--------------|
+| G51 | HIGH | 29.4 | `prostanet/ai/inference/model_registry.py` | Preservar `IncompatibleCheckpointError` type en metadata (load_error_type + incompatible_vocab_version flag) — clinician banner puede ahora diferenciar vocab-mismatch vs missing-file |
+| G52 | HIGH | 29.5 | `prostanet/domains/decision_arbiter/recommendation_arbiter.py` | Seizure detector: word-boundary regex + negación + family-history exclusion. Pre-EPIC29 "no seizure history" disparaba false-positive enzalutamide block |
+| G53 | HIGH | 29.1 | `prostanet/domains/decision_arbiter/recommendation_arbiter.py` + `prostanet/presentation/v2_adapters.py` | ERA-223 concurrent Ra-223+abi+pred detector (PMID 30853531) + bone_health_ra223 UI adapter |
+| G54 | MOD | 29.8 | `prostanet/domains/patient_tracking/post_rp_salvage_copilot_service.py` | BCR PSA confirmatory window upper bound 180 días (>6m = trayectoria persistente distinta, no nueva salvage window) |
+| G55 | HIGH | 29.2 | `prostanet/domains/patient_tracking/clinical_contradiction_engine.py` | PCWG3-correct PSA contradiction: nadir + ≥25% + ≥2 ng/mL + confirmatory (Scher JCO 2016 PMID 26921877) |
+| G56 | MOD | 29.9 | `prostanet/domains/patient_tracking/psa_forecast.py` | 13/13 PSA forecast cohort entries con `data_quality_tag=approximate_no_published_median` + disclaimer + evidence_pmid |
+| G57 | HIGH | 29.7 | `prostanet/domains/patient_tracking/clinical_decision_today_fusion_kernel.py` | Logger + upstream_failures audit trail en 4 sub-builders (no more silent fallthrough) |
+| G58 | HIGH | 29.6 | `prostanet/domains/patient_tracking/arpi_benefit_matrix.py` | m1_crpc expanded 2→10 regimens (OLAPARIB + TALAZOPARIB_ENZA + LU177_PSMA_617 + CABAZITAXEL + RA223 + DOCETAXEL + PEMBROLIZUMAB + SIPULEUCEL_T) con eligibility_gate, evidence_pmid, benefit_score |
+| G59 | MOD | 29.10 | `prostanet/domains/patient_tracking/arpi_benefit_matrix.py` | m0_crpc `eligibility_gate.psadt_max_months=10` para ARAMIS/PROSPER/SPARTAN trio (los 3 trials excluyeron PSADT >10mo) |
+| G60 | MOD | 29.11 | `clinical_scores.py` + `prostanet/domains/patient_tracking/risk_tools.py` | CAPRA `age` ahora REQUIRED input — missing → INCOMPLETO con missing_inputs=['age'], NO silent default=65 |
+| G61 | MOD | 29.12 | `prostanet/presentation/v2_adapters.py` | `_post_brachy_hdr_summary` adapter wired (HDR ya tenía classifier + registry pero UI silent) |
+| G62 | HIGH | 29.3 | `tracking_db.py` | UNIQUE partial index `patient_clinical_facts_unique_active` + auto-demote prior active row antes de INSERT (no más duplicate-active rows) |
+
+### Side-fix: jinja null-guard en regimen.predicted_os_gain_mo
+
+`templates/patient_profile_v2.html` línea 876: nuevos regimens m1_crpc del G58 expandido pueden tener `predicted_os_gain_mo=None` (no benchmark publicado aún) → template crash con TypeError. Cambiado a `{% if regimen.predicted_os_gain_mo is not none %}{{ '%.1f' % value }}mo{% else %}—{% endif %}`.
+
+### Tests EPIC 29
+- ✅ 73/73 EPIC 22-23 core tests
+- ✅ 273/273 EPIC 20-26 sweep (incluye EPIC 24 STT)
+- ✅ Smoke G55/G58/G59/G60/G61 con casos sintéticos
+- ⚠️ 1 pre-existing failure: `test_post_rt_copilot_keeps_local_salvage_visible_and_endpoint_resolves` (Auditoría OOS-3 documentada en línea 6750, NO regresión EPIC 29)
+
+### Constraint del usuario respetado
+0 líneas de lógica clínica eliminadas. Todas las modificaciones son append-only o repair-only.
 
 

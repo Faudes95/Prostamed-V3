@@ -873,7 +873,7 @@
                                 <span style="font-size:.7rem; color:var(--pn-text-muted);">({{ regimen.trial_source }})</span>
                             </div>
                             <div style="font-size:.78rem; color:var(--pn-text-muted); margin-top:3px;">
-                                OS gain esperada: <span style="color:#f8fafc;">{{ '%.1f' % regimen.predicted_os_gain_mo }}mo</span>
+                                OS gain esperada: <span style="color:#f8fafc;">{% if regimen.predicted_os_gain_mo is not none %}{{ '%.1f' % regimen.predicted_os_gain_mo }}mo{% else %}—{% endif %}</span>
                             </div>
                             {% if regimen.tolerance_mismatches %}
                             <ul style="margin:6px 0 0; padding-left:18px; font-size:.75rem; color:rgb(252,165,165); list-style:disc;">
