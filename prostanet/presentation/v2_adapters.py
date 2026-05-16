@@ -929,7 +929,12 @@ def _decision_fusion_summary(
     """
     pv = profile_view or {}
     pt = patient or {}
-    # EPIC 26.7 + 27.8 — thread-safe LRU cache check
+    # EPIC 26.7 + 27.8 + 28.6 — thread-safe LRU cache check with deepcopy.
+    # G44: pre-EPIC28 cache returned `cached` by reference + stored `result`
+    # by reference. Callers mutating the dict (e.g., result["timestamp"]=now)
+    # corrupted the cache entry shared across threads. Now deepcopy on
+    # read AND write to enforce read-only semantics.
+    import copy as _copy_e28
     try:
         cache_key = _cache_key_for_facts(pt)
         with _DECISION_FUSION_CACHE_LOCK:
@@ -937,7 +942,9 @@ def _decision_fusion_summary(
             if cached is not None:
                 # EPIC 27.8 — true LRU: bump on hit
                 _DECISION_FUSION_CACHE.move_to_end(cache_key)
-                return cached
+                # EPIC 28.6 — return deep copy so caller mutations don't
+                # contaminate the cached entry
+                return _copy_e28.deepcopy(cached)
     except Exception:
         cache_key = None
     try:
@@ -1043,12 +1050,13 @@ def _decision_fusion_summary(
         "data_integrity_flags": decision.data_integrity_flags,
         "arbiter_version": decision.arbiter_version,
     }
-    # EPIC 26.7 + 27.8 — thread-safe true-LRU cache write
+    # EPIC 26.7 + 27.8 + 28.6 — thread-safe true-LRU cache write with deepcopy
     if cache_key is not None:
         with _DECISION_FUSION_CACHE_LOCK:
             if cache_key in _DECISION_FUSION_CACHE:
                 _DECISION_FUSION_CACHE.move_to_end(cache_key)
-            _DECISION_FUSION_CACHE[cache_key] = result
+            # G44 — store deep copy so caller can mutate `result` safely
+            _DECISION_FUSION_CACHE[cache_key] = _copy_e28.deepcopy(result)
             # Evict oldest least-recently-used entries beyond max size
             while len(_DECISION_FUSION_CACHE) > _DECISION_FUSION_CACHE_MAX:
                 _DECISION_FUSION_CACHE.popitem(last=False)

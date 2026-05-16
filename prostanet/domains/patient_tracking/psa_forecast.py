@@ -680,6 +680,16 @@ def _build_forecast_for_segment_points(
 # nadir_pct: % del baseline PSA esperado en nadir (e.g., 0.05 = 5% del baseline)
 # time_to_nadir_m: meses esperados a nadir
 # duration_response_m: meses esperados de respuesta sostenida (post-nadir hasta progresión)
+#
+# EPIC 28.12 (GodiBot G50 MOD) — DISCLAIMER:
+# Los valores de nadir_pct son APROXIMACIONES derivadas de proporciones de
+# pacientes que alcanzan PSA<0.2 ng/mL en los trials pivotales, NO de
+# medianas absolutas publicadas. Por ejemplo:
+#   - ARASENS PMID 35179323: 70% triplete vs 50% doublete alcanzan PSA<0.2
+#   - SPARTAN/PROSPER/ARAMIS: 33-40% sin describir nadir fraccional
+# Estos valores sirven como REFERENCIA DE OVERLAY para el PSA Compass,
+# no como predicción individual. Cada entrada incluye `data_quality_tag`
+# para que la UI muestre disclaimer apropiado.
 COHORT_PSA_REFERENCES: dict[str, dict[str, dict[str, Any]]] = {
     "mcspc_high_volume_sync": {
         "ADT": {"nadir_pct": 0.10, "time_to_nadir_m": 6, "duration_response_m": 12,
@@ -689,7 +699,10 @@ COHORT_PSA_REFERENCES: dict[str, dict[str, dict[str, Any]]] = {
         "ADT_ARPI": {"nadir_pct": 0.04, "time_to_nadir_m": 5, "duration_response_m": 24,
                      "median_label": "Mediana ADT+ARPI mHSPC (LATITUDE/ENZAMET/ARCHES)"},
         "ADT_TRIPLET": {"nadir_pct": 0.02, "time_to_nadir_m": 4, "duration_response_m": 30,
-                        "median_label": "Mediana ADT+Docetaxel+ARPI triplete (PEACE-1/ARASENS)"},
+                        "median_label": "Mediana ADT+Docetaxel+ARPI triplete (PEACE-1/ARASENS)",
+                        "data_quality_tag": "approximate_no_published_median",
+                        "evidence_pmid": ["35179323", "35405085"],
+                        "disclaimer": "Derivado de % PSA<0.2 en trial, no mediana publicada"},
     },
     "mcspc_high_volume_metachronous": {
         "ADT": {"nadir_pct": 0.10, "time_to_nadir_m": 6, "duration_response_m": 14,
@@ -701,7 +714,10 @@ COHORT_PSA_REFERENCES: dict[str, dict[str, dict[str, Any]]] = {
     },
     "m0_crpc": {
         "ADT_ARPI": {"nadir_pct": 0.30, "time_to_nadir_m": 4, "duration_response_m": 24,
-                     "median_label": "Mediana ARPI m0CRPC (SPARTAN/PROSPER/ARAMIS)"},
+                     "median_label": "Mediana ARPI m0CRPC (SPARTAN/PROSPER/ARAMIS)",
+                     "data_quality_tag": "approximate_no_published_median",
+                     "evidence_pmid": ["29420164", "29420827", "30575667"],
+                     "disclaimer": "PSA<0.2 ~33-40% en trials; nadir fraccional no reportado"},
         "ADT": {"nadir_pct": 0.80, "time_to_nadir_m": 3, "duration_response_m": 8,
                 "median_label": "Mediana ADT solo m0CRPC (control arm)"},
     },

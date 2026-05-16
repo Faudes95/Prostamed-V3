@@ -168,9 +168,18 @@ REGIMEN_CATALOG: dict[int, dict[str, Any]] = {
         "expected_os_gain_mo": 4.7,
         "expected_rpfs_hr": 0.34,
         "expected_os_hr": 0.69,
+        # EPIC 28.5 (GodiBot G43 HIGH) — corrected PMID. Pre-EPIC28 the
+        # second citation used PMID 33571915 which does NOT correspond to
+        # PROfound OS update. Only verifiable PROfound citation in
+        # CLINICAL_EVIDENCE_2026.md whitelist is Hussain NEJM 2020 (PMID
+        # 32343890) — primary publication with rPFS primary endpoint AND
+        # interim OS data (cohort A: 18.5 vs 15.1 mo). The 4.7mo OS gain
+        # figure derives from Hussain ASCO 2020 (oral abstract LBA5004)
+        # and ESMO 2020 mature OS update — both are congress presentations
+        # without independent PMIDs. Citing only the validated PMID.
         "evidence_citations": [
-            "PROfound rPFS — Hussain NEJM 2020 PMID 32343890",
-            "PROfound OS update — de Bono NEJM 2020 PMID 33571915",
+            "PROfound primary publication — Hussain NEJM 2020 PMID 32343890",
+            "PROfound mature OS — Hussain ASCO 2020 LBA5004 / ESMO 2020 (congress)",
         ],
         "indications": [
             "mcrpc_hrr_positive_parp_naive",
@@ -621,35 +630,73 @@ def _state_matches_indication(state: str, indication: str) -> bool:
         "atm": "atm",
         "hoxb13": "hoxb13",
     }
-    def _family_of(norm: str) -> str | None:
-        for tok, canonical in family_aliases.items():
-            if tok in norm:
-                return canonical
-        return None
-    s_family = _family_of(s_norm)
-    i_family = _family_of(i_norm)
-    if not s_family or not i_family or s_family != i_family:
+    # EPIC 28.4 (GodiBot G42 HIGH) — multi-family resolution.
+    # Pre-fix: `_family_of` returned the FIRST matching token in iteration
+    # order. For indication `brca2_carrier_mcrpc` (contains "brca2" AND
+    # "mcrpc") `_family_of` returned whichever was first in family_aliases
+    # dict insertion order. For state `brca2_carrier` (no stage suffix)
+    # `_family_of` returned "brca2". Mismatch → PARP didn't rank for
+    # BRCA2 carrier whose state lacked a stage suffix. Fix: collect ALL
+    # families and require non-empty set intersection.
+    def _families_of(norm: str) -> set[str]:
+        return {canonical for tok, canonical in family_aliases.items() if tok in norm}
+    s_families = _families_of(s_norm)
+    i_families = _families_of(i_norm)
+    if not s_families or not i_families:
         return False
+    # EPIC 28.4 (GodiBot G42 refined) — carrier-aware family intersection.
+    # When indication declares BOTH a carrier family AND a stage family
+    # (e.g., "brca2_carrier_mcrpc"), the state must contain the CARRIER
+    # family — having only the stage family alone is not sufficient (a
+    # generic mcrpc state without carrier context shouldn't match a
+    # carrier-specific indication). Without this, m1_crpc state matched
+    # brca2_carrier_mcrpc indication via the shared "mcrpc" family alone.
+    carrier_families = {"brca1", "brca2", "atm", "hoxb13", "lynch"}
+    i_carrier_families = i_families & carrier_families
+    if i_carrier_families:
+        s_carrier_families = s_families & carrier_families
+        # When indication is carrier-specific, state must share the carrier family
+        if not (s_carrier_families & i_carrier_families):
+            return False
+    else:
+        # No carrier in indication — require any family intersection
+        if not (s_families & i_families):
+            return False
     # Both in same family — check sub-signals (volume/sync/etc)
-    # EPIC 27.6 (GodiBot G32 HIGH) — include disease stage tokens so that
-    # indications like "brca2_carrier_mcrpc" require the state to also be mCRPC
-    # context. Pre-fix, `brca2_carrier_mcrpc` indication matched any
-    # `brca2_carrier` state regardless of disease stage (accidental match via
-    # the "no sub-signal → True" fallback). PARP-first should only rank for
-    # mCRPC-context carriers; localized brca2_carrier should not surface PARP.
+    # EPIC 27.6 + 28.4 (GodiBot G32 + G42) — stage tokens REMOVED from volume_tokens.
+    # Originally G32 added "mcrpc"/"mcspc"/"m0crpc" to discriminate indications
+    # like "brca2_carrier_mcrpc". But these tokens also match family aliases →
+    # produced false positive when both state AND indication shared the same
+    # stage substring as both family AND volume signal (e.g.,
+    # "mcspc_low_volume" vs "mcspc_high_volume" both matched "mcspc" as
+    # subsignal → True wrong). G42 fixed the brca2 case via the
+    # carrier-bare-state special-case below — so we can keep volume_tokens
+    # focused on TRUE volume/intent discriminators only.
     volume_tokens = ("highvolume", "lowvolume", "visceral", "oligo", "synchronous",
                      "metachronous", "arsifirst", "post arsi", "postarsi",
                      "hrr", "msi", "psma", "naive",
-                     # stage discriminators (EPIC 27.6)
-                     "mcrpc", "mcspc", "m0crpc", "localized", "advanced",
-                     "parpnaive", "postparp")
-    i_subsignals = {tok for tok in volume_tokens if tok in i_norm}
-    s_subsignals = {tok for tok in volume_tokens if tok in s_norm}
-    if not i_subsignals:
-        # Indication has no specific sub-signal → family match is enough
+                     "parpnaive", "postparp", "localized")
+    # EPIC 28.4 (GodiBot G42 refined v2) — bifurcate sub-signals into two tiers:
+    # STRICT (volume/intent, must match) and BIOMARKER (msi/hrr/psma/parp,
+    # checked separately by biomarker-specific detectors).
+    strict_subsignals = ("highvolume", "lowvolume", "visceral", "oligo",
+                         "synchronous", "metachronous", "localized")
+    biomarker_subsignals = ("hrr", "msi", "psma", "naive",
+                            "parpnaive", "postparp", "arsifirst", "post arsi", "postarsi")
+    i_strict = {t for t in strict_subsignals if t in i_norm}
+    s_strict = {t for t in strict_subsignals if t in s_norm}
+    # Carrier special case (bare carrier state, no stage suffix)
+    carrier_families_set = {"brca1", "brca2", "atm", "hoxb13", "lynch"}
+    s_is_bare_carrier = bool(s_families & carrier_families_set) and not s_strict
+    if s_is_bare_carrier and (s_families & i_families & carrier_families_set):
         return True
-    # Indication has sub-signal: require state to share at least one
-    return bool(i_subsignals & s_subsignals)
+    # If indication has STRICT sub-signals, state must share at least one.
+    # If indication has only biomarker sub-signals (or none), family match
+    # is sufficient — biomarker-specific arbiter detectors validate
+    # eligibility downstream.
+    if not i_strict:
+        return True
+    return bool(i_strict & s_strict)
 
 
 # ─────────────────── Re-decision alerts ───────────────────

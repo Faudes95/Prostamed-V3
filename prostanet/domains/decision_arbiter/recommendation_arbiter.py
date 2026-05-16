@@ -375,17 +375,18 @@ def _detect_visceral_undertreatment(
     )
     if not has_visceral:
         return None
-    # EPIC 27.3 (GodiBot G29 HIGH) — explicit mCSPC assertion + prior chemo check.
-    # Pre-fix: `is_mcspc = castrate in ("not_castrate", "intact") or not castrate`
-    # treated MISSING castration data as mCSPC by default → false positives.
-    # Also: ARASENS exclusion = prior chemotherapy. Cannot give triplete twice.
-    castrate = str(facts.get("castrate_testosterone_status") or "").lower()
+    # EPIC 27.3 + 28.3 (GodiBot G29 + G41) — tri-state castration handling.
+    # State A: mcspc_confirmed (castrate ∈ not_castrate/intact, no CRPC) → can detect
+    # State B: mcrpc_confirmed (castrate=castrate OR crpc_confirmed=True) → skip
+    # State C: castrate_unknown (missing/pending) → emit data_gap conflict
+    #          instead of suppressing alert silently (G41 fix).
+    castrate = str(facts.get("castrate_testosterone_status") or "").lower().strip()
     crpc_confirmed = _truthy(facts.get("crpc_confirmed"))
-    # Require POSITIVE assertion of mCSPC (not absence of castrate data)
     is_mcspc = castrate in ("not_castrate", "intact") and not crpc_confirmed
-    if not is_mcspc:
-        return None
-    # Skip if chemo already received (in mCSPC or any prior line)
+    is_mcrpc = castrate in ("castrate", "castration_resistant") or crpc_confirmed
+    is_unknown = not is_mcspc and not is_mcrpc
+
+    # Skip if chemo already received (any state)
     prior_chemo = (
         _truthy(facts.get("prior_docetaxel_received"))
         or _truthy(facts.get("prior_chemo_in_mcspc"))
@@ -394,6 +395,36 @@ def _detect_visceral_undertreatment(
     )
     if prior_chemo:
         return None
+
+    if is_mcrpc:
+        return None  # ARASENS doesn't apply
+
+    if is_unknown:
+        # G41: emit data_gap conflict instead of silently passing
+        return ClinicalConflict(
+            conflict_id="visceral_data_gap_castration",
+            severity="high",
+            title="Visceral mets + estado de castración no documentado — bloqueante",
+            description=(
+                "Paciente con metástasis viscerales pero `castrate_testosterone_status` "
+                "no documentado. NCCN PROS-13 exige testosterona <50 ng/dL documentada "
+                "para distinguir mCSPC (donde aplica triplete ARASENS) vs mCRPC "
+                "(donde aplica secuencia post-ARSI). Sin este dato la decisión es "
+                "no-confiable: el sistema no puede recomendar terapia visceral-intensive."
+            ),
+            affected_sources=["patient_clinical_facts.castrate_testosterone_status"],
+            resolution=(
+                "Obtener testosterona sérica antes de cualquier decisión sistémica. "
+                "Mientras tanto, mantener visible alerta de visceral pero NO re-rankear."
+            ),
+            clinical_rationale=(
+                "NCCN PROS-13 v2026 + PCWG3 Scher JCO 2016 (PMID 26903579): CRPC "
+                "diagnosis requires testosterone <50 ng/dL + biochemical/radiographic "
+                "progression. Single-PSA-rising does not suffice."
+            ),
+            requires_clinician_review=True,
+        )
+    # If mcspc, continue to original undertreatment logic
     top_3 = (twin_ranking or [])[:3]
     if not top_3:
         return None
@@ -520,15 +551,33 @@ def _detect_enzalutamide_seizure_risk(
         or _truthy(facts.get("cns_avm"))
         or _truthy(facts.get("cns_aneurysm"))
     )
-    # Generic seizure_history (potentially remote) ONLY counts when not
-    # qualified as resolved/controlled
+    # EPIC 28.2 (GodiBot G40 HIGH) — distinguish TRULY inactive seizure
+    # history from "controlled on AED" (which is active disease under
+    # medication that LOWERS seizure threshold — still a contraindication
+    # per PREVAIL exclusion + Xtandi label §4).
     raw_seizure_history = str(facts.get("seizure_history") or facts.get("seizure") or "").lower().strip()
     history_uncertain_or_active = raw_seizure_history in {"true", "1", "yes", "active", "uncontrolled", "recent"}
-    history_remote_resolved = any(
-        marker in raw_seizure_history
-        for marker in ("resolved", "remote", "childhood", "controlled", "stable", "none", "never")
+    # TRULY inactive: no active disease, no AED required
+    truly_inactive_markers = ("resolved", "remote", "childhood", "none", "never")
+    history_truly_inactive = any(m in raw_seizure_history for m in truly_inactive_markers)
+    # ACTIVE but controlled on AED — still counts as risk for enza
+    controlled_on_aed = any(
+        token in raw_seizure_history
+        for token in ("aed", "valproic", "lamotrigine", "levetiracetam", "carbamazepine",
+                      "phenytoin", "controlled with", "stable on", "on medication",
+                      "on anticonvulsant", "epilepsy")
     )
-    history_counts = history_uncertain_or_active and not history_remote_resolved
+    # Explicit structured field
+    aed_use = (
+        _truthy(facts.get("anticonvulsant_use"))
+        or _truthy(facts.get("aed_active"))
+        or _truthy(facts.get("epilepsy_on_treatment"))
+    )
+    history_counts = (
+        (history_uncertain_or_active and not history_truly_inactive)
+        or controlled_on_aed
+        or aed_use
+    )
     seizure_risk = recent_seizure or cns_acute_risk or history_counts
     if not seizure_risk:
         return None

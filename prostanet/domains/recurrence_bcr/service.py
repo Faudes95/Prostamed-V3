@@ -367,7 +367,17 @@ class RecurrenceBCRService:
                         schedule="20-33 fracciones según planificación",
                         component_drugs=[{"drug_name": "Radioterapia de rescate", "dose": "64-66 Gy", "route": "Radioterapia externa", "schedule": "20-33 fracciones"}],
                         metadata_source="guideline_backbone",
-                        evidence_tags=["RADICALS-RT", "RAVES", "ARTISTIC"],
+                        # EPIC 28.7 (GodiBot G45 HIGH) — added missing trials.
+                        # RAVES (Kneebone Lancet Oncol 2020 PMID 32702280): adjuvant
+                        # vs early salvage RT equipoise — early salvage preferred
+                        # when PSA <0.5 (less toxicity, equivalent outcomes).
+                        # Tilki BJU Int 2020 PMID 32568627: early <PSA 0.5 vs late.
+                        evidence_tags=[
+                            "RADICALS-RT Parker Lancet 2020 PMID 33002429",
+                            "RAVES Kneebone Lancet Oncol 2020 PMID 32702280",
+                            "ARTISTIC pooled analysis",
+                            "Tilki BJU Int 2020 PMID 32568627 (early PSA <0.5 vs late)",
+                        ],
                         notes=(
                             "La RT sola permanece visible cuando la ventana curativa post-RP sigue abierta, "
                             "pero deja de liderar si ya existen rasgos de alto riesgo que favorecen intensificación hormonal."
@@ -406,7 +416,13 @@ class RecurrenceBCRService:
                             {"drug_name": "Goserelina", "dose": "10.8 mg", "route": "Subcutánea", "schedule": "Cada 3 meses"},
                         ],
                         metadata_source="guideline_backbone",
-                        evidence_tags=["GETUG-AFU 16"],
+                        # EPIC 28.7 (GodiBot G45 HIGH) — added GETUG-AFU 17 + NRG-GU002
+                        evidence_tags=[
+                            "GETUG-AFU 16 Carrie Lancet Oncol 2016 PMID 27375295",
+                            "GETUG-AFU 17 Sargos Lancet Oncol 2020 PMID 32502443 (goserelin + SRT vs SRT alone)",
+                            "RTOG 9601 Shipley NEJM 2017 PMID 28190862 (bicalutamide adjuvant)",
+                            "NRG-GU002 / NRG-GU006 ongoing (apa+SRT)",
+                        ],
                         notes=(
                             "La ADT corta es la base preferida cuando el salvage post-RP sigue siendo curativo pero el riesgo biológico "
                             "ya no favorece RT sola."

@@ -722,7 +722,46 @@ class PostRPSalvageCopilotService:
                     "pending_inputs",
                     f"Persisten vacíos decisivos para cerrar la ventana de salvage: {', '.join(missing_for_window)}.",
                 )
-            promote_to_bcr = effective_state == "recurrence_bcr" or (latest_psa is not None and latest_psa >= 0.2)
+            # EPIC 28.8 (GodiBot G46 HIGH) — AUA-ASTRO 2024 + EAU 2026 §5.2 require
+            # TWO PSA values ≥0.2 (confirmatory) separated ≥3 weeks. A single
+            # PSA ≥0.2 may reflect lab variability, hemorrhage transient, or
+            # processing artifact — not diagnostic of BCR alone.
+            # Pre-EPIC28: `latest_psa >= 0.2` alone promoted to BCR → premature
+            # salvage planning.
+            # Accept promotion if: (a) state already recurrence_bcr (upstream
+            # confirmed), OR (b) `bcr_confirmed_by_two_psa=True` explicit flag,
+            # OR (c) ≥2 PSA values in psa_history both ≥0.2 separated ≥21 days.
+            bcr_two_psa_confirmed = bool(safe_state_payload.get("bcr_confirmed_by_two_psa"))
+            psa_history = safe_state_payload.get("psa_history") or []
+            confirmatory_psa_count = 0
+            if not bcr_two_psa_confirmed and isinstance(psa_history, list):
+                # Count consecutive PSAs ≥0.2 (most recent first)
+                elevated = [
+                    (p.get("psa_value") or p.get("value"), p.get("sample_date") or p.get("date"))
+                    for p in psa_history
+                    if isinstance(p, dict)
+                    and (p.get("psa_value") or p.get("value")) is not None
+                ]
+                from datetime import date as _date_e28
+                try:
+                    elevated_dates = [
+                        (_date_e28.fromisoformat(str(d)[:10]), float(v))
+                        for v, d in elevated if d and v is not None
+                    ]
+                    elevated_dates.sort(key=lambda x: x[0], reverse=True)
+                    if len(elevated_dates) >= 2:
+                        # Check if 2 most recent are both ≥0.2 and separated ≥21 days
+                        v1, d1 = elevated_dates[0][1], elevated_dates[0][0]
+                        v2, d2 = elevated_dates[1][1], elevated_dates[1][0]
+                        if v1 >= 0.2 and v2 >= 0.2 and (d1 - d2).days >= 21:
+                            bcr_two_psa_confirmed = True
+                            confirmatory_psa_count = 2
+                except Exception:
+                    pass
+            promote_to_bcr = (
+                effective_state == "recurrence_bcr"
+                or bcr_two_psa_confirmed
+            )
             if salvage_feasible and not psma_done and promote_to_bcr:
                 return (
                     "recurrence_bcr",

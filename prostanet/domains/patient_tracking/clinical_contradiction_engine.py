@@ -173,6 +173,67 @@ def build_clinical_contradiction_bundle(
                 target_state="adt_progression_verification",
             )
 
+    # EPIC 28.11 (GodiBot G49 MOD) — inverse contradiction: mCSPC state with
+    # castrate-range testosterone + PSA rising = possible CRPC misclassification.
+    # Pre-EPIC28 only the forward direction (m1_crpc requires castrate) was
+    # checked. Reverse case (state labeled mcspc_* but biology suggests CRPC)
+    # passed silently → patient could receive mCSPC-tier therapy when they're
+    # already CRPC and need different sequencing.
+    MHSPC_STATES = {
+        "mcspc_oligo_metachronous", "mcspc_low_volume_sync_oligo",
+        "mcspc_high_volume_sync", "mcspc_high_volume_metachronous",
+        "mcspc_high_volume", "mcspc_latitude_high_risk",
+        "mcspc_visceral_only_m1c", "mcspc_psma_only_metastatic",
+    }
+    if explicit_state in MHSPC_STATES:
+        try:
+            testo_val = float(field_values.get("testosterone_value") or field_values.get("testosterone") or 999)
+        except (TypeError, ValueError):
+            testo_val = 999
+        castrate_range = testo_val < 50
+        # PSA rising signal: latest psa > previous psa OR explicit progression
+        psa_history = patient.get("psa_history") or []
+        psa_rising = False
+        if isinstance(psa_history, list) and len(psa_history) >= 2:
+            try:
+                recent = [
+                    float(p.get("psa_value") or p.get("value") or 0)
+                    for p in psa_history[-3:] if isinstance(p, dict)
+                ]
+                if len(recent) >= 2 and recent[-1] > recent[0] * 1.25:
+                    psa_rising = True
+            except (TypeError, ValueError):
+                pass
+        progression_signal = (
+            psa_rising
+            or str(field_values.get("progression_pattern") or "").lower() in {
+                "biochemical", "radiographic", "clinical", "any",
+            }
+        )
+        if castrate_range and progression_signal:
+            _append_contradiction(
+                contradictions,
+                contradiction_key="mhspc_with_castrate_progression",
+                severity="critical",
+                policy="hard_stop",
+                title="mCSPC etiquetado pero biología sugiere mCRPC",
+                rationale=(
+                    f"Estado actual='{explicit_state}' (mCSPC) pero testosterona "
+                    f"{testo_val:.0f} ng/dL <50 (rango castración) Y signal de progresión "
+                    f"(PSA rising o pattern documented). Per PCWG3 (Scher JCO 2016 PMID "
+                    "26903579) esto define mCRPC. Mantener etiqueta mCSPC arriesga "
+                    "secuenciación terapéutica equivocada."
+                ),
+                affected_fields=["castrate_testosterone_status", "testosterone_value", "psa_history", "progression_pattern"],
+                suggested_resolution=(
+                    "Reclasificar a adt_progression_verification para confirmar criterios "
+                    "PCWG3 (testosterona<50 + biochemical OR radiographic progression). "
+                    "Luego promover a m0_crpc o m1_crpc según imagen."
+                ),
+                current_state=explicit_state,
+                target_state="adt_progression_verification",
+            )
+
     unresolved = [item for item in contradictions if item.get("resolution_status") == "open"]
     critical_unresolved = [item for item in unresolved if item.get("severity") == "critical"]
     block_status = "hard_stop" if critical_unresolved else "provisional" if unresolved else "clear"

@@ -82,6 +82,8 @@ class BoneHealthRecommendation:
     evidence_tags: list[str] = field(default_factory=list)
     alerts: list[dict[str, Any]] = field(default_factory=list)
     missing_inputs: list[str] = field(default_factory=list)
+    # EPIC 28.10 (GodiBot G48 MOD) — Ra-223 ALSYMPCA layer
+    ra223_recommendation: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -662,6 +664,52 @@ def build_bone_health_recommendation(patient: dict[str, Any]) -> BoneHealthRecom
         evidence_tags.append("smith_2009_halt_denosumab")
         evidence_tags.append("smith_2014_halt_za")
 
+    # EPIC 28.10 (GodiBot G48 MOD) — Radium-223 (ALSYMPCA) alongside BMA.
+    # Pre-EPIC28 the engine recommended denosumab/ZA correctly for bone
+    # protection but DIDN'T surface Ra-223 as a bone-targeted ALPHA-emitter
+    # therapy with documented OS benefit in mCRPC bone-only sympomatic
+    # (Parker NEJM 2013 ALSYMPCA, PMID 23863050). Engine extension below
+    # detects eligibility and adds Ra-223 recommendation as additional layer.
+    ra223_eligible = (
+        state in {"m1_crpc", "mcrpc_arsi_naive", "mcrpc_post_arsi"}
+        and _patient_has_bone_mets(patient)
+        and not _is_true(patient.get("visceral_metastasis_present"))
+        and not _is_true(patient.get("visceral_liver"))
+        and not _is_true(patient.get("visceral_lung"))
+    )
+    ecog_int = _safe_int(patient.get("ecog_score"), None)
+    if ecog_int is not None and ecog_int > 2:
+        ra223_eligible = False  # ALSYMPCA ECOG ≤2
+    symptomatic_bone = (
+        _is_true(patient.get("symptomatic_bone_pain"))
+        or _is_true(patient.get("opioids_for_bone_pain"))
+        or _is_true(patient.get("bone_directed_rt_prior"))
+    )
+    ra223_recommendation: dict[str, Any] | None = None
+    if ra223_eligible and symptomatic_bone:
+        ra223_recommendation = {
+            "agent": "radium-223 dichloride",
+            "dose": "50 kBq/kg IV q4w × 6 ciclos",
+            "rationale": (
+                "mCRPC bone-only sintomático sin visceral mets, ECOG ≤2. "
+                "Alpha-emitter con OS benefit demostrado ALSYMPCA "
+                "(Parker NEJM 2013): median OS 14.9 vs 11.3 mo, HR 0.70."
+            ),
+            "indication": "mcrpc_bone_only_symptomatic",
+            "evidence": "ALSYMPCA Parker NEJM 2013 PMID 23863050",
+            "caveats": [
+                "Excluir si visceral mets >1cm (no eligible ALSYMPCA).",
+                "Vigilar bone marrow reserve (CBC q ciclo).",
+                "NO combinar con abi+prednisone (ERA-223 PMID 30853531 — riesgo fracturas).",
+                "Coordinar con denosumab/ZA — Ra-223 NO reemplaza BMA.",
+            ],
+            "complementary_to_bma": True,
+        }
+        evidence_tags.append("alsympca_parker_2013_pmid_23863050")
+        alerts_pending_ra223 = True
+    else:
+        alerts_pending_ra223 = False
+
     # Alertas derivadas (devueltas como dict; alert_engine se encargará del objeto formal)
     alerts: list[dict[str, Any]] = []
     if dxa_gap["status"] == "missing_mandatory":
@@ -741,6 +789,7 @@ def build_bone_health_recommendation(patient: dict[str, Any]) -> BoneHealthRecom
         evidence_tags=evidence_tags,
         alerts=alerts,
         missing_inputs=missing,
+        ra223_recommendation=ra223_recommendation,  # EPIC 28.10
     )
 
 

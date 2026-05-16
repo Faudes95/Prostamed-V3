@@ -40,7 +40,12 @@ logger = logging.getLogger(__name__)
 
 PSA_VELOCITY_ALERT_NG_ML_PER_YEAR = 0.75     # Carter JAMA 1992; EAU 2026 umbral orientativo
 PSADT_MONITORING_THRESHOLD_MONTHS = 36        # PRIAS: <36m → intensificar
-PSADT_EXIT_THRESHOLD_MONTHS = 12              # Sunnybrook/Klotz: <12m → exit
+# EPIC 28.9 (GodiBot G47 MOD) — citation corrected. Klotz JCO 2015
+# (Sunnybrook/Toronto) used PSADT <36 months as exit trigger, NOT <12.
+# PSADT <12 months is a HIGH-SUSPICION threshold from Royal Marsden /
+# UCSF 90th percentile cohorts + PRIAS intensification. Keep cutoff at 12
+# (more aggressive — safer) but credit correct sources.
+PSADT_EXIT_THRESHOLD_MONTHS = 12              # Royal Marsden/UCSF high-suspicion + PRIAS intensification
 PSA_RELATIVE_INCREASE_ALERT = 1.5             # PSA actual >1.5× PSA basal en ≤3 snapshots
 GLEASON_UPGRADE_EXIT_ISUP = 2                 # NCCN: upgrade a ≥ISUP2 → reclasificación
 MRI_PROGRESSION_PIRADS_CUTOFF = 4             # PRECISE: PI-RADS nuevo ≥4
@@ -273,8 +278,11 @@ def _detect_psa_kinetics_trigger(
                 "Cinética PSA muy rápida sostenida. Evaluar salida de VA: "
                 "biopsia de re-estadificación + RMmp en ≤8 semanas, considerar prostatectomía/RT."
             ),
+            # EPIC 28.9 (GodiBot G47 MOD) — corrected attribution
             evidence_tags=[
-                "Sunnybrook Klotz JCO 2015 PSADT <12m exit",
+                "PRIAS Bul JCO 2013 (intensification trigger) PMID 22928768",
+                "Royal Marsden cohort (PSADT <12m high-suspicion)",
+                "Klotz JCO 2015 PMID 26628466 (Toronto AS protocol — uses <36m for exit)",
                 "EAU 2026 §6.2.2 PSA kinetics",
             ],
         )
