@@ -37,6 +37,15 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+
+def _truthy(value: Any) -> bool:
+    """EPIC 25.6 — Defensive boolean coercion for fact values stored as strings."""
+    if value is True:
+        return True
+    if value is False or value is None:
+        return False
+    return str(value).strip().lower() in {"true", "1", "yes", "si", "sí", "positive", "positivo"}
+
 # Registry loaded lazily from YAML
 _REGISTRY_CACHE: dict[str, dict] | None = None
 
@@ -766,13 +775,45 @@ def _classify_oligometastatic_refinement(facts: Mapping[str, Any]) -> ClinicalSt
             rationale="Metachronous oligomets ADT-naive → MDT preferred vs ARSI escalation",
             discriminators_matched=[f"timing={timing}", "adt_naive=true"],
         )
-    # De novo synchronous
+    # EPIC 25.6 (GodiBot CLASSIFIER-OLIGO-007) — De novo synchronous oligomet
+    # MUST distinguish CHAARTED high-volume vs low-volume + exclude visceral.
+    # Pre-EPIC25 the rule fired with meta_count≤3 alone — a 3-bone-met
+    # patient with appendicular involvement (CHAARTED high-vol) was misclassified
+    # as oligo and routed to MDT+SBRT instead of triplete ARASENS.
     if "synchronous" in timing or "de_novo" in timing:
+        # Visceral metastasis → defer to mCSPC refinements (visceral_only_m1c)
+        visceral_present = (
+            _truthy(facts.get("visceral_metastasis_present"))
+            or _truthy(facts.get("visceral_liver"))
+            or _truthy(facts.get("visceral_lung"))
+            or _truthy(facts.get("visceral_adrenal"))
+            or _truthy(facts.get("visceral_cns"))
+        )
+        if visceral_present:
+            return None  # not oligo — visceral classified upstream
+        # CHAARTED high-volume = ≥4 bone with ≥1 appendicular
+        # (femur/humerus/etc, beyond axial spine/pelvis). With meta_count≤3
+        # the only path to high-vol is having appendicular involvement.
+        has_appendicular = (
+            _truthy(facts.get("appendicular_bone_mets"))
+            or _truthy(facts.get("bone_appendicular_present"))
+            or str(facts.get("bone_distribution") or "").lower() in {"appendicular", "appendicular_+_axial", "diffuse"}
+        )
+        if has_appendicular and meta_count >= 3:
+            return None  # CHAARTED high-vol territory; classified elsewhere
         return _build_classification(
             state="oligometastatic_synchronous",
             confidence=0.86,
-            rationale=f"De novo synchronous {meta_count} mets (≤3) → SBRT to all + systemic",
-            discriminators_matched=[f"timing={timing}", f"meta_count={meta_count}"],
+            rationale=(
+                f"De novo synchronous {meta_count} bone met(s) (≤3), CHAARTED low-vol "
+                "(no visceral, no appendicular high-vol) → SBRT to all + systemic ADT/ARSI"
+            ),
+            discriminators_matched=[
+                f"timing={timing}",
+                f"meta_count={meta_count}",
+                "visceral=false",
+                f"appendicular={has_appendicular}",
+            ],
         )
     return None
 

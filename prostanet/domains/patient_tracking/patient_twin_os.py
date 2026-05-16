@@ -114,6 +114,50 @@ REGIMEN_CATALOG: dict[int, dict[str, Any]] = {
         "expected_os_gain_mo": 19.0,  # Best in class for high-volume mCSPC
         "indications": ["mCSPC_high_volume"],
     },
+    # EPIC 25.4 (GodiBot ARBITER-COMPLETENESS-005) — Pembrolizumab for
+    # MSI-H/dMMR / Lynch carriers. Pre-EPIC25 the catalog had ZERO
+    # immunotherapy entries → Lynch_carrier card surfaced as a pathway
+    # but the Twin OS ranking never showed pembro as a real option.
+    # KEYNOTE-158 (Lancet Onc 2020) ORR 34.3% tumor-agnostic MSI-H.
+    6: {
+        "regimen_id": 6,
+        "regimen_name": "pembrolizumab",
+        "trial_source": "KEYNOTE-158",
+        "primary_drug": "pembrolizumab",
+        "typical_aes": {
+            "immune_related_g3_plus_pct": 18.0,
+            "fatigue_g3_plus_pct": 4.0,
+            "endocrinopathy_g2_plus_pct": 12.0,
+            "colitis_g3_plus_pct": 3.0,
+        },
+        "expected_os_gain_mo": 14.0,  # Median OS responders, KEYNOTE-158
+        "indications": [
+            "mcrpc_msi_h_dmmr",
+            "lynch_carrier",
+            "lynch_advanced",
+        ],
+    },
+    # EPIC 25.5 (GodiBot ARBITER-COMPLETENESS-003) — Olaparib for HRR+ mCRPC
+    # post-ARSI failure. PROfound NEJM 2020 — HR=0.34 rPFS BRCA1/2.
+    7: {
+        "regimen_id": 7,
+        "regimen_name": "olaparib",
+        "trial_source": "PROfound",
+        "primary_drug": "olaparib",
+        "typical_aes": {
+            "anemia_g3_plus_pct": 22.0,
+            "nausea_g2_plus_pct": 30.0,
+            "fatigue_g3_plus_pct": 4.0,
+            "thrombocytopenia_g3_plus_pct": 8.0,
+        },
+        "expected_os_gain_mo": 6.0,  # OS gain post-ARSI failure, PROfound
+        "indications": [
+            "mcrpc_hrr_positive_parp_naive",
+            "brca2_carrier_mcrpc",
+            "brca1_carrier_mcrpc",
+            "atm_carrier_mcrpc",
+        ],
+    },
 }
 
 # Toxicity tolerance vocabulary

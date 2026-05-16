@@ -835,10 +835,36 @@
                 </div>
             </div>
 
-            {% if patient_twin.regimen_rankings %}
+            {# EPIC 25.1 (GodiBot ARBITER-DISPLAY-001 fix) — when arbiter has    #}
+            {# applied contraindications, render the arbitrated_ranking (already  #}
+            {# filtered) instead of the Twin's original. Otherwise clinician      #}
+            {# sees "abi EXCLUIDA" in banner above AND "#1 abiraterone" below     #}
+            {# simultaneously, defeating the safety guard.                        #}
+            {% set _excluded_drugs = [] %}
+            {% if decision_fusion and decision_fusion.has_conflicts and decision_fusion.excluded_regimens %}
+                {% for excl in decision_fusion.excluded_regimens %}{% set _ = _excluded_drugs.append(excl.drug|lower) %}{% endfor %}
+            {% endif %}
+            {% set _twin_rankings_to_render = patient_twin.regimen_rankings %}
+            {% if _excluded_drugs %}
+                {# Filter out excluded drugs from displayed Twin ranking #}
+                {% set _filtered = [] %}
+                {% for r in patient_twin.regimen_rankings %}
+                    {% set _drug = (r.primary_drug or r.regimen_name or '')|lower %}
+                    {% set _is_excluded = false %}
+                    {% for excl in _excluded_drugs %}{% if excl in _drug %}{% set _is_excluded = true %}{% endif %}{% endfor %}
+                    {% if not _is_excluded %}{% set _ = _filtered.append(r) %}{% endif %}
+                {% endfor %}
+                {% set _twin_rankings_to_render = _filtered %}
+            {% endif %}
+            {% if _twin_rankings_to_render %}
             <div style="margin-top:14px;">
-                <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:8px;">Ranking personalizado de regímenes</div>
-                {% for regimen in patient_twin.regimen_rankings[:5] %}
+                <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:8px;" data-testid="twin-ranking-header">
+                    Ranking personalizado de regímenes
+                    {% if _excluded_drugs %}
+                    <span style="color:rgb(252,165,165); font-weight:700; margin-left:8px;">· {{ _excluded_drugs|length }} regimen(es) excluido(s) por arbiter</span>
+                    {% endif %}
+                </div>
+                {% for regimen in _twin_rankings_to_render[:5] %}
                 <div style="margin-bottom:8px; padding:10px 14px; border-radius:8px; {% if loop.index == 1 %}background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.32);{% elif regimen.tolerance_mismatches %}background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.32);{% else %}background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18);{% endif %}" data-testid="twin-regimen-{{ regimen.regimen_id }}">
                     <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
                         <div style="flex:1;">

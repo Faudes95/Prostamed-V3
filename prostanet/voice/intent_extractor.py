@@ -500,6 +500,34 @@ def extract_intake_classifier_candidates(
     t_stage_pattern = re.compile(r"\bcT\s*(?P<value>[1-4][abc]?)\b", re.I)
     for match in t_stage_pattern.finditer(text):
         add("clinical_tstage", f"cT{match.group('value').lower()}", "cT clínico", match, 0.84)
+
+    # EPIC 25.7 (GodiBot CORTANA-INTAKE-013) — pT (pathologic T-stage), Charlson,
+    # cribriform pattern. Pre-EPIC25 these clinically common dictation patterns
+    # were silently ignored.
+    pt_stage_pattern = re.compile(r"\bpT\s*(?P<value>[1-4][abc]?)\b", re.I)
+    for match in pt_stage_pattern.finditer(text):
+        add("pathologic_t_stage", f"pT{match.group('value').lower()}",
+            "pT patológico", match, 0.88)
+        add("tumor_stage_at_rp", f"pT{match.group('value').lower()}",
+            "pT en pieza RP", match, 0.86)
+
+    charlson_pattern = re.compile(r"\bcharlson\s*(?:de|=|:)?\s*(?P<value>\d+)\b", re.I)
+    for match in charlson_pattern.finditer(text):
+        add("charlson_score", match.group("value"), "Charlson Comorbidity Index",
+            match, 0.90)
+
+    # Cribriform pattern — NCCN PROS-3 v2026 unfavorable-IR trigger
+    if _has(text, r"\b(?:patr[oó]n\s+)?cribriform[eo](?:\s+pattern)?\b"):
+        add("cribriform_pattern", "1", "Patrón cribriforme presente",
+            None, 0.88)
+        add("histology_aggressive_variant", "1",
+            "Variante histológica agresiva (cribriform)", None, 0.85)
+
+    # Intraductal carcinoma (often dictated alongside Gleason — different keyword
+    # from "adenocarcinoma intraductal" already handled in EPIC 23.fix)
+    if _has(text, r"\bcarcinoma\s+intraductal\b"):
+        add("intraductal_carcinoma", "1",
+            "Carcinoma intraductal documentado", None, 0.90)
     n_stage_pattern = re.compile(r"\bcN\s*(?P<value>[01xX])\b", re.I)
     for match in n_stage_pattern.finditer(text):
         value = match.group("value").upper().replace("X", "x")

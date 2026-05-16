@@ -277,6 +277,182 @@ def _detect_brca2_timing_mismatch(
     )
 
 
+def _detect_hrr_parp_omission(
+    cards: list[CardRecommendation],
+    twin_ranking: list[Mapping[str, Any]],
+    facts: Mapping[str, Any],
+) -> ClinicalConflict | None:
+    """EPIC 25.3 (GodiBot ARBITER-COMPLETENESS-003) — HRR+ post-ARSI without PARP.
+
+    NCCN PROS-J cat 1: BRCA2/ATM/BRCA1+ mCRPC post-ARSI failure → PARP first
+    (PROfound olaparib; PROpel/MAGNITUDE/TALAPRO-2 combo). Pre-EPIC25, if Twin
+    OS ranks docetaxel/cabazitaxel #1 in that scenario, no conflict surfaced.
+
+    Trigger:
+      - HRR+ documented (hrr_status=positive OR hrr_gene in BRCA-set)
+      - Castrate (mCRPC)
+      - No prior PARP inhibitor received
+      - Chemo (docetaxel/cabazitaxel) in Twin top-3
+    """
+    hrr_status = str(facts.get("hrr_status") or "").lower()
+    hrr_gene = str(facts.get("hrr_gene") or "").upper()
+    is_hrr_positive = (
+        hrr_status in ("positive", "high")
+        or hrr_gene in {"BRCA1", "BRCA2", "ATM", "PALB2", "CHEK2", "FANCA", "RAD51D"}
+    )
+    if not is_hrr_positive:
+        return None
+    castrate = str(facts.get("castrate_testosterone_status") or "").lower()
+    is_crpc = castrate in ("castrate", "castration_resistant") or "mcrpc" in str(
+        facts.get("metastatic_stage_resolved") or ""
+    ).lower()
+    if not is_crpc:
+        return None
+    if _truthy(facts.get("parp_inhibitor_received")):
+        return None
+    chemo_in_top = any(
+        any(c in str(r.get("regimen_name", "")).lower() for c in ("docetaxel", "cabazitaxel"))
+        for r in (twin_ranking or [])[:3]
+    )
+    if not chemo_in_top:
+        return None
+    return ClinicalConflict(
+        conflict_id="hrr_parp_omission",
+        severity="high",
+        title="HRR+ mCRPC con quimio top-3 sin PARP — NCCN PROS-J cat 1 omitido",
+        description=(
+            f"Paciente con HRR+ ({hrr_gene or hrr_status}) en mCRPC, sin PARP previo. "
+            "Twin OS rankea quimioterapia (docetaxel/cabazitaxel) en top-3 sin "
+            "considerar la evidencia categoría 1 de PROfound (olaparib en BRCA1/2/ATM) "
+            "y PROpel/MAGNITUDE/TALAPRO-2 (combo PARP+ARSI). PARP-first es preferred "
+            "en este perfil."
+        ),
+        affected_sources=["patient_twin_os", "brca2_carrier", "hrr_pathway"],
+        resolution=(
+            "Re-rankear PARP (olaparib monoterapia si post-ARSI failure; "
+            "combo PARP+ARSI primera línea mCRPC) sobre quimio. Considerar trial "
+            "PROpel-style si elegible."
+        ),
+        clinical_rationale=(
+            "PROfound NEJM 2020 (Hussain): olaparib HR=0.34 rPFS BRCA1/2; "
+            "PROpel Lancet 2023; TALAPRO-2 Lancet 2023. NCCN PROS-J cat 1."
+        ),
+        requires_clinician_review=True,
+    )
+
+
+def _detect_visceral_undertreatment(
+    cards: list[CardRecommendation],
+    twin_ranking: list[Mapping[str, Any]],
+    facts: Mapping[str, Any],
+) -> ClinicalConflict | None:
+    """EPIC 25.4 (GodiBot ARBITER-COMPLETENESS-004) — visceral mCSPC under-treated.
+
+    ARASENS (NEJM 2022 Smith): HR=0.68 OS para triplete ADT+darolutamide+
+    docetaxel en mCSPC visceral. Si state es mcspc_visceral_only_m1c (o
+    visceral metástasis presente) Y Twin top no incluye chemo intensification,
+    surface conflict.
+    """
+    has_visceral = (
+        _truthy(facts.get("visceral_metastasis_present"))
+        or _truthy(facts.get("visceral_liver"))
+        or _truthy(facts.get("visceral_lung"))
+        or str(facts.get("metastatic_stage_resolved") or "").upper() == "M1C"
+        or "visceral" in str(facts.get("disease_state") or "").lower()
+    )
+    if not has_visceral:
+        return None
+    castrate = str(facts.get("castrate_testosterone_status") or "").lower()
+    is_mcspc = castrate in ("not_castrate", "intact") or not castrate
+    if not is_mcspc:
+        return None
+    top_3 = (twin_ranking or [])[:3]
+    if not top_3:
+        return None
+    has_chemo = any(
+        any(c in str(r.get("regimen_name", "")).lower()
+            for c in ("docetaxel", "darolutamide_docetaxel"))
+        for r in top_3
+    )
+    if has_chemo:
+        return None
+    return ClinicalConflict(
+        conflict_id="visceral_undertreatment",
+        severity="high",
+        title="mCSPC visceral sin intensificación quimio en top-3 — ARASENS omitido",
+        description=(
+            "Paciente mCSPC con metástasis viscerales. Twin OS rankea solo "
+            "ARSI single-agent en top-3 sin considerar triplete ADT+"
+            "darolutamide+docetaxel (ARASENS) que demostró HR=0.68 OS "
+            "específicamente en esta población. Visceral mCSPC tiene "
+            "pronóstico peor y el beneficio incremental de la triplete "
+            "es mayor."
+        ),
+        affected_sources=["patient_twin_os", "mcspc_visceral"],
+        resolution=(
+            "Re-rankear triplete ADT+darolutamide+docetaxel #1 si paciente "
+            "fit (ECOG ≤1, función adecuada). Si no fit para quimio, considerar "
+            "ADT+abi (LATITUDE) o ADT+enza (ENZAMET)."
+        ),
+        clinical_rationale=(
+            "ARASENS NEJM 2022 (Smith): HR=0.68 OS triplete vs doublete. "
+            "NCCN PROS-G cat 1. CHAARTED: visceral = high volume independiente "
+            "de bone count."
+        ),
+        requires_clinician_review=True,
+    )
+
+
+def _detect_lynch_pembro_omission(
+    cards: list[CardRecommendation],
+    twin_ranking: list[Mapping[str, Any]],
+    facts: Mapping[str, Any],
+) -> ClinicalConflict | None:
+    """EPIC 25.5 (GodiBot ARBITER-COMPLETENESS-005) — Lynch carrier sin pembro.
+
+    KEYNOTE-158 (Lancet 2020): MSI-H/dMMR tumor-agnostic pembrolizumab.
+    3-5% mCRPC son hyper-respondedores. La card lynch_carrier existe pero
+    el REGIMEN_CATALOG de Twin OS NO incluye pembrolizumab → score nunca
+    surge → clínico podría perder esta oportunidad terapéutica.
+    """
+    has_lynch_card = any(c.source_card == "lynch_carrier" for c in cards)
+    msi_high = str(facts.get("msi_status") or "").lower() in {"high", "msi_high", "msi-h", "dmmr"}
+    if not (has_lynch_card or msi_high):
+        return None
+    # Check if pembrolizumab is in twin ranking at all
+    has_pembro = any(
+        "pembro" in str(r.get("regimen_name", "")).lower()
+        for r in (twin_ranking or [])
+    )
+    if has_pembro:
+        return None  # catalog has it — clinician can see it
+    return ClinicalConflict(
+        conflict_id="lynch_pembro_omission",
+        severity="critical",
+        title="Lynch/MSI-H confirmado pero pembrolizumab NO está en ranking Twin",
+        description=(
+            "Paciente con Lynch syndrome o MSI-H/dMMR documentado. NCCN PROS-J "
+            "categoría 1 indica pembrolizumab tumor-agnostic (KEYNOTE-158). "
+            "El catálogo de regímenes del Twin OS NO incluye pembrolizumab — "
+            "el clínico no verá esta opción en el ranking. 3-5% de mCRPC son "
+            "hyper-respondedores: omisión clínicamente grave."
+        ),
+        affected_sources=["patient_twin_os.REGIMEN_CATALOG", "lynch_carrier"],
+        resolution=(
+            "Pembrolizumab debe añadirse al REGIMEN_CATALOG con indicaciones "
+            "['mcrpc_msi_h_dmmr', 'lynch_advanced']. Mientras tanto, alertar "
+            "al clínico que esta terapia indicada NO se evaluó automáticamente "
+            "y debe considerarse fuera del ranking."
+        ),
+        clinical_rationale=(
+            "KEYNOTE-158 (Lancet Oncology 2020 Marabelle): ORR 34.3% en MSI-H "
+            "non-CRC tumors. FDA tumor-agnostic 2017. NCCN PROS-J cat 1 + "
+            "PROS-A v2026."
+        ),
+        requires_clinician_review=True,
+    )
+
+
 def _detect_metastatic_stage_contradiction(
     cards: list[CardRecommendation],
     twin_ranking: list[Mapping[str, Any]],
@@ -284,11 +460,52 @@ def _detect_metastatic_stage_contradiction(
 ) -> ClinicalConflict | None:
     """Conflict D — data integrity: metastatic_stage_resolved vs m_substage_resolved.
 
-    Fires when both keys have values and they contradict (M0 vs M1*).
-    Either is fine alone; both with conflict means stale data.
+    EPIC 25.2 (GodiBot ARBITER-INTEGRITY-002 fix) — the detector previously
+    read `facts["metastatic_stage_resolved"]` AND `facts["m_substage_resolved"]`
+    as if they were 2 distinct keys. But clinical_fact_registry.py:47 declares
+    `m_substage_resolved` as a legacy_alias of `metastatic_stage_resolved`, so
+    `extract_canonical_fact_candidates` collapses them into one canonical key.
+    With normalized facts, this detector never fired.
+
+    Fix: accept BOTH the post-coalesce single-key form (legacy contract) AND
+    a pre-coalesce form where the adapter exposes per-source fact rows (the
+    EPIC 23 adapter now passes facts as a dict but also looks at clinical_facts
+    list — we read both paths).
+
+    Fires when:
+      (a) facts dict has both keys distinct (pre-coalesce path — legacy adapter)
+      (b) facts._clinical_facts_raw list has 2 active rows with same fact_key
+          `metastatic_stage_resolved` whose normalized values contradict, OR
+          a row for the legacy alias with a value that contradicts the canonical
     """
+    # Path (a): legacy pre-coalesce dict — direct access to both keys
     stage = str(facts.get("metastatic_stage_resolved") or "").upper()
     sub = str(facts.get("m_substage_resolved") or "").upper()
+
+    # Path (b): post-coalesce — inspect raw fact rows passed by adapter
+    raw_rows = facts.get("_clinical_facts_raw") or []
+    if raw_rows and isinstance(raw_rows, list):
+        m_stage_rows: list[str] = []
+        for row in raw_rows:
+            if not isinstance(row, Mapping):
+                continue
+            row_key = str(row.get("fact_key") or "").strip().lower()
+            row_val = str(
+                row.get("normalized_value_text")
+                or row.get("value")
+                or ""
+            ).strip().upper()
+            if row_key in {"metastatic_stage_resolved", "m_substage_resolved"} and row_val:
+                m_stage_rows.append(row_val)
+        # If we have at least 2 distinct values, check for M0 vs M1 contradiction
+        unique_vals = set(m_stage_rows)
+        has_m0 = any(v in ("M0", "M0_CRPC", "NMCRPC") for v in unique_vals)
+        has_m1 = any(v.startswith("M1") for v in unique_vals)
+        if has_m0 and has_m1:
+            # Override the path (a) values for the description
+            stage = "M0"
+            sub = next(v for v in unique_vals if v.startswith("M1"))
+
     if not stage or not sub:
         return None
     is_m0 = stage in ("M0", "M0_CRPC", "NMCRPC")
@@ -413,6 +630,10 @@ def arbitrate_recommendations(
         _detect_hepatic_abi_conflict,
         _detect_metastatic_stage_contradiction,
         _detect_brca2_timing_mismatch,
+        # EPIC 25 (GodiBot adversarial audit) — 3 detectors críticos faltantes
+        _detect_hrr_parp_omission,             # ARBITER-COMPLETENESS-003
+        _detect_visceral_undertreatment,       # ARBITER-COMPLETENESS-004
+        _detect_lynch_pembro_omission,         # ARBITER-COMPLETENESS-005
     ]
 
     conflicts: list[ClinicalConflict] = []

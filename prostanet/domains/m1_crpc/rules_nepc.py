@@ -33,7 +33,14 @@ from typing import Any
 # Umbrales comúnmente usados como anclas clínicas (no son categoría 1 por sí
 # solos, pero alimentan el score de sospecha junto con hallazgos moleculares).
 NSE_UPPER_LIMIT = 16.3  # μg/L (ng/mL), laboratorios estándar
-CHROMOGRANIN_A_UPPER_LIMIT = 100  # ng/mL
+# EPIC 25.6 (GodiBot NEPC-THRESHOLD-011) — clinically calibrated cutoff.
+# Pre-EPIC25 we used 100 ng/mL (too conservative — missed real NEPC
+# suspects). Aggarwal JCO 2018 + Beltran Cancer Discov 2016 establish
+# ~93 ng/mL as the clinical suspicion threshold and 2x ULN (~66) the level
+# at which CgA elevation becomes clinically significant in mCRPC context.
+# A patient with CgA=80 ng/mL (clinically elevated) was missed pre-EPIC25.
+CHROMOGRANIN_A_UPPER_LIMIT = 66        # ng/mL (2x ULN) — suspect band
+CHROMOGRANIN_A_AGGRESSIVE_LIMIT = 93   # ng/mL (Aggarwal 2018) — high suspicion
 LDH_UPPER_LIMIT = 250  # U/L
 CEA_UPPER_LIMIT = 5  # ng/mL (no específico, usado como corroboración)
 
@@ -117,8 +124,20 @@ def evaluate_nepc_pathway(payload: dict, *, m1_context: dict | None = None) -> d
     )
     bulky_ln = _flag(payload, "bulky_lymph_nodes_over_3cm") or _flag(payload, "ln_gt_3cm")
 
-    nse = _safe_float(payload.get("nse") or payload.get("neuron_specific_enolase"))
-    cga = _safe_float(payload.get("chromogranin_a") or payload.get("cga"))
+    # EPIC 25.7 (GodiBot NEPC-FACT-FLOW-012) — read canonical FactSpec keys
+    # added in EPIC 22b.5 (chromogranin_a_value, nse_value) alongside legacy
+    # aliases. Pre-EPIC25 the canonical facts were orphan — NEPC scoring
+    # could not see them when patient_clinical_facts emitted normalized rows.
+    nse = _safe_float(
+        payload.get("nse")
+        or payload.get("neuron_specific_enolase")
+        or payload.get("nse_value")  # EPIC 22b.5 canonical FactSpec
+    )
+    cga = _safe_float(
+        payload.get("chromogranin_a")
+        or payload.get("cga")
+        or payload.get("chromogranin_a_value")  # EPIC 22b.5 canonical FactSpec
+    )
     ldh = _safe_float(payload.get("ldh") or payload.get("lactate_dehydrogenase"))
     psa_discordant_low = _flag(payload, "psa_discordant_low")
 

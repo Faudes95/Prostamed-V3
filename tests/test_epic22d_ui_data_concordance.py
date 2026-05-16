@@ -87,6 +87,7 @@ STATIC_NO_DATA_BINDING: set[str] = {
     "oligo-recurrent-post-def-card-preferred", "second-primary-card-preferred",
     "suspected-low-psa-card-preferred", "suspected-elevated-psa-ww-card-preferred",
     "neg-biopsy-age-lt45-card-preferred",
+    "twin-ranking-header",  # EPIC 25.1 — header that shows "X regimens excluded by arbiter"
     "patient-twin-low-capture",  # nested chip under patient-twin-os-card
     "patient-twin-readiness-pct",  # nested chip under patient-twin-os-card
     "risk-strat-preferred-therapy",  # nested label under risk-stratified card

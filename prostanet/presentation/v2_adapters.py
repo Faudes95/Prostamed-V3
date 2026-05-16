@@ -968,6 +968,11 @@ def _decision_fusion_summary(
     # Also overlay baseline fields
     for k, v in (pt.get("baseline") or {}).items():
         facts.setdefault(k, v)
+    # EPIC 25.2 (GodiBot ARBITER-INTEGRITY-002) — also expose raw rows so
+    # the metastatic_stage_contradiction detector can find both
+    # `metastatic_stage_resolved` and its legacy_alias `m_substage_resolved`
+    # before they collapse to a single canonical key.
+    facts["_clinical_facts_raw"] = pt.get("clinical_facts") or []
 
     decision = arbitrate_recommendations(cards, twin_ranking_raw, facts)
     return {
