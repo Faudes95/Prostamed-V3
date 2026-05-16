@@ -33,6 +33,8 @@ from typing import Any
 
 from flask import Blueprint, jsonify, render_template
 
+from prostanet.shared.utc_time import utc_now, utc_today  # EPIC 32.G G78
+
 loop_monitor_bp = Blueprint("loop_monitor", __name__)
 
 
@@ -103,7 +105,7 @@ def record_iteration(
         (timestamp, iteration_id, vector, metric, value, status, notes, faubot_release)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        datetime.utcnow().isoformat(),
+        utc_now().isoformat(),
         iteration_id,
         vector,
         metric,
@@ -118,7 +120,7 @@ def record_iteration(
 
 def get_recent_iterations(days: int = 30, limit: int = 500) -> list[dict[str, Any]]:
     """Get loop iterations from last N days."""
-    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+    cutoff = (utc_now() - timedelta(days=days)).isoformat()
     conn = _get_conn()
     rows = conn.execute("""
         SELECT * FROM loop_iterations
@@ -868,7 +870,7 @@ def record_clinical_coverage_check() -> dict[str, Any]:
         gate_count = len(codes)
         status = "ok" if gate_count >= 89 else "warning"
         record_iteration(
-            iteration_id=f"clinical-coverage-{datetime.utcnow().date().isoformat()}",
+            iteration_id=f"clinical-coverage-{utc_today().isoformat()}",
             vector="clinical_coverage",
             metric="gates_loaded",
             value=gate_count,
@@ -878,7 +880,7 @@ def record_clinical_coverage_check() -> dict[str, Any]:
         return {"gate_count": gate_count, "status": status}
     except Exception as exc:
         record_iteration(
-            iteration_id=f"clinical-coverage-{datetime.utcnow().date().isoformat()}",
+            iteration_id=f"clinical-coverage-{utc_today().isoformat()}",
             vector="clinical_coverage",
             metric="gates_loaded",
             value=0,
@@ -904,7 +906,7 @@ def record_backend_integrity_check() -> dict[str, Any]:
         )
         status = "ok" if ok else "warning"
         record_iteration(
-            iteration_id=f"backend-integrity-{datetime.utcnow().date().isoformat()}",
+            iteration_id=f"backend-integrity-{utc_today().isoformat()}",
             vector="backend_integrity",
             metric="progressive_builder_returns_complete_structure",
             value=100.0 if ok else 50.0,
@@ -914,7 +916,7 @@ def record_backend_integrity_check() -> dict[str, Any]:
         return {"ok": ok, "status": status}
     except Exception as exc:
         record_iteration(
-            iteration_id=f"backend-integrity-{datetime.utcnow().date().isoformat()}",
+            iteration_id=f"backend-integrity-{utc_today().isoformat()}",
             vector="backend_integrity",
             metric="progressive_builder_returns_complete_structure",
             value=0.0,
@@ -963,7 +965,7 @@ def record_godibot_concordance_check(days: int = 7) -> dict[str, Any]:
             )
 
         record_iteration(
-            iteration_id=f"godibot-concordance-{datetime.utcnow().date().isoformat()}",
+            iteration_id=f"godibot-concordance-{utc_today().isoformat()}",
             vector="recommendation_concordance",
             metric="approval_rate_pct",
             value=approval_rate,
@@ -971,7 +973,7 @@ def record_godibot_concordance_check(days: int = 7) -> dict[str, Any]:
             notes=note,
         )
         record_iteration(
-            iteration_id=f"godibot-concordance-{datetime.utcnow().date().isoformat()}",
+            iteration_id=f"godibot-concordance-{utc_today().isoformat()}",
             vector="recommendation_concordance",
             metric="avg_confidence_weighted",
             value=float(avg_conf or 0) * 100,
@@ -987,7 +989,7 @@ def record_godibot_concordance_check(days: int = 7) -> dict[str, Any]:
         }
     except Exception as exc:
         record_iteration(
-            iteration_id=f"godibot-concordance-{datetime.utcnow().date().isoformat()}",
+            iteration_id=f"godibot-concordance-{utc_today().isoformat()}",
             vector="recommendation_concordance",
             metric="approval_rate_pct",
             value=0.0,

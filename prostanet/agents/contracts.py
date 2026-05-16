@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from prostanet.shared.utc_time import utc_now_iso  # EPIC 32.G G78
+
 
 @dataclass
 class AgentInput:
@@ -25,7 +27,9 @@ class AgentInput:
 
     def __post_init__(self) -> None:
         if not self.timestamp:
-            self.timestamp = datetime.utcnow().isoformat()
+            # EPIC 32.G (GodiBot G78 MOD) — utc_now_iso() reemplaza
+            # datetime.utcnow().isoformat() (deprecated 3.12+, naive UTC).
+            self.timestamp = utc_now_iso()
 
 
 @dataclass

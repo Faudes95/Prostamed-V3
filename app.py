@@ -12,6 +12,8 @@ from datetime import datetime
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for
 
+from prostanet.shared.utc_time import utc_now_iso  # EPIC 32.G G78 — UTC unification
+
 # Añadir directorio actual al path para importar el modelo
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from prostate_cancer_model import load_all
@@ -5172,7 +5174,7 @@ def api_longitudinal_append(nss: str):
                 "nss": nss,
                 "results": results,
                 "appended_count": ok_count,
-                "appended_at": datetime.now().isoformat(),
+                "appended_at": utc_now_iso(),
                 "decision_changed": recompute_delta.get("decision_changed", False),
                 "delta": recompute_delta.get("delta") or {},
                 "alerts_count": recompute_delta.get("alerts_count", 0),
@@ -5198,7 +5200,7 @@ def api_longitudinal_append(nss: str):
                 **result,
                 "kind": kind,
                 "nss": nss,
-                "appended_at": datetime.now().isoformat(),
+                "appended_at": utc_now_iso(),
                 "decision_changed": recompute_delta.get("decision_changed", False),
                 "delta": recompute_delta.get("delta") or {},
                 "alerts_count": recompute_delta.get("alerts_count", 0),
@@ -5305,7 +5307,7 @@ def api_longitudinal_append(nss: str):
             recompute_delta = _recompute_after_append(nss, kind=kind)
             return jsonify({
                 **result, "kind": kind, "nss": nss,
-                "appended_at": datetime.now().isoformat(),
+                "appended_at": utc_now_iso(),
                 "decision_changed": recompute_delta.get("decision_changed", False),
                 "delta": recompute_delta.get("delta") or {},
                 "source": f"longitudinal_v2_{kind}",
@@ -5331,7 +5333,7 @@ def api_longitudinal_append(nss: str):
                 **result,
                 "kind": kind,
                 "nss": nss,
-                "appended_at": datetime.now().isoformat(),
+                "appended_at": utc_now_iso(),
                 "decision_changed": recompute_delta.get("decision_changed", False),
                 "delta": recompute_delta.get("delta") or {},
                 "alerts_count": recompute_delta.get("alerts_count", 0),
@@ -5356,7 +5358,7 @@ def api_longitudinal_append(nss: str):
                 **result,
                 "kind": kind,
                 "nss": nss,
-                "appended_at": datetime.now().isoformat(),
+                "appended_at": utc_now_iso(),
                 "decision_changed": recompute_delta.get("decision_changed", False),
                 "delta": recompute_delta.get("delta") or {},
                 "alerts_count": recompute_delta.get("alerts_count", 0),
@@ -5376,7 +5378,7 @@ def api_longitudinal_append(nss: str):
         "kind": kind,
         "nss": nss,
         "received_payload": body,
-        "appended_at": datetime.now().isoformat(),
+        "appended_at": utc_now_iso(),
         "source": "longitudinal_v2_stub",
         "audit_note": f"Kind '{kind}' accepted as audit-only (no DB write yet for this kind).",
     })
@@ -5541,7 +5543,7 @@ def api_patient_transition(nss: str):
             "target_state": target_state,
             "override": override,
             "override_reason": override_reason or None,
-            "confirmed_at": datetime.now().isoformat(),
+            "confirmed_at": utc_now_iso(),
             "source": "v2_transition_endpoint_LXXXVI",
         }
         # Persistencia: si tracking_db tiene helper específico, úsalo; sino,
@@ -5595,7 +5597,7 @@ def api_patient_action_log(nss: str):
     if not action_text:
         return jsonify({"success": False, "error": "missing action_text/action"}), 400
 
-    completed_at = payload.get("completed_at") or datetime.now().isoformat()
+    completed_at = payload.get("completed_at") or utc_now_iso()
     action_index = payload.get("action_index")
     source = payload.get("source") or "unknown"
     logger.info(f"action_log nss={nss} action='{action_text[:60]}' completed_at={completed_at} source={source}")
@@ -6103,7 +6105,7 @@ def api_consent_sign(nss=None):
     nss_value = (payload.get("nss") or "").strip()
     signer_name = (payload.get("signer_name") or "").strip()
     content_hash = (payload.get("content_hash") or "").strip()
-    signed_at = payload.get("signed_at") or datetime.now().isoformat()
+    signed_at = payload.get("signed_at") or utc_now_iso()
     consent_version = payload.get("consent_version") or "v3.2"
     source = payload.get("source") or "unknown"
 

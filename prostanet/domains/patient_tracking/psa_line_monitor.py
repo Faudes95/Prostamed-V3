@@ -1,9 +1,44 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 from typing import Any
 
 from prostanet.domains.patient_tracking.therapy_catalog import regimen_label
+
+_logger = logging.getLogger(__name__)
+
+
+# EPIC 32.B (Explore EXP-4 MOD) — clinical_scores import con @lru_cache.
+# Pre-EPIC32 cada llamada a `_calculate_per_line_granular_kinetics`,
+# `build_psa_by_treatment_line`, `_calculate_kinetics_for_segment_points`
+# hacía un `from clinical_scores import calculate_psa_kinetics` lazy + fallback
+# silencioso. APFS lock + repeated imports → degradation silent en PSADT.
+# Helper cacheado: 1 import attempt + state preservado entre calls.
+_CLINICAL_SCORES_IMPORT_FAILED_LOGGED = False
+
+
+@lru_cache(maxsize=1)
+def _get_calculate_psa_kinetics():
+    """Returns calculate_psa_kinetics callable from clinical_scores, or None.
+
+    Caches result for process lifetime. If import fails (APFS lock, missing
+    module, syntax error), returns None — caller must use fallback.
+    Logs warning ONCE per process to avoid log noise.
+    """
+    global _CLINICAL_SCORES_IMPORT_FAILED_LOGGED
+    try:
+        from clinical_scores import calculate_psa_kinetics  # type: ignore[import-not-found]
+        return calculate_psa_kinetics
+    except Exception as exc:
+        if not _CLINICAL_SCORES_IMPORT_FAILED_LOGGED:
+            _logger.warning(
+                "clinical_scores.calculate_psa_kinetics import failed "
+                "(degraded PSADT, using fallback): %s", exc,
+            )
+            _CLINICAL_SCORES_IMPORT_FAILED_LOGGED = True
+        return None
 
 LINE_COLORS = [
     "rgba(59, 130, 246, 0.12)",
@@ -377,25 +412,25 @@ def _calculate_per_line_granular_kinetics(
         result["duration_response_months"] = round(days_response / 30.4375, 2)
 
     # PSADT durante fase de progresión (post-nadir + prog points)
-    if len(progression_points) >= 2:
+    # EPIC 32.B (EXP-4 MOD) — cached clinical_scores import
+    _calc_kinetics = _get_calculate_psa_kinetics()
+    if _calc_kinetics is not None and len(progression_points) >= 2:
         try:
-            from clinical_scores import calculate_psa_kinetics  # noqa
-            prog_kinetics = calculate_psa_kinetics(
+            prog_kinetics = _calc_kinetics(
                 [(p.get("date"), p.get("psa")) for p in progression_points]
             )
             result["psadt_during_progression"] = prog_kinetics.get("psadt")
-        except (ImportError, Exception):
+        except Exception:
             pass
-    elif len(progression_points) == 1 and len(post_nadir_points) >= 2:
+    elif _calc_kinetics is not None and len(progression_points) == 1 and len(post_nadir_points) >= 2:
         # Si solo 1 point ≥ threshold pero ≥2 post-nadir, calcular PSADT
         # sobre todos los post-nadir (más conservador)
         try:
-            from clinical_scores import calculate_psa_kinetics  # noqa
-            post_kinetics = calculate_psa_kinetics(
+            post_kinetics = _calc_kinetics(
                 [(p.get("date"), p.get("psa")) for p in post_nadir_points]
             )
             result["psadt_during_progression"] = post_kinetics.get("psadt")
-        except (ImportError, Exception):
+        except Exception:
             pass
 
     # Clasificación clínica per-line
@@ -429,7 +464,8 @@ def _calculate_per_line_granular_kinetics(
 
 
 def _segment_points_by_line(points: list[dict[str, Any]], bands: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    from clinical_scores import calculate_psa_kinetics
+    # EPIC 32.B (EXP-4 MOD) — cached import
+    calculate_psa_kinetics = _get_calculate_psa_kinetics() or _fallback_psa_kinetics
 
     segments = []
     for band in bands:
@@ -628,10 +664,8 @@ def _annotate_points_with_treatment_line(
 
 
 def build_psa_by_treatment_line(patient: dict[str, Any]) -> dict[str, Any]:
-    try:
-        from clinical_scores import calculate_psa_kinetics
-    except Exception:
-        calculate_psa_kinetics = _fallback_psa_kinetics
+    # EPIC 32.B (EXP-4 MOD) — cached import + fallback
+    calculate_psa_kinetics = _get_calculate_psa_kinetics() or _fallback_psa_kinetics
 
     points, source = _extract_psa_points(patient)
     if not points:

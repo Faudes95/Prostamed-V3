@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, date
 import logging
 from pathlib import Path
 
+from prostanet.shared.utc_time import utc_now_iso  # EPIC 32.G G78 — UTC unification
 from prostanet.domains.patient_tracking.psma_imaging import (
     build_psma_decision_impact,
     build_psma_structured_profile,
@@ -9039,7 +9040,7 @@ def _persist_therapeutic_window_events(cursor, patient_id, window_worklist_bundl
         key = str(row.get("window_key") or "")
         if key and not row.get("window_closed_at") and key not in open_by_key:
             open_by_key[key] = row
-    now_iso = datetime.now().isoformat(timespec="seconds")
+    now_iso = utc_now_iso()
 
     def _closure_metadata(window):
         status = str(window.get("window_status") or "").lower()
@@ -11567,7 +11568,7 @@ def save_clinical_decision_capture(patient_id, data):
                 1 if safe_bool(data.get("tumor_board_required"), default=False) else 0,
                 1 if safe_bool(data.get("shared_with_patient"), default=False) else 0,
                 data.get("decided_by") or "system",
-                data.get("decision_finalized_at") or datetime.now().isoformat(timespec="seconds"),
+                data.get("decision_finalized_at") or utc_now_iso(),
             ),
         )
         conn.commit()
@@ -12046,7 +12047,7 @@ def _ensure_voice_consent_version(cursor):
             VOICE_CONSENT_TITLE,
             VOICE_CONSENT_TEXT,
             VOICE_CONSENT_TEXT.replace("\n", "<br>"),
-            datetime.now().isoformat(timespec="seconds"),
+            utc_now_iso(),
         ),
     )
     return VOICE_CONSENT_VERSION
@@ -12434,7 +12435,7 @@ def store_voice_audio_chunk(nss_or_id, session_key, audio_bytes, *, mime_type=""
                     "file_name": file_name or "voice.webm",
                     "session_key": session_key,
                     "patient_id": patient_id,
-                    "created_at": datetime.now().isoformat(timespec="seconds"),
+                    "created_at": utc_now_iso(),
                     "retention_policy": session.get("retention_policy") or "delete_audio_after_review",
                     "local_first": True,
                 }

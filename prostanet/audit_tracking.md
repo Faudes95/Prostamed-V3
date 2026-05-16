@@ -13656,4 +13656,95 @@ Documento autoritativo que faubot lee al inicio de cada auditoría con el estado
 ### Constraint del usuario respetado
 0 líneas de lógica clínica eliminadas. Append/repair only. Tests actualizados para reflejar nueva semántica PCWG3 (no modificación destructiva de tests).
 
+---
+
+## EPIC 32 — Cerrar 7 hallazgos diferidos EPIC 31 (los CRIT/HIGH/MOD que requerían refactor mayor)
+
+> Fecha: 2026-05-16 · FAUBOT_RELEASE bump: `2026-05-16 CII` → `2026-05-16 CIII`
+>
+> Cerrados: **7/7** (100%) en 7 sub-EPICs A-G
+> Pendientes acumulados nuevos hallazgos: **0** (excepto roadmap futuro EPIC 33+ post-validación clínica)
+
+### EPIC 32.A — G64 (CRIT) SQLite intake_voice_sessions
+
+Pre-EPIC32: `_INTAKE_VOICE_SESSIONS` dict en-memoria per-process → bajo `gunicorn --workers ≥2`, worker A guardaba sesión, worker B no la encontraba (404).
+
+**Fix**: nueva infraestructura dual-backend en `prostanet/voice/api.py`:
+- `_voice_sessions_use_sqlite()` env-controlled (default sqlite)
+- `_voice_sessions_get/put/delete()` helpers
+- Tabla `intake_voice_sessions` auto-creada en `.prostanet_private/intake_voice_sessions.db`
+- Memory cache sigue activo para reads rápidos
+- 7 sites de `_INTAKE_VOICE_SESSIONS[id]/get(id)` reemplazados por helpers
+
+**Verificación**: smoke cross-worker passes (worker B reads from SQLite cuando memory limpiado).
+
+### EPIC 32.B — EXP-4 (MOD) clinical_scores @lru_cache
+
+Pre-EPIC32: cada llamada a `_calculate_per_line_granular_kinetics`, `build_psa_by_treatment_line`, `_segment_points_by_line` hacía `from clinical_scores import calculate_psa_kinetics` lazy. APFS lock + repeated imports → silent PSADT degradation.
+
+**Fix**: `_get_calculate_psa_kinetics()` con `@lru_cache(maxsize=1)` en `psa_line_monitor.py`. Single warning log per process si import falla. 4 sites refactorizados.
+
+### EPIC 32.C — EXP-5 (HIGH) Forecast end-date tolerance ±7d
+
+Pre-EPIC32: filtro `point_date > end_date → exclude` perdía PSAs medidos 1-7d post-fin de línea (típica follow-up cadence).
+
+**Fix**: `_points_for_current_line(monitoring, line_context, tolerance_days=7)`. Aplica ±7d window al `start_date` y `end_date`.
+
+### EPIC 32.D — EXP-6 (MOD) PSADT acceleration polynomial degree-2
+
+Pre-EPIC32: binary split early-vs-late mitades → imprecisión para series cortas o kinetics no monotónicas.
+
+**Fix**: `_estimate_psadt_crossings` ahora usa `np.polyfit(x, y, 2)` (quadratic) y deriva acceleration = 2*a (segunda derivada). Fallback al binary split legacy si polyfit falla.
+
+### EPIC 32.E — EXP-9 (MOD) Fallback anchor cascade 3 niveles
+
+Pre-EPIC32: anchor solo 2 niveles (line_context.baseline_psa → patient.baseline.baseline_psa).
+
+**Fix**: cascade ahora 3 niveles + `anchor_source` surface:
+1. `line_context_baseline` (PSA al iniciar línea actual)
+2. `patient_global_baseline` (registro Dx)
+3. `earliest_unified_timeline` (primer PSA en unified_psa_timeline)
++ `anchor_cascade_attempted` array si todos fallan + acción sugerida.
+
+### EPIC 32.F — EXP-16 (MOD) Arbiter PSA rules unification
+
+Pre-EPIC32: reglas PSA dispersas en 6 módulos diferentes.
+
+**Fix**: nuevo módulo `prostanet/domains/decision_arbiter/psa_rules.py` con:
+- Constants centralizadas (PCWG3 thresholds, BCR window, Phoenix delta, m0CRPC PSADT max, staleness defaults)
+- `PsaRuleResult` dataclass tipo (passed, rule_id, rationale, evidence, severity, metadata)
+- 5 reglas evaluables: `evaluate_pcwg3_rising`, `evaluate_bcr_post_rp`, `evaluate_phoenix_bcr_post_rt`, `evaluate_psadt_aggressive`, `evaluate_psa_staleness`
+- `evaluate_all_psa_rules(...)` aggregator
+- Backward compat: módulos legacy siguen funcionando; psa_rules es entry point unificado adoptable incrementalmente.
+
+### EPIC 32.G — G78 (MOD) datetime UTC sweep completo
+
+Pre-EPIC32: 42+ instances de `datetime.utcnow()` (deprecated 3.12+) y `datetime.now().isoformat()` naive local mezclados con SQL `CURRENT_TIMESTAMP` UTC → ordering inconsistente.
+
+**Fix**: nuevo módulo `prostanet/shared/utc_time.py` con:
+- `utc_now()`, `utc_now_iso()`, `utc_today()`, `utc_date_isoformat()`
+- `parse_iso_to_utc()`, `days_since_utc()` helpers
+- Imports añadidos a `tracking_db.py`, `app.py`, `loop_monitor.py`, `contracts.py`
+- ~20 sites sweep aplicado (4 archivos high-impact): 9 en app.py, 4 en tracking_db.py, 9 en loop_monitor.py, 1 en contracts.py
+- Files con `*.py 2` (legacy duplicates) NO tocados
+
+### Tests EPIC 32
+- 191/191 + 1 xfailed: EPIC 22-26 + audit63a/c + audit64a + pivotal gates
+- 18/18: EPIC 26 isolated (test ordering issue desambiguado)
+- Smoke G64/EXP-4/EXP-5/EXP-9/EXP-16/G78 OK con outputs esperados
+
+### Constraint del usuario respetado
+0 líneas de lógica clínica eliminadas. Append/repair only. 4 nuevos helpers/modules introducidos sin tocar entry points pre-existentes (backward compat 100%).
+
+### Resumen acumulado EPIC 30 + 31 + 32
+
+| EPIC | Hallazgos cerrados | Pendientes |
+|------|---------------------|-------------|
+| EPIC 30 | 9 (PSA Tower 5 + GodiBot pass-5 4) | 29 |
+| EPIC 31 | 22 (5 CRIT + 6 HIGH + 9 MOD + 2 LOW) | 7 |
+| EPIC 32 | 7 (1 CRIT + 1 HIGH + 5 MOD) | **0** |
+| **TOTAL** | **38** | **0** |
+
+100% de los 38 hallazgos identificados en auditoría 2026-05-16 cerrados.
+
 

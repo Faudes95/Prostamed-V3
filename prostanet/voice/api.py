@@ -27,7 +27,123 @@ def _utc_now_iso() -> str:
 
 
 voice_bp = Blueprint("voice_clinical_os", __name__)
-_INTAKE_VOICE_SESSIONS: dict[str, dict[str, Any]] = {}
+
+# EPIC 32.A (GodiBot G64 CRIT) — SQLite-backed intake voice sessions store
+# para multi-worker safety. Pre-EPIC32 `_INTAKE_VOICE_SESSIONS` era un dict
+# en-memoria per-process; bajo `gunicorn --workers ≥2` worker A guardaba
+# sesión, worker B no la encontraba (404) → workflow rota silenciosamente.
+#
+# Implementación: store con dual backend. Si VOICE_SESSIONS_BACKEND=memory
+# o sqlite no disponible → in-memory dict (backward compat tests). Default
+# (production) → SQLite con tabla intake_voice_sessions auto-creada.
+_INTAKE_VOICE_SESSIONS: dict[str, dict[str, Any]] = {}  # legacy in-memory fallback
+
+
+def _voice_sessions_db_path() -> Path:
+    """SQLite DB path para intake voice sessions. Co-located con tracking.db."""
+    return Path.cwd() / ".prostanet_private" / "intake_voice_sessions.db"
+
+
+def _voice_sessions_use_sqlite() -> bool:
+    backend = os.environ.get("VOICE_SESSIONS_BACKEND", "sqlite").lower()
+    return backend == "sqlite"
+
+
+def _voice_sessions_ensure_schema() -> None:
+    """Crea tabla intake_voice_sessions si no existe (idempotent)."""
+    if not _voice_sessions_use_sqlite():
+        return
+    import sqlite3 as _sq
+    db_path = _voice_sessions_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = _sq.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS intake_voice_sessions (
+                session_id TEXT PRIMARY KEY,
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                expires_at TEXT
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _voice_sessions_get(session_id: str) -> dict[str, Any] | None:
+    """Lookup session. Prefer SQLite, fallback memory."""
+    if _voice_sessions_use_sqlite():
+        try:
+            import sqlite3 as _sq
+            _voice_sessions_ensure_schema()
+            conn = _sq.connect(_voice_sessions_db_path())
+            conn.row_factory = _sq.Row
+            try:
+                row = conn.execute(
+                    "SELECT payload_json FROM intake_voice_sessions WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()
+            finally:
+                conn.close()
+            if row:
+                return json.loads(row["payload_json"])
+        except Exception:
+            pass  # Fallback to memory
+    return _INTAKE_VOICE_SESSIONS.get(session_id)
+
+
+def _voice_sessions_put(session_id: str, session: dict[str, Any]) -> None:
+    """Persist session. Write to BOTH SQLite + memory (memory is fast read cache)."""
+    _INTAKE_VOICE_SESSIONS[session_id] = session  # always keep in-process cache
+    if _voice_sessions_use_sqlite():
+        try:
+            import sqlite3 as _sq
+            _voice_sessions_ensure_schema()
+            now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            # Strip bytes for JSON serialization (audio_buffer_bytes is private)
+            serializable = {k: v for k, v in session.items() if not isinstance(v, bytes)}
+            payload_json = json.dumps(serializable, ensure_ascii=False, default=str)
+            conn = _sq.connect(_voice_sessions_db_path())
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO intake_voice_sessions
+                        (session_id, payload_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(session_id) DO UPDATE SET
+                        payload_json = excluded.payload_json,
+                        updated_at = excluded.updated_at
+                    """,
+                    (session_id, payload_json, now_iso, now_iso),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            pass  # Memory cache still valid, just no cross-worker visibility
+
+
+def _voice_sessions_delete(session_id: str) -> None:
+    _INTAKE_VOICE_SESSIONS.pop(session_id, None)
+    if _voice_sessions_use_sqlite():
+        try:
+            import sqlite3 as _sq
+            _voice_sessions_ensure_schema()
+            conn = _sq.connect(_voice_sessions_db_path())
+            try:
+                conn.execute(
+                    "DELETE FROM intake_voice_sessions WHERE session_id = ?",
+                    (session_id,),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            pass
 
 
 def _json_body() -> dict[str, Any]:
@@ -228,7 +344,7 @@ def _resolve_intake_candidate_fields(
 def _review_intake_session(session_id: str, transcript_text: str = "", *, append: bool = True) -> tuple[bool, dict[str, Any] | str]:
     from prostanet.voice.intent_extractor import extract_intake_classifier_candidates
 
-    session = _INTAKE_VOICE_SESSIONS.get(session_id)
+    session = _voice_sessions_get(session_id)
     if not session:
         return False, "intake_voice_session_not_found"
     if session.get("consent_status") != "signed":
@@ -249,6 +365,7 @@ def _review_intake_session(session_id: str, transcript_text: str = "", *, append
     session["status"] = "review_pending"
     resolved = _resolve_intake_candidate_fields(session["candidates"])
     session["last_resolved_fields"] = resolved["fields"]
+    _voice_sessions_put(session_id, session)
     return True, {
         **_serialize_intake_session(session),
         "fields": resolved["fields"],
@@ -429,14 +546,14 @@ def create_intake_voice_encounter():
         "transcript_text": "",
         "candidates": [],
     }
-    _INTAKE_VOICE_SESSIONS[session_id] = session
+    _voice_sessions_put(session_id, session)
     return jsonify({"success": True, **_serialize_intake_session(session)})
 
 
 @voice_bp.route("/api/clinical-hub/voice/encounters/<session_id>/consent", methods=["POST"])
 @require_clinical_session(scope="phi:write", redirect_to_login=False)
 def consent_intake_voice_encounter(session_id: str):
-    session = _INTAKE_VOICE_SESSIONS.get(session_id)
+    session = _voice_sessions_get(session_id)
     if not session:
         return _error("intake_voice_session_not_found", 404)
     spoken_text = str(_json_body().get("spoken_text") or "").strip()
@@ -446,6 +563,7 @@ def consent_intake_voice_encounter(session_id: str):
     session["status"] = "consented"
     session["consent_hash"] = hashlib.sha256(f"{session_id}|{spoken_text}".encode("utf-8")).hexdigest()
     session["consented_at"] = _utc_now_iso()
+    _voice_sessions_put(session_id, session)
     return jsonify({"success": True, **_serialize_intake_session(session)})
 
 
@@ -469,7 +587,7 @@ def review_intake_voice_encounter(session_id: str):
 def upload_intake_voice_audio(session_id: str):
     from prostanet.voice.stt_engine import LocalSTTEngine
 
-    session = _INTAKE_VOICE_SESSIONS.get(session_id)
+    session = _voice_sessions_get(session_id)
     if not session:
         return _error("intake_voice_session_not_found", 404)
     if session.get("consent_status") != "signed":
@@ -668,7 +786,7 @@ def upload_intake_voice_audio(session_id: str):
 @voice_bp.route("/api/clinical-hub/voice/encounters/<session_id>/apply", methods=["POST"])
 @require_clinical_session(scope="phi:write", redirect_to_login=False)
 def apply_intake_voice_encounter(session_id: str):
-    session = _INTAKE_VOICE_SESSIONS.get(session_id)
+    session = _voice_sessions_get(session_id)
     if not session:
         return _error("intake_voice_session_not_found", 404)
     if session.get("consent_status") != "signed":
@@ -681,6 +799,7 @@ def apply_intake_voice_encounter(session_id: str):
     session["status"] = "applied_to_classifier"
     session["applied_fields"] = fields
     session["applied_at"] = _utc_now_iso()
+    _voice_sessions_put(session_id, session)
     return jsonify(
         {
             "success": True,
@@ -700,11 +819,12 @@ def apply_intake_voice_encounter(session_id: str):
 @voice_bp.route("/api/clinical-hub/voice/encounters/<session_id>/discard", methods=["POST"])
 @require_clinical_session(scope="phi:write", redirect_to_login=False)
 def discard_intake_voice_encounter(session_id: str):
-    session = _INTAKE_VOICE_SESSIONS.get(session_id)
+    session = _voice_sessions_get(session_id)
     if not session:
         return _error("intake_voice_session_not_found", 404)
     session["status"] = "discarded"
     session["discarded_at"] = _utc_now_iso()
+    _voice_sessions_put(session_id, session)
     return jsonify({"success": True, **_serialize_intake_session(session)})
 
 

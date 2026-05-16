@@ -92,7 +92,21 @@ def _current_line_context(patient: dict[str, Any], monitoring: dict[str, Any]) -
     }
 
 
-def _points_for_current_line(monitoring: dict[str, Any], line_context: dict[str, Any]) -> list[dict[str, Any]]:
+def _points_for_current_line(
+    monitoring: dict[str, Any],
+    line_context: dict[str, Any],
+    tolerance_days: int = 7,
+) -> list[dict[str, Any]]:
+    """Filtra PSAs que pertenecen a la línea terapéutica actual.
+
+    EPIC 32.C (Explore EXP-5 HIGH) — añadida ventana de tolerancia ±7 días al
+    `end_date`. Pre-EPIC32 el filtro `point_date > end_date → exclude` causaba
+    que PSAs medidos 1-7 días post-fin de línea (representativos de la
+    respuesta sostenida o transición) se PERDIERAN del forecast.
+
+    Tolerance window 7d coincide con typical clinical follow-up cadence
+    (visita 1 semana después de cambio de línea).
+    """
     points = list(monitoring.get("points") or [])
     if not points:
         return []
@@ -103,9 +117,11 @@ def _points_for_current_line(monitoring: dict[str, Any], line_context: dict[str,
         point_date = _parse_date(point.get("date"))
         if not point_date:
             continue
-        if start_date and point_date < start_date:
+        if start_date and point_date < start_date - timedelta(days=tolerance_days):
+            # EPIC 32.C — tolerance también para start_date (PSA pre-tx 7d antes
+            # se considera baseline anchor de esta línea)
             continue
-        if end_date and point_date > end_date:
+        if end_date and point_date > end_date + timedelta(days=tolerance_days):
             continue
         psa = _safe_float(point.get("psa"))
         if psa is None or psa < 0:
@@ -314,19 +330,40 @@ def _estimate_psadt_crossings(model: dict[str, Any], points: list[dict[str, Any]
     if not last_date or len(x) < 3:
         return results
 
+    # EPIC 32.D (Explore EXP-6 MOD) — acceleration via polynomial degree-2 fit
+    # en lugar de binary split (early vs late). Quadratic fit captura el
+    # cambio de pendiente continuo más precisamente que dividir la serie en 2
+    # mitades, especialmente para series cortas o con kinetics no monotónicas.
+    # Si scipy no disponible o fit falla, fallback al binary split legacy.
     acceleration = None
     if len(x) >= 5:
-        split = len(x) // 2
-        early_x = np.asarray(x[: split + 1], dtype=float)
-        early_y = np.asarray(y[: split + 1], dtype=float)
-        late_x = np.asarray(x[split:], dtype=float)
-        late_y = np.asarray(y[split:], dtype=float)
-        if len(early_x) >= 2 and len(late_x) >= 2:
-            early_slope, _ = np.polyfit(early_x, early_y, 1)
-            late_slope, _ = np.polyfit(late_x, late_y, 1)
-            delta_months = max(float(late_x[-1] - early_x[-1]), 0.5)
-            if late_slope > early_slope > 0:
-                acceleration = (late_slope - early_slope) / delta_months
+        try:
+            x_arr = np.asarray(x, dtype=float)
+            y_arr = np.asarray(y, dtype=float)
+            # Fit y = a*x^2 + b*x + c. Acceleration = 2a (segunda derivada).
+            poly_coeffs = np.polyfit(x_arr, y_arr, 2)
+            # poly_coeffs = [a, b, c] for ax^2 + bx + c
+            a_coeff = float(poly_coeffs[0])
+            # Acceleration constante 2*a en log-PSA / month^2
+            # Solo significativa si paciente acelera (a > 0)
+            if a_coeff > 0:
+                acceleration = 2.0 * a_coeff
+        except Exception:
+            # Fallback: binary split legacy
+            split = len(x) // 2
+            early_x = np.asarray(x[: split + 1], dtype=float)
+            early_y = np.asarray(y[: split + 1], dtype=float)
+            late_x = np.asarray(x[split:], dtype=float)
+            late_y = np.asarray(y[split:], dtype=float)
+            if len(early_x) >= 2 and len(late_x) >= 2:
+                try:
+                    early_slope, _ = np.polyfit(early_x, early_y, 1)
+                    late_slope, _ = np.polyfit(late_x, late_y, 1)
+                    delta_months = max(float(late_x[-1] - early_x[-1]), 0.5)
+                    if late_slope > early_slope > 0:
+                        acceleration = (late_slope - early_slope) / delta_months
+                except Exception:
+                    pass
 
     for threshold in thresholds:
         slope_threshold = math.log(2) / threshold
@@ -936,21 +973,54 @@ def build_psa_cohort_reference_overlay(patient: dict[str, Any]) -> dict[str, Any
             ),
         }
 
-    # Anchor: baseline_psa de la línea actual + start_date de la línea
+    # EPIC 32.E (Explore EXP-9 MOD) — anchor cascade 3 niveles:
+    # 1. line_context.baseline_psa (preferred — PSA al iniciar línea actual)
+    # 2. patient.baseline.baseline_psa (registro Dx inicial)
+    # 3. Primer PSA en unified timeline (earliest reliable measurement)
+    # Cada nivel logueado para audit + transparencia clínica.
+    anchor_source = None
     anchor_baseline = _safe_float(line_context.get("baseline_psa"))
-    if anchor_baseline is None or anchor_baseline <= 0:
-        # Fallback: baseline global del paciente
+    if anchor_baseline is not None and anchor_baseline > 0:
+        anchor_source = "line_context_baseline"
+    else:
+        # Nivel 2: patient global baseline
         anchor_baseline = _safe_float(
             (patient.get("baseline") or {}).get("baseline_psa")
             or patient.get("baseline_psa")
         )
+        if anchor_baseline is not None and anchor_baseline > 0:
+            anchor_source = "patient_global_baseline"
+        else:
+            # Nivel 3: earliest PSA en unified timeline
+            try:
+                from prostanet.shared.psa_unified import unified_psa_timeline
+                timeline = unified_psa_timeline(patient)
+                earliest = next(
+                    (p for p in timeline if p.get("value") and float(p.get("value", 0)) > 0),
+                    None,
+                )
+                if earliest:
+                    anchor_baseline = _safe_float(earliest.get("value"))
+                    if anchor_baseline is not None and anchor_baseline > 0:
+                        anchor_source = "earliest_unified_timeline"
+            except Exception:
+                anchor_baseline = None
+
     if anchor_baseline is None or anchor_baseline <= 0:
         return {
             "has_data": False,
             "reference_curve": [],
             "median_label": reference.get("median_label", ""),
             "cohort_class": cohort_class,
-            "narrative": "Sin baseline_psa documentado para anclar curva de referencia.",
+            "anchor_source": "missing",
+            "anchor_cascade_attempted": [
+                "line_context_baseline", "patient_global_baseline", "earliest_unified_timeline"
+            ],
+            "narrative": (
+                "Sin baseline_psa documentado para anclar curva de referencia. "
+                "Cascada de fallback (line_context → patient.baseline → "
+                "earliest timeline) agotada. Capturar PSA baseline."
+            ),
         }
 
     anchor_date = _parse_date(line_context.get("start_date"))
@@ -1020,6 +1090,8 @@ def build_psa_cohort_reference_overlay(patient: dict[str, Any]) -> dict[str, Any
         "cohort_class": cohort_class,
         "anchor_baseline_psa": _round_or_none(anchor_baseline, 2),
         "anchor_date": anchor_date.isoformat(),
+        # EPIC 32.E — surfacing anchor source para transparencia clínica
+        "anchor_source": anchor_source or "unknown",
         "expected_nadir_psa": _round_or_none(expected_nadir, 2),
         "expected_time_to_nadir_months": time_to_nadir_m,
         "expected_duration_response_months": duration_m,
