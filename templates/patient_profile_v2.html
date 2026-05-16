@@ -2230,13 +2230,27 @@
                     <div class="pm2-tab-card-body" style="padding:0">
                         {% if psa_cohort_reference and psa_cohort_reference.applicable_combos %}
                         <table class="pm2-tbl pm2-cohort-tbl">
-                            <thead><tr><th>Métrica</th><th>Paciente</th><th>Cohort</th><th>Δ</th></tr></thead>
+                            <thead><tr><th>Cohorte (régimen pivotal)</th><th>PSA basal paciente</th><th>Nadir esperado (mes)</th><th>Nadir esperado (PSA)</th></tr></thead>
                             <tbody>
                                 {% for combo in psa_cohort_reference.applicable_combos[:4] %}
-                                <tr><td>{{ combo.median_label or combo.regimen_class or 'Cohorte' }}</td><td class="pm2-num">{{ psa_cohort_reference.anchor_baseline_psa or '—' }}</td><td class="pm2-num">{{ combo.time_to_nadir_m or combo.nadir_pct or '—' }}</td><td class="pm2-num">—</td></tr>
+                                <tr>
+                                    <td>{{ combo.median_label or combo.regimen_class or 'Cohorte' }}</td>
+                                    <td class="pm2-num">{{ psa_cohort_reference.anchor_baseline_psa or '—' }}</td>
+                                    <td class="pm2-num">{{ combo.time_to_nadir_m or '—' }}m</td>
+                                    <td class="pm2-num">{{ combo.expected_nadir_psa or '—' }}</td>
+                                </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
+                        {# EPIC 30.1 — surface EPIC 29.9 disclaimer cuando aplica #}
+                        {% if psa_cohort_reference.data_quality_disclaimer %}
+                        <div style="padding:10px 14px;color:#fbbf24;font-size:.72rem;background:rgba(251,191,36,.08);border-top:1px solid rgba(251,191,36,.2)">
+                            ⚠ <strong>Calidad de datos:</strong> {{ psa_cohort_reference.data_quality_disclaimer }}
+                            {% if psa_cohort_reference.evidence_pmid %}
+                            · PMID {{ psa_cohort_reference.evidence_pmid|join(', ') }}
+                            {% endif %}
+                        </div>
+                        {% endif %}
                         <div style="padding:10px 14px;color:var(--pn-text-muted);font-size:.7rem">Overlay calculado desde cohorte aplicable y APE real del paciente.</div>
                         {% else %}
                         <div style="padding:16px;color:var(--pn-text-muted);font-size:.82rem;line-height:1.55">Sin cohorte aplicable: no se renderiza comparación pivotal hasta tener estado, línea y APE suficientes.</div>

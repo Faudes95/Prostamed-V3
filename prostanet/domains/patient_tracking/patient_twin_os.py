@@ -900,9 +900,16 @@ def _build_rationale(
             f"(OS weight {preferences.os_weight:.2f}, QoL weight {preferences.qol_weight:.2f})."
         )
     top = top_regimens[0]
+    # EPIC 30.2 (GodiBot pass-5) — `predicted_os_gain_mo` puede ser None para
+    # regímenes single-arm (pembrolizumab KEYNOTE-158 sin comparador OS gain
+    # cuantificado). Pre-EPIC30 `f"{None:.1f}"` crasheaba con TypeError.
+    if top.predicted_os_gain_mo is not None:
+        os_gain_str = f"{top.predicted_os_gain_mo:.1f}mo"
+    else:
+        os_gain_str = "OS gain no cuantificado (evidencia single-arm)"
     parts.append(
         f"Top regimen: {top.regimen_name} (score {top.score:.1f}/10, expected OS gain "
-        f"{top.predicted_os_gain_mo:.1f}mo from {top.trial_source})."
+        f"{os_gain_str} from {top.trial_source})."
     )
     if top.tolerance_mismatches:
         parts.append(f"⚠ Tolerance mismatches noted: {len(top.tolerance_mismatches)}")

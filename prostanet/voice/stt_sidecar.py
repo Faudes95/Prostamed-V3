@@ -19,6 +19,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device", default=os.environ.get("VOICE_STT_DEVICE", "cpu"))
     parser.add_argument("--compute-type", default=os.environ.get("VOICE_STT_COMPUTE_TYPE", "int8"))
     parser.add_argument("--language", default="es")
+    parser.add_argument(
+        "--initial-prompt",
+        default=None,
+        help=(
+            "Optional Whisper initial_prompt to bias recognition toward clinical"
+            " vocabulary (drogas pivotales, PSMA, antígeno, etc.). EPIC 30.4."
+        ),
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -27,9 +35,22 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"success": False, "error": "faster_whisper_unavailable", "detail": type(exc).__name__}))
         return 2
 
+    # EPIC 30.4 (GodiBot G65 CRIT) — derive initial_prompt from
+    # clinical_vocabulary_boost if caller didn't pass it explícitamente.
+    initial_prompt = args.initial_prompt
+    if not initial_prompt:
+        try:
+            from prostanet.voice.clinical_vocabulary_boost import get_stt_initial_prompt
+            initial_prompt = get_stt_initial_prompt(language=args.language)
+        except Exception:
+            initial_prompt = None
+
     try:
         model = WhisperModel(args.model, device=args.device, compute_type=args.compute_type)
-        segments, _info = model.transcribe(args.audio, language=args.language, vad_filter=True)
+        transcribe_kwargs = {"language": args.language, "vad_filter": True}
+        if initial_prompt:
+            transcribe_kwargs["initial_prompt"] = initial_prompt
+        segments, _info = model.transcribe(args.audio, **transcribe_kwargs)
         payload = []
         for idx, segment in enumerate(segments):
             text = str(getattr(segment, "text", "") or "").strip()

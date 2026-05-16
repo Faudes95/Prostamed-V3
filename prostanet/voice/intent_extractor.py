@@ -108,6 +108,41 @@ def _has(text: str, *patterns: str) -> bool:
     return any(re.search(pattern, text, re.I) for pattern in patterns)
 
 
+# EPIC 30.3 (GodiBot G63 CRIT) — negation-aware detection. Pre-EPIC30:
+# "no hay metástasis óseas, hígado y pulmones libres de enfermedad" gatillaba
+# bone_metastasis_present=1, visceral_metastasis_present=1, visceral_site=liver.
+# Reclasificaba el paciente como M1c visceral → recomendaciones drásticas (Lu-177,
+# cabazitaxel). Falla clínica directa CFR §820.30.
+_NEGATION_WINDOW_CHARS = 35
+_NEGATION_TOKENS = re.compile(
+    r"\b(?:no|sin|niega|libre[s]?\s+de|ausencia\s+de|descarta(?:da|do|n)?|"
+    r"negativa?|negativo[s]?|excluy(?:e|en|endo)|sin\s+evidencia\s+de|"
+    r"ya\s+no|nunca|jam[aá]s|no\s+hay)\b",
+    re.I,
+)
+
+
+def _has_negated(text: str, *patterns: str) -> bool:
+    """True si pattern matches AND hay negation token en los _NEGATION_WINDOW_CHARS
+    caracteres previos al match. Reduce falsos positivos de M1b/M1c en dictado
+    clínico que describe enfermedad AUSENTE.
+    """
+    for pattern in patterns:
+        for m in re.finditer(pattern, text, re.I):
+            start = max(0, m.start() - _NEGATION_WINDOW_CHARS)
+            window = text[start:m.start()]
+            if _NEGATION_TOKENS.search(window):
+                return True
+    return False
+
+
+def _has_positive(text: str, *patterns: str) -> bool:
+    """True si pattern matches AND NO está precedido por negación.
+    Reemplaza `_has()` en contextos donde negación cambia el significado clínico
+    (presencia de metástasis, sintomatología, etc.)."""
+    return _has(text, *patterns) and not _has_negated(text, *patterns)
+
+
 def _first_match(text: str, *patterns: str) -> re.Match[str] | None:
     matches = []
     for pattern in patterns:
@@ -551,22 +586,25 @@ def extract_intake_classifier_candidates(
         add("metastatic_disease_known", "0", "Enfermedad metastásica conocida", None, 0.78)
         add("metastasis_site", "M0", "Resumen cM", None, 0.78)
         add("conventional_imaging_status", "M0", "Imagen convencional", None, 0.72)
-    if _has(text, r"\bM1a\b|ganglios\s+no\s+regionales|retroperitoneal"):
+    # EPIC 30.3 (GodiBot G63 CRIT) — usar _has_positive para evitar falsos
+    # positivos de metástasis cuando dictado clínico describe AUSENCIA
+    # ("no hay metástasis óseas", "hígado libre de enfermedad", etc.).
+    if _has_positive(text, r"\bM1a\b|ganglios\s+no\s+regionales|retroperitoneal"):
         add("metastatic_disease_known", "1", "Enfermedad metastásica conocida", None, 0.86)
         add("metastasis_site", "M1a", "Resumen cM", None, 0.86)
         add("nonregional_nodal_metastasis_present", "1", "Ganglios no regionales", None, 0.84)
         add("nonregional_nodal_site", "retroperitoneal", "Cadena ganglionar no regional", None, 0.62)
-    if _has(text, r"\bM1b\b|met[aá]stasis\s+[oó]sea|lesiones?\s+[oó]seas?|hueso"):
+    if _has_positive(text, r"\bM1b\b|met[aá]stasis\s+[oó]sea|lesiones?\s+[oó]seas?|hueso"):
         add("metastatic_disease_known", "1", "Enfermedad metastásica conocida", None, 0.86)
         add("metastasis_site", "M1b", "Resumen cM", None, 0.82)
         add("bone_metastasis_present", "1", "Metástasis óseas", None, 0.84)
-    if _has(text, r"\bM1c\b|met[aá]stasis\s+visceral|h[ií]gado|pulm[oó]n|visceral"):
+    if _has_positive(text, r"\bM1c\b|met[aá]stasis\s+visceral|h[ií]gado|pulm[oó]n|visceral"):
         add("metastatic_disease_known", "1", "Enfermedad metastásica conocida", None, 0.88)
         add("metastasis_site", "M1c", "Resumen cM", None, 0.88)
         add("visceral_metastasis_present", "1", "Metástasis viscerales", None, 0.86)
-        if _has(text, r"h[ií]gado|hep[aá]tic"):
+        if _has_positive(text, r"h[ií]gado|hep[aá]tic"):
             add("visceral_site", "liver", "Órgano visceral predominante", None, 0.72)
-        elif _has(text, r"pulm[oó]n|pulmonar"):
+        elif _has_positive(text, r"pulm[oó]n|pulmonar"):
             add("visceral_site", "lung", "Órgano visceral predominante", None, 0.72)
 
     count_patterns = [

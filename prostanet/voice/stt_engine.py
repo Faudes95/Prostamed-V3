@@ -216,7 +216,24 @@ class LocalSTTEngine:
                 import faster_whisper  # noqa: F401
 
                 model = self._load_model()
-                segments, _info = model.transcribe(str(tmp_path), language=language, vad_filter=True)
+                # EPIC 30.4 (GodiBot G65 CRIT) — wire clinical_vocabulary_boost
+                # initial_prompt al Whisper. Pre-EPIC30 el módulo existía pero
+                # NUNCA se llamaba: Whisper confundía "darolutamida"→"doralutamida",
+                # "apalutamida"→"abalumida", "PSMA"→"P MA", "Lutecio-177"→"lucio 177".
+                # Downstream intent_extractor regex requiere ortografía exacta,
+                # producía silent drops de señales clínicas.
+                try:
+                    from prostanet.voice.clinical_vocabulary_boost import get_stt_initial_prompt
+                    initial_prompt = get_stt_initial_prompt(language=language)
+                except Exception:
+                    initial_prompt = None
+                transcribe_kwargs: dict[str, Any] = {
+                    "language": language,
+                    "vad_filter": True,
+                }
+                if initial_prompt:
+                    transcribe_kwargs["initial_prompt"] = initial_prompt
+                segments, _info = model.transcribe(str(tmp_path), **transcribe_kwargs)
                 out = []
                 for idx, seg in enumerate(segments):
                     out.append(

@@ -283,15 +283,22 @@ def _sidecar_module_available(python_bin: str | None, module_name: str) -> bool:
 @voice_bp.route("/api/voice/stt/health", methods=["GET"])
 @require_clinical_session(scope="phi:read", redirect_to_login=False)
 def voice_stt_health():
+    # EPIC 30.6 (GodiBot G73 HIGH) — surfaceer LocalSTTEngine.diagnose() en su
+    # totalidad para que la UI banner muestre `mode`, `blockers`,
+    # `in_process_faster_whisper`, `stt_disable_env` que EPIC 24a expuso
+    # explícitamente. Pre-EPIC30 solo se retornaba un subset y la UI quedaba
+    # con microcopy genérico "audio cifrado · STT local pendiente".
     from prostanet.voice.stt_engine import LocalSTTEngine
 
     stt = LocalSTTEngine()
+    diag = stt.diagnose()
     sidecar_python = stt._sidecar_python()
     return jsonify(
         {
             "success": True,
             "local_first": True,
-            "local_stt_available": stt.is_available(),
+            # Legacy keys preservados para backward compat
+            "local_stt_available": diag.get("stt_available", False),
             "model": stt.model_size,
             "device": stt.device,
             "sidecar_available": bool(sidecar_python),
@@ -300,6 +307,8 @@ def voice_stt_health():
                 "pyav": _sidecar_module_available(sidecar_python, "av"),
                 "ctranslate2": _sidecar_module_available(sidecar_python, "ctranslate2"),
             },
+            # EPIC 30.6 — full diagnostic for UI banner
+            "diagnostic": diag,
         }
     )
 

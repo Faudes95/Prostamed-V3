@@ -3137,12 +3137,16 @@ def bundle_to_v2_profile_full(profile_view: Mapping[str, Any],
         # psa_obs ya existe pero faltaba exponerlo en bundle_to_v2_profile_full
         "psa_obs": _psa_observability(profile_view),
         # testosterone_history para chart secondary axis (LXC fix)
+        # EPIC 30.1 (PSA Tower coherence) — aceptar TESTOSTERONA (ES) y
+        # TESTOSTERONE (EN). Pre-EPIC30 filtraba solo ES, perdiendo casos
+        # que llegan con biomarker_type en inglés (e.g. FHIR export).
         "testosterone_history": [
             {"date": bm.get("sample_date") or bm.get("date") or "",
              "value": bm.get("value"),
              "status": bm.get("status") or ""}
             for bm in (patient.get("biomarker_longitudinal") or [])
-            if isinstance(bm, dict) and (bm.get("biomarker_type") or "").upper() == "TESTOSTERONA"
+            if isinstance(bm, dict)
+            and (bm.get("biomarker_type") or "").upper() in {"TESTOSTERONA", "TESTOSTERONE"}
             and bm.get("value") is not None and (bm.get("sample_date") or bm.get("date"))
         ],
     }

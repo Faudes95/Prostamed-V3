@@ -13522,4 +13522,56 @@ Completa la cobertura UI del set EPIC 22c (22 estados nuevos → 22 cards):
 ### Constraint del usuario respetado
 0 líneas de lógica clínica eliminadas. Todas las modificaciones son append-only o repair-only.
 
+---
+
+## EPIC 30 — Auditoría PSA Tower + Faubot update + GodiBot pass-5 (CRIT/HIGH fixes)
+
+> Fecha: 2026-05-16 · Trigger: usuario pidió actualizar faubot + verificar coherencia PSA Tower + GodiBot todas las áreas no auditadas
+>
+> Total nuevos hallazgos: **38** (4 manuales PSA Tower + 16 Explore PSA pipeline + 18 GodiBot pass-5)
+> Fixes aplicados en este commit: **9** (E-PSA-1..4 + E-Twin-1 + G63 + G65 + G70 + G73)
+> Hallazgos restantes pendientes para EPIC 31+: **29** (16 Explore + 13 GodiBot MOD/LOW)
+
+### Faubot platform dossier (`prostanet/regulatory/clinical/faubot_platform_dossier_post_epic29.md`)
+Documento autoritativo que faubot lee al inicio de cada auditoría con el estado post-EPIC 22-29 (54 estados, Recommendation Arbiter + 10 conflict detectors, Patient Twin OS, ARPI matrix expanded, PSA pipeline completo, gates clínicos, 12 áreas con fixes EPIC 29).
+
+### Manuales PSA Tower (4 fixes — EPIC 30.1)
+
+| ID | Severity | Archivo | Fix |
+|----|----------|---------|-----|
+| E-PSA-1 | HIGH | `psa_forecast.py` | `build_psa_cohort_reference_overlay` ahora retorna `applicable_combos[]` (template línea 2231 lo esperaba pero nunca existía → "Cohort ref" section siempre vacía) |
+| E-PSA-2 | HIGH | `psa_forecast.py` + `patient_profile_v2.html` | EPIC 29.9 disclaimers (data_quality_tag, evidence_pmid, disclaimer) ahora surfaced al frontend con banner amarillo "⚠ Calidad de datos: ..." |
+| E-PSA-3 | MOD | `v2_adapters.py:3145` | `testosterone_history` acepta `TESTOSTERONA` (ES) y `TESTOSTERONE` (EN) — antes solo ES, perdiendo casos FHIR/inglés |
+| E-PSA-4 | MOD | `patient_profile_v2.html:2233-2236` | Template antes mezclaba meses + porcentaje en mismo cell. Separado en columnas "Nadir esperado (mes)" + "Nadir esperado (PSA)" |
+| E-Twin-1 | HIGH | `patient_twin_os.py:905` + `templates/patient_profile_v2.html:876` | Null-guard para `predicted_os_gain_mo=None` (pembrolizumab single-arm KEYNOTE-158). Crash `TypeError: unsupported format string passed to NoneType.__format__` evitado |
+
+### GodiBot pass-5 fixes aplicados (4 — EPIC 30.3-30.6)
+
+| ID | Severity | Archivo | Fix |
+|----|----------|---------|-----|
+| G63 | CRIT | `prostanet/voice/intent_extractor.py` | Nuevo helper `_has_positive` + `_has_negated` con ventana 35 chars + token negadores (no/sin/niega/libre/ausencia/descarta/negativa/excluye). Aplicado a 4 detecciones metástasis M1a/M1b/M1c/visceral_site. Falso positivo de M1c crítico evitado en dictado "no hay metástasis óseas, hígado libre" |
+| G65 | CRIT | `prostanet/voice/stt_engine.py` + `prostanet/voice/stt_sidecar.py` | Wire `clinical_vocabulary_boost.get_stt_initial_prompt()` al Whisper. Pre-EPIC30 código muerto: Whisper confundía darolutamida→doralutamida, apalutamida→abalumida, PSMA→P MA. Sidecar CLI también extendido con `--initial-prompt` |
+| G70 | HIGH | `prostanet/domains/patient_tracking/psa_forecast.py` | Añadidas 4 entries a `COHORT_PSA_REFERENCES["m1_crpc"]`: CABAZITAXEL (CARD PMID 31566937), RA223 (ALSYMPCA PMID 23863050 con `not_psa_endpoint_trial` tag), PEMBROLIZUMAB (KEYNOTE-158 PMID 31682550 con disclaimer respondedores raros), SIPULEUCEL_T (IMPACT PMID 20818862 con disclaimer NO modula PSA). `_classify_regimen_for_cohort` extendido para reconocer XOFIGO, JEVTANA, KEYTRUDA, PROVENGE, SIP-T aliases |
+| G73 | HIGH | `prostanet/voice/api.py:283` | `/api/voice/stt/health` ahora retorna `diagnostic` dict completo de `LocalSTTEngine.diagnose()` (mode, blockers, in_process_faster_whisper, stt_disable_env). EPIC 24a promise honoured — UI banner puede mostrar guía específica en lugar de microcopy genérico |
+
+### Hallazgos pendientes para EPIC 31+ (29)
+
+**Explore PSA pipeline agent (16 findings — quedan 12 sin atender)**:
+- E-PSA-5..16 (CRIT 5, HIGH 4, MOD 7): invalidación automática profile_view cache, between-lines PSA assignment, PCWG3 confirmatory window ≥3 semanas, end-date filtering con tolerance, m0_crpc_state_confirmed FACT_SPECS, psa_observability mapping documentation, testosterone staleness >90d gate, etc.
+
+**GodiBot pass-5 (18 findings — quedan 13 sin atender)**:
+- CRIT: G64 (`_INTAKE_VOICE_SESSIONS` multi-worker), G68 (UNIQUE constraint legacy migration race)
+- HIGH: G66 (FAUBOT_RELEASE no bumpea), G67 (eligibility_gate no enforce), G72 (ya parcialmente arreglado vía E-Twin-1 pero línea 547 type-hint mismatch persiste), G74 (voice intent NO extrae comorbilidades CV/hepático/diabetes), G80 (lineage actor_id HIPAA §164.312(b))
+- MOD: G69 (ISUP/gleason composite), G71 (prior_local_therapy dedup), G76 (Loop Monitor PSA stale candidates), G77 (`_state_card_summary` available=True con YAML vacío), G78 (datetime UTC unificación)
+- LOW: G75 (PMIDs ERA-223/ASCENDE-RT no en CLINICAL_EVIDENCE_2026.md), G79 (`_fact_lookup` no filtra is_active)
+
+### Tests
+- 168/168 EPIC 22-26 + STT + pivotal gates pass
+- Smoke G63 ✓ (NEG case empty, POS case detects metastases)
+- Smoke G70 ✓ (Ra-223 → RA223, Xofigo → RA223, Pembro → PEMBROLIZUMAB con applicable_combos populated)
+- Smoke E-PSA-1/E-PSA-2 ✓ (`applicable_combos[0].disclaimer` correctly surfaced)
+
+### Constraint del usuario respetado
+0 líneas de lógica clínica eliminadas. Append/repair only.
+
 

@@ -763,12 +763,43 @@ COHORT_PSA_REFERENCES: dict[str, dict[str, dict[str, Any]]] = {
                   "data_quality_tag": "approximate_no_published_median",
                   "evidence_pmid": ["34161051"],
                   "disclaimer": "VISION reportó PSA decline ≥50% en 46%; nadir fraccional aproximado"},
+        # EPIC 30.5 (GodiBot G70 HIGH) — cohort references para los 4 regimens
+        # m1_crpc añadidos en EPIC 29.6 G58. Pre-EPIC30, paciente bajo Ra-223
+        # o pembrolizumab veía "Sin curva de referencia poblacional documentada"
+        # en la torre de vigilancia — sin contexto pivotal de PSA esperada.
+        "CABAZITAXEL": {"nadir_pct": 0.55, "time_to_nadir_m": 3, "duration_response_m": 7,
+                        "median_label": "Mediana Cabazitaxel mCRPC post-docetaxel (CARD)",
+                        "data_quality_tag": "approximate_no_published_median",
+                        "evidence_pmid": ["31566937"],
+                        "disclaimer": "CARD reportó PSA50 ~36%; nadir fraccional aproximado en cohorte post-ARSI"},
+        "RA223": {"nadir_pct": 1.00, "time_to_nadir_m": 0, "duration_response_m": 12,
+                  "median_label": "Ra-223 mCRPC sintomático óseo (ALSYMPCA)",
+                  "data_quality_tag": "not_psa_endpoint_trial",
+                  "evidence_pmid": ["23863050"],
+                  "disclaimer": "Ra-223 NO modula PSA significativamente (target óseo). PSA decline NO es endpoint primario. Monitorizar AlkPhos + dolor en lugar de PSA. Curva nadir_pct=1.0 indica que no se espera reducción APE."},
+        "PEMBROLIZUMAB": {"nadir_pct": 0.75, "time_to_nadir_m": 6, "duration_response_m": 9,
+                          "median_label": "Pembrolizumab mCRPC MSI-H/dMMR (KEYNOTE-158)",
+                          "data_quality_tag": "approximate_no_published_median_rare_responders",
+                          "evidence_pmid": ["31682550"],
+                          "disclaimer": "PSA50 ~9% en MSI-H mCRPC; respuestas dramáticas en minoría. NO esperar pattern decline poblacional. Vigilancia individualizada por irRECIST."},
+        "SIPULEUCEL_T": {"nadir_pct": 1.00, "time_to_nadir_m": 0, "duration_response_m": 18,
+                         "median_label": "Sipuleucel-T mCRPC asintomático (IMPACT)",
+                         "data_quality_tag": "not_psa_endpoint_trial",
+                         "evidence_pmid": ["20818862"],
+                         "disclaimer": "Sipuleucel-T NO modula PSA (inmunoterapia celular). PSA puede subir mientras OS mejora. NO usar PSA como signal de respuesta. Curva nadir_pct=1.0 confirma esto."},
     },
 }
 
 
 def _classify_regimen_for_cohort(drug_scheme: str) -> str:
-    """Faubot LXVIII #64A — Mapea drug_scheme canónico a clase para cohort lookup."""
+    """Faubot LXVIII #64A — Mapea drug_scheme canónico a clase para cohort lookup.
+
+    EPIC 30.5 (GodiBot G70 HIGH) — extendido con Ra-223, Pembrolizumab, Sip-T y
+    Cabazitaxel. Pre-EPIC30 estos regimens caían a fallback "" → torre de
+    vigilancia mostraba "Sin curva de referencia" para pacientes bajo Ra-223
+    (target óseo, NO modula PSA), Pembrolizumab (MSI-H raros respondedores),
+    Sip-T (inmunoterapia que NO baja PSA), o Cabazitaxel.
+    """
     if not drug_scheme:
         return ""
     s = str(drug_scheme).upper()
@@ -779,6 +810,18 @@ def _classify_regimen_for_cohort(drug_scheme: str) -> str:
     # ADT + Docetaxel
     if "DOCETAXEL" in s and "ADT" in s:
         return "ADT_DOCETAXEL"
+    # EPIC 30.5: Cabazitaxel BEFORE generic Docetaxel check
+    if "CABAZITAXEL" in s or "JEVTANA" in s:
+        return "CABAZITAXEL"
+    # EPIC 30.5: Ra-223 dichloride
+    if "RA223" in s or "RA-223" in s or "RADIO-223" in s or "RADIUM" in s or "XOFIGO" in s:
+        return "RA223"
+    # EPIC 30.5: Pembrolizumab (Lynch/MSI-H mCRPC)
+    if "PEMBROLIZUMAB" in s or "PEMBRO" in s or "KEYTRUDA" in s:
+        return "PEMBROLIZUMAB"
+    # EPIC 30.5: Sipuleucel-T cell immunotherapy
+    if "SIPULEUCEL" in s or "SIP-T" in s or "PROVENGE" in s:
+        return "SIPULEUCEL_T"
     # ADT + ARPI (sin docetaxel)
     if any(arpi in s for arpi in ["ABIRATERONE", "ENZALUTAMIDE", "APALUTAMIDE", "DAROLUTAMIDE"]):
         return "ADT_ARPI" if "ADT" in s else "ARPI"
@@ -899,6 +942,26 @@ def build_psa_cohort_reference_overlay(patient: dict[str, Any]) -> dict[str, Any
             "expected_psa": _round_or_none(expected_nadir, 2),
         })
 
+    # EPIC 30.1 (PSA Tower coherence) — surface EPIC 29.9 disclaimers + build
+    # `applicable_combos` array that the v2 template expects at line 2231.
+    # Pre-EPIC30 los disclaimers (data_quality_tag, evidence_pmid, disclaimer)
+    # se quedaban atrapados en COHORT_PSA_REFERENCES y la sección "Cohort ref"
+    # en la torre de vigilancia NUNCA renderizaba porque applicable_combos
+    # no existía en el bundle return. Resultado clínico: el especialista NO
+    # veía la comparación pivotal NI los avisos de calidad de datos.
+    applicable_combo = {
+        "regimen_class": cohort_class,
+        "median_label": reference["median_label"],
+        "nadir_pct": _round_or_none(nadir_pct, 3),
+        "time_to_nadir_m": time_to_nadir_m,
+        "duration_response_m": duration_m,
+        "expected_nadir_psa": _round_or_none(expected_nadir, 2),
+        # EPIC 29.9 disclaimer fields surfaced
+        "data_quality_tag": reference.get("data_quality_tag", ""),
+        "disclaimer": reference.get("disclaimer", ""),
+        "evidence_pmid": reference.get("evidence_pmid", []),
+    }
+
     return {
         "has_data": True,
         "reference_curve": reference_curve,
@@ -909,10 +972,17 @@ def build_psa_cohort_reference_overlay(patient: dict[str, Any]) -> dict[str, Any
         "expected_nadir_psa": _round_or_none(expected_nadir, 2),
         "expected_time_to_nadir_months": time_to_nadir_m,
         "expected_duration_response_months": duration_m,
+        # EPIC 30.1 — applicable_combos array para template line 2231
+        "applicable_combos": [applicable_combo],
+        # EPIC 30.1 — data_quality top-level para banner UI
+        "data_quality_tag": reference.get("data_quality_tag", ""),
+        "data_quality_disclaimer": reference.get("disclaimer", ""),
+        "evidence_pmid": reference.get("evidence_pmid", []),
         "narrative": (
             f"{reference['median_label']}. Comparar trayectoria del paciente vs "
             f"mediana esperada (nadir ~{nadir_pct * 100:.0f}% baseline a {time_to_nadir_m}m, "
             f"respuesta sostenida ~{duration_m}m)."
+            + (f" ⚠ {reference['disclaimer']}" if reference.get("disclaimer") else "")
         ),
     }
 
