@@ -63,6 +63,37 @@ def invalidate_dashboard_cache(key: str | None = None) -> None:
         _DASHBOARD_CACHE.pop(key, None)
 
 
+def invalidate_profile_view_cache(patient_id: Any, reason: str = "data_change") -> None:
+    """EPIC 31.A (Explore EXP-1 CRIT) — invalidar cache de profile_view para
+    un paciente específico cuando llegue data clínica nueva (PSA, biomarker,
+    biopsia, treatment line). Pre-EPIC31 el cache LRU TTL=5min permitía
+    forecast desactualizado tras append vía API.
+
+    Implementación tolerante: limpia entradas con `patient_id` en la key
+    (string match). NO romper write path si cache mecanismo falla.
+    """
+    try:
+        pid_str = str(patient_id or "")
+        if not pid_str:
+            _DASHBOARD_CACHE.clear()
+            return
+        # Limpia keys que contengan el patient_id
+        to_drop = [k for k in list(_DASHBOARD_CACHE.keys()) if pid_str in str(k)]
+        for k in to_drop:
+            _DASHBOARD_CACHE.pop(k, None)
+        # También invalida decision_fusion_cache si existe (EPIC 28)
+        try:
+            with _DECISION_FUSION_CACHE_LOCK:
+                fusion_drops = [k for k in list(_DECISION_FUSION_CACHE.keys())
+                                if isinstance(k, tuple) and pid_str in str(k[0])]
+                for k in fusion_drops:
+                    _DECISION_FUSION_CACHE.pop(k, None)
+        except NameError:
+            pass  # decision_fusion_cache defined later in module
+    except Exception:
+        pass  # No bloquear write path por fallo de cache
+
+
 def _safe_get(obj: Any, *keys: str, default: Any = None) -> Any:
     """Navega un dict anidado con tolerancia a None/missing."""
     cur = obj
@@ -258,8 +289,11 @@ def _vitals(profile_view: Mapping[str, Any], patient: Mapping[str, Any]) -> list
     return [
         {"label": "PSA basal", "value": cb.get("baseline_psa") or "—",
          "unit": "ng/mL", "delta": _format_date(patient.get("diagnosis_date")), "tone": ""},
+        # EPIC 31.F (Explore EXP-13 MOD) — PSA actual context default mejorado
         {"label": "PSA actual", "value": metrics.get("current_psa") or metrics.get("psa_current") or "—",
-         "unit": "ng/mL", "delta": metrics.get("psa_current_context") or "—", "tone": ""},
+         "unit": "ng/mL",
+         "delta": metrics.get("psa_current_context") or metrics.get("current_line_label") or "contexto no documentado",
+         "tone": ""},
         {"label": "PSA nadir", "value": metrics.get("nadir_psa") or "—",
          "unit": "ng/mL", "delta": metrics.get("nadir_date") or "—", "tone": ""},
         {"label": "PSADT", "value": metrics.get("psadt") or metrics.get("psadt_months") or "—",
@@ -407,14 +441,27 @@ def _load_therapeutic_entry(state_name: str) -> dict[str, Any]:
 
 
 def _fact_lookup(patient: Mapping[str, Any]) -> dict[str, Any]:
-    """Build a fact_key → value dict from patient.clinical_facts."""
+    """Build a fact_key → value dict from patient.clinical_facts.
+
+    EPIC 31.C (GodiBot G79 LOW) — sort facts by (is_active DESC, id DESC) y
+    aplicar "first-wins" para que rows is_active=1 + más recientes ganen.
+    Pre-EPIC31 si UNIQUE index fallaba (G68) y existían duplicados, el dict
+    overwrite arbitrario podía dejar al final el row LEGACY is_active=0 →
+    perder valor canónico actual.
+    """
     facts = patient.get("clinical_facts") or patient.get("patient_clinical_facts") or []
     out: dict[str, Any] = {}
-    for f in facts:
-        if not isinstance(f, Mapping):
-            continue
+    sorted_facts = sorted(
+        (f for f in facts if isinstance(f, Mapping)),
+        key=lambda f: (
+            1 if f.get("is_active") in (True, 1, "1") else 0,
+            int(f.get("id") or 0),
+        ),
+        reverse=True,
+    )
+    for f in sorted_facts:
         key = str(f.get("fact_key") or "").strip()
-        if key:
+        if key and key not in out:
             out[key] = f.get("value") or f.get("normalized_value_text") or ""
     return out
 
@@ -656,6 +703,23 @@ def _state_card_summary(
         return {"available": False}
 
     entry = _load_therapeutic_entry(state_name)
+    # EPIC 31.C (GodiBot G77 MOD) — si YAML registry no tiene entry (o falla
+    # load), NO marcar available=True. Pre-EPIC31 la card aparecía vacía
+    # (sólo "—") aunque el trigger fired → médico veía sección sin contenido
+    # y dudaba si bug o si genuinamente no hay terapia. Esta confusión es
+    # peligrosa en contexto clínico crítico.
+    if not entry or not (entry.get("preferred") or entry.get("acceptable")):
+        import logging as _lg
+        _lg.getLogger(__name__).warning(
+            "Card adapter triggered for state=%s but therapeutic_alternative_registry.yaml "
+            "missing entry. Card hidden. Add entry to surface card.",
+            state_name,
+        )
+        return {
+            "available": False,
+            "_skip_reason": "no_therapeutic_entry_in_registry",
+            "_state_name": state_name,
+        }
     payload = {
         "available": True,
         "therapeutic_preferred": str(entry.get("preferred") or ""),
@@ -1406,7 +1470,23 @@ def _surface_consistency(profile_view: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _psa_observability(profile_view: Mapping[str, Any]) -> dict[str, Any]:
-    """PSA history + per-line + forecast desde psa_observability."""
+    """PSA history + per-line + forecast desde psa_observability.
+
+    EPIC 31.F (Explore EXP-14 HIGH) — Mapeo documentado:
+        profile_view["psa_observability"] = build_psa_by_treatment_line(patient)
+            ↓ retorna dict con keys: has_data, points (annotated), treatment_bands,
+              line_segments, line_events, points_by_line, metrics, source
+        ↓ NOTA: profile_compass._build_psa_observability() está en
+          prostanet/domains/patient_tracking/profile_compass.py:1123
+        ↓ Construido durante build_patient_profile_view_model()
+        ↓ Bundleado por bundle_to_v2_profile() / bundle_to_v2_profile_full()
+        ↓ Templated as `psa_obs` / `pm2_psa` en patient_profile_v2.html:32
+
+    EPIC 31.F (Explore EXP-13 MOD) — psa_current_context default:
+    Si metric `psa_current_context` no documentado, mostrar "no documentado"
+    en lugar de "—" para reducir confusion clínica (clínico ahora sabe que
+    el contexto no fue capturado vs error del sistema).
+    """
     psa = _safe_get(profile_view, "psa_observability", default={})
     points = _safe_get(psa, "points", default=[]) or []
     bands = _safe_get(psa, "treatment_bands", default=[]) or []

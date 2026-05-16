@@ -691,6 +691,14 @@ CORE_VECTORS: dict[str, dict[str, Any]] = {
         "target_value": 1,  # 1 weekly report minimum
         "skill": "/generate-status-report",
     },
+    # 9° vector — Faubot Iteración C (GodiBot v1)
+    "recommendation_concordance": {
+        "label": "Recommendation concordance",
+        "icon": "🛡",
+        "target_metric": "GodiBot approval rate + override rate inverso",
+        "target_value": 95,  # ≥95% recomendaciones aprobadas sin hard_block
+        "skill": "/godibot + /faubot",
+    },
 }
 
 
@@ -914,3 +922,156 @@ def record_backend_integrity_check() -> dict[str, Any]:
             notes=f"Error: {exc}",
         )
         return {"error": str(exc), "status": "critical"}
+
+
+def record_godibot_concordance_check(days: int = 7) -> dict[str, Any]:
+    """Self-check del 9° vector recommendation_concordance.
+
+    Lee métricas del godibot_reviews + agrega al loop monitor:
+    - metric=approval_rate: % aprobado vs total
+    - metric=override_rate: % overrides firmados (inverso target)
+    - metric=avg_confidence: confianza promedio weighted
+    """
+    try:
+        from prostanet.presentation.godibot_routes import (
+            get_concordance_summary,
+        )
+        summary = get_concordance_summary(days=days)
+        total = summary.get("total_reviews", 0)
+        approval_rate = (summary.get("approved_rate") or 0) * 100
+        override_rate = (summary.get("override_rate") or 0) * 100
+        avg_conf = summary.get("weighted_avg_confidence", 0)
+
+        # Status: ok si approval_rate ≥95%, warning si 80-95%, critical <80%
+        if total == 0:
+            status = "warning"
+            note = "Sin reviews GodiBot registradas en ventana"
+        elif approval_rate >= 95:
+            status = "ok"
+            note = f"{total} reviews — {approval_rate:.1f}% approved"
+        elif approval_rate >= 80:
+            status = "warning"
+            note = (
+                f"{total} reviews — {approval_rate:.1f}% approved "
+                f"({override_rate:.1f}% overrides)"
+            )
+        else:
+            status = "critical"
+            note = (
+                f"{total} reviews — solo {approval_rate:.1f}% approved "
+                f"({override_rate:.1f}% overrides). Posible drift clinical_decision_agent."
+            )
+
+        record_iteration(
+            iteration_id=f"godibot-concordance-{datetime.utcnow().date().isoformat()}",
+            vector="recommendation_concordance",
+            metric="approval_rate_pct",
+            value=approval_rate,
+            status=status,
+            notes=note,
+        )
+        record_iteration(
+            iteration_id=f"godibot-concordance-{datetime.utcnow().date().isoformat()}",
+            vector="recommendation_concordance",
+            metric="avg_confidence_weighted",
+            value=float(avg_conf or 0) * 100,
+            status=status,
+            notes=f"{total} reviews window={days}d",
+        )
+        return {
+            "total_reviews": total,
+            "approval_rate_pct": round(approval_rate, 2),
+            "override_rate_pct": round(override_rate, 2),
+            "avg_confidence": round(float(avg_conf or 0), 3),
+            "status": status,
+        }
+    except Exception as exc:
+        record_iteration(
+            iteration_id=f"godibot-concordance-{datetime.utcnow().date().isoformat()}",
+            vector="recommendation_concordance",
+            metric="approval_rate_pct",
+            value=0.0,
+            status="critical",
+            notes=f"Error: {exc}",
+        )
+        return {"error": str(exc), "status": "critical"}
+
+
+def record_psa_freshness_check(patient_records: list[dict]) -> dict[str, float | int | str]:
+    """EPIC 31.E (GodiBot G76 MOD) — Loop Monitor barrido patient-wide para
+    detectar PSAs missing o stale (>90 días) por paciente activo.
+
+    Pre-EPIC31 Loop Monitor solo auditaba `clinical_coverage` (gates loaded),
+    `backend_integrity` (capture builder), `recommendation_concordance`
+    (godibot). NO vector "data_freshness_per_patient" → médico tenía que
+    descubrir manualmente al abrir el chart si PSA stale.
+
+    Genera candidate clínico `psa_capture_priority_<patient>` cuando paciente
+    cae fuera de ventana fresca (≥90d) o sin PSA registrado.
+    """
+    from datetime import date as _date_freshness, timedelta as _td_freshness
+    if not patient_records:
+        return {"status": "ok", "total": 0, "stale_pct": 0.0, "missing_count": 0}
+
+    stale_count = 0
+    missing_count = 0
+    total = 0
+    today = _date_freshness.today()
+    for p in patient_records:
+        if not isinstance(p, dict):
+            continue
+        total += 1
+        # Try psa_unified.latest_psa_value
+        try:
+            from prostanet.shared.psa_unified import latest_psa_value
+            latest = latest_psa_value(p)
+        except Exception:
+            latest = None
+        if not latest or not latest.get("date"):
+            missing_count += 1
+            continue
+        try:
+            psa_date = _date_freshness.fromisoformat(str(latest["date"])[:10])
+            age_days = (today - psa_date).days
+            if age_days > 90:
+                stale_count += 1
+        except (ValueError, TypeError):
+            missing_count += 1
+
+    stale_pct = (stale_count / max(1, total)) * 100
+    missing_pct = (missing_count / max(1, total)) * 100
+    combined_pct = ((stale_count + missing_count) / max(1, total)) * 100
+
+    if combined_pct > 30:
+        status = "critical"
+    elif combined_pct > 15:
+        status = "warning"
+    else:
+        status = "ok"
+
+    iteration_id = f"psa-freshness-{today.isoformat()}"
+    try:
+        record_iteration(
+            iteration_id=iteration_id,
+            vector="patient_data_freshness",
+            metric="psa_stale_or_missing_pct",
+            value=round(combined_pct, 2),
+            status=status,
+            notes=(
+                f"{stale_count}/{total} PSA stale (>90d), "
+                f"{missing_count}/{total} missing. "
+                f"Threshold critical=30%, warning=15%."
+            ),
+        )
+    except Exception:
+        pass  # Monitoring failure should not block app
+
+    return {
+        "status": status,
+        "total": total,
+        "stale_count": stale_count,
+        "missing_count": missing_count,
+        "stale_pct": round(stale_pct, 2),
+        "missing_pct": round(missing_pct, 2),
+        "combined_pct": round(combined_pct, 2),
+    }

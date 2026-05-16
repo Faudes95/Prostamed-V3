@@ -406,6 +406,60 @@ NO puede revisar fácilmente la base independiente. Requiere 510(k) + clinical v
 - `CLAUDE.md` §1-§13 — backbone del proyecto + reglas operacionales
 - `tests/test_audit*.py` — tests dedicados por iteración Faubot
 
-**Última actualización**: 2026-04-27 · Faubot 2026-04-27 LXXXVI (#67F · Pivote CDE
-Auditable real). Mantener sincronizado con NCCN/EAU release cycles + nuevos trials
-pivotales. Bumpear con cada cambio sustantivo.
+**Última actualización**: 2026-05-16 · EPIC 31.D (GodiBot G75 LOW). Mantener
+sincronizado con NCCN/EAU release cycles + nuevos trials pivotales. Bumpear con
+cada cambio sustantivo.
+
+---
+
+## §9. Evidencia adicional EPIC 29-31 (whitelist completion)
+
+Trials citados en código pero AUSENTES de §1-§8 hasta EPIC 31. Whitelisted aquí
+para cumplir disciplina GodiBot ("no cites PMIDs no-whitelisted") y auditorías
+regulatorias.
+
+### §9.1 ERA-223 (PMID 30853531)
+- **Trial**: Smith MR et al. *Lancet Oncology* 2019;20(3):408-419
+- **Diseño**: RCT fase III, Ra-223 dichloride + abiraterona/prednisona vs placebo
+  + abiraterona/prednisona en mCRPC asintomático/mínimamente sintomático con
+  metástasis óseas
+- **Resultado clave**: HR fracturas 1.83 (95% CI 1.39-2.41) — INCREMENTO
+  significativo de fracturas óseas en brazo concurrent
+- **Implicación clínica**: NCCN PROS-G v2026 + EAU 2026 contraindican el uso
+  CONCURRENT de Ra-223 con abiraterona+prednisona
+- **Uso en ProstaNet**: `recommendation_arbiter._detect_ra223_abi_pred_concurrent`
+  (EPIC 29.1 G53) bloquea esta combinación
+
+### §9.2 ASCENDE-RT (PMID 28279249)
+- **Trial**: Morris WJ et al. *Int J Radiat Oncol Biol Phys* 2017;98(2):275-285
+- **Diseño**: RCT fase III, EBRT 78Gy vs EBRT 46Gy + HDR brachy boost
+- **Resultado clave**: bRFS HR 0.43 (95% CI 0.30-0.61) favoreciendo brachy boost
+- **Implicación clínica**: HDR brachy boost preferred para high-risk localized;
+  faster nadir + smaller bounce vs LDR — surveillance protocol distinto
+- **Uso en ProstaNet**: `_post_brachy_hdr_summary` adapter (EPIC 29.12 G61)
+
+### §9.3 KEYNOTE-158 (PMID 31682550) — pembrolizumab MSI-H
+- **Trial**: Marabelle A et al. *J Clin Oncol* 2020;38(1):1-10
+- **Diseño**: phase II single-arm, pembrolizumab 200mg q3w en MSI-H/dMMR
+- **Resultado clave**: ORR 34.3% global; PSA50 ~9% en mCRPC MSI-H
+- **Uso en ProstaNet**: `_detect_lynch_pembrolizumab_eligibility` (EPIC 26)
+
+### §9.4 SIPULEUCEL-T IMPACT (PMID 20818862)
+- **Trial**: Kantoff PW et al. *N Engl J Med* 2010;363(5):411-422
+- **Resultado clave**: OS HR 0.78, median OS +4.1mo. PSA NO modulado
+- **Implicación clínica**: NO usar PSA como signal de respuesta a sipuleucel-T
+- **Uso en ProstaNet**: m1_crpc benefit matrix (EPIC 29.6) + cohort PSA
+  reference con disclaimer (EPIC 30.5)
+
+### §9.5 CARD (PMID 31566937) — cabazitaxel post-ARSI
+- **Trial**: de Wit R et al. *N Engl J Med* 2019;381(26):2506-2516
+- **Diseño**: RCT fase IV, cabazitaxel vs ARSI switch (abi↔enza) en mCRPC
+  post-docetaxel + ≥1 ARSI
+- **Resultado clave**: OS HR 0.64, rPFS HR 0.54 favoreciendo cabazitaxel
+- **Uso en ProstaNet**: m1_crpc benefit matrix CABAZITAXEL entry (EPIC 29.6)
+
+### §9.6 ALSYMPCA (PMID 23863050) — Ra-223 monoterapia
+- **Trial**: Parker C et al. *N Engl J Med* 2013;369(3):213-223
+- **Resultado clave**: OS HR 0.70, median OS +3.6mo en mCRPC sintomático óseo
+- **PSA**: NO endpoint primario; respuesta PSA50 <16% (target óseo)
+- **Uso en ProstaNet**: cohort reference `RA223` con `not_psa_endpoint_trial` tag

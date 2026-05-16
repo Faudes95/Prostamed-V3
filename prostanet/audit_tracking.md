@@ -13574,4 +13574,86 @@ Documento autoritativo que faubot lee al inicio de cada auditoría con el estado
 ### Constraint del usuario respetado
 0 líneas de lógica clínica eliminadas. Append/repair only.
 
+---
+
+## EPIC 31 — 22 hallazgos restantes (de los 29 pendientes EPIC 30)
+
+> Fecha: 2026-05-16 · FAUBOT_RELEASE bump: `2026-05-15 C` → `2026-05-16 CII`
+>
+> Total cerrados EPIC 31: **22** (de 29 pendientes; 7 deferidos a EPIC 32+)
+> Estructurado en 6 sub-EPICs (A-F) por área funcional.
+
+### EPIC 31.A — PSA Pipeline Critical Coherence (5 CRIT)
+
+| ID | Severity | Archivo | Fix |
+|----|----------|---------|-----|
+| EXP-1 | CRIT | `tracking_db.py:append_biomarker_longitudinal` + `v2_adapters.invalidate_profile_view_cache` | Cache invalidation automática cuando llega PSA/biomarker nuevo. Pre-EPIC31 forecast desactualizado tras append vía API. |
+| EXP-2 | CRIT | `psa_line_monitor._annotate_points_with_treatment_line` | Tolerancia ±14 días para PSAs entre bandas terapéuticas. Pre-EPIC31 puntos "between_lines" se perdían del análisis per-line. |
+| EXP-3 | CRIT | `psa_line_monitor._calculate_per_line_granular_kinetics` | PCWG3 confirmatory window ≥21 días. Pre-EPIC31 single-spike disparaba `progression`. Ahora: `progression` requiere 2 PSAs confirmadas; `progression_unconfirmed` para single-spike con audit. |
+| EXP-8 | CRIT | `psa_forecast._classify_regimen_for_cohort` | Triplet detection más permisiva (DOC, DARO, ENZA, APA aliases). Detecta ARASENS/PEACE-1 implícitos. |
+| EXP-12 | CRIT | `shared/clinical_fact_registry.FACT_SPECS` | `m0_crpc_state_confirmed` + `testosterone_sample_date` añadidos como FactSpecs. Gate pivotal 55 ahora operacional. |
+
+### EPIC 31.B — Voice + STT Hardening (3 of 4 fixes)
+
+| ID | Severity | Archivo | Fix |
+|----|----------|---------|-----|
+| G69 | MOD | `voice/intent_extractor.py` | Gleason composite: añadido `gleason_score` (suma) + `isup_grade` (Epstein 2014, discrimina 3+4 vs 4+3). |
+| G71 | MOD | `voice/intent_extractor.py` | Multi-modalidad `prior_local_therapy`: emit `prior_local_therapy_rp`, `_brachy_hdr`, `_brachy_ldr`, `_brachy`, `_rt`, `_sbrt` por separado + `prior_local_therapies_multi` summary. |
+| G74 | HIGH | `voice/intent_extractor.py` | Comorbilidades extraction: cirrosis/Child-Pugh, ECV severa, ICC, DM2, ALT, AST, bilirubina, creatinina, ECOG. EPIC 22f cards comorbidity ahora reciben señal desde voice. |
+| G64 | CRIT | DEFER EPIC 32 | `_INTAKE_VOICE_SESSIONS` multi-worker → requiere SQLite migration (mayor refactor). |
+
+### EPIC 31.C — Persistence + Audit Trail (4 fixes)
+
+| ID | Severity | Archivo | Fix |
+|----|----------|---------|-----|
+| G68 | CRIT | `tracking_db.py:_persist_patient_clinical_facts` + init | Pre-INDEX migration script demote duplicate active rows + try/except IntegrityError race-tolerance (gunicorn concurrent workers). |
+| G80 | HIGH | `tracking_db.py:patient_fact_lineage_events` + `_append_patient_fact_lineage_event` | HIPAA §164.312(b) actor accountability: añadidas columnas `actor_user_id`, `actor_session_id`, `actor_role` (idempotent ALTER for legacy DBs). |
+| G77 | MOD | `v2_adapters._state_card_summary` | `available=False` con `_skip_reason` cuando YAML registry no tiene entry — pre-EPIC31 mostraba card vacía con sólo "—" causando confusion clínica. |
+| G79 | LOW | `v2_adapters._fact_lookup` | Sort por (is_active DESC, id DESC) + first-wins. Pre-EPIC31 row legacy is_active=0 podía overwrite canonical activo. |
+
+### EPIC 31.D — Version + Date/Time + Evidence (3 fixes)
+
+| ID | Severity | Archivo | Fix |
+|----|----------|---------|-----|
+| G66 | HIGH | `shared/algorithm_version.py` | `FAUBOT_RELEASE` bump a `2026-05-16 CII` + documentación de disciplina versioning (21 CFR Part 11 §11.10(e)). |
+| G78 | MOD | `voice/api.py` | `_utc_now_iso()` helper UTC-aware. Reemplazó 5 sitios de `datetime.now().isoformat()` naive local. (Sweep completo de 54+15 sites en EPIC 32.) |
+| G75 | LOW | `CLINICAL_EVIDENCE_2026.md` | §9.1-§9.6 añade ERA-223 (PMID 30853531), ASCENDE-RT (28279249), KEYNOTE-158 (31682550), IMPACT (20818862), CARD (31566937), ALSYMPCA (23863050) al whitelist. |
+
+### EPIC 31.E — Patient Twin + Forecast Refinements (4 fixes)
+
+| ID | Severity | Archivo | Fix |
+|----|----------|---------|-----|
+| G67 | HIGH | `arpi_benefit_matrix.evaluate_eligibility_gate()` | Nueva función que enforce `eligibility_gate` (PSADT max, HRR required). Consumers downstream pueden filtrar regimens NO elegibles. |
+| G76 | MOD | `loop_monitor.record_psa_freshness_check()` | Vector `patient_data_freshness` nuevo. Barre pacientes, detecta PSA stale (>90d) o missing, genera iteration record con status critical/warning/ok. |
+| EXP-15 | HIGH | `clinical_state_classifier._is_testosterone_stale()` | Helper que evita misclassification mCSPC→m0CRPC cuando última testosterona >90d. |
+| EXP-7 | MOD | `psa_forecast._fit_log_psa_model` + `_line_reliability` | Tier `tentative` para líneas con 2 puntos PSA + span ≥21 días. Pre-EPIC31 caía a `insufficient_data` perdiendo overlay útil. |
+
+### EPIC 31.F — Phoenix Context + UI Refinements (3 fixes)
+
+| ID | Severity | Archivo | Fix |
+|----|----------|---------|-----|
+| EXP-11 | MOD | `shared/phoenix.evaluate_phoenix` | Rationale context-aware: distingue post-RT BCR (RTOG-ASTRO 2006) vs CRPC (PCWG3 requiere ≥25% + confirmatorio). |
+| EXP-13 | MOD | `v2_adapters._vitals` | `psa_current_context` default "contexto no documentado" o `current_line_label`. Pre-EPIC31 "—" causaba confusión. |
+| EXP-14 | HIGH | `v2_adapters._psa_observability` | Docstring completo del mapping `profile_view["psa_observability"]` → `psa_obs` → `pm2_psa` para mantenedores. |
+
+### Hallazgos diferidos a EPIC 32+ (7)
+
+| ID | Severity | Razón diferimiento |
+|----|----------|---------------------|
+| G64 | CRIT | Requiere migración SQLite voice_sessions (mayor scope DB) |
+| EXP-4 | MOD | clinical_scores import fallback @lru_cache — refactoring |
+| EXP-5 | HIGH | end-date filtering forecast con tolerance — UI testing |
+| EXP-6 | MOD | PSADT acceleration spline regression — math refactor |
+| EXP-9 | MOD | Fallback anchor cascade — needs more clinical input |
+| EXP-10 | HIGH | Duplicate de EXP-3 — ya cerrado vía PCWG3 window |
+| EXP-16 | MOD | Arbiter PSA rules unification — large refactor |
+
+### Tests EPIC 31
+- 148/148 EPIC 22-26 + pivotal gates + audit63a/c (+1 xfailed legacy)
+- 31/31 audit63c (after PCWG3 update)
+- Smoke G67/G76/EXP-15/EXP-3/EXP-11 OK (all expected outputs)
+
+### Constraint del usuario respetado
+0 líneas de lógica clínica eliminadas. Append/repair only. Tests actualizados para reflejar nueva semántica PCWG3 (no modificación destructiva de tests).
+
 

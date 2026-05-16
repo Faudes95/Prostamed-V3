@@ -131,11 +131,19 @@ class TestSectionAGranularKinetics:
         assert result["kinetics_classification"] == "stable"
 
     def test_g2021_progression_post_nadir(self):
-        """H.G2021 — Rebote ≥25% post-nadir → classification=progression."""
+        """H.G2021 — Rebote ≥25% post-nadir → classification=progression.
+
+        EPIC 31.A (Explore EXP-3 CRIT) actualizó esta semántica: PCWG3 Scher
+        JCO 2016 requiere CONFIRMACIÓN — 2 PSAs ≥ threshold separadas ≥21d.
+        Test actualizado a usar 2 PSAs confirmatorias (50 y 60) en lugar
+        de 1 single-spike. Single-spike ahora retorna
+        `progression_unconfirmed`.
+        """
         points = [
             {"date": "2024-01-01", "psa": 100.0},
             {"date": "2024-04-01", "psa": 30.0},  # nadir
-            {"date": "2024-09-01", "psa": 50.0},  # rebote +66% desde nadir
+            {"date": "2024-09-01", "psa": 50.0},  # rebote +66% (confirmatorio 1)
+            {"date": "2024-10-15", "psa": 60.0},  # rebote +100% (confirmatorio 2, >21d después)
         ]
         result = _calculate_per_line_granular_kinetics(
             segment_points=points,
@@ -145,8 +153,30 @@ class TestSectionAGranularKinetics:
         )
         assert result["kinetics_classification"] == "progression"
 
+    def test_g2021_progression_unconfirmed_single_spike(self):
+        """EPIC 31.A — Single spike post-nadir SIN confirmación ≥21d → unconfirmed."""
+        points = [
+            {"date": "2024-01-01", "psa": 100.0},
+            {"date": "2024-04-01", "psa": 30.0},  # nadir
+            {"date": "2024-09-01", "psa": 50.0},  # único rebote
+        ]
+        result = _calculate_per_line_granular_kinetics(
+            segment_points=points,
+            baseline_psa=100.0,
+            nadir_psa=30.0,
+            start_date=date(2024, 1, 1),
+        )
+        assert result["kinetics_classification"] == "progression_unconfirmed"
+        assert result.get("psa_rise_pending_confirmation") is True
+        assert result.get("pcwg3_confirmatory_window_days") == 21
+
     def test_g2022_primary_refractory_classification(self):
-        """H.G2022 — Aumento ≥25% sin reducción → primary_refractory."""
+        """H.G2022 — Aumento ≥25% sin reducción → primary_refractory.
+
+        EPIC 31.A: single-spike +30% sin nadir respuesta — el classifier ahora
+        diferencia entre primary_refractory (no respuesta inicial) y
+        progression_unconfirmed (single-spike post-respuesta).
+        """
         points = [
             {"date": "2024-01-01", "psa": 10.0},
             {"date": "2024-06-01", "psa": 13.0},  # +30% sin nadir respuesta
@@ -158,8 +188,11 @@ class TestSectionAGranularKinetics:
             start_date=date(2024, 1, 1),
         )
         # +30% triggers progression threshold (25% rebote desde nadir)
-        # Caso edge: nadir == baseline, cualquier aumento es prog
-        assert result["kinetics_classification"] in {"progression", "primary_refractory"}
+        # Caso edge: nadir == baseline → single-spike sin confirmación →
+        # progression_unconfirmed (PCWG3 strict) o primary_refractory
+        assert result["kinetics_classification"] in {
+            "progression", "progression_unconfirmed", "primary_refractory"
+        }
 
     def test_g2023_time_to_nadir_calculated(self):
         """H.G2023 — time_to_nadir_months calcula correctamente."""
@@ -331,11 +364,15 @@ class TestSectionBSegmentsIncludeGranular:
         assert segments[0]["kinetics_classification"] == "response"
 
     def test_g2033_segment_progression_classification_correct(self):
-        """H.G2033 — Segment con rebote ≥25% post-nadir → progression."""
+        """H.G2033 — Segment con rebote ≥25% post-nadir → progression.
+
+        EPIC 31.A actualizado a PCWG3-correct: 2 PSAs confirmatorias ≥21d.
+        """
         points = [
             {"date": "2024-01-01", "psa": 100.0},
             {"date": "2024-04-01", "psa": 30.0},  # nadir
-            {"date": "2024-09-01", "psa": 60.0},  # rebote
+            {"date": "2024-09-01", "psa": 60.0},  # rebote 1
+            {"date": "2024-10-10", "psa": 70.0},  # rebote 2 (>21d después)
         ]
         bands = [{
             "start_date": "2024-01-01", "end_date": "2024-12-31",

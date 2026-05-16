@@ -29,7 +29,14 @@ from typing import Any
 
 # Constante actualizada al cierre de cada iteración del bucle Faubot.
 # Convención: "YYYY-MM-DD ROMAN_NUMERAL" (e.g., "2026-04-25 X").
-FAUBOT_RELEASE = "2026-04-30 LXCIX"
+#
+# EPIC 31.D (GodiBot G66 HIGH) — DISCIPLINA DE VERSIONADO: cada PR que cierre
+# ≥1 G-finding clínico DEBE bumpear este stamp (21 CFR Part 11 §11.10(e) +
+# IEC 62304 §5.1.6 requieren trazabilidad versionada). EPIC 25-29 cerraron
+# 50 hallazgos sin bump — audit trail post-hoc indistinguible.
+# Histórico: 2026-04-30 LXCIX → 2026-05-15 C (pre-EPIC30) → 2026-05-16 CI
+# (post-EPIC 30: PSA Tower + GodiBot pass-5) → 2026-05-16 CII (post-EPIC 31)
+FAUBOT_RELEASE = "2026-05-16 CII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

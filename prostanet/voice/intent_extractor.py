@@ -529,8 +529,28 @@ def extract_intake_classifier_candidates(
 
     gleason_pattern = re.compile(r"\bgleason\s*(?P<primary>[3-5])\s*(?:\+|mas|más)\s*(?P<secondary>[3-5])\b", re.I)
     for match in gleason_pattern.finditer(text):
-        add("gleason_primary", match.group("primary"), "Gleason primario", match, 0.9)
-        add("gleason_secondary", match.group("secondary"), "Gleason secundario", match, 0.9)
+        primary = int(match.group("primary"))
+        secondary = int(match.group("secondary"))
+        add("gleason_primary", str(primary), "Gleason primario", match, 0.9)
+        add("gleason_secondary", str(secondary), "Gleason secundario", match, 0.9)
+        # EPIC 31.B (GodiBot G69 MOD) — gleason_score (suma) + isup_grade
+        # derivados. Pre-EPIC31 downstream auto-deriving funcionaba solo si
+        # se invocaba compute_isup_from_gleason — voice path lo saltaba.
+        total = primary + secondary
+        add("gleason_score", str(total), "Gleason score (suma)", match, 0.90)
+        # ISUP per Epstein 2014 (Histopathology) — discrimina 3+4 vs 4+3
+        if total <= 6:
+            isup = 1
+        elif (primary, secondary) == (3, 4):
+            isup = 2
+        elif (primary, secondary) == (4, 3):
+            isup = 3
+        elif total == 8:
+            isup = 4
+        else:  # 9 or 10
+            isup = 5
+        add("isup_grade", str(isup), f"ISUP grade {isup} (Epstein 2014)",
+            match, 0.90)
 
     t_stage_pattern = re.compile(r"\bcT\s*(?P<value>[1-4][abc]?)\b", re.I)
     for match in t_stage_pattern.finditer(text):
@@ -568,12 +588,97 @@ def extract_intake_classifier_candidates(
         value = match.group("value").upper().replace("X", "x")
         add("nodal_status", f"N{value}", "cN clínico", match, 0.84)
 
+    # EPIC 31.B (GodiBot G71 MOD) — prior_local_therapy multi-valor.
+    # Pre-EPIC31 RP (0.86) + brachy (0.86) tie → solo el primero gana, segundo
+    # se perdía. Paciente real "prostatectomy + brachytherapy salvage" → solo
+    # "prostatectomy" persistido → post_brachy_*_summary adapters nunca
+    # disparaban. Ahora emite field_names SEPARADOS por modalidad para que
+    # downstream dedup por field_id permita coexistir múltiples.
+    prior_modalities_detected: list[str] = []
     if _has(text, r"\b(prostatectom[ií]a|post[- ]?rp|post prostatectom[ií]a)\b"):
-        add("prior_local_therapy", "prostatectomy", "Terapia local previa", None, 0.86)
-    if _has(text, r"\b(braquiterapia)\b"):
-        add("prior_local_therapy", "brachytherapy", "Terapia local previa", None, 0.86)
-    elif _has(text, r"\b(radioterapia|post[- ]?rt)\b"):
-        add("prior_local_therapy", "radiation", "Terapia local previa", None, 0.84)
+        prior_modalities_detected.append("prostatectomy")
+        add("prior_local_therapy_rp", "1", "Prostatectomía documentada",
+            None, 0.86)
+    # Brachy con sub-modalidades HDR/LDR
+    if _has(text, r"\bbraquiterapia\s+(?:HDR|de\s+alta\s+tasa)\b"):
+        prior_modalities_detected.append("brachytherapy_hdr")
+        add("prior_local_therapy_brachy_hdr", "1",
+            "Braquiterapia HDR documentada", None, 0.87)
+        add("prior_local_treatment_modality", "hdr_brachytherapy",
+            "Modalidad brachy HDR", None, 0.87)
+    elif _has(text, r"\bbraquiterapia\s+(?:LDR|de\s+baja\s+tasa|con\s+semillas)\b"):
+        prior_modalities_detected.append("brachytherapy_ldr")
+        add("prior_local_therapy_brachy_ldr", "1",
+            "Braquiterapia LDR documentada", None, 0.87)
+        add("prior_local_treatment_modality", "ldr_brachytherapy",
+            "Modalidad brachy LDR", None, 0.87)
+    elif _has(text, r"\b(braquiterapia)\b"):
+        prior_modalities_detected.append("brachytherapy")
+        add("prior_local_therapy_brachy", "1",
+            "Braquiterapia (tipo no especificado)", None, 0.82)
+        add("prior_local_treatment_modality", "brachytherapy",
+            "Modalidad brachy", None, 0.80)
+    if _has(text, r"\b(radioterapia|post[- ]?rt|ebrt|imrt|vmat)\b"):
+        prior_modalities_detected.append("radiation")
+        add("prior_local_therapy_rt", "1",
+            "Radioterapia externa documentada", None, 0.84)
+        add("prior_local_treatment_modality", "ebrt",
+            "Modalidad RT externa", None, 0.82)
+    if _has(text, r"\b(sbrt|estereot[aá]ctica)\b"):
+        prior_modalities_detected.append("sbrt")
+        add("prior_local_therapy_sbrt", "1",
+            "SBRT documentada", None, 0.84)
+        add("prior_local_treatment_modality", "sbrt",
+            "Modalidad SBRT", None, 0.84)
+    # Legacy single-value field preservado para backward compat: primer match
+    if prior_modalities_detected:
+        add("prior_local_therapy", prior_modalities_detected[0],
+            f"Terapia local previa (primera detectada de {len(prior_modalities_detected)})",
+            None, 0.86)
+        # Si hay más de una, expose en summary field
+        if len(prior_modalities_detected) > 1:
+            add("prior_local_therapies_multi", "|".join(prior_modalities_detected),
+                f"Múltiples terapias locales previas: {', '.join(prior_modalities_detected)}",
+                None, 0.85)
+
+    # EPIC 31.B (GodiBot G74 HIGH) — extraer comorbilidades clínicamente
+    # críticas para arbiter conflict detection (CV+abi, hepatic+abi, etc.).
+    # Pre-EPIC31 las cards EPIC 22f (comorbidity_cv, comorbidity_hepatic) solo
+    # se activaban vía wizard intake estructurado → voice flow las saltaba.
+    if _has_positive(text, r"\b(cirrosis|child[\s-]?pugh|hipertensi[oó]n\s+portal)\b"):
+        add("cirrhosis_or_portal_hypertension", "1",
+            "Cirrosis / hipertensión portal", None, 0.86)
+        add("active_liver_disease", "1", "Enfermedad hepática activa", None, 0.85)
+    if _has_positive(text, r"\b(?:enfermedad\s+(?:cardiovascular|isqu[eé]mica|coronaria))|(?:infarto\s+(?:al\s+miocardio|previo))|(?:angina)\b"):
+        add("severe_cardiovascular_disease", "1",
+            "Enfermedad cardiovascular severa", None, 0.84)
+        add("cv_risk_documented", "1", "Riesgo CV documentado", None, 0.82)
+    if _has_positive(text, r"\b(insuficiencia\s+card[ií]aca|fall[aoe]\s+card[ií]aca|nyha\s+(?:III|IV|3|4))\b"):
+        add("heart_failure", "1", "Insuficiencia cardíaca", None, 0.86)
+        add("severe_cardiovascular_disease", "1",
+            "Enfermedad cardiovascular severa", None, 0.84)
+    if _has_positive(text, r"\b(?:diabetes|dm)\s*(?:tipo\s+[12]|t[12])?\b"):
+        add("diabetes_mellitus", "1", "Diabetes mellitus", None, 0.82)
+    # Lab values for hepatic detection
+    alt_match = re.search(r"\bALT\s*(?:de|=|:)?\s*(?P<value>\d+(?:\.\d+)?)\b", text, re.I)
+    if alt_match:
+        add("alt_u_l", alt_match.group("value"), "ALT (TGP)", alt_match, 0.88)
+    ast_match = re.search(r"\bAST\s*(?:de|=|:)?\s*(?P<value>\d+(?:\.\d+)?)\b", text, re.I)
+    if ast_match:
+        add("ast_u_l", ast_match.group("value"), "AST (TGO)", ast_match, 0.88)
+    bili_match = re.search(r"\bbilirrubina\s+(?:total\s+)?(?:de|=|:)?\s*(?P<value>\d+(?:\.\d+)?)\b", text, re.I)
+    if bili_match:
+        add("bilirubin_total_mg_dl", bili_match.group("value"),
+            "Bilirrubina total", bili_match, 0.86)
+    creat_match = re.search(r"\bcreatinina\s+(?:de|=|:)?\s*(?P<value>\d+(?:\.\d+)?)\b", text, re.I)
+    if creat_match:
+        add("creatinine_mg_dl", creat_match.group("value"),
+            "Creatinina sérica", creat_match, 0.86)
+    # ECOG performance status
+    ecog_match = re.search(r"\becog\s+(?:de|=|:)?\s*(?P<value>[0-4])\b", text, re.I)
+    if ecog_match:
+        add("ecog_performance_status", ecog_match.group("value"),
+            f"ECOG {ecog_match.group('value')}", ecog_match, 0.88)
     if _has(text, r"\b(bcr|recurrencia bioqu[ií]mica|phoenix)\b"):
         add("bcr_detected", "1", "BCR documentada", None, 0.82)
         explicit_date = _explicit_iso_date(text)

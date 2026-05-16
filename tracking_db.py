@@ -220,12 +220,22 @@ def _append_patient_fact_lineage_event(
     target_fact_id=None,
     event_note="",
     payload=None,
+    actor_user_id=None,
+    actor_session_id=None,
+    actor_role=None,
 ):
+    """EPIC 31.C (GodiBot G80 HIGH) — record actor accountability (HIPAA
+    §164.312(b)) when persisting fact lineage events. If actor info missing,
+    persists NULL — but call sites in Flask routes should populate from
+    `g.user.id` (clinician session).
+    """
     cursor.execute(
         '''
         INSERT INTO patient_fact_lineage_events (
-            patient_id, fact_key, event_type, source_fact_id, target_fact_id, event_note, payload_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            patient_id, fact_key, event_type, source_fact_id, target_fact_id,
+            event_note, payload_json,
+            actor_user_id, actor_session_id, actor_role
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''',
         (
             patient_id,
@@ -235,6 +245,9 @@ def _append_patient_fact_lineage_event(
             target_fact_id,
             event_note or "",
             _json_blob(payload or {}),
+            actor_user_id,
+            actor_session_id,
+            actor_role,
         ),
     )
 
@@ -394,34 +407,72 @@ def _persist_patient_clinical_facts(cursor, patient_id, fact_candidates):
                 (patient_id, fact_key),
             )
 
-        cursor.execute(
-            '''
-            INSERT INTO patient_clinical_facts (
-                patient_id, fact_key, value_json, normalized_value_text, source_type, source_record_type,
-                source_record_id, source_date, observed_at, state_context, management_track, certainty_tier,
-                freshness_status, freshness_expires_at, clinician_verified, verification_note, is_active
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''',
-            (
-                patient_id,
-                fact_key,
-                value_json,
-                normalized_value_text,
-                candidate_row["source_type"],
-                candidate_row["source_record_type"],
-                candidate_row["source_record_id"],
-                candidate_row["source_date"],
-                candidate_row["observed_at"],
-                candidate_row["state_context"],
-                candidate_row["management_track"],
-                candidate_row["certainty_tier"],
-                candidate_row["freshness_status"],
-                candidate_row["freshness_expires_at"],
-                candidate_row["clinician_verified"],
-                candidate_row["verification_note"],
-                1 if incoming_is_active else 0,
-            ),
-        )
+        # EPIC 31.C (GodiBot G68 CRIT) — race condition tolerance: si 2 workers
+        # bajo gunicorn pasan el SELECT simultáneamente y ambos intentan INSERT
+        # is_active=1, el UNIQUE index raise IntegrityError. Catch + retry como
+        # supersession (demote y reintentar).
+        import sqlite3 as _sqlite3_race
+        try:
+            cursor.execute(
+                '''
+                INSERT INTO patient_clinical_facts (
+                    patient_id, fact_key, value_json, normalized_value_text, source_type, source_record_type,
+                    source_record_id, source_date, observed_at, state_context, management_track, certainty_tier,
+                    freshness_status, freshness_expires_at, clinician_verified, verification_note, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (
+                    patient_id,
+                    fact_key,
+                    value_json,
+                    normalized_value_text,
+                    candidate_row["source_type"],
+                    candidate_row["source_record_type"],
+                    candidate_row["source_record_id"],
+                    candidate_row["source_date"],
+                    candidate_row["observed_at"],
+                    candidate_row["state_context"],
+                    candidate_row["management_track"],
+                    candidate_row["certainty_tier"],
+                    candidate_row["freshness_status"],
+                    candidate_row["freshness_expires_at"],
+                    candidate_row["clinician_verified"],
+                    candidate_row["verification_note"],
+                    1 if incoming_is_active else 0,
+                ),
+            )
+        except _sqlite3_race.IntegrityError as race_exc:
+            # UNIQUE constraint race — other worker beat us. Demote prior active
+            # forcibly (their insert is more recent or same), then retry as
+            # supersession with our incoming row.
+            cursor.execute(
+                '''
+                UPDATE patient_clinical_facts
+                SET is_active = 0,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE patient_id = ? AND fact_key = ? AND is_active = 1
+                ''',
+                (patient_id, fact_key),
+            )
+            cursor.execute(
+                '''
+                INSERT INTO patient_clinical_facts (
+                    patient_id, fact_key, value_json, normalized_value_text, source_type, source_record_type,
+                    source_record_id, source_date, observed_at, state_context, management_track, certainty_tier,
+                    freshness_status, freshness_expires_at, clinician_verified, verification_note, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (
+                    patient_id, fact_key, value_json, normalized_value_text,
+                    candidate_row["source_type"], candidate_row["source_record_type"],
+                    candidate_row["source_record_id"], candidate_row["source_date"],
+                    candidate_row["observed_at"], candidate_row["state_context"],
+                    candidate_row["management_track"], candidate_row["certainty_tier"],
+                    candidate_row["freshness_status"], candidate_row["freshness_expires_at"],
+                    candidate_row["clinician_verified"], candidate_row["verification_note"],
+                    1 if incoming_is_active else 0,
+                ),
+            )
         candidate_row["id"] = cursor.lastrowid
         candidate_row["is_active"] = 1 if incoming_is_active else 0
         persisted.append(candidate_row)
@@ -3938,6 +3989,29 @@ def init_tracking_db():
     # data inconsistency. SQLite partial unique index enforces invariant
     # at schema level (raises IntegrityError if duplicate active insert
     # attempted; catch + treat as supersession).
+    # EPIC 31.C (GodiBot G68 CRIT) — antes de CREATE UNIQUE INDEX, demote
+    # duplicate active rows pre-existentes en DBs legacy. Sin esto, el
+    # CREATE INDEX raise IntegrityError + transacción init rota.
+    try:
+        c.execute(
+            '''
+            WITH dupes AS (
+                SELECT id, patient_id, fact_key,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY patient_id, fact_key
+                           ORDER BY updated_at DESC, id DESC
+                       ) AS rn
+                FROM patient_clinical_facts WHERE is_active = 1
+            )
+            UPDATE patient_clinical_facts
+            SET is_active = 0,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id IN (SELECT id FROM dupes WHERE rn > 1)
+            '''
+        )
+    except Exception:
+        # DBs vacías o sin patient_clinical_facts pueden fallar; ignorar
+        pass
     c.execute(
         '''
         CREATE UNIQUE INDEX IF NOT EXISTS patient_clinical_facts_unique_active
@@ -3957,12 +4031,32 @@ def init_tracking_db():
             event_note TEXT,
             payload_json TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            -- EPIC 31.C (GodiBot G80 HIGH) — HIPAA §164.312(b) + 21 CFR Part 11
+            -- §11.10(d)+(e) requieren accountability de WHO modificó cada fact.
+            -- Pre-EPIC31 patient_fact_lineage_events solo trackeaba mecánica
+            -- (id, fact_key, event_type) sin atribución a usuario clínico.
+            -- Forensic reconstruction post-hoc imposible.
+            actor_user_id INTEGER,
+            actor_session_id TEXT,
+            actor_role TEXT,
             FOREIGN KEY(patient_id) REFERENCES patient_identity(id),
             FOREIGN KEY(source_fact_id) REFERENCES patient_clinical_facts(id),
             FOREIGN KEY(target_fact_id) REFERENCES patient_clinical_facts(id)
         )
         '''
     )
+    # Idempotent ALTER for legacy DBs (lineage table existed before EPIC 31.C)
+    for col_def in (
+        ("actor_user_id", "INTEGER"),
+        ("actor_session_id", "TEXT"),
+        ("actor_role", "TEXT"),
+    ):
+        col_name, col_type = col_def
+        try:
+            c.execute(f"ALTER TABLE patient_fact_lineage_events ADD COLUMN {col_name} {col_type}")
+        except Exception:
+            # Already exists or DB doesn't yet have base table — both ok
+            pass
     c.execute(
         '''
         CREATE TABLE IF NOT EXISTS patient_fact_conflicts (
@@ -6157,6 +6251,15 @@ def append_biomarker_longitudinal(nss_or_id, biomarker_type, sample_date,
             (patient_id, biomarker_upper, value, unit, sample_date, lab_source_blob),
         )
         conn.commit()
+        # EPIC 31.A (Explore EXP-1 CRIT) — invalidate profile_view cache cuando
+        # llega un nuevo biomarker (PSA, testosterona, ALP, LDH, AlkPhos).
+        # Pre-EPIC31: PSA nuevo via /api/longitudinal/append no invalidaba el
+        # cache → forecast desactualizado hasta refresh manual del clínico.
+        try:
+            from prostanet.presentation.v2_adapters import invalidate_profile_view_cache
+            invalidate_profile_view_cache(patient_id, reason=f"biomarker_appended:{biomarker_upper}")
+        except Exception:
+            pass  # cache helper opcional, no romper write path
         return {"success": True, "appended_id": cursor.lastrowid,
                 "source": source, "biomarker_type": biomarker_upper}
     finally:

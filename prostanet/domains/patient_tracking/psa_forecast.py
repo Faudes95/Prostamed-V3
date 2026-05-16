@@ -24,6 +24,13 @@ ADVANCED_FORECAST_STATES = {
 FORECAST_HORIZONS = (3, 6, 12)
 _MIN_POINTS = 3
 _MIN_SPAN_DAYS = 42
+
+# EPIC 31.E (Explore EXP-7 MOD) — permitir short-line forecast con confidence
+# baja en lugar de descartarlo completo como insufficient_data. Líneas con
+# 2 puntos (≥21d span) son comunes en early-line management; el clínico se
+# beneficia de overlay tentativo aunque NO sea estadísticamente robusto.
+_LOW_CONF_MIN_POINTS = 2
+_LOW_CONF_MIN_SPAN_DAYS = 21
 _LINE_STABLE_DAYS = 84
 _OUTLIER_Z = 2.5
 _EPSILON = 0.01
@@ -127,8 +134,27 @@ def _prepare_regression_points(points: list[dict[str, Any]]) -> tuple[np.ndarray
 
 def _fit_log_psa_model(points: list[dict[str, Any]]) -> dict[str, Any]:
     x, y, kept_points = _prepare_regression_points(points)
+    # EPIC 31.E (Explore EXP-7 MOD) — permitir 2-punto fit con flag tentative
+    if len(kept_points) < _LOW_CONF_MIN_POINTS:
+        return {"status": "insufficient_data", "reason": "Menos de 2 puntos PSA válidos."}
     if len(kept_points) < _MIN_POINTS:
-        return {"status": "insufficient_data", "reason": "Puntos PSA insuficientes para ajuste."}
+        # 2-point lineal sin covarianza (no se puede estimar uncertainty)
+        try:
+            slope, intercept = np.polyfit(x, y, 1)
+        except Exception:
+            return {"status": "insufficient_data", "reason": "Ajuste 2-punto falló."}
+        return {
+            "status": "ok",
+            "slope": float(slope),
+            "intercept": float(intercept),
+            "covariance": np.zeros((2, 2)),  # zero placeholder; widen UI intervals
+            "r2": None,  # No es válido con 2 puntos
+            "x": x,
+            "y": y,
+            "kept_points": kept_points,
+            "outlier_count": 0,
+            "tentative_fit": True,  # flag para UI
+        }
 
     weights = np.linspace(1.0, 2.0, len(x))
     try:
@@ -213,6 +239,11 @@ def _line_reliability(
     line_age_days = (last_date - line_start).days if line_start and last_date else 0
 
     minimum_data_passed = len(current_points) >= _MIN_POINTS and span_days >= _MIN_SPAN_DAYS
+    # EPIC 31.E (Explore EXP-7 MOD) — short-line tentative tier
+    short_line_passed = (
+        len(current_points) >= _LOW_CONF_MIN_POINTS
+        and span_days >= _LOW_CONF_MIN_SPAN_DAYS
+    )
     line_stability_passed = line_age_days >= _LINE_STABLE_DAYS
     model_fit_quality = _round_or_none(max(float(model.get("r2") or 0.0), 0.0), 3)
     outlier_burden = int(model.get("outlier_count") or 0)
@@ -225,8 +256,13 @@ def _line_reliability(
         prediction_interval_width = _round_or_none(next_point["interval_width"], 2)
 
     reasons = []
-    if not minimum_data_passed:
-        reasons.append("Menos de 3 puntos válidos o ventana temporal insuficiente dentro de la línea actual.")
+    if not minimum_data_passed and short_line_passed:
+        reasons.append(
+            "Línea con 2 puntos PSA: forecast tentativo de baja confianza "
+            "(EPIC 31.E EXP-7). Recapturar PSA para mejorar precision."
+        )
+    elif not minimum_data_passed and not short_line_passed:
+        reasons.append("Menos de 2 puntos válidos o ventana temporal <21 días dentro de la línea actual.")
     if minimum_data_passed and not line_stability_passed:
         reasons.append("La línea terapéutica actual es demasiado reciente para extrapolar con seguridad.")
     if model_fit_quality is not None and model_fit_quality < 0.4:
@@ -234,8 +270,12 @@ def _line_reliability(
     if outlier_burden:
         reasons.append("Se detectaron valores PSA atípicos que ensanchan la incertidumbre del modelo.")
 
-    if not minimum_data_passed or model.get("status") != "ok":
+    # EPIC 31.E (EXP-7) — tier "tentative" para líneas cortas
+    if not short_line_passed or model.get("status") != "ok":
         confidence = "insufficient_data"
+    elif not minimum_data_passed:
+        # 2-3 puntos OK + span 21+ días pero menor a _MIN_SPAN_DAYS=42
+        confidence = "tentative"
     elif not line_stability_passed or model_fit_quality is not None and model_fit_quality < 0.4:
         confidence = "low"
     elif model_fit_quality is not None and model_fit_quality >= 0.75 and outlier_burden == 0 and line_age_days >= 120:
@@ -795,21 +835,32 @@ def _classify_regimen_for_cohort(drug_scheme: str) -> str:
     """Faubot LXVIII #64A — Mapea drug_scheme canónico a clase para cohort lookup.
 
     EPIC 30.5 (GodiBot G70 HIGH) — extendido con Ra-223, Pembrolizumab, Sip-T y
-    Cabazitaxel. Pre-EPIC30 estos regimens caían a fallback "" → torre de
-    vigilancia mostraba "Sin curva de referencia" para pacientes bajo Ra-223
-    (target óseo, NO modula PSA), Pembrolizumab (MSI-H raros respondedores),
-    Sip-T (inmunoterapia que NO baja PSA), o Cabazitaxel.
+    Cabazitaxel.
+
+    EPIC 31.A (Explore EXP-8 CRIT) — triplet detection más robusta con aliases
+    (DOC, DARO, ENZA, APA, ABI) + soporte para drug_scheme normalized strings
+    que omiten "ADT_" prefix explícito (e.g. "DOCETAXEL_DAROLUTAMIDE" como
+    triplete ARASENS implícito en mCSPC).
     """
     if not drug_scheme:
         return ""
     s = str(drug_scheme).upper()
-    # Triplete: ADT + DOCETAXEL + ARPI
-    if "DOCETAXEL" in s and ("ARPI" in s or "ABIRATERONE" in s or "ENZALUTAMIDE" in s
-                              or "APALUTAMIDE" in s or "DAROLUTAMIDE" in s):
+    # EPIC 31.A — alias expansion para detección robusta
+    docetaxel_tokens = ("DOCETAXEL", "DOC", "TAXANE", "TAXOTERE")
+    arpi_tokens = ("ARPI", "ABIRATERONE", "ABI", "ENZALUTAMIDE", "ENZA",
+                   "APALUTAMIDE", "APA", "DAROLUTAMIDE", "DARO")
+    has_docetaxel = any(tok in s for tok in docetaxel_tokens)
+    has_arpi = any(tok in s for tok in arpi_tokens)
+    # Triplete: DOCETAXEL + ARPI (con o sin ADT explícito; en mCSPC ADT siempre
+    # está presente clínicamente, no es opcional)
+    if has_docetaxel and has_arpi:
         return "ADT_TRIPLET"
-    # ADT + Docetaxel
-    if "DOCETAXEL" in s and "ADT" in s:
+    # ADT + Docetaxel (sin ARPI)
+    if has_docetaxel and ("ADT" in s or "HORMONAL" in s):
         return "ADT_DOCETAXEL"
+    if has_docetaxel and not has_arpi:
+        # Docetaxel solo (mCRPC primera línea quimio post-castración)
+        return "DOCETAXEL"
     # EPIC 30.5: Cabazitaxel BEFORE generic Docetaxel check
     if "CABAZITAXEL" in s or "JEVTANA" in s:
         return "CABAZITAXEL"

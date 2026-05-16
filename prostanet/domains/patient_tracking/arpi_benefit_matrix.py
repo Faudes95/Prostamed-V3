@@ -668,6 +668,64 @@ def benefit_profile_for_state(state: str, regimen_code: str) -> dict[str, object
     return dict(ARPI_BENEFIT_MATRIX.get(str(state or "").strip(), {}).get(str(regimen_code or "").strip(), {}))
 
 
+def evaluate_eligibility_gate(
+    state: str,
+    regimen_code: str,
+    patient_facts: dict[str, object],
+) -> tuple[bool, str]:
+    """EPIC 31.E (GodiBot G67 HIGH) — Enforce `eligibility_gate` declarado en
+    ARPI_BENEFIT_MATRIX antes de surfacear regimen como preferred.
+
+    Pre-EPIC31: G59 añadió `eligibility_gate.psadt_max_months=10` a
+    ARAMIS/PROSPER/SPARTAN m0_crpc, pero ningún consumer leía el campo.
+    Slow risers (PSADT >10mo) seguían recibiendo ARPI ranking alto sin gate.
+
+    Returns:
+        (passes, rationale): passes=True si el régimen pasa el gate o no
+        tiene gate declarado; passes=False con rationale clínico si falla.
+    """
+    profile = benefit_profile_for_state(state, regimen_code)
+    gate = profile.get("eligibility_gate")
+    if not gate:
+        return True, ""
+    # Dict-style gates (m0_crpc PSADT, m1_crpc HRR/post-ARSI threshold)
+    if isinstance(gate, dict):
+        psadt_max = gate.get("psadt_max_months")
+        if psadt_max is not None:
+            psadt_raw = patient_facts.get("psadt_months") or patient_facts.get("psa_doubling_time_months")
+            try:
+                psadt = float(psadt_raw) if psadt_raw is not None else None
+            except (TypeError, ValueError):
+                psadt = None
+            if psadt is not None and psadt > float(psadt_max):
+                rationale = gate.get("rationale_es", "")
+                return False, (
+                    f"PSADT {psadt:.1f}mo > {psadt_max}mo. {rationale} "
+                    f"Regimen {regimen_code} para state {state} no aplicable."
+                )
+        # HRR gate (PARP regimens)
+        hrr_required = gate.get("hrr_pathogenic_required")
+        if hrr_required:
+            hrr_status = str(patient_facts.get("hrr_status") or "").lower()
+            hrr_gene = str(patient_facts.get("hrr_gene") or "").upper()
+            HRR_POSITIVE = {"BRCA1", "BRCA2", "ATM", "PALB2", "CDK12", "CHEK2",
+                            "FANCA", "MLH1", "MRE11A", "NBN", "RAD51B", "RAD51C"}
+            is_positive = hrr_status in ("positive", "pathogenic") or hrr_gene in HRR_POSITIVE
+            if not is_positive:
+                return False, (
+                    f"Regimen {regimen_code} requiere HRR pathogenic variant "
+                    f"documentado (BRCA1/2, ATM, PALB2, etc.). hrr_status={hrr_status}, "
+                    f"hrr_gene={hrr_gene}. Considerar germline testing."
+                )
+    # String-typed gates (legacy)
+    elif isinstance(gate, str):
+        if "hrr_pathogenic" in gate.lower():
+            hrr_status = str(patient_facts.get("hrr_status") or "").lower()
+            if hrr_status not in ("positive", "pathogenic"):
+                return False, f"Regimen {regimen_code} requiere HRR positivo. Gate: {gate}"
+    return True, ""
+
+
 # ── Auditoría #14 — Mapeo (state, regimen_code) → códigos de ensayo pivotal ──
 #
 # Hace machine-readable la trazabilidad estado×régimen → ensayo. Cada entrada

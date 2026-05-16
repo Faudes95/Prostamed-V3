@@ -319,15 +319,51 @@ def _calculate_per_line_granular_kinetics(
         if _parse_iso_date(p.get("date")) > nadir_date
     ]
 
-    # Definición de progresión PSA: rebote ≥25% desde nadir O >2 ng/mL absoluto
-    # (criterio PCWG3 simplificado)
+    # Definición de progresión PSA: rebote ≥25% desde nadir Y >2 ng/mL absoluto
+    # (PCWG3 Scher JCO 2016 PMID 26921877). EPIC 31.A (Explore EXP-3 CRIT):
+    # añadido REQUERIMIENTO DE CONFIRMACIÓN ≥21 días entre 2 PSAs ≥ threshold.
+    # Pre-EPIC31 SOLO 1 punto ≥ threshold disparaba progresión → falso positivo
+    # con spike aislado de pseudoprogresión.
     progression_threshold = max(nadir_psa * 1.25, nadir_psa + 2.0)
-    progression_points = [
+    candidate_progression = [
         p for p in post_nadir_points
         if p.get("psa") >= progression_threshold
     ]
+    # Filter PCWG3-confirmed: ≥2 puntos ≥ threshold separados ≥21 días
+    PCWG3_CONFIRMATORY_DAYS = 21
+    progression_points: list[dict[str, Any]] = []
+    if len(candidate_progression) >= 2:
+        # Sort por fecha
+        candidate_sorted = sorted(
+            candidate_progression,
+            key=lambda p: _parse_iso_date(p.get("date")) or date.min,
+        )
+        # Buscar primer par separado ≥21 días
+        for i, cand in enumerate(candidate_sorted):
+            cand_date = _parse_iso_date(cand.get("date"))
+            if cand_date is None:
+                continue
+            for later in candidate_sorted[i + 1:]:
+                later_date = _parse_iso_date(later.get("date"))
+                if later_date is None:
+                    continue
+                if (later_date - cand_date).days >= PCWG3_CONFIRMATORY_DAYS:
+                    # Confirmed: tomar ambos + cualquier subsiguiente ≥ threshold
+                    confirmed_dates = {cand_date, later_date}
+                    for p in candidate_sorted:
+                        pd_ = _parse_iso_date(p.get("date"))
+                        if pd_ and (pd_ >= cand_date):
+                            progression_points.append(p)
+                    break
+            if progression_points:
+                break
 
-    has_progression = len(progression_points) >= 1
+    has_progression = bool(progression_points)
+    # Audit: si hubo candidate_progression pero NO confirmatorio, exponerlo
+    if candidate_progression and not has_progression:
+        result["psa_rise_pending_confirmation"] = True
+        result["psa_rise_candidate_count"] = len(candidate_progression)
+        result["pcwg3_confirmatory_window_days"] = PCWG3_CONFIRMATORY_DAYS
 
     # duration_response_months (nadir → 1ra evidencia de progresión)
     if has_progression:
@@ -367,8 +403,19 @@ def _calculate_per_line_granular_kinetics(
         best_pct = ((nadir_psa - baseline_psa) / baseline_psa) * 100
     else:
         best_pct = 0
+    # EPIC 31.A (Explore EXP-3 CRIT) — clasificación con backward-compat:
+    # - "progression" sigue requiriendo PCWG3 confirmatorio (≥2 PSAs ≥21d)
+    # - "progression_unconfirmed" para single-spike (no confirmado, audit)
+    # - Sentinel `psa_rise_pending_confirmation` permite UI mostrar señal
+    #   sin escalation prematura
     if has_progression:
         result["kinetics_classification"] = "progression"
+    elif candidate_progression:
+        # Single-spike o pares <21d → unconfirmed. Esto es la SEMANTICA NUEVA
+        # PCWG3-correcta. Tests legacy que esperan "progression" para single
+        # spike deben actualizarse a "progression_unconfirmed" o proveer 2
+        # PSAs separadas ≥21 días.
+        result["kinetics_classification"] = "progression_unconfirmed"
     elif best_pct <= -50:
         result["kinetics_classification"] = "response"
     elif best_pct <= -30:
@@ -513,8 +560,51 @@ def _annotate_points_with_treatment_line(
                 }
             )
         else:
-            # Point fuera de cualquier banda: clasificar como pretreatment
-            # o between_lines según posición temporal
+            # EPIC 31.A (Explore EXP-2 CRIT) — tolerancia ±14 días para PSA
+            # entre bandas terapéuticas. Pre-EPIC31 cualquier PSA fuera del
+            # rango [start_date, end_date] caía a "between_lines" y se
+            # perdía del análisis per-line, AUNQUE clínicamente pertenecía
+            # a la línea adyacente (PSA medido el día del cambio, o 1-2
+            # semanas después del término — perfectamente representativo
+            # de la línea previa o la nueva).
+            BETWEEN_LINES_TOLERANCE_DAYS = 14
+            tolerance_band: dict[str, Any] | None = None
+            tolerance_index: int | None = None
+            tolerance_origin = "between_lines_tolerant"
+            for start, end, band, idx in band_ranges:
+                if start is None:
+                    continue
+                band_end = end or date.today()
+                # Pre-band tolerance (PSA medido hasta 14 días ANTES del inicio
+                # → atribuible a línea PREVIA en realidad, pero si no hay banda
+                # previa lo asignamos a esta como baseline pre-treatment)
+                if start - timedelta(days=BETWEEN_LINES_TOLERANCE_DAYS) <= point_date < start:
+                    tolerance_band = band
+                    tolerance_index = idx
+                    tolerance_origin = "auto_by_date_tolerance_pre"
+                    break
+                # Post-band tolerance (PSA medido hasta 14 días DESPUÉS del
+                # término → atribuible a la línea que acaba de terminar)
+                if band_end < point_date <= band_end + timedelta(days=BETWEEN_LINES_TOLERANCE_DAYS):
+                    tolerance_band = band
+                    tolerance_index = idx
+                    tolerance_origin = "auto_by_date_tolerance_post"
+                    break
+
+            if tolerance_band is not None:
+                annotated.append(
+                    {
+                        **point,
+                        "treatment_line_number": tolerance_band.get("line_of_therapy_number"),
+                        "treatment_line_label": tolerance_band.get("label", ""),
+                        "treatment_band_index": tolerance_index,
+                        "treatment_color": tolerance_band.get("color"),
+                        "treatment_assignment_origin": tolerance_origin,
+                    }
+                )
+                continue
+
+            # Fallback: realmente fuera de tolerancia → pretreatment o between_lines
             first_band_start = next(
                 (rng[0] for rng in band_ranges if rng[0] is not None), None
             )

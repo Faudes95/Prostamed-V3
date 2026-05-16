@@ -7,7 +7,7 @@ import json
 import os
 import subprocess
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +16,14 @@ from flask import Blueprint, current_app, jsonify, request
 from prostanet.shared.security_helpers import require_clinical_session
 from prostanet.voice.consent import is_affirmative_verbal_consent
 from prostanet.voice.encryption import get_voice_crypto
+
+
+# EPIC 31.D (GodiBot G78 MOD) — datetime UTC unification helper. Pre-EPIC31
+# `datetime.now()` (naive local) vs SQLite CURRENT_TIMESTAMP (UTC) → ordering
+# inconsistente, PSADT cruzando medianoche local con errores de 1 día.
+def _utc_now_iso() -> str:
+    """Returns UTC-aware ISO timestamp with seconds precision."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 voice_bp = Blueprint("voice_clinical_os", __name__)
@@ -417,7 +425,7 @@ def create_intake_voice_encounter():
         "status": "created",
         "consent_status": "missing",
         "ui_surface": data.get("ui_surface") or "clinical_hub_classifier",
-        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "created_at": _utc_now_iso(),
         "transcript_text": "",
         "candidates": [],
     }
@@ -437,7 +445,7 @@ def consent_intake_voice_encounter(session_id: str):
     session["consent_status"] = "signed"
     session["status"] = "consented"
     session["consent_hash"] = hashlib.sha256(f"{session_id}|{spoken_text}".encode("utf-8")).hexdigest()
-    session["consented_at"] = datetime.now().isoformat(timespec="seconds")
+    session["consented_at"] = _utc_now_iso()
     return jsonify({"success": True, **_serialize_intake_session(session)})
 
 
@@ -486,7 +494,7 @@ def upload_intake_voice_audio(session_id: str):
                 "mime_type": mime_type,
                 "file_name": file_name,
                 "session_id": session_id,
-                "created_at": datetime.now().isoformat(timespec="seconds"),
+                "created_at": _utc_now_iso(),
                 "retention_policy": "delete_audio_after_review",
                 "local_first": True,
                 "chunk_index": chunk_index,
@@ -672,7 +680,7 @@ def apply_intake_voice_encounter(session_id: str):
         return _error("accepted_candidates_required", 400)
     session["status"] = "applied_to_classifier"
     session["applied_fields"] = fields
-    session["applied_at"] = datetime.now().isoformat(timespec="seconds")
+    session["applied_at"] = _utc_now_iso()
     return jsonify(
         {
             "success": True,
@@ -696,7 +704,7 @@ def discard_intake_voice_encounter(session_id: str):
     if not session:
         return _error("intake_voice_session_not_found", 404)
     session["status"] = "discarded"
-    session["discarded_at"] = datetime.now().isoformat(timespec="seconds")
+    session["discarded_at"] = _utc_now_iso()
     return jsonify({"success": True, **_serialize_intake_session(session)})
 
 

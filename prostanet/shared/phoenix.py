@@ -47,11 +47,40 @@ class PhoenixEvaluation:
 
 
 def evaluate_phoenix(payload: dict[str, Any] | None) -> PhoenixEvaluation:
+    """Phoenix BCR criterion: PSA ≥ nadir + 2.0 ng/mL (RTOG-ASTRO 2006).
+
+    EPIC 31.F (Explore EXP-11 MOD) — context awareness:
+    - Para POST-RT BCR (state ∈ post_ebrt_alone, post_brachy_*, post_sbrt,
+      post_focal_therapy): Phoenix nadir+2 es el criterio canonical.
+    - Para CRPC (state ∈ m0_crpc, m1_crpc, adt_progression_verification):
+      PCWG3 Scher JCO 2016 requiere additionally ≥25% rise from nadir +
+      ≥2 ng/mL absolute + confirmatory ≥21d. El threshold Phoenix solo
+      es part of the picture — el rationale debe indicarlo claramente.
+    """
     data = dict(payload or {})
     nadir = _safe_float(data.get("psa_nadir"))
     current = _safe_float(data.get("psa_current") or data.get("psa"))
     stored_delta = _safe_float(data.get("phoenix_delta"))
     stored_threshold = _safe_float(data.get("phoenix_threshold"))
+    # Context: state-aware rationale
+    state_context = str(
+        data.get("reconciled_state")
+        or data.get("current_state")
+        or data.get("clinical_state")
+        or ""
+    ).lower()
+    POST_RT_STATES = {
+        "post_ebrt_alone", "post_brachy_ldr", "post_brachy_hdr",
+        "post_sbrt", "post_focal_therapy", "post_rt_bcr",
+        "post_combined_modality",
+    }
+    CRPC_STATES = {
+        "m0_crpc", "m1_crpc", "adt_progression_verification",
+        "mcrpc_arsi_naive", "mcrpc_post_arsi", "mcrpc_hrr_positive_parp_naive",
+        "mcrpc_psma_eligible_lu177", "mcrpc_msi_h_dmmr",
+    }
+    is_post_rt = any(s in state_context for s in POST_RT_STATES)
+    is_crpc = any(s in state_context for s in CRPC_STATES)
 
     threshold = (
         stored_threshold
@@ -76,12 +105,37 @@ def evaluate_phoenix(payload: dict[str, Any] | None) -> PhoenixEvaluation:
     if not assessable:
         rationale = "Sin PSA actual o nadir disponible: Phoenix no evaluable."
     elif threshold_reached:
-        rationale = "PSA actual ≥ nadir + 2.0 ng/mL: criterio Phoenix cumplido."
+        # EPIC 31.F — context-aware rationale
+        if is_post_rt:
+            rationale = (
+                "PSA actual ≥ nadir + 2.0 ng/mL: criterio Phoenix BCR post-RT "
+                "(RTOG-ASTRO 2006) cumplido. Evaluar salvage local."
+            )
+        elif is_crpc:
+            rationale = (
+                "PSA actual ≥ nadir + 2.0 ng/mL: criterio absoluto cumplido. "
+                "Para confirmar progresión CRPC, PCWG3 (Scher JCO 2016) "
+                "requiere TAMBIÉN ≥25% rise desde nadir + confirmación ≥21d."
+            )
+        else:
+            rationale = "PSA actual ≥ nadir + 2.0 ng/mL: criterio Phoenix cumplido."
     else:
-        rationale = (
-            "Aumento de PSA aún no cumple Phoenix (nadir + 2 ng/mL); "
-            "mantener vigilancia — no detonar salvage prematuro."
-        )
+        if is_post_rt:
+            rationale = (
+                "Aumento de PSA aún no cumple Phoenix (nadir + 2 ng/mL) "
+                "post-RT; mantener vigilancia — no detonar salvage prematuro."
+            )
+        elif is_crpc:
+            rationale = (
+                "PSA bajo umbral Phoenix; para CRPC, PCWG3 evalúa rising "
+                "como nadir + ≥25% + ≥2 ng/mL absoluto + confirmación ≥21d. "
+                "Mantener vigilancia."
+            )
+        else:
+            rationale = (
+                "Aumento de PSA aún no cumple Phoenix (nadir + 2 ng/mL); "
+                "mantener vigilancia — no detonar salvage prematuro."
+            )
 
     return PhoenixEvaluation(
         nadir=nadir,

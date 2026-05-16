@@ -217,6 +217,34 @@ def _get_castration_resistance(facts: Mapping[str, Any]) -> bool:
     )
 
 
+def _is_testosterone_stale(facts: Mapping[str, Any], max_age_days: int = 90) -> bool:
+    """EPIC 31.E (Explore EXP-15 HIGH) — verify testosterone sample freshness.
+
+    Pre-EPIC31 classifier asumía castration status sin verificar antigüedad
+    de la última testosterona. Si último testo fue medido hace >90 días,
+    el classifier puede MAL-CLASIFICAR mCSPC como m0CRPC porque asume
+    castration_resistance sin evidencia bioquímica actualizada.
+
+    Returns True si testosterone está stale (>max_age_days días) y por tanto
+    castration status NO debería asumirse — el classifier debe degrade a
+    "verification_pending" o flag missing_castration_evidence.
+    """
+    from datetime import date as _date_stale
+    testo_date_raw = (
+        facts.get("testosterone_sample_date")
+        or facts.get("last_testosterone_date")
+        or facts.get("testo_sample_date")
+    )
+    if not testo_date_raw:
+        return True  # No date documented → treat as stale
+    try:
+        testo_date = _date_stale.fromisoformat(str(testo_date_raw)[:10])
+    except (ValueError, TypeError):
+        return True  # Invalid date → treat as stale
+    age_days = (_date_stale.today() - testo_date).days
+    return age_days > max_age_days
+
+
 def _get_hrr_status(facts: Mapping[str, Any]) -> str:
     val = facts.get("hrr_status") or facts.get("hrr_mutation_status") or ""
     return str(val).strip().lower()

@@ -23,6 +23,24 @@ FACT_SPECS: dict[str, FactSpec] = {
     "current_psa": FactSpec("current_psa", "biochemical", "number", ("psa_current", "psa"), True, ("decision_input_requirements", "governance")),
     "psa_postop": FactSpec("psa_postop", "biochemical", "number", (), True, ("decision_input_requirements", "governance", "profile")),
     "psadt_months": FactSpec("psadt_months", "biochemical", "number", ("psadt_at_bcr",), True, ("decision_input_requirements", "governance", "profile")),
+    # EPIC 31.A (Explore EXP-12 CRIT) — flag explícito de confirmación m0CRPC.
+    # El gate pivotal 55 (PSADT≤10m → SPARTAN/PROSPER/ARAMIS) requiere este
+    # flag como input. Pre-EPIC31 el flag estaba referenciado en YAML pero NO
+    # en FACT_SPECS → gate fallaba si el clinical_state_classifier lo computa.
+    "m0_crpc_state_confirmed": FactSpec(
+        "m0_crpc_state_confirmed", "staging", "boolean",
+        ("m0_crpc_confirmed", "m0_crpc_documented"), True,
+        ("decision_input_requirements", "governance", "profile", "gates"),
+    ),
+    # EPIC 31.E (EXP-15 HIGH) — testosterone staleness sentinel. Si la última
+    # testosterona fue medida hace >90 días, la clasificación CRPC vs HSPC
+    # no es confiable; el classifier debe degrade castration_status a
+    # "verification_pending" en lugar de asumir castrate.
+    "testosterone_sample_date": FactSpec(
+        "testosterone_sample_date", "biochemical", "date",
+        ("last_testosterone_date",), False,
+        ("decision_input_requirements", "governance", "profile"),
+    ),
     "repeat_psa_value": FactSpec("repeat_psa_value", "biochemical", "number", (), False, ("decision_input_requirements", "governance")),
     "repeat_psa_date": FactSpec("repeat_psa_date", "biochemical", "date", (), False, ("decision_input_requirements", "governance")),
     "testosterone": FactSpec("testosterone", "biochemical", "number", ("testosterone_current", "testosterone_baseline"), True, ("decision_input_requirements", "governance")),
