@@ -503,8 +503,24 @@ def _classify_mcrpc_subtypes(facts: Mapping[str, Any]) -> ClinicalStateClassific
 
 
 def _classify_hereditary_umbrella(facts: Mapping[str, Any]) -> ClinicalStateClassification | None:
-    """NCCN 2026 PROS-A — Universal germline testing trigger."""
-    # NCCN 2026 triggers
+    """NCCN 2026 PROS-A — Universal germline testing trigger.
+
+    EPIC 26.5+26.6 (GodiBot PRE-RP-GERMLINE-015 + INTAKE-INTRADUCTAL-014) — two fixes:
+
+    1. Pre-EPIC26 the `high_risk_localized` trigger read `facts.get("risk_group")`,
+       but `risk_group` is NOT a canonical fact emitted by upstream classifiers;
+       it only exists in legacy intake payloads. A Gleason 9 + cT3a + PSA 35
+       patient (high-risk by NCCN PROS-2) wasn't triggering germline because
+       risk_group never propagated.
+       Fix: derive risk band in-place from PSA + Gleason + clinical_tstage.
+
+    2. Pre-EPIC26 intraductal carcinoma (NCCN PROS-A universal germline trigger)
+       was captured by intent_extractor as histology_aggressive_variant=1 but
+       this rule didn't read it. A patient with confirmed intraductal histology
+       wouldn't trigger germline.
+       Fix: add intraductal/aggressive_variant trigger.
+    """
+    # NCCN 2026 triggers — existing
     metastatic = (
         facts.get("metastasis_present")
         or facts.get("visceral_metastasis_present")
@@ -514,8 +530,43 @@ def _classify_hereditary_umbrella(facts: Mapping[str, Any]) -> ClinicalStateClas
     family_first_degree_lt_60 = bool(facts.get("family_history_first_degree_prostate_cancer_age_lt_60"))
     family_breast_ovary_pancreas = bool(facts.get("family_history_breast_ovary_pancreas"))
     ashkenazi = bool(facts.get("ashkenazi_ancestry"))
-    high_risk_localized = facts.get("risk_group") in ("high", "very_high")
     germline_done = bool(facts.get("germline_testing_done"))
+
+    # EPIC 26.5 — derive high_risk_localized in-place (don't trust legacy
+    # risk_group key)
+    high_risk_localized = facts.get("risk_group") in ("high", "very_high")
+    if not high_risk_localized:
+        try:
+            psa = _get_psa(facts)
+            gp = facts.get("gleason_primary")
+            gs = facts.get("gleason_secondary")
+            t_stage = str(facts.get("clinical_tstage") or facts.get("ctnm") or "").lower()
+            gleason_sum = None
+            if gp is not None and gs is not None:
+                try:
+                    gleason_sum = int(gp) + int(gs)
+                except (TypeError, ValueError):
+                    gleason_sum = None
+            # NCCN PROS-2 v2026 — high-risk if PSA>20 OR Gleason 8-10 OR cT2c-T3a
+            # very-high-risk if cT3b-T4 OR primary Gleason 5
+            if (
+                (psa is not None and psa > 20)
+                or (gleason_sum is not None and gleason_sum >= 8)
+                or ("ct2c" in t_stage or "ct3" in t_stage or "ct4" in t_stage
+                    or "t3" in t_stage or "t4" in t_stage)
+                or (gp is not None and int(gp) == 5)
+            ):
+                high_risk_localized = True
+        except (TypeError, ValueError):
+            pass
+
+    # EPIC 26.6 — intraductal carcinoma / aggressive variant histology
+    aggressive_histology = (
+        _truthy(facts.get("histology_aggressive_variant"))
+        or _truthy(facts.get("intraductal_carcinoma"))
+        or "intraductal" in str(facts.get("histology_subtype") or "").lower()
+        or _truthy(facts.get("cribriform_pattern"))
+    )
 
     triggers = []
     if metastatic:
@@ -527,7 +578,9 @@ def _classify_hereditary_umbrella(facts: Mapping[str, Any]) -> ClinicalStateClas
     if ashkenazi:
         triggers.append("ashkenazi_ancestry")
     if high_risk_localized:
-        triggers.append("high_risk_localized")
+        triggers.append("high_risk_localized_derived_PSA_Gleason_T")
+    if aggressive_histology:
+        triggers.append("aggressive_histology_intraductal_or_cribriform")
 
     if triggers and not germline_done:
         return _build_classification(
@@ -655,6 +708,20 @@ def _classify_post_local_modality(facts: Mapping[str, Any]) -> ClinicalStateClas
             rationale=f"Post-LDR brachytherapy surveillance. {rationale_suffix}",
             discriminators_matched=[f"modality={modality}", rationale_suffix],
         )
+    # EPIC 26.4 (GodiBot CLASSIFIER-HDR-010) — HDR brachytherapy distinct
+    # surveillance. ASCENDE-RT (Morris IJROBP 2017) + NRG GU-007 show HDR has
+    # different kinetics (faster nadir, smaller bounce peaks). Pre-EPIC26 HDR
+    # patients caught the post_ebrt_alone fallback below — wrong surveillance.
+    if "brachy" in modality and ("hdr" in modality or "high-dose" in modality or "high dose" in modality):
+        return _build_classification(
+            state="post_brachy_hdr",
+            confidence=0.86,
+            rationale=(
+                f"Post-HDR brachytherapy surveillance (faster nadir, smaller bounce "
+                f"vs LDR). {rationale_suffix}"
+            ),
+            discriminators_matched=[f"modality={modality}", rationale_suffix],
+        )
     if "sbrt" in modality or "stereotactic" in modality:
         return _build_classification(
             state="post_sbrt",
@@ -703,6 +770,11 @@ def _classify_pre_diagnostic(facts: Mapping[str, Any]) -> ClinicalStateClassific
     prior_neg_biopsy = facts.get("prior_negative_biopsy") in (True, "true", "1", 1, "yes")
 
     # Pre-diagnostic Pattern A: negative biopsy in young patient with high-risk FH
+    # EPIC 26.3 (GodiBot CLASSIFIER-NEGBIOP-009) — additionally gate on PSA ≥4
+    # OR PSA density ≥0.15. NCCN PROS-1 v2026 only recommends aggressive re-biopsy
+    # "if persistent PSA elevation OR PIRADS≥3 OR density>0.15". A young patient
+    # with FH but PSA 1.2 ng/mL shouldn't trigger an aggressive re-biopsy
+    # recommendation (resource waste, anxiety, infection risk).
     if (age_num is not None and age_num < 45) and prior_neg_biopsy:
         fh_high = (
             facts.get("family_history_cancer") in (True, "true", "1", 1, "yes")
@@ -710,12 +782,40 @@ def _classify_pre_diagnostic(facts: Mapping[str, Any]) -> ClinicalStateClassific
             or facts.get("brca_family_history") in (True, "true", "1", 1, "yes")
         )
         if fh_high:
-            return _build_classification(
-                state="negative_biopsy_age_lt_45",
-                confidence=0.82,
-                rationale=f"Age {age_num} (<45) + prior neg biopsy + high-risk family history",
-                discriminators_matched=[f"age={age_num}", "prior_neg_biopsy=true", "fh_high=true"],
+            psa_curr = psa  # already extracted via _get_psa above
+            psa_density = facts.get("psa_density") or facts.get("psad")
+            try:
+                psad_num = float(psa_density) if psa_density is not None else None
+            except (TypeError, ValueError):
+                psad_num = None
+            pirads = facts.get("pirads_score") or facts.get("mri_pirads_score") or 0
+            try:
+                pirads_num = float(pirads) if pirads is not None else 0
+            except (TypeError, ValueError):
+                pirads_num = 0
+            # NCCN PROS-1: re-biopsy indicated only if PSA elevation OR density OR PIRADS
+            warrants_rebiopsy = (
+                (psa_curr is not None and psa_curr >= 4.0)
+                or (psad_num is not None and psad_num >= 0.15)
+                or pirads_num >= 3
             )
+            if warrants_rebiopsy:
+                return _build_classification(
+                    state="negative_biopsy_age_lt_45",
+                    confidence=0.82,
+                    rationale=(
+                        f"Age {age_num} (<45) + prior neg biopsy + high-risk FH + "
+                        f"PSA elevation (PSA={psa_curr}, density={psad_num}, "
+                        f"PIRADS={pirads_num}) — NCCN PROS-1 re-biopsy indicated"
+                    ),
+                    discriminators_matched=[
+                        f"age={age_num}", "prior_neg_biopsy=true",
+                        "fh_high=true", f"psa={psa_curr}",
+                        f"density={psad_num}", f"pirads={pirads_num}",
+                    ],
+                )
+            # Has FH but no PSA elevation → still suspicious_low_psa_no_biopsy
+            # routing (less aggressive); fall through.
 
     # Pre-diagnostic Pattern B: elevated PSA + frail / limited LE → WW preferred
     is_frail_or_le_limited = (
@@ -850,6 +950,15 @@ def _classify_special_populations(facts: Mapping[str, Any]) -> ClinicalStateClas
     frailty = str(facts.get("frailty_status") or "").lower()
 
     # Geriatric frail limited (>75y + G8≤14)
+    # EPIC 26.2 (GodiBot CLASSIFIER-GERIATRIC-008) — also fire on the SIOG
+    # third path: age >70 + Charlson Comorbidity Index ≥3 + IADL impairment
+    # OR polypharmacy. Pre-EPIC26 a 76yo with G8=15 (borderline) and Charlson=6
+    # was missed despite NCCN PROS-K + SIOG 2024 recommending de-escalation.
+    charlson = facts.get("charlson_score") or facts.get("charlson_index")
+    try:
+        charlson_num = float(charlson) if charlson is not None else None
+    except (TypeError, ValueError):
+        charlson_num = None
     try:
         if age_num is not None and age_num > 75:
             if g8 is not None and float(g8) <= 14:
@@ -866,6 +975,31 @@ def _classify_special_populations(facts: Mapping[str, Any]) -> ClinicalStateClas
                     rationale=f"Age {age_num} + frailty={frailty}",
                     discriminators_matched=[f"age={age_num}", f"frailty={frailty}"],
                 )
+        # EPIC 26.2 third path: age>70 + Charlson≥3 + (some frailty marker)
+        if (
+            age_num is not None
+            and age_num > 70
+            and charlson_num is not None
+            and charlson_num >= 3
+            and (
+                frailty in ("frail", "severely_frail", "pre_frail")
+                or (g8 is not None and float(g8) <= 14)
+                or _truthy(facts.get("iadl_impairment"))
+                or _truthy(facts.get("polypharmacy"))
+            )
+        ):
+            return _build_classification(
+                state="geriatric_frail_limited",
+                confidence=0.80,
+                rationale=(
+                    f"Age {age_num} (>70) + Charlson {charlson_num} (≥3) + frailty marker "
+                    f"(G8={g8}, frailty={frailty}) → SIOG de-escalation criteria"
+                ),
+                discriminators_matched=[
+                    f"age={age_num}", f"charlson={charlson_num}",
+                    f"g8={g8}", f"frailty={frailty}",
+                ],
+            )
     except (TypeError, ValueError):
         pass
 

@@ -540,10 +540,72 @@ def _ae_category(ae_key: str) -> str | None:
 
 
 def _state_matches_indication(state: str, indication: str) -> bool:
-    """Fuzzy state matching: mcspc_high_volume_sync matches mCSPC_high_volume."""
-    s = (state or "").lower().replace("_", "").replace("-", "")
-    i = (indication or "").lower().replace("_", "").replace("-", "")
-    return i in s or s.startswith(i.split("sync")[0].split("metach")[0]) if i else False
+    """State ↔ indication matcher.
+
+    EPIC 26.6 (GodiBot _state_matches_indication-LOW) — pre-EPIC26 the matcher
+    used `i in s` which produced false positives (e.g., indication="mcspc"
+    would match state="post_mcspc_relapse"). Worse: the split-on-sync/metach
+    was ambiguous when both tokens were absent — `"mCSPC_high_volume".split("sync")[0]`
+    returns the entire string, and the prefix check would over-match.
+
+    Fix: normalize both sides (lowercase, strip _-), build a set of canonical
+    families (mcspc/mcrpc/m0crpc/localized/bcr), and require either:
+      - exact normalized equality, OR
+      - family-level match (indication family ∈ state families) AND volume
+        bucket compatible (high/low/visceral/oligo).
+
+    Returns True only when the indication family + sub-classifier match.
+    """
+    if not state or not indication:
+        return False
+    s_norm = state.lower().replace("_", "").replace("-", "")
+    i_norm = indication.lower().replace("_", "").replace("-", "")
+    if s_norm == i_norm:
+        return True
+    # Tokenize both into family. Use a canonical map so synonyms collapse
+    # (m1crpc, mcrpc, nmcrpc all → "mcrpc" family).
+    family_aliases = {
+        # mCSPC family
+        "mcspc": "mcspc",
+        # mCRPC family — m1crpc and nmcrpc both belong here
+        "mcrpc": "mcrpc",
+        "m1crpc": "mcrpc",
+        "nmcrpc": "mcrpc",
+        # m0crpc stays distinct (different therapeutic algorithm)
+        "m0crpc": "m0crpc",
+        # Localized
+        "localized": "localized",
+        "bcr": "bcr",
+        "postprostatectomy": "postprostatectomy",
+        "postrt": "postrt",
+        "diagnosticworkup": "diagnosticworkup",
+        # Hereditary carriers — each is its own family
+        "lynch": "lynch",
+        "brca1": "brca1",
+        "brca2": "brca2",
+        "atm": "atm",
+        "hoxb13": "hoxb13",
+    }
+    def _family_of(norm: str) -> str | None:
+        for tok, canonical in family_aliases.items():
+            if tok in norm:
+                return canonical
+        return None
+    s_family = _family_of(s_norm)
+    i_family = _family_of(i_norm)
+    if not s_family or not i_family or s_family != i_family:
+        return False
+    # Both in same family — check sub-signals (volume/sync/etc)
+    volume_tokens = ("highvolume", "lowvolume", "visceral", "oligo", "synchronous",
+                     "metachronous", "arsifirst", "post arsi", "postarsi",
+                     "hrr", "msi", "psma", "naive")
+    i_subsignals = {tok for tok in volume_tokens if tok in i_norm}
+    s_subsignals = {tok for tok in volume_tokens if tok in s_norm}
+    if not i_subsignals:
+        # Indication has no specific sub-signal → family match is enough
+        return True
+    # Indication has sub-signal: require state to share at least one
+    return bool(i_subsignals & s_subsignals)
 
 
 # ─────────────────── Re-decision alerts ───────────────────

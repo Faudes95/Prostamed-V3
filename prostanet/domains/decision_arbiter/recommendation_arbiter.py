@@ -453,6 +453,69 @@ def _detect_lynch_pembro_omission(
     )
 
 
+def _detect_enzalutamide_seizure_risk(
+    cards: list[CardRecommendation],
+    twin_ranking: list[Mapping[str, Any]],
+    facts: Mapping[str, Any],
+) -> ClinicalConflict | None:
+    """EPIC 26.1 (GodiBot ARBITER-COMPLETENESS-006) — Enzalutamide + seizure.
+
+    PROS-K + FDA Xtandi label: enzalutamide is contraindicated in patients
+    with history of seizure, stroke <6 months, recent TIA, brain metastasis
+    with edema, or AVM/aneurysm. Pre-EPIC26 the arbiter only blocked abi
+    by CV/hepatic; enza ranked high could route a stroke patient to a
+    contraindicated drug.
+
+    Trigger:
+      - seizure_history=True OR stroke_lt_6mo=True OR tia_recent=True
+        OR brain_mets_edema=True OR cns_avm=True
+      - AND enzalutamide in Twin top-3
+    """
+    seizure_risk = (
+        _truthy(facts.get("seizure_history"))
+        or _truthy(facts.get("seizure"))
+        or _truthy(facts.get("stroke_lt_6mo"))
+        or _truthy(facts.get("recent_stroke"))
+        or _truthy(facts.get("tia_recent"))
+        or _truthy(facts.get("brain_mets_edema"))
+        or _truthy(facts.get("cns_avm"))
+        or _truthy(facts.get("cns_aneurysm"))
+    )
+    if not seizure_risk:
+        return None
+    enza_in_top = any(
+        "enza" in str(r.get("regimen_name", "")).lower()
+        for r in (twin_ranking or [])[:3]
+    )
+    if not enza_in_top:
+        return None
+    return ClinicalConflict(
+        conflict_id="enza_seizure_override",
+        severity="critical",
+        title="Conflicto crítico — enzalutamida top-3 con historial de seizure/stroke",
+        description=(
+            "Paciente con historial de convulsiones, stroke <6mo, TIA reciente, "
+            "metástasis cerebrales con edema, o AVM/aneurisma. NCCN PROS-K + "
+            "FDA Xtandi label contraindican enzalutamida en este perfil "
+            "(aumenta umbral convulsivo, riesgo de seizure G3-4). El ranking "
+            "del Twin OS posiciona enzalutamida en top-3 sin considerar esta "
+            "contraindicación."
+        ),
+        affected_sources=["patient_twin_os", "seizure_history"],
+        resolution=(
+            "Enzalutamida EXCLUIDA del ranking re-arbitrado. Top-1 promovido "
+            "a abi (si CV/hepatic permitido) o apalutamida/darolutamida. "
+            "Considerar referral neurología antes de cualquier ARSI si "
+            "metástasis CNS activas."
+        ),
+        clinical_rationale=(
+            "PREVAIL/AFFIRM exclusion criteria. FDA Xtandi label 2024. "
+            "NCCN PROS-K v2026."
+        ),
+        requires_clinician_review=True,
+    )
+
+
 def _detect_metastatic_stage_contradiction(
     cards: list[CardRecommendation],
     twin_ranking: list[Mapping[str, Any]],
@@ -568,6 +631,13 @@ def _apply_contraindications_to_ranking(
                     "drug": "abiraterone",
                     "reason": "Active hepatic disease — NCCN 2026 PROS-K contraindication",
                 })
+        # EPIC 26.1 — enzalutamide exclusion on seizure risk
+        if conflict.conflict_id == "enza_seizure_override":
+            drugs_to_exclude.add("enzalutamide")
+            excluded.append({
+                "drug": "enzalutamide",
+                "reason": "Seizure/stroke history — NCCN 2026 PROS-K + FDA Xtandi label contraindication",
+            })
 
     re_ranked: list[dict[str, Any]] = []
     new_rank = 0
@@ -634,6 +704,8 @@ def arbitrate_recommendations(
         _detect_hrr_parp_omission,             # ARBITER-COMPLETENESS-003
         _detect_visceral_undertreatment,       # ARBITER-COMPLETENESS-004
         _detect_lynch_pembro_omission,         # ARBITER-COMPLETENESS-005
+        # EPIC 26 (GodiBot remaining 8 fixes)
+        _detect_enzalutamide_seizure_risk,     # ARBITER-COMPLETENESS-006
     ]
 
     conflicts: list[ClinicalConflict] = []

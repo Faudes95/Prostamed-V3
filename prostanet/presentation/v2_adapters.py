@@ -876,6 +876,37 @@ def _truthy_helper(value):
     return str(value).strip().lower() in {"true", "1", "yes", "si", "sí"}
 
 
+# EPIC 26.7 (GodiBot decision_fusion-LOW) — per-request in-memory cache.
+# decision_fusion runs ~5 detectors + N card adapters per render. With 41
+# Cortana cards in patient_profile_v2, page render could spend >500ms on
+# the arbiter alone. Cache keyed by (patient_id, facts_hash) — invalidates
+# automatically when patient_clinical_facts changes (because hash differs).
+_DECISION_FUSION_CACHE: dict[tuple[int, str], dict[str, Any]] = {}
+_DECISION_FUSION_CACHE_MAX = 256  # bounded — LRU evict oldest
+
+
+def _cache_key_for_facts(patient: Mapping[str, Any]) -> tuple[int, str]:
+    """Generate cache key for decision_fusion. Uses patient_id + sorted
+    fact_key:value digest so any fact change invalidates the cache."""
+    pid = int((patient.get("identity") or {}).get("id") or 0)
+    facts = patient.get("clinical_facts") or []
+    sig_parts: list[str] = []
+    for f in facts:
+        if not isinstance(f, Mapping):
+            continue
+        fk = str(f.get("fact_key") or "").strip()
+        if not fk:
+            continue
+        # Use is_active + normalized_value_text — covers preference updates
+        active = "1" if f.get("is_active") in (True, 1, "1") else "0"
+        val = str(f.get("normalized_value_text") or f.get("value") or "")
+        sig_parts.append(f"{fk}@{active}={val}")
+    sig_parts.sort()
+    import hashlib
+    digest = hashlib.sha1("\x1f".join(sig_parts).encode("utf-8")).hexdigest()[:16]
+    return (pid, digest)
+
+
 def _decision_fusion_summary(
     profile_view: Mapping[str, Any],
     patient: Mapping[str, Any],
@@ -895,6 +926,14 @@ def _decision_fusion_summary(
     """
     pv = profile_view or {}
     pt = patient or {}
+    # EPIC 26.7 — cache check
+    try:
+        cache_key = _cache_key_for_facts(pt)
+        cached = _DECISION_FUSION_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+    except Exception:
+        cache_key = None
     try:
         from prostanet.domains.decision_arbiter import (
             arbitrate_recommendations, CardRecommendation,
@@ -975,7 +1014,7 @@ def _decision_fusion_summary(
     facts["_clinical_facts_raw"] = pt.get("clinical_facts") or []
 
     decision = arbitrate_recommendations(cards, twin_ranking_raw, facts)
-    return {
+    result = {
         "available": True,
         "has_conflicts": decision.has_conflicts,
         "severity_max": decision.severity_max,
@@ -998,6 +1037,16 @@ def _decision_fusion_summary(
         "data_integrity_flags": decision.data_integrity_flags,
         "arbiter_version": decision.arbiter_version,
     }
+    # EPIC 26.7 — cache write (bounded LRU eviction)
+    if cache_key is not None:
+        if len(_DECISION_FUSION_CACHE) >= _DECISION_FUSION_CACHE_MAX:
+            # Evict oldest (FIFO ~LRU; Python dict preserves insertion order)
+            try:
+                _DECISION_FUSION_CACHE.pop(next(iter(_DECISION_FUSION_CACHE)))
+            except StopIteration:
+                pass
+        _DECISION_FUSION_CACHE[cache_key] = result
+    return result
 
 
 def _comorbidity_cv_summary(

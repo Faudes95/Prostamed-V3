@@ -346,6 +346,20 @@ states:
     nccn_reference: PROS-F_v2026
     evidence_grade: I
 
+  # EPIC 26.4 (GodiBot CLASSIFIER-HDR-010) — HDR brachytherapy distinct from LDR
+  post_brachy_hdr:
+    preferred: psa_q6mo_+_faster_nadir_expected_+_smaller_bounce_peaks
+    acceptable: [mri_if_psa_rise_persists, biopsy_if_phoenix_breach_+_local_signs,
+                 dose_escalation_options_if_post_combined_modality]
+    not_recommended: [phoenix_alarm_in_first_12mo, treat_as_ldr_kinetics]
+    nccn_reference: PROS-F_v2026
+    evidence_grade: I
+    pivotal_trials: [ASCENDE-RT, NRG_GU-007]
+    notes: |
+      HDR has faster nadir and smaller bounce peaks than LDR (Morris IJROBP
+      2017). Phoenix breach threshold same (nadir+2) but psychological/clinical
+      alarm should trigger ~12mo post-HDR rather than 24mo for LDR.
+
   post_ebrt_alone:
     preferred: psa_q6mo_+_phoenix_monitoring_+_late_toxicity_surveillance
     acceptable: [mri_fossa_if_psa_rise, bone_scan_if_distant_signs, transrectal_us_if_local_recur]

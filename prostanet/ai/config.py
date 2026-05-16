@@ -75,6 +75,7 @@ CLINICAL_STATES: list[str] = [
     "negative_biopsy_age_lt_45",          # <45y, high-risk FH/germline → aggressive re-biopsy
     # Category 2 — Post-local by modality (4) NCCN 2026 PROS-F + Phoenix consensus
     "post_brachy_ldr",          # Surveillance: PSA bounce 18-36mo, different cutoffs
+    "post_brachy_hdr",          # EPIC 26.4 — HDR distinct kinetics (ASCENDE-RT)
     "post_ebrt_alone",          # Phoenix BCR criteria, late rectal/urinary toxicity
     "post_sbrt",                # Faster nadir, distinct toxicity profile
     "post_focal_therapy",       # HIFU/cryo/IRE — in-field vs out-of-field follow-up
