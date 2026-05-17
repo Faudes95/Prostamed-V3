@@ -393,7 +393,108 @@ KPI_REGISTRY: dict[str, dict[str, Any]] = {
         "builder": aggregate_clinical_state_distribution,
         "args": {},
     },
+    # EPIC 34.A Phase 2 — added via lambda since aggregate_ecog_capture_coverage
+    # is defined later in file (Python forward-ref via lambda lazy lookup)
+    "ecog_capture_coverage": {
+        "label": "Cobertura ECOG en pacientes ARPI",
+        "category": "capture_completeness",
+        "builder": lambda: aggregate_ecog_capture_coverage(),
+        "args": {},
+    },
 }
+
+
+def aggregate_ecog_capture_coverage() -> dict[str, Any]:
+    """EPIC 34.A Phase 2 — Cobertura ECOG en pacientes con ARPI documentado.
+
+    Target Phase 2: 30/57 = 53% capture rate en 2 semanas. Mide:
+    - N pacientes con ARPI activo (treatment_history)
+    - De esos, cuántos tienen ECOG documentado en últimos 90 días
+    - De esos, cuántos tienen ECOG dentro de ±14d de window 8wk o 24wk
+
+    Sin esta cobertura, KPI ecog_change_24wk siempre supresada.
+    """
+    from datetime import date as _d
+    conn = sqlite3.connect(_db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        # ARPI patients from treatment_history
+        arpi_patients = conn.execute(
+            """
+            SELECT DISTINCT patient_id
+            FROM treatment_history
+            WHERE drug_scheme IS NOT NULL AND drug_scheme != ''
+              AND (drug_scheme LIKE '%ABIRATERONE%' OR drug_scheme LIKE '%ENZALUTAMIDE%'
+                   OR drug_scheme LIKE '%APALUTAMIDE%' OR drug_scheme LIKE '%DAROLUTAMIDE%')
+            """
+        ).fetchall()
+        n_arpi = len(arpi_patients)
+
+        if n_arpi == 0:
+            return {
+                "kpi_id": "ecog_capture_coverage",
+                "kpi_label": "Cobertura ECOG en pacientes ARPI (Phase 2 target 53%)",
+                "category": "capture_completeness",
+                "n_arpi_patients": 0,
+                "n_with_ecog": 0,
+                "n_with_recent_ecog_90d": 0,
+                "coverage_pct": 0.0,
+                "recent_coverage_pct": 0.0,
+                "target_pct": 53.0,
+                "computed_at": utc_now_iso(),
+            }
+
+        arpi_pids = [r["patient_id"] for r in arpi_patients]
+        placeholders = ",".join("?" * len(arpi_pids))
+
+        n_with_ecog = conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT patient_id)
+            FROM patient_clinical_facts
+            WHERE fact_key IN ('ecog_performance_status', 'ecog_score')
+              AND is_active = 1
+              AND patient_id IN ({placeholders})
+            """,
+            arpi_pids,
+        ).fetchone()[0]
+
+        # Recent ECOG (last 90 days)
+        cutoff_iso = (_d.today().isoformat())
+        n_recent = conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT patient_id)
+            FROM patient_clinical_facts
+            WHERE fact_key IN ('ecog_performance_status', 'ecog_score')
+              AND is_active = 1
+              AND patient_id IN ({placeholders})
+              AND COALESCE(source_date, observed_at, updated_at) >= date('now', '-90 days')
+            """,
+            arpi_pids,
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    coverage_pct = round(100 * n_with_ecog / max(1, n_arpi), 1)
+    recent_pct = round(100 * n_recent / max(1, n_arpi), 1)
+    status = (
+        "target_achieved" if recent_pct >= 53.0
+        else "below_target" if recent_pct >= 25.0
+        else "critical_gap"
+    )
+    return {
+        "kpi_id": "ecog_capture_coverage",
+        "kpi_label": "Cobertura ECOG en pacientes ARPI (Phase 2 target 53%)",
+        "category": "capture_completeness",
+        "n_arpi_patients": n_arpi,
+        "n_with_ecog": n_with_ecog,
+        "n_with_recent_ecog_90d": n_recent,
+        "coverage_pct": coverage_pct,
+        "recent_coverage_pct": recent_pct,
+        "target_pct": 53.0,
+        "status": status,
+        "gap_to_target_patients": max(0, int(round((53.0 - recent_pct) / 100 * n_arpi))),
+        "computed_at": utc_now_iso(),
+    }
 
 
 def populate_arpi_response_windows_for_cohort(

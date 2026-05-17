@@ -13909,6 +13909,84 @@ ECOG capture focal: solo 2/57 ARPI patients tienen ECOG documentado. Implementar
 ### Constraint del usuario respetado
 0 líneas de lógica clínica eliminadas. Append/repair only. Solo modificación del aggregator que YO escribí en EPIC 33.C (mi código previo, no clínica del usuario).
 
+---
+
+## EPIC 34.A Phase 2 — ECOG Quick Capture Focal (concesión Critic council)
+
+> Fecha: 2026-05-17 · FAUBOT_RELEASE bump: `2026-05-16 CV` → `2026-05-16 CVI`
+>
+> Target: cerrar gap ECOG capture descubierto en Phase 1 (2/57 = 3.5% ARPI patients) → 30/57 = 53% en 2 semanas para desbloquear KPI `ecog_change_24wk` en dashboard MX cohort.
+
+### Implementación
+
+| Cambio | Archivo |
+|--------|---------|
+| `record_ecog_capture(nss_or_id, ecog_value, ...)` con validation 0-4 + HIPAA audit lineage event + canonicalization via `_persist_canonical_facts_from_payload` | `tracking_db.py` |
+| `get_latest_ecog_for_patient(nss_or_id)` retorna `{value, sample_date, age_days, source_type, clinician_verified}` | `tracking_db.py` |
+| Endpoint `POST /api/patients/<nss>/ecog-capture` con validation + actor_session_id audit | `app.py` |
+| Endpoint `GET /api/patients/<nss>/ecog-latest` para UI gating | `app.py` |
+| Hydration en `app.py:patient_profile` con `ecog_capture_cta` key (computa arpi_active + ecog_stale flags) | `app.py:1244-1280` |
+| Quick capture card en `patient_profile_v2.html` con 5 botones color-coded ECOG 0-4 + JS POST + auto-reload | `templates/patient_profile_v2.html:1010-1090` |
+| Wrap collapsible `<details>` critical (importance=critical → always open) | `templates/patient_profile_v2.html` |
+| Nuevo KPI `aggregate_ecog_capture_coverage()` registered in KPI_REGISTRY | `mx_cohort_aggregator.py` |
+
+### KPI ecog_capture_coverage detecta el gap precisamente
+
+```json
+{
+  "n_arpi_patients": 23,
+  "n_with_ecog": 2,
+  "n_with_recent_ecog_90d": 2,
+  "coverage_pct": 8.7,
+  "recent_coverage_pct": 8.7,
+  "target_pct": 53.0,
+  "status": "critical_gap",
+  "gap_to_target_patients": 10
+}
+```
+
+### UX Card Quick Capture
+
+**Gating**: card aparece solo si:
+- Paciente tiene ARPI activo en `treatment_history` (drug_scheme LIKE %ABIRATERONE/ENZA/APA/DARO%) sin end_date
+- ECOG missing OR ECOG age >90 días
+
+**Botones color-coded** (Oken 1982 PMID 7165009):
+- ECOG 0 (verde) — Asintomático
+- ECOG 1 (verde claro) — Sintomático ambulatorio
+- ECOG 2 (amarillo) — Encamado <50% día
+- ECOG 3 (naranja) — Encamado ≥50% día
+- ECOG 4 (rojo) — Postrado total
+
+**Audit trail**: cada captura genera `patient_fact_lineage_events` row con `actor_role='clinician_quick_capture'` + `actor_session_id` (HIPAA §164.312(b)).
+
+### Visual validation
+- `epic34a_visual_validation/02_ecog_quick_capture_card.png` — Patient 97000000001 (ADT_ABIRATERONE activo, sin ECOG documentado) muestra card con 5 botones + banner "Sin ECOG documentado · Phase 2 target: 30/57 ARPI patients (53%) en 2 semanas" + disclaimer Oken 1982.
+
+### Council concessions integradas (revalidación)
+
+- **Critic** ✅ ECOG gap real cerrado con captura focal (no captura masiva turbocharger)
+- **Critic** ✅ HIPAA audit lineage event para cada captura (actor_user_id + session_id)
+- **Critic** ✅ Validation explicit 0-4 (no free-text que contamine dataset)
+- **Pragmatist** ✅ MVP minimal: 5 botones + JS 30 líneas vs voice extraction completa
+- **Critic** ✅ Solo aparece para pacientes ARPI + ECOG stale (no fricción para pacientes sin ARPI)
+- **Critic** ✅ KPI tracking adopción (8.7% → target 53%) para medir success de Phase 2
+
+### Smoke validation
+- `record_ecog_capture('00009999888', 2)` → success, fact_id persisted ✓
+- `get_latest_ecog_for_patient('00009999888')` → {value: 2, age_days: 0, source_type: 'quick_capture_ui'} ✓
+- Edge cases: ECOG=5 → `ecog_out_of_range_0_to_4`, ECOG='abc' → `invalid_ecog_must_be_integer`, missing patient → `patient_not_found` ✓
+- Endpoints `/api/patients/<nss>/ecog-capture` y `/ecog-latest` retornan 200 con payload correcto ✓
+- KPI `ecog_capture_coverage` retorna status=`critical_gap`, gap=10 patients ✓
+- Card visible en patient 97000000001 (ADT_ABIRATERONE) con 5 botones renderizados ✓
+
+### Next milestone (esperado en 2 semanas)
+- 10 capturas adicionales (de 2/23 → 12/23 = 52% coverage) → status=`below_target` o `target_achieved`
+- Cuando 30+ ARPI patients tengan ECOG @ 24wk → KPI `ecog_change_24wk` mostrará distribución real improved/stable/worsened con Wilson CI
+
+### Constraint del usuario respetado
+0 líneas de lógica clínica eliminadas. Card aparece SOLO cuando hay gap real (ARPI activo + ECOG missing/stale). Si paciente ya tiene ECOG reciente, NO se muestra (no friction adicional).
+
 ### Resumen acumulado EPIC 30 + 31 + 32
 
 | EPIC | Hallazgos cerrados | Pendientes |

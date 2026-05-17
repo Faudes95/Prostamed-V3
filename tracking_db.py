@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, date
 import logging
 from pathlib import Path
 
-from prostanet.shared.utc_time import utc_now_iso  # EPIC 32.G G78 — UTC unification
+from prostanet.shared.utc_time import utc_now_iso, utc_today  # EPIC 32.G G78 / EPIC 34.A Phase 2
 from prostanet.domains.patient_tracking.psma_imaging import (
     build_psma_decision_impact,
     build_psma_structured_profile,
@@ -642,6 +642,146 @@ def _persist_verified_document_facts_to_canonical(
         clinician_verified=True,
         verification_note=f"Documento verificado por {verified_by}",
     )
+
+
+def record_ecog_capture(
+    nss_or_id,
+    ecog_value: int,
+    *,
+    sample_date: str | None = None,
+    source_type: str = "quick_capture_ui",
+    actor_user_id: int | None = None,
+    actor_session_id: str | None = None,
+    clinician_verified: bool = True,
+    notes: str = "",
+) -> dict:
+    """EPIC 34.A Phase 2 — Captura rápida de ECOG performance status para
+    pacientes con ARPI activo. Cumple HIPAA + EPIC 31.B G74 voice extraction.
+
+    Args:
+        nss_or_id: NSS o patient_id
+        ecog_value: 0-4 (ECOG performance status estándar)
+        sample_date: ISO date (default utc_today)
+        source_type: 'quick_capture_ui' | 'voice_intake' | 'wizard' | etc.
+        actor_user_id: clinician ID para HIPAA accountability
+        clinician_verified: True (default — quick capture is direct clinician input)
+
+    Returns: {success, fact_id} o {success: False, error}
+    """
+    # Validation
+    if ecog_value is None:
+        return {"success": False, "error": "missing_ecog_value"}
+    try:
+        ecog_int = int(ecog_value)
+    except (ValueError, TypeError):
+        return {"success": False, "error": "invalid_ecog_must_be_integer"}
+    if ecog_int < 0 or ecog_int > 4:
+        return {"success": False, "error": "ecog_out_of_range_0_to_4"}
+    sample_date = sample_date or utc_now_iso()[:10]
+
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return {"success": False, "error": "patient_not_found"}
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+
+        payload = {
+            "ecog_performance_status": str(ecog_int),
+            "ecog_score": str(ecog_int),  # legacy alias
+            "ecog_sample_date": sample_date,
+        }
+        persisted = _persist_canonical_facts_from_payload(
+            cursor,
+            patient_id,
+            payload,
+            source_type=source_type,
+            source_record_type="quick_capture",
+            source_date=sample_date,
+            observed_at=utc_now_iso(),
+            certainty_tier="structured_result",
+            clinician_verified=clinician_verified,
+            verification_note=notes,
+        )
+        # Audit log: quick capture is a clinical event
+        try:
+            _append_patient_fact_lineage_event(
+                cursor,
+                patient_id,
+                "ecog_performance_status",
+                "quick_captured",
+                event_note=f"ECOG {ecog_int} via {source_type}",
+                payload={"ecog_value": ecog_int, "sample_date": sample_date,
+                         "source": source_type, "notes": notes},
+                actor_user_id=actor_user_id,
+                actor_session_id=actor_session_id,
+                actor_role="clinician_quick_capture",
+            )
+        except Exception as exc:
+            logger.debug(f"Lineage event ECOG audit failed: {exc}")
+        conn.commit()
+        return {
+            "success": True,
+            "patient_id": patient_id,
+            "ecog_value": ecog_int,
+            "sample_date": sample_date,
+            "facts_persisted": len(persisted) if persisted else 0,
+        }
+    finally:
+        conn.close()
+
+
+def get_latest_ecog_for_patient(nss_or_id) -> dict | None:
+    """Returns latest ECOG row + age in days. None si no documented.
+
+    Returns: {value: int, sample_date: str, age_days: int, source_type: str}
+    """
+    conn = _connect()
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return None
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+        cursor.execute(
+            """
+            SELECT normalized_value_text, source_date, observed_at, updated_at,
+                   source_type, clinician_verified
+            FROM patient_clinical_facts
+            WHERE patient_id = ?
+              AND fact_key IN ('ecog_performance_status', 'ecog_score')
+              AND is_active = 1
+            ORDER BY COALESCE(source_date, observed_at, updated_at) DESC, id DESC
+            LIMIT 1
+            """,
+            (patient_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        from datetime import date as _d
+        ecog_str = row[0] if hasattr(row, "__getitem__") else row.get("normalized_value_text")
+        try:
+            ecog_value = int(float(ecog_str))
+        except (TypeError, ValueError):
+            ecog_value = None
+        source_date_str = (row[1] if hasattr(row, "__getitem__") else row.get("source_date")) or ""
+        age_days = None
+        try:
+            d = _d.fromisoformat(str(source_date_str)[:10])
+            age_days = (utc_today() - d).days
+        except (ValueError, TypeError):
+            pass
+        return {
+            "value": ecog_value,
+            "sample_date": str(source_date_str)[:10] if source_date_str else None,
+            "age_days": age_days,
+            "source_type": row[4] if hasattr(row, "__getitem__") else row.get("source_type"),
+            "clinician_verified": bool(row[5] if hasattr(row, "__getitem__") else row.get("clinician_verified")),
+        }
+    finally:
+        conn.close()
 
 
 def record_clinical_view_audit(

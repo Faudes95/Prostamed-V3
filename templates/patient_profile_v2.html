@@ -1006,6 +1006,83 @@
         </details>
         {% endif %}
 
+        {# EPIC 34.A Phase 2 — ECOG Quick Capture CTA (paciente con ARPI + ECOG missing/stale) #}
+        {% if ecog_capture_cta and ecog_capture_cta.available %}
+        <details class="pm2-section-collapsible" data-section-key="ecog_quick_capture" data-importance="critical" data-section-label="ECOG Quick Capture" open>
+        <summary>⚡ ECOG Quick Capture · Captura prioritaria <span class="pm2-section-meta-chip">EPIC 34.A Phase 2</span></summary>
+        <section id="pm2EcogQuickCapture" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(251,191,36,.08), rgba(15,23,42,.6)); border: 1px solid rgba(251,191,36,.3); border-left: 6px solid rgb(251,191,36); border-radius: 14px;" aria-label="ECOG Quick Capture" data-testid="ecog-quick-capture-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
+                <div>
+                    <div style="font-size:.7rem; color:#fbbf24; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">⚡ ECOG capture priority</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.05rem; color:#f8fafc; margin:5px 0 0;">Documenta ECOG actual</h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.78rem; line-height:1.5;">
+                        Paciente en ARPI activo · {{ ecog_capture_cta.reason }}.
+                        {% if ecog_capture_cta.latest_ecog %}
+                        Último ECOG: <strong style="color:#cbd5e1;">{{ ecog_capture_cta.latest_ecog.value }}</strong>
+                        ({{ ecog_capture_cta.latest_ecog.sample_date }} · hace {{ ecog_capture_cta.latest_ecog.age_days }}d).
+                        {% else %}
+                        Sin ECOG documentado.
+                        {% endif %}
+                        Phase 2 target: 30/57 ARPI patients (53%) en 2 semanas.
+                    </p>
+                </div>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                {% for ecog_val, label, color in [(0, 'Asintomático', '#10b981'), (1, 'Sintomático ambulatorio', '#34d399'), (2, 'Encamado <50% día', '#fbbf24'), (3, 'Encamado ≥50% día', '#f97316'), (4, 'Postrado total', '#ef4444')] %}
+                <button type="button" class="pm2-ecog-quick-btn" data-ecog="{{ ecog_val }}" data-patient-nss="{{ identity.nss }}" style="padding:10px 14px; background:rgba(15,23,42,.6); border:2px solid {{ color }}; color:{{ color }}; border-radius:8px; cursor:pointer; font-size:.82rem; font-weight:600; transition:all 150ms ease; min-width:140px;">
+                    ECOG {{ ecog_val }}<br><small style="font-size:.65rem; color:var(--pn-text-muted); font-weight:400;">{{ label }}</small>
+                </button>
+                {% endfor %}
+            </div>
+            <div id="ecogQuickCaptureFeedback" style="margin-top:10px; font-size:.74rem; color:#cbd5e1; min-height:18px;"></div>
+            <div style="margin-top:10px; padding:8px 10px; background:rgba(251,191,36,.06); border-left:3px solid rgba(251,191,36,.4); border-radius:6px; font-size:.66rem; color:#fde68a;">
+                ⓘ ECOG estándar 0-4 (Oken 1982 PMID 7165009). Captura clinician-verified · HIPAA audit logged.
+                Solo aparece para pacientes ARPI con ECOG missing o &gt;90d stale.
+            </div>
+        </section>
+        </details>
+        <script>
+        (function() {
+            const buttons = document.querySelectorAll('.pm2-ecog-quick-btn');
+            const feedback = document.getElementById('ecogQuickCaptureFeedback');
+            buttons.forEach(btn => {
+                btn.addEventListener('click', async function() {
+                    const ecog = parseInt(btn.dataset.ecog, 10);
+                    const nss = btn.dataset.patientNss;
+                    btn.disabled = true;
+                    feedback.textContent = `Guardando ECOG ${ecog}...`;
+                    feedback.style.color = '#cbd5e1';
+                    try {
+                        const resp = await fetch(`/api/patients/${nss}/ecog-capture`, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                ecog_value: ecog,
+                                source_type: 'quick_capture_ui',
+                                actor_session_id: sessionStorage.getItem('pm2_session_id') || ''
+                            })
+                        });
+                        const data = await resp.json();
+                        if (data.success) {
+                            feedback.textContent = `✓ ECOG ${ecog} guardado (${data.sample_date}). Refrescando...`;
+                            feedback.style.color = '#10b981';
+                            setTimeout(() => location.reload(), 1500);
+                        } else {
+                            feedback.textContent = `Error: ${data.error || 'unknown'}`;
+                            feedback.style.color = '#ef4444';
+                            btn.disabled = false;
+                        }
+                    } catch (err) {
+                        feedback.textContent = `Falló: ${err.message}`;
+                        feedback.style.color = '#ef4444';
+                        btn.disabled = false;
+                    }
+                });
+            });
+        })();
+        </script>
+        {% endif %}
+
         {% set _tb_recommendation = _tumor_board.get('recommendation', {}) if _tumor_board else {} %}
         {% if _tumor_board and _tb_options %}
         {# EPIC 33.A — Wrap Tumor Board OS (standard, default open, persistible) #}

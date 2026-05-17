@@ -1243,6 +1243,38 @@ def patient_profile(nss):
                 v2_ctx["arpi_response_2mo"] = {"available": False, "error": str(e)}
                 v2_ctx["arpi_response_6mo"] = {"available": False, "error": str(e)}
 
+            # EPIC 34.A Phase 2 — ECOG quick capture gating
+            # Show CTA card if patient on ARPI but ECOG missing or >90 days stale
+            try:
+                import tracking_db as _td_e34p2
+                identity_id = (data.get("identity") or {}).get("id")
+                latest_ecog = _td_e34p2.get_latest_ecog_for_patient(identity_id) if identity_id else None
+                # Check if ARPI active in current line
+                arpi_active = False
+                for tx in (data.get("treatments") or []):
+                    drug = str(tx.get("drug_scheme") or "").upper()
+                    if any(t in drug for t in ("ABIRATERONE", "ENZALUTAMIDE", "APALUTAMIDE", "DAROLUTAMIDE")):
+                        if not tx.get("end_date") or tx.get("outcome", "").lower() in ("ongoing", ""):
+                            arpi_active = True
+                            break
+                ecog_stale = (latest_ecog is None) or (
+                    latest_ecog.get("age_days") is not None and latest_ecog["age_days"] > 90
+                )
+                v2_ctx["ecog_capture_cta"] = {
+                    "available": arpi_active and ecog_stale,
+                    "arpi_active": arpi_active,
+                    "latest_ecog": latest_ecog,
+                    "ecog_stale": ecog_stale,
+                    "reason": (
+                        "ECOG missing for ARPI patient" if latest_ecog is None and arpi_active
+                        else f"ECOG stale ({latest_ecog['age_days']}d)" if (latest_ecog and ecog_stale and arpi_active)
+                        else "ECOG fresh or no ARPI"
+                    ),
+                }
+            except Exception as e:
+                logger.debug(f"EPIC 34.A Phase 2 ECOG CTA build failed: {e}")
+                v2_ctx["ecog_capture_cta"] = {"available": False, "error": str(e)}
+
             # EPIC 20: Clinical Trajectory Recognition — 5 copilot bundles
             # Each copilot self-gates via available=False when patient doesn't qualify
             v2_ctx["risk_stratified_localized"] = {"available": False}
@@ -2414,6 +2446,48 @@ def _build_patient_decision_today_for_api(patient_ref, *, force_recompute=False)
         "decision_today": decision_today,
         "resolved": resolved,
     }, None
+
+
+@app.route('/api/patients/<patient_ref>/ecog-capture', methods=['POST'])
+def api_patient_ecog_capture(patient_ref):
+    """EPIC 34.A Phase 2 — Quick capture ECOG performance status (0-4).
+
+    Body: {ecog_value: int, sample_date?: str, notes?: str, actor_session_id?: str}
+    Returns: {success, fact_id, ecog_value, sample_date}
+
+    Razón Phase 2: 2/57 ARPI patients tienen ECOG documentado. Target: 30/57 = 53%
+    en 2 semanas para desbloquear KPI ecog_change_24wk en dashboard MX cohort.
+    """
+    import tracking_db as _td
+    try:
+        payload = request.get_json(silent=True) or {}
+    except Exception:
+        payload = {}
+    ecog_value = payload.get('ecog_value')
+    if ecog_value is None:
+        return jsonify({'success': False, 'error': 'missing_ecog_value'}), 400
+    res = _td.record_ecog_capture(
+        patient_ref,
+        ecog_value,
+        sample_date=payload.get('sample_date'),
+        source_type=payload.get('source_type', 'quick_capture_ui'),
+        actor_session_id=payload.get('actor_session_id'),
+        notes=payload.get('notes', ''),
+    )
+    status = 200 if res.get('success') else (
+        404 if res.get('error') == 'patient_not_found' else 400
+    )
+    return jsonify(res), status
+
+
+@app.route('/api/patients/<patient_ref>/ecog-latest', methods=['GET'])
+def api_patient_ecog_latest(patient_ref):
+    """EPIC 34.A Phase 2 — Get latest ECOG + age for patient (drives UI gating)."""
+    import tracking_db as _td
+    res = _td.get_latest_ecog_for_patient(patient_ref)
+    if res is None:
+        return jsonify({'success': True, 'has_ecog': False}), 200
+    return jsonify({'success': True, 'has_ecog': True, **res}), 200
 
 
 @app.route('/api/population/recompute-arpi-windows', methods=['POST'])
