@@ -3894,22 +3894,39 @@ def stage_specific_intake_schema(state: str) -> dict[str, Any]:
     """
     import importlib
 
-    target = _STAGE_SCHEMA_REGISTRY.get(state) or _STAGE_SCHEMA_REGISTRY.get("diagnostic_workup")
-    if not target:
-        return {"module": "unknown", "title": "Schema no disponible", "description": "", "fields": []}
-
-    module_path, attr_name = target
+    # EPIC 43 — consult inline registry first (covers 41 estados pre-EPIC43 con
+    # fallback a diagnostic_workup). Si state está en INLINE_STAGE_SCHEMAS,
+    # build the schema sin import. Si no, fallback al _STAGE_SCHEMA_REGISTRY
+    # (module-based) y finalmente diagnostic_workup.
+    schema: dict[str, Any] | None = None
     try:
-        mod = importlib.import_module(module_path)
-        schema = getattr(mod, attr_name)
-    except (ImportError, AttributeError) as exc:
-        return {
-            "module": "unknown",
-            "title": f"Error cargando {state}: {exc}",
-            "description": "",
-            "fields": [],
-            "_error": str(exc),
-        }
+        from prostanet.presentation.stage_schemas_inline import INLINE_STAGE_SCHEMAS
+        builder = INLINE_STAGE_SCHEMAS.get(state)
+        if builder is not None:
+            schema = builder()
+    except Exception as exc:
+        # Defensive: si el inline builder falla, log y caer a module registry
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            f"EPIC43 inline schema builder failed for state={state}: {exc}"
+        )
+
+    if schema is None:
+        target = _STAGE_SCHEMA_REGISTRY.get(state) or _STAGE_SCHEMA_REGISTRY.get("diagnostic_workup")
+        if not target:
+            return {"module": "unknown", "title": "Schema no disponible", "description": "", "fields": []}
+        module_path, attr_name = target
+        try:
+            mod = importlib.import_module(module_path)
+            schema = getattr(mod, attr_name)
+        except (ImportError, AttributeError) as exc:
+            return {
+                "module": "unknown",
+                "title": f"Error cargando {state}: {exc}",
+                "description": "",
+                "fields": [],
+                "_error": str(exc),
+            }
 
     fields = _with_display_options({"fields": list(schema.get("fields") or [])})["fields"]
 

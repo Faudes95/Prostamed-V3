@@ -7355,6 +7355,141 @@ def intake_wizard():
     return redirect("/clinical-hub#pm2OfficialClassifier", code=302)
 
 
+@app.route("/intake/smart", methods=["GET"])
+def intake_smart_capture():
+    """EPIC 43.4 — Smart Capture intake (single-page, dynamic, intelligent).
+
+    Single-page alternativa al wizard (intake_stage_aware_v2.html):
+      - Renderiza los 104 campos del quick_classify_schema en secciones
+        colapsables organizadas por dominio clínico.
+      - Sidebar sticky con navegador de secciones + barra de progreso global
+        + indicadores de completitud por sección.
+      - Voice dictation hub (composite) al top + mini-mic por sección.
+      - Reasoning trail inline por sección: muestra qué fields decisivos
+        faltan para clasificar.
+      - Auto-save draft a localStorage cada 5s (NO backend dependence).
+      - Cmd-K abre quick-jump (search any field).
+      - Smart defaults aplicados al mount (e.g., ECOG=0, family_history=Desconocido).
+      - Submit en cualquier momento (Save Draft / Submit Complete).
+      - Mobile-responsive + WCAG AA contrast.
+
+    NO elimina campos clínicos. Reusa el mismo schema que el wizard.
+    """
+    from prostanet.presentation.v2_adapters import quick_classify_schema
+    try:
+        page_chrome = build_page_chrome(
+            "intake_smart_capture",
+            "Smart Capture · Ingreso clínico (single-page)",
+            "Captura inteligente: 104 campos NCCN/EAU 2026 organizados en secciones colapsables, "
+            "con voice + reasoning trail + auto-save + Cmd-K jump.",
+            content_width_class="max-w-7xl",
+        )
+    except NameError:
+        page_chrome = {
+            "title": "Smart Capture", "subtitle": "Single-page intake",
+            "content_width_class": "max-w-7xl",
+        }
+    schema = quick_classify_schema()
+    # Group fields by section preserving group_order
+    fields = schema.get("fields", [])
+    sections_map: dict[str, dict] = {}
+    for f in fields:
+        gname = f.get("group") or "Otros"
+        if gname not in sections_map:
+            sections_map[gname] = {
+                "name": gname,
+                "order": float(f.get("group_order", 99)),
+                "fields": [],
+                "anchor": gname.lower().replace(" ", "-").replace("/", "-")
+                           .replace("á", "a").replace("é", "e").replace("í", "i")
+                           .replace("ó", "o").replace("ú", "u").replace("ñ", "n"),
+            }
+        sections_map[gname]["fields"].append(f)
+        sections_map[gname]["order"] = min(sections_map[gname]["order"],
+                                            float(f.get("group_order", 99)))
+    sections = sorted(sections_map.values(), key=lambda s: (s["order"], s["name"]))
+    total_required = sum(1 for f in fields if f.get("required"))
+    return render_template(
+        "intake_smart_capture.html",
+        page_chrome=page_chrome,
+        schema=schema,
+        sections=sections,
+        total_fields=len(fields),
+        total_required=total_required,
+        sections_count=len(sections),
+    )
+
+
+@app.route("/api/intake/smart-defaults", methods=["GET"])
+def api_intake_smart_defaults():
+    """EPIC 43.4 — Smart defaults endpoint.
+
+    Returns recommended default values per field for the empty-intake state.
+    Currently NCCN-derived sensible defaults (e.g., ECOG=0 hopeful baseline,
+    family_history=Desconocido conservadurismo, charlson=0 healthy newcomer).
+
+    Future: query similar-patient cohort for empirical defaults (hold for
+    cohort_real_vs_synthetic ≥ 30).
+    """
+    defaults = {
+        # Universal
+        "ecog_score": "0",
+        "family_history_cancer": "Desconocido",
+        "charlson_comorbidity_index": 0,
+        "known_cancer_diagnosis": "1",
+        # Pre-diagnostic
+        "encounter_type": "clinical_evaluation",
+        "screening_context": "0",
+        "prior_negative_biopsy": "0",
+        "biopsy_scheduled": "0",
+        "dre_suspicious": "Desconocido",
+        # Diagnostic
+        "planned_biopsy_type": "Pendiente",
+        "planned_biopsy_route": "No definida",
+        # Metastatic
+        "metachronous_metastasis": "0",
+        "visceral_metastasis_present": "0",
+        "bone_lesion_count_total": 0,
+        "bone_appendicular_count": 0,
+        "conventional_imaging_status": "NOT_RESTAGED",
+        # Treatment
+        "current_adt_context": "none",
+        "castrate_testosterone_status": "unknown",
+        "systemic_progression_context": "none",
+        "line_of_therapy_number": 1,
+        "prior_local_therapy": "none",
+        # Bone health monitoring
+        "bone_protective_agent_current": "none",
+        # Genetic
+        "germline_testing_performed": "unknown",
+        "hrr_status": "unknown",
+        "msi_status": "unknown",
+        "genomic_classifier_result": "not_performed",
+        # Imaging detalle
+        "mpmri_done": "unknown",
+        "bone_scan_done": "unknown",
+        "ct_abdomen_pelvis_done": "unknown",
+        "psma_pet_done": "unknown",
+        # Fitness
+        "frailty_status": "unknown",
+        "anesthesia_surgical_fitness": "unknown",
+        "radiotherapy_feasibility": "unknown",
+        # Comorbilidades específicas
+        "severe_cv_disease": "unknown",
+        "active_liver_disease": "unknown",
+        "cognitive_impairment_documented": "unknown",
+        # Preferences
+        "goal_of_care": "unknown",
+        "patient_priority_profile": "unknown",
+        "treatment_modality_preference": "none",
+        # DDI
+        "ddi_review_status": "pending",
+        # CRPC
+        "bcr_detected": "0",
+    }
+    return jsonify({"success": True, "defaults": defaults, "source": "nccn_eau_2026_conservative"})
+
+
 @app.route("/api/state-classifier", methods=["POST"])
 @require_clinical_session(scope="phi:write", redirect_to_login=False)
 def api_state_classifier():

@@ -44,8 +44,12 @@ from typing import Any
 # → CXVII (EPIC 40: Cortana Dictation Hub — composite extractor + apply mode
 # + Trial Matcher diff before/after) → CXVIII (EPIC 42: Comprehensive intake
 # 47 → 104 fields, NO eliminación + cohort hygiene is_synthetic + reasoning
-# trail compass + voice intake hub + real patient consent endpoint).
-FAUBOT_RELEASE = "2026-05-17 CXVIII"
+# trail compass + voice intake hub + real patient consent endpoint)
+# → CXIX (EPIC 43: stage-specific schema completeness — 42 inline schemas
+# para los 41 estados sin schema dedicado, 782 fields totales · Smart Capture
+# UX single-page con sidebar nav + auto-save + Cmd-K + voice per section +
+# reasoning trail inline + WCAG AA — preservando los 104 fields del intake).
+FAUBOT_RELEASE = "2026-05-17 CXIX"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

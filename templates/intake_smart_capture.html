@@ -1,0 +1,210 @@
+{#
+   EPIC 43.4 — Smart Capture intake (single-page, dynamic, intelligent, fast).
+   Renders quick_classify_schema (104 fields, 22 grupos) as collapsible
+   sections con voice + reasoning trail + auto-save + Cmd-K.
+   NO eliminamos campos clínicos — directiva usuario.
+#}
+{% extends "layouts/base_clinical.html" %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/intake_smart_capture.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="isc-shell" data-testid="intake-smart-capture-shell">
+
+    {# ────────── Sidebar navigator ────────── #}
+    <aside class="isc-sidebar" aria-label="Navegador de secciones">
+        <div class="isc-sidebar-header">
+            <div class="isc-sidebar-title">Progreso global</div>
+            <div class="isc-progress-shell" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div class="isc-progress-bar" id="iscProgressBar"></div>
+            </div>
+            <div class="isc-progress-label" id="iscProgressLabel">
+                <strong>0/{{ total_required }}</strong> requeridos · 0%
+            </div>
+        </div>
+
+        <nav>
+            <ul class="isc-nav-list" role="list">
+                {% for s in sections %}
+                <li>
+                    <a href="#sec-{{ s.anchor }}" class="isc-nav-item is-empty"
+                       data-anchor="{{ s.anchor }}" data-testid="isc-nav-{{ s.anchor }}">
+                        <span>{{ s.name }}</span>
+                        <span class="isc-nav-completion">0/{{ s.fields|length }}</span>
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </nav>
+
+        <div class="isc-keyboard-hints">
+            <strong style="color:var(--isc-text); display:block; margin-bottom:6px;">Atajos</strong>
+            <kbd>⌘</kbd>+<kbd>K</kbd> · buscar campo<br>
+            <kbd>⌘</kbd>+<kbd>S</kbd> · guardar draft<br>
+            <kbd>Tab</kbd> · siguiente campo<br>
+            <kbd>Esc</kbd> · cerrar overlays
+        </div>
+    </aside>
+
+    {# ────────── Main panel ────────── #}
+    <main class="isc-main">
+
+        {# Hero #}
+        <header class="isc-hero">
+            <div style="font-size:.7rem; color:#a5b4fc; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">
+                EPIC 43.4 · Smart Capture
+            </div>
+            <h1>Ingreso clínico inteligente · NCCN/EAU 2026</h1>
+            <p>
+                {{ total_fields }} campos clínicos organizados en {{ sections_count }} secciones. Voice + reasoning trail + auto-save.
+                <strong>NO eliminamos campos</strong> — todos los discriminadores NCCN/EAU preservados. Progressive disclosure según respuestas.
+            </p>
+            <div class="isc-hero-meta">
+                <span><strong>{{ total_required }}</strong> requeridos</span>
+                <span><strong>{{ total_fields - total_required }}</strong> opcionales/refiners</span>
+                <span id="iscClassificationBadge" style="display:none; padding:3px 10px; background:rgba(99,102,241,.18); border-radius:999px; color:#c7d2fe;"></span>
+            </div>
+        </header>
+
+        {# Voice composite hub #}
+        <div class="isc-voice-hub" data-testid="isc-voice-hub">
+            <div style="flex:1; min-width:200px;">
+                <strong style="color:var(--isc-text); display:block;">🎙️ Dicta el caso clínico completo</strong>
+                <span style="color:var(--isc-text-muted); font-size:.78rem;">Whisper STT + 4 extractores en paralelo (ECOG/Castración/HRR/PSMA) → auto-completan campos vacíos.</span>
+            </div>
+            <button type="button" class="isc-mic-btn" id="iscVoiceCompositeMic"
+                    data-recording="false" aria-label="Dictar caso completo">
+                <span aria-hidden="true">🎤</span> Dictar caso
+            </button>
+        </div>
+
+        {# Sections #}
+        {% for s in sections %}
+        <section class="isc-section" id="sec-{{ s.anchor }}"
+                 data-isc-section="{{ s.anchor }}" data-isc-section-name="{{ s.name }}"
+                 data-open="{{ 'true' if loop.index <= 2 else 'false' }}"
+                 data-testid="isc-section-{{ s.anchor }}">
+            <header class="isc-section-header" role="button" tabindex="0" aria-expanded="false">
+                <div class="isc-section-header-left">
+                    <span class="isc-chevron" aria-hidden="true">▶</span>
+                    <h2 class="isc-section-title">{{ s.name }}</h2>
+                </div>
+                <div class="isc-section-status">
+                    <span class="isc-section-status-count">0/{{ s.fields|length }}</span>
+                    <span class="isc-section-status-text">sin capturar</span>
+                </div>
+            </header>
+            <div class="isc-section-body">
+                <div class="isc-section-actions">
+                    <button type="button" class="isc-btn isc-btn-ghost isc-mini-mic"
+                            data-recording="false" aria-label="Dictar valores de esta sección">
+                        🎤 Dictar sección
+                    </button>
+                    <span style="color:var(--isc-text-faint);">Progressive disclosure · campos relacionados aparecen al capturar predecesores.</span>
+                </div>
+
+                <div class="isc-field-grid">
+                    {% for f in s.fields %}
+                    {% set cv = f.conditional_visibility %}
+                    <div class="isc-field{% if cv %} is-cv{% endif %}"
+                         {% if cv %}data-cv='{{ cv|tojson|safe }}'{% endif %}
+                         data-field-name="{{ f.name }}">
+                        <label class="isc-field-label" for="isc-fld-{{ f.name }}">
+                            {{ f.label }}
+                            {% if f.required %}<span class="isc-field-required" aria-label="requerido">*</span>{% endif %}
+                            {% if f.help_text %}
+                            <button type="button" class="isc-field-help-toggle" aria-label="Ayuda contextual">ⓘ</button>
+                            {% endif %}
+                            {% if f.unit %}<span class="isc-unit-suffix">({{ f.unit }})</span>{% endif %}
+                        </label>
+
+                        {% set ftype = f.field_type %}
+                        {% if ftype == 'select' %}
+                        <select class="isc-select"
+                                id="isc-fld-{{ f.name }}"
+                                name="{{ f.name }}"
+                                data-isc-field="{{ f.name }}"
+                                data-isc-label="{{ f.label }}"
+                                {% if f.required %}data-isc-required="1"{% endif %}>
+                            {% for opt in f.options %}
+                            <option value="{{ opt }}"{% if f.default == opt %} selected{% endif %}>{{ opt }}</option>
+                            {% endfor %}
+                        </select>
+                        {% elif ftype == 'textarea' %}
+                        <textarea class="isc-textarea"
+                                  id="isc-fld-{{ f.name }}"
+                                  name="{{ f.name }}"
+                                  data-isc-field="{{ f.name }}"
+                                  data-isc-label="{{ f.label }}"
+                                  rows="3"
+                                  {% if f.required %}data-isc-required="1"{% endif %}
+                                  placeholder="{{ f.placeholder or '' }}"></textarea>
+                        {% elif ftype == 'date' %}
+                        <input type="date" class="isc-input"
+                               id="isc-fld-{{ f.name }}"
+                               name="{{ f.name }}"
+                               data-isc-field="{{ f.name }}"
+                               data-isc-label="{{ f.label }}"
+                               {% if f.required %}data-isc-required="1"{% endif %}>
+                        {% elif ftype == 'number' %}
+                        <input type="number" class="isc-input"
+                               id="isc-fld-{{ f.name }}"
+                               name="{{ f.name }}"
+                               data-isc-field="{{ f.name }}"
+                               data-isc-label="{{ f.label }}"
+                               {% if f.required %}data-isc-required="1"{% endif %}
+                               {% if f.min_value is defined %}min="{{ f.min_value }}"{% endif %}
+                               {% if f.max_value is defined %}max="{{ f.max_value }}"{% endif %}
+                               step="{{ f.step or 'any' }}"
+                               value="{{ f.default if f.default is defined else '' }}"
+                               placeholder="{{ f.placeholder or '' }}">
+                        {% else %}
+                        <input type="text" class="isc-input"
+                               id="isc-fld-{{ f.name }}"
+                               name="{{ f.name }}"
+                               data-isc-field="{{ f.name }}"
+                               data-isc-label="{{ f.label }}"
+                               {% if f.required %}data-isc-required="1"{% endif %}
+                               value="{{ f.default if f.default is defined else '' }}"
+                               placeholder="{{ f.placeholder or '' }}">
+                        {% endif %}
+
+                        {% if f.help_text %}
+                        <div class="isc-field-help">{{ f.help_text }}</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <aside class="isc-reasoning-trail" aria-label="Compass clínico inline"></aside>
+            </div>
+        </section>
+        {% endfor %}
+
+        {# Footer actions #}
+        <footer class="isc-footer">
+            <div class="isc-footer-status" id="iscFooterStatus">Sin draft guardado aún</div>
+            <button type="button" class="isc-btn isc-btn-ghost" id="iscClearDraftBtn">Eliminar draft</button>
+            <button type="button" class="isc-btn isc-btn-secondary" id="iscSaveDraftBtn">💾 Guardar draft</button>
+            <button type="button" class="isc-btn isc-btn-primary" id="iscSubmitBtn">✓ Registrar paciente</button>
+        </footer>
+    </main>
+</div>
+
+{# Cmd-K quick-jump overlay #}
+<div class="isc-cmdk-overlay" id="iscCmdkOverlay" role="dialog" aria-label="Buscador rápido de campos">
+    <div class="isc-cmdk">
+        <input type="text" class="isc-cmdk-input" id="iscCmdkInput"
+               placeholder="Buscar campo… (e.g., PSA, gleason, ECOG, BRCA…)"
+               aria-label="Buscar campo">
+        <div class="isc-cmdk-list" id="iscCmdkList" role="listbox"></div>
+    </div>
+</div>
+
+{# Toast host #}
+<div class="isc-toast-host" id="iscToastHost" aria-live="polite" aria-atomic="true"></div>
+
+<script src="{{ url_for('static', filename='js/intake_smart_capture.js') }}" defer></script>
+{% endblock %}
