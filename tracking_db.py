@@ -1162,6 +1162,66 @@ def get_latest_castration_for_patient(nss_or_id) -> dict | None:
         conn.close()
 
 
+def get_cohort_synthetic_breakdown() -> dict:
+    """EPIC 42.A — Returns {total, real, synthetic, ratio_real_pct} from
+    patient_identity. Cualquier KPI inferencial debe usar SOLO is_synthetic=0.
+    """
+    conn = _connect()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM patient_identity")
+        total = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM patient_identity WHERE is_synthetic = 0")
+        real = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM patient_identity WHERE is_synthetic = 1")
+        synthetic = cursor.fetchone()[0]
+        return {
+            "total": total,
+            "real": real,
+            "synthetic": synthetic,
+            "ratio_real_pct": round(100 * real / max(1, total), 1),
+            "computed_at": utc_now_iso(),
+        }
+    finally:
+        conn.close()
+
+
+def mark_patient_as_real(nss_or_id, *, consent_signed_at=None, actor_user_id=None) -> dict:
+    """EPIC 42.A — Promueve un paciente synthetic a real cohort.
+
+    Requiere consentimiento explícito + actor_user_id (audit 21 CFR Part 11).
+    Idempotente: si ya is_synthetic=0, retorna success sin re-write.
+    """
+    if not consent_signed_at:
+        return {"success": False, "error": "consent_signed_at_required"}
+    if not actor_user_id:
+        return {"success": False, "error": "actor_user_id_required"}
+    conn = _connect(write=True)
+    try:
+        cursor = conn.cursor()
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return {"success": False, "error": "patient_not_found"}
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+        cursor.execute(
+            "UPDATE patient_identity SET is_synthetic=0, "
+            "synthetic_flag_reason=NULL, "
+            "real_patient_consent_signed_at=?, "
+            "real_patient_consent_actor_user_id=? "
+            "WHERE id=?",
+            (consent_signed_at, actor_user_id, patient_id),
+        )
+        conn.commit()
+        return {
+            "success": True,
+            "patient_id": patient_id,
+            "consent_signed_at": consent_signed_at,
+            "actor_user_id": actor_user_id,
+        }
+    finally:
+        conn.close()
+
+
 def record_psma_pet_capture(
     nss_or_id,
     psma_status: str,
@@ -3277,11 +3337,47 @@ def init_tracking_db():
         # Faubot LXCVI.F.4 — Demographic fields gap closure
         "ALTER TABLE patient_identity ADD COLUMN country TEXT DEFAULT 'México'",
         "ALTER TABLE patient_demographics ADD COLUMN preferred_language TEXT DEFAULT 'es'",
+        # EPIC 42.A (Critic mitigation) — separar synthetic test patients de cohorte real.
+        # Sin este flag, cualquier baseline de classifier/KPI sobre 424 patients es
+        # contaminado por smoke fixtures. is_synthetic=1 por default conservador para
+        # cualquier paciente nuevo via test/dev; production endpoint debe explícitamente
+        # setear 0 con flag REAL_PATIENT_MODE.
+        "ALTER TABLE patient_identity ADD COLUMN is_synthetic INTEGER DEFAULT 1",
+        "ALTER TABLE patient_identity ADD COLUMN synthetic_flag_reason TEXT",
+        "ALTER TABLE patient_identity ADD COLUMN real_patient_consent_signed_at TIMESTAMP",
+        "ALTER TABLE patient_identity ADD COLUMN real_patient_consent_actor_user_id INTEGER",
     ):
         try:
             c.execute(ddl)
         except sqlite3.OperationalError:
             pass
+
+    # EPIC 42.A — Retroactive sweep: classify reason for is_synthetic=1.
+    # Two reason classes:
+    #  - 'heuristic_nss_prefix' — NSS matches known test fixture patterns
+    #  - 'default_conservative_pre_epic42a' — pre-EPIC42 patients (real or test
+    #    unknown), defaulted to synthetic for safety. Requires explicit promotion
+    #    via mark_patient_as_real() with consent signature.
+    try:
+        c.execute(
+            """
+            UPDATE patient_identity
+            SET synthetic_flag_reason = 'heuristic_nss_prefix'
+            WHERE synthetic_flag_reason IS NULL
+              AND (nss LIKE 'VAL-%' OR nss LIKE 'TEST-%' OR nss LIKE 'PAL-VISUAL-%'
+                   OR nss LIKE 'V2-MO%' OR nss LIKE '00009%' OR nss LIKE '0099887%'
+                   OR nss = '1234567890' OR nss LIKE 'PHASE6-%')
+            """
+        )
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute(
+            "UPDATE patient_identity SET synthetic_flag_reason='default_conservative_pre_epic42a' "
+            "WHERE synthetic_flag_reason IS NULL"
+        )
+    except sqlite3.OperationalError:
+        pass
 
     # ── 2. PERFIL CLÍNICO BASAL (Investigación) ──────────────────────────
     c.execute('''
@@ -7853,12 +7949,28 @@ def register_new_patient(data, assessment=None):
         c = conn.cursor()
         
         # 1. Identidad
+        # EPIC 42.A — is_synthetic gating (Critic mitigation).
+        # Default conservador: is_synthetic=1 (test). Solo intake endpoint con
+        # REAL_PATIENT_MODE explícito + consentimiento firmado puede setear 0.
+        # Esto evita que cualquier smoke test contamine la cohorte real.
+        is_synthetic_flag = 1
+        synthetic_reason = 'register_default_conservative'
+        consent_signed_at = None
+        consent_actor = None
+        if _is_truthy(data.get('is_real_patient')) and _is_truthy(data.get('consent_signed')):
+            is_synthetic_flag = 0
+            synthetic_reason = None
+            consent_signed_at = data.get('consent_signed_at') or utc_now_iso()
+            consent_actor = data.get('actor_user_id')
         diagnosis_date = datetime.now().strftime("%Y-%m-%d")
         try:
             c.execute('''
-                INSERT INTO patient_identity (nss, full_name, dob, diagnosis_date)
-                VALUES (?, ?, ?, DATE('now'))
-            ''', (data.get('nss'), data.get('full_name'), data.get('dob')))
+                INSERT INTO patient_identity (nss, full_name, dob, diagnosis_date,
+                    is_synthetic, synthetic_flag_reason,
+                    real_patient_consent_signed_at, real_patient_consent_actor_user_id)
+                VALUES (?, ?, ?, DATE('now'), ?, ?, ?, ?)
+            ''', (data.get('nss'), data.get('full_name'), data.get('dob'),
+                  is_synthetic_flag, synthetic_reason, consent_signed_at, consent_actor))
             patient_id = c.lastrowid
         except sqlite3.IntegrityError:
             return None, f"El paciente con NSS {data.get('nss')} ya existe.", {}

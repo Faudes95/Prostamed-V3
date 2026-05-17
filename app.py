@@ -2783,6 +2783,185 @@ def api_patient_psma_pet_latest(patient_ref):
     return jsonify({'success': True, 'has_psma_pet': True, **res}), 200
 
 
+# ─────────────────── EPIC 42.C — Real patient consent + cohort breakdown ───────────────────
+
+@app.route('/api/cohort/breakdown', methods=['GET'])
+def api_cohort_breakdown():
+    """EPIC 42.A surface — Returns cohort split real vs synthetic.
+
+    Critical para Critic mitigation: cualquier KPI inferencial debe usar
+    SOLO is_synthetic=0. Pre-EPIC42 los 424 estaban contaminados sin flag.
+    """
+    import tracking_db as _td
+    return jsonify({'success': True, **_td.get_cohort_synthetic_breakdown()})
+
+
+@app.route('/api/patients/<patient_ref>/mark-real', methods=['POST'])
+def api_patient_mark_real(patient_ref):
+    """EPIC 42.C — Promueve un paciente synthetic a real cohort.
+
+    Body: {consent_signed_at: 'YYYY-MM-DDTHH:MM:SSZ', actor_user_id: int,
+           informed_consent_notes?: str}
+
+    REQUIRE: consent_signed_at + actor_user_id (audit 21 CFR Part 11 §11.10(e)).
+    Idempotente. No reversible vía API (requiere DB migration manual).
+    """
+    import tracking_db as _td
+    try:
+        payload = request.get_json(silent=True) or {}
+    except Exception:
+        payload = {}
+    consent = payload.get('consent_signed_at')
+    actor = payload.get('actor_user_id')
+    if not consent:
+        return jsonify({'success': False, 'error': 'consent_signed_at_required',
+                         'hint': 'ISO 8601 timestamp del momento de firma del consentimiento'}), 400
+    if not actor:
+        return jsonify({'success': False, 'error': 'actor_user_id_required',
+                         'hint': 'ID del usuario clínico que verifica el consentimiento'}), 400
+    res = _td.mark_patient_as_real(patient_ref, consent_signed_at=consent, actor_user_id=int(actor))
+    code = 200 if res.get('success') else (
+        404 if res.get('error') == 'patient_not_found' else 400
+    )
+    return jsonify(res), code
+
+
+# ─────────────────── EPIC 42.B.4 + 42.B.5 — Classifier reasoning trail (compass) + missing-data validator ───────────────────
+
+@app.route('/api/intake/reasoning-trail', methods=['POST'])
+def api_intake_reasoning_trail():
+    """EPIC 42.B.4 — Compass del razonamiento clínico (Skeptic concession).
+
+    Recibe payload partial de intake → corre classifier + identifica QUÉ datos
+    decisivos faltan para cada path de clasificación posible. Retorna:
+      - current_classification: state + rationale + discriminators_matched
+      - alternative_paths: si añade fields X/Y/Z, podría reclasificar a Z
+      - missing_blocking_fields: fields blocking=True ausentes (NO BLOQUEA submit)
+      - missing_for_alt_path: por cada alt path, qué fields faltan
+      - confidence_breakdown: por dimensión (PSA / Gleason / cT / etc)
+
+    NO bloquea la captura. Es asistencia transparente para que el clínico
+    sepa POR QUÉ el sistema clasifica X y QUÉ datos cambiarían la
+    recomendación.
+    """
+    from prostanet.shared.clinical_fact_registry import FACT_SPECS
+    try:
+        payload = request.get_json(silent=True) or {}
+    except Exception:
+        payload = {}
+    facts = dict(payload)
+
+    # Run classifier
+    try:
+        from prostanet.domains.state_classifier.clinical_state_classifier import (
+            classify_clinical_state,
+        )
+        result = classify_clinical_state(facts)
+    except Exception as exc:
+        result = None
+        logger.debug(f"Reasoning trail classifier failed: {exc}")
+
+    current_state = None
+    rationale = ""
+    discriminators_matched = []
+    if result is not None:
+        current_state = getattr(result, "state", None)
+        rationale = getattr(result, "rationale", "") or ""
+        discriminators_matched = getattr(result, "discriminators_matched", []) or []
+
+    # Missing blocking fields (informativo)
+    missing_blocking = []
+    for key, spec in FACT_SPECS.items():
+        if not getattr(spec, "blocking", False):
+            continue
+        if key in facts and facts.get(key) not in (None, "", "unknown"):
+            continue
+        # Check aliases
+        aliases = getattr(spec, "legacy_aliases", ()) or ()
+        if any(a in facts and facts.get(a) not in (None, "", "unknown") for a in aliases):
+            continue
+        missing_blocking.append({
+            "fact_key": key,
+            "domain": spec.domain,
+            "value_type": spec.value_type,
+            "consumers": list(spec.consumers or ()),
+        })
+
+    # Group missing by clinical domain for UX prioritization
+    missing_by_domain: dict[str, list[str]] = {}
+    for m in missing_blocking:
+        missing_by_domain.setdefault(m["domain"], []).append(m["fact_key"])
+
+    # Alternative paths (heuristic — what additional facts could reclassify)
+    alt_paths = _suggest_alternative_classification_paths(facts, current_state)
+
+    return jsonify({
+        "success": True,
+        "current_classification": {
+            "state": current_state,
+            "rationale": rationale,
+            "discriminators_matched": discriminators_matched,
+            "confidence": getattr(result, "confidence", None) if result else None,
+        },
+        "missing_blocking_fields": missing_blocking,
+        "missing_blocking_count": len(missing_blocking),
+        "missing_by_domain": missing_by_domain,
+        "alternative_paths": alt_paths,
+        "facts_evaluated_count": len(facts),
+        "note": "Esta vista es informativa — NO bloquea la captura. Muestra QUÉ datos cambiarían la clasificación.",
+    })
+
+
+def _suggest_alternative_classification_paths(facts: dict, current_state: str | None) -> list[dict]:
+    """EPIC 42.B.5 — Heurística simple para identificar paths alternativos.
+
+    Para cada path candidate (e.g., very_low_risk_localized vs low_risk),
+    enumera qué fields cambiarían la clasificación. Esto es Skeptic's
+    "trazabilidad del razonamiento explícito".
+    """
+    paths = []
+    has_psa = facts.get("baseline_psa") not in (None, "", "unknown")
+    has_gleason = facts.get("gleason_primary") not in (None, "", "unknown")
+    has_density = facts.get("psa_density") not in (None, "", "unknown")
+    has_total_cores = facts.get("total_cores_biopsied") not in (None, "", "unknown")
+    has_psma = facts.get("psma_pet_done") in ("1", "true", True)
+    has_hrr = facts.get("hrr_status") not in (None, "", "unknown")
+
+    # Risk stratification refinement
+    if has_psa and has_gleason:
+        if not has_density:
+            paths.append({
+                "path": "very_low_risk_localized_refinement",
+                "trigger_fields": ["psa_density", "total_cores_biopsied", "percent_positive_cores"],
+                "rationale": "Sin PSA density + total cores biopsiados + % positive cores, "
+                             "no se puede distinguir very_low_risk de low_risk_localized "
+                             "(NCCN PROS-2 v2026 requiere density <0.15 + <34% cores positive).",
+                "currently_classified_as": current_state,
+            })
+
+    # PSMA-PET unlock for advanced trial matching
+    if not has_psma and current_state in ("m1_crpc", "recurrence_bcr", "m0_crpc"):
+        paths.append({
+            "path": "psma_eligibility_trials",
+            "trigger_fields": ["psma_pet_done", "psma_positive", "psma_index_lesion_suvmax"],
+            "rationale": "PSMA-PET captura desbloquea VISION/PSMAfore (Lu-177 PSMA-617) "
+                         "y TheraP elegibilidad en Trial Matcher.",
+            "currently_classified_as": current_state,
+        })
+
+    # HRR for PARP trials
+    if not has_hrr:
+        paths.append({
+            "path": "parp_trial_eligibility",
+            "trigger_fields": ["hrr_status", "hrr_gene", "germline_testing_performed"],
+            "rationale": "Sin HRR status, PROfound/MAGNITUDE/TALAPRO-2 marcan blocked-by-missing-data. "
+                         "NCCN PROS-A v2026: germline testing universal en PCa avanzado.",
+            "currently_classified_as": current_state,
+        })
+
+    return paths
+
+
 # ─────────────────── EPIC 40 — Cortana dictation hub ───────────────────
 
 @app.route('/api/voice/cortana-dictation/<patient_ref>', methods=['POST'])

@@ -42,8 +42,10 @@ from typing import Any
 # replicado en 4 cards via shared helper) → CXV (EPIC 38: STT smoke harness)
 # → CXVI (EPIC 39: visual validation harness 5/5 cards+dashboard)
 # → CXVII (EPIC 40: Cortana Dictation Hub — composite extractor + apply mode
-# + Trial Matcher diff before/after).
-FAUBOT_RELEASE = "2026-05-17 CXVII"
+# + Trial Matcher diff before/after) → CXVIII (EPIC 42: Comprehensive intake
+# 47 → 104 fields, NO eliminación + cohort hygiene is_synthetic + reasoning
+# trail compass + voice intake hub + real patient consent endpoint).
+FAUBOT_RELEASE = "2026-05-17 CXVIII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

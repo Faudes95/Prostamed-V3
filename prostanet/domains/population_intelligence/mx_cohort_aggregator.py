@@ -429,6 +429,13 @@ KPI_REGISTRY: dict[str, dict[str, Any]] = {
         "builder": lambda: aggregate_psma_pet_capture_coverage(),
         "args": {},
     },
+    # EPIC 42.A — Cohorte real vs synthetic (Critic mitigation surface)
+    "cohort_real_vs_synthetic": {
+        "label": "Cohorte real (consented) vs synthetic test patients",
+        "category": "data_integrity",
+        "builder": lambda: aggregate_cohort_real_vs_synthetic(),
+        "args": {},
+    },
 }
 
 
@@ -506,6 +513,54 @@ def aggregate_castration_capture_coverage() -> dict[str, Any]:
         "status": status,
         "gap_to_target_patients": max(0, int(round((90.0 - coverage_pct) / 100 * n_eligible))),
         "computed_at": utc_now_iso(),
+    }
+
+
+def aggregate_cohort_real_vs_synthetic() -> dict[str, Any]:
+    """EPIC 42.A — Returns cohort split flagged real (consented) vs synthetic.
+
+    Critical para Critic mitigation: cualquier inferencia poblacional debe
+    usar SOLO is_synthetic=0. Pre-EPIC42 los 424 estaban contaminados sin flag.
+
+    Status interpretation:
+      - real_count >= 30 → cohorte real viable para inferencia (Wilson CI estable)
+      - real_count 1-29 → cohorte demasiado pequeña (informativo, no inferencial)
+      - real_count == 0 → toda la cohorte es synthetic (pre-validation state)
+    """
+    conn = sqlite3.connect(_db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM patient_identity").fetchone()[0]
+        real = conn.execute("SELECT COUNT(*) FROM patient_identity WHERE is_synthetic = 0").fetchone()[0]
+        synthetic = conn.execute("SELECT COUNT(*) FROM patient_identity WHERE is_synthetic = 1").fetchone()[0]
+        # Reason distribution
+        reason_rows = conn.execute(
+            "SELECT synthetic_flag_reason, COUNT(*) c FROM patient_identity "
+            "WHERE is_synthetic = 1 GROUP BY synthetic_flag_reason"
+        ).fetchall()
+    finally:
+        conn.close()
+    if real >= 30:
+        status = "viable_for_inference"
+    elif real >= 1:
+        status = "informative_only_n_lt_30"
+    else:
+        status = "pre_validation_no_real_patients"
+    return {
+        "kpi_id": "cohort_real_vs_synthetic",
+        "kpi_label": "Cohorte real vs synthetic",
+        "category": "data_integrity",
+        "total": total,
+        "real": real,
+        "synthetic": synthetic,
+        "ratio_real_pct": round(100 * real / max(1, total), 1),
+        "synthetic_reason_breakdown": {r["synthetic_flag_reason"] or "unknown": r["c"] for r in reason_rows},
+        "status": status,
+        "min_real_for_inference": 30,
+        "computed_at": utc_now_iso(),
+        "note": "Wilson CI estable requiere n≥30. Pre-EPIC42 cohorte contaminada; "
+                "promoción a real requiere consent_signed_at + actor_user_id "
+                "via /api/patients/<nss>/mark-real (21 CFR Part 11 §11.10(e)).",
     }
 
 
@@ -1113,6 +1168,7 @@ __all__ = [
     "aggregate_hrr_capture_coverage",
     "aggregate_ecog_capture_coverage",
     "aggregate_psma_pet_capture_coverage",
+    "aggregate_cohort_real_vs_synthetic",
     "aggregate_trial_eligibility_funnel",
     "ARPI_LABELS",
     "_classify_drug_scheme",

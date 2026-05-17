@@ -60,6 +60,19 @@ FACT_SPECS: dict[str, FactSpec] = {
     "gleason_primary": FactSpec("gleason_primary", "pathology", "number", (), True, ("decision_input_requirements", "profile")),
     "gleason_secondary": FactSpec("gleason_secondary", "pathology", "number", (), True, ("decision_input_requirements", "profile")),
     "isup_grade": FactSpec("isup_grade", "pathology", "number", (), True, ("decision_input_requirements", "profile")),
+    # EPIC 42.B.1 — Risk-stratified localized discriminators identified as CRITICAL
+    # missing por EPIC 39 inventory (Critic / NCCN PROS-2/3/4/5 risk stratification).
+    # Without these in registry, intake form drops them silently and classifier
+    # cannot distinguish very_low_risk_localized (AS) from low_risk (AS/tx choice).
+    "psa_density": FactSpec("psa_density", "biochemical", "number",
+                             ("psad", "psa_density_ratio"), True,
+                             ("decision_input_requirements", "profile", "localized_modality")),
+    "total_cores_biopsied": FactSpec("total_cores_biopsied", "pathology", "number",
+                                      ("biopsy_total_cores", "cores_total"), True,
+                                      ("decision_input_requirements", "profile")),
+    "prostate_volume_ml": FactSpec("prostate_volume_ml", "diagnostic", "number",
+                                    ("prostate_volume",), False,
+                                    ("decision_input_requirements", "profile")),
     "genomic_classifier_result": FactSpec("genomic_classifier_result", "precision", "text", ("genomic_classifier", "decipher_risk"), False, ("localized_modality", "profile")),
     "genomic_classifier_report_date": FactSpec("genomic_classifier_report_date", "precision", "date", ("genomic_report_date",), False, ("localized_modality", "profile")),
     "metastatic_stage_resolved": FactSpec("metastatic_stage_resolved", "metastatic_context", "text", ("m_substage_resolved",), True, ("reconciled_state", "profile", "governance")),
@@ -407,6 +420,10 @@ def extract_canonical_fact_candidates(
         "known_cancer_diagnosis",
         "pirads_score",
         "mri_fact_date",
+        # EPIC 42.B.1 — new pathology + biochemical discriminators
+        "psa_density",
+        "total_cores_biopsied",
+        "prostate_volume_ml",
         "biopsy_date",
         "confirmatory_biopsy_done",
         "confirmatory_biopsy_date",
