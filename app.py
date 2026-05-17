@@ -1168,9 +1168,23 @@ def patient_profile(nss):
                     ),
                     patient_ref=str(nss),
                 )
-                profile_view["decision_today_fusion_kernel"] = profile_view["autodrive"].get("decision_today") or build_decision_today(
-                    data,
-                    longitudinal_bundle=longitudinal_bundle or {},
+                # BUG FIX 2026-05-17 — inyectar clinical_compass en bundle/data
+                # para que build_decision_today pueda usar
+                # structured_decision_headline ("Priorizar ADT + enzalutamida")
+                # en lugar de fallback genérico ("Biomarcadores accionables" /
+                # "Reabrir decision clinica") para el hero principal.
+                # ALWAYS rebuild (NO usar autodrive.decision_today cached —
+                # ese se construye internamente sin nuestro compass override).
+                _bundle_for_fusion = dict(longitudinal_bundle or {})
+                _compass_in_pv = profile_view.get("clinical_compass") if isinstance(profile_view, Mapping) or hasattr(profile_view, "get") else None
+                if _compass_in_pv:
+                    _bundle_for_fusion["clinical_compass"] = _compass_in_pv
+                _data_for_fusion = dict(data)
+                if _compass_in_pv:
+                    _data_for_fusion["clinical_compass"] = _compass_in_pv
+                profile_view["decision_today_fusion_kernel"] = build_decision_today(
+                    _data_for_fusion,
+                    longitudinal_bundle=_bundle_for_fusion,
                     clinical_autodrive=profile_view["autodrive"],
                     state=str(
                         signals_for_autodrive.get("effective_state_final")

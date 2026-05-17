@@ -254,6 +254,36 @@ def build_decision_today(
     active_safety = _has_active_safety(enriched, autodrive, memory_status)
     redecision = _requires_redecision(enriched.get("clinical_memory_os") or {}, autodrive, memory_status)
 
+    # BUG FIX 2026-05-17 — Clinical compass structured headline override.
+    # El classifier oficial (clinical_compass.structured_decision_headline)
+    # YA computa la decisión terapéutica correcta del estadio (ej.
+    # "Priorizar ADT + enzalutamida" para mcspc_low_volume_sync_oligo).
+    # Pre-fix, el fusion kernel ignoraba este headline y sobreescribía con
+    # `top_autodrive.title` que terminaba siendo un refiner ("Biomarcadores
+    # accionables"). Post-fix: si el compass tiene structured_decision_headline
+    # válido (no genérico) Y no hay safety/redecision/state-block real,
+    # úsalo como decision_title autoritativo.
+    compass = enriched.get("clinical_compass") or patient.get("clinical_compass") or {}
+    compass_headline = ""
+    compass_rationale = ""
+    if isinstance(compass, Mapping):
+        compass_headline = str(compass.get("structured_decision_headline") or "").strip()
+        compass_rationale = str(
+            compass.get("why_this_now") or compass.get("primary_clinical_question") or ""
+        ).strip() if compass else ""
+        # If why_this_now is a list, flatten
+        wtn = compass.get("why_this_now")
+        if isinstance(wtn, (list, tuple)) and wtn:
+            compass_rationale = " · ".join(str(x) for x in wtn if x)[:500]
+    # Guardia: si el compass headline es genérico/vacío, no úsarlo
+    GENERIC_HEADLINES = {"", "—", "sin recomendación", "sin recomendacion",
+                          "sin decisión clínica activa", "sin decision clinica activa"}
+    compass_override_valid = (
+        compass_headline
+        and compass_headline.lower() not in GENERIC_HEADLINES
+        and len(compass_headline) > 10  # filtrar headlines triviales
+    )
+
     if active_safety:
         decision_state = "urgent_safety"
         decision_title = _first_text(top_autodrive.get("title"), "Atender seguridad clinica hoy")
@@ -265,8 +295,15 @@ def build_decision_today(
         risk_avoided = _first_text(top_autodrive.get("risk_avoided"), "Evita retrasar una intervencion de seguridad clinica.")
     elif redecision:
         decision_state = "redecision_required"
-        decision_title = "Reabrir decision clinica"
+        # BUG FIX — compass headline preferido sobre "Reabrir decision clinica" genérico.
+        # Si el classifier oficial tiene la decisión recomendada del estadio,
+        # mostrarla con prefix "Reabrir: " para indicar que requiere reevaluación.
+        if compass_override_valid:
+            decision_title = f"Reabrir: {compass_headline}"
+        else:
+            decision_title = "Reabrir decision clinica"
         rationale = _first_text(
+            compass_rationale if compass_override_valid else "",
             source_alignment.get("clinical_memory", {}).get("reason"),
             top_autodrive.get("reason"),
             "Clinical Memory o el curso longitudinal exigen nueva decision.",
@@ -279,8 +316,16 @@ def build_decision_today(
         risk_avoided = "Evita liberar una recomendacion insegura por datos criticos faltantes."
     elif missing:
         decision_state = "requires_data"
-        decision_title = _first_text(tumor_choice.get("label"), top_autodrive.get("title"), "Completar datos para decidir")
+        # BUG FIX — preferir clinical_compass.structured_decision_headline antes que
+        # tumor_choice.label o top_autodrive.title (que podrían ser refiners).
+        decision_title = _first_text(
+            compass_headline if compass_override_valid else "",
+            tumor_choice.get("label"),
+            top_autodrive.get("title"),
+            "Completar datos para decidir",
+        )
         rationale = _first_text(
+            compass_rationale if compass_override_valid else "",
             tumor_choice.get("rationale"),
             top_autodrive.get("reason"),
             "Faltan datos decisivos antes de liberar la recomendacion.",
@@ -288,14 +333,39 @@ def build_decision_today(
         risk_avoided = "Evita decidir con criterios incompletos."
     elif tumor_choice.get("status") == "releaseable":
         decision_state = "releaseable"
-        decision_title = _first_text(tumor_choice.get("label"), "Decision liberable")
-        rationale = _first_text(tumor_choice.get("rationale"), "Tumor Board OS no detecta bloqueo critico.")
+        # BUG FIX — compass headline también aplica a releaseable (es la decisión correcta del estadio)
+        decision_title = _first_text(
+            compass_headline if compass_override_valid else "",
+            tumor_choice.get("label"),
+            "Decision liberable",
+        )
+        rationale = _first_text(
+            compass_rationale if compass_override_valid else "",
+            tumor_choice.get("rationale"),
+            "Tumor Board OS no detecta bloqueo critico.",
+        )
         risk_avoided = _first_text(top_autodrive.get("risk_avoided"), "Evita retrasar una decision clinica lista.")
     elif top_autodrive:
         decision_state = _state_from_autodrive(top_autodrive)
-        decision_title = _first_text(top_autodrive.get("title"), "Accion clinica hoy")
-        rationale = _first_text(top_autodrive.get("reason"), "Autodrive prioriza esta accion hoy.")
+        # BUG FIX — compass headline también aplica a actionable
+        decision_title = _first_text(
+            compass_headline if compass_override_valid else "",
+            top_autodrive.get("title"),
+            "Accion clinica hoy",
+        )
+        rationale = _first_text(
+            compass_rationale if compass_override_valid else "",
+            top_autodrive.get("reason"),
+            "Autodrive prioriza esta accion hoy.",
+        )
         risk_avoided = _first_text(top_autodrive.get("risk_avoided"), "Evita perdida de oportunidad clinica.")
+    elif compass_override_valid:
+        # BUG FIX — si NO hay autodrive items pero el compass tiene structured headline,
+        # úsalo como fallback (mejor que "Sin decision clinica accionable hoy").
+        decision_state = "actionable"
+        decision_title = compass_headline
+        rationale = compass_rationale or "Clinical compass tiene recomendación oficial del estadio."
+        risk_avoided = ""
     else:
         decision_state = "not_actionable"
         decision_title = "Sin decision clinica accionable hoy"
@@ -413,6 +483,17 @@ def _ensure_source_bundles(patient: Mapping[str, Any], bundle: Mapping[str, Any]
     enriched = dict(bundle or {})
     signals = dict(enriched.get("signals") or patient.get("latest_signal_snapshot") or {})
     enriched["signals"] = signals
+
+    # BUG FIX 2026-05-17 — Preservar clinical_compass si viene en bundle o patient.
+    # build_decision_today consume compass.structured_decision_headline para
+    # override de decision_title genérico. Pre-fix, _ensure_source_bundles
+    # ignoraba compass → fallback a "Biomarcadores accionables" / "Reabrir
+    # decision clinica" en lugar de "Priorizar ADT + enzalutamida".
+    compass = (enriched.get("clinical_compass")
+               or patient.get("clinical_compass")
+               or signals.get("clinical_compass"))
+    if compass:
+        enriched["clinical_compass"] = compass
 
     # EPIC 29.7 (GodiBot G57 HIGH) — instrument 4 sub-builder calls with
     # explicit exception logging + audit upstream_failures collection.
@@ -705,8 +786,91 @@ def _top_care_action(care: Mapping[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _is_primary_therapy_item(item: Mapping[str, Any]) -> bool:
+    """BUG FIX 2026-05-17 — Distingue THERAPY DECISIONS vs MOLECULAR REFINERS.
+
+    Para que "DECISIÓN HOY" muestre la opción terapéutica primaria del estadio
+    (e.g., "Doblete ADT+ARPI" para mCSPC bajo volumen, "Salvage RT" para BCR
+    post-RP) y NO un refiner molecular (Biomarcadores accionables / PSMA gate /
+    ARPI safety). Los refiners son requisitos pre-decisión, NO la decisión.
+
+    Heurística (signal de orden bajo a alto):
+      1. action_key empieza con 'tumor_board:' o 'therapy:' o 'recommendation:'
+         o 'pathway:' o contiene 'doublet'/'triplet'/'salvage'/'start_therapy'
+      2. category == 'therapy' / 'tumor_board' / 'recommendation'
+      3. clinical_role contiene 'systemic' / 'local_therapy' / 'salvage' /
+         'primary_treatment' / 'curative'
+      4. lane es 'recommendation_today' o termina en '_therapy'
+      5. NO es un gate/refiner: key NO debe ser 'biomarker_gate',
+         'psma_gate', 'arpi_safety', 'docetaxel_cbc', 'safety_alert',
+         'imaging_followup', 'lab_pending'
+    """
+    if not isinstance(item, Mapping):
+        return False
+    action_key = str(item.get("action_key") or "").lower()
+    key = str(item.get("key") or "").lower()
+    category = str(item.get("category") or item.get("type") or "").lower()
+    clinical_role = str(item.get("clinical_role") or "").lower()
+    lane = str(item.get("lane") or "").lower()
+
+    # Negative signal — refiners / gates / safety, NOT primary therapy
+    REFINER_KEYS = {
+        "biomarker_gate", "psma_gate", "arpi_safety", "docetaxel_cbc",
+        "safety_alert", "imaging_followup", "lab_pending",
+        "hrr_capture", "germline_gate", "msi_gate", "consent_pending",
+    }
+    if key in REFINER_KEYS:
+        return False
+    REFINER_PATTERNS = ("_gate", "safety", "pending", "missing_data",
+                         "biomarker", "imaging_due", "lab_due")
+    if any(p in key for p in REFINER_PATTERNS):
+        return False
+
+    # Positive signal — primary therapy decision
+    THERAPY_ACTION_PREFIXES = ("tumor_board:", "therapy:", "recommendation:",
+                                "pathway:", "treatment:", "start_therapy")
+    if any(action_key.startswith(p) for p in THERAPY_ACTION_PREFIXES):
+        return True
+    THERAPY_KEYWORDS = ("doublet", "triplet", "salvage_rt", "salvage_local",
+                        "adt_backbone", "arpi", "start_therapy", "intensification",
+                        "primary_rt", "mdt", "sbrt", "active_surveillance")
+    if any(kw in key for kw in THERAPY_KEYWORDS):
+        return True
+    if category in ("therapy", "tumor_board", "recommendation", "primary_treatment"):
+        return True
+    if any(t in clinical_role for t in ("systemic", "local_therapy",
+                                         "salvage", "primary_treatment", "curative",
+                                         "mhspc_systemic", "mcrpc_systemic")):
+        return True
+    if lane.endswith("_therapy") or lane == "recommendation_today":
+        return True
+    return False
+
+
 def _top_autodrive_item(autodrive: Mapping[str, Any]) -> dict[str, Any]:
-    for item in autodrive.get("today_queue") or autodrive.get("autodrive_actions") or []:
+    """BUG FIX 2026-05-17 — Prefiere THERAPY DECISIONS sobre refiners moleculares.
+
+    Pre-fix: retornaba el PRIMER item del queue sin filtrar tipo. Resultado:
+    "Biomarcadores accionables" (refiner) sobrescribía la decisión terapéutica
+    primaria del estadio (e.g., para mcspc_low_volume_sync_oligo debería
+    surface "Doblete ADT+ARPI" según STAMPEDE/ENZAMET v2026, no biomarkers).
+
+    Post-fix: dos pasadas:
+      Pass 1 — busca primer item que sea decisión terapéutica primaria
+               (_is_primary_therapy_item)
+      Pass 2 — fallback al primer item no-kernel si no hay therapy decision
+               visible (estados pre-diagnóstico, screening, etc.)
+    """
+    queue = autodrive.get("today_queue") or autodrive.get("autodrive_actions") or []
+    # Pass 1 — primary therapy decisions take precedence
+    for item in queue:
+        if (isinstance(item, Mapping)
+                and item.get("action_key") != "decision_today:fusion_kernel"
+                and _is_primary_therapy_item(item)):
+            return dict(item)
+    # Pass 2 — fallback to first non-kernel item (refiners surface only
+    # when no therapy decision is visible — pre-diagnostic / screening states)
+    for item in queue:
         if isinstance(item, Mapping) and item.get("action_key") != "decision_today:fusion_kernel":
             return dict(item)
     return {}
@@ -721,13 +885,32 @@ def _memory_status(memory: Mapping[str, Any]) -> str:
 
 
 def _has_active_safety(bundle: Mapping[str, Any], autodrive: Mapping[str, Any], memory_status: str) -> bool:
+    """BUG FIX 2026-05-17 — Active safety SOLO por GENUINE safety triggers:
+    toxicidad limitante, off-track real (memoria clínica), o readiness lane con
+    `active_risk`. NO disparar por missing-data refiners (biomarker_gate,
+    psma_gate, lab_pending) aunque tengan lane=urgent_today + priority=critical_today.
+
+    Pre-fix: cualquier item top con lane=urgent_today+critical_today disparaba
+    active_safety → decision_title overridden por top_autodrive.title →
+    "Biomarcadores accionables" aparecía como decision today incluso cuando
+    el classifier oficial ya tenía 'Priorizar ADT + enzalutamida'.
+
+    Post-fix: el top item solo cuenta si NO es un refiner molecular/lab.
+    """
     if memory_status in {"toxicity_limited", "off_track"}:
         return True
     readiness = bundle.get("clinical_readiness_tower") or {}
     if any(isinstance(lane, Mapping) and lane.get("status") == "active_risk" for lane in readiness.get("lanes") or []):
         return True
     top = _top_autodrive_item(autodrive)
-    return top.get("lane") == "urgent_today" and top.get("priority_status") == "critical_today"
+    if top.get("lane") == "urgent_today" and top.get("priority_status") == "critical_today":
+        # Re-check: el top es genuine safety o un refiner enmascarado de urgente?
+        # _top_autodrive_item ahora prefiere therapy items, pero si solo hay refiners
+        # cae a primer refiner. NO disparar safety por refiners.
+        if _is_primary_therapy_item(top):
+            return True
+        # Si top es un refiner (biomarker_gate/psma_gate/lab_pending) → NO es safety
+    return False
 
 
 def _requires_redecision(memory: Mapping[str, Any], autodrive: Mapping[str, Any], memory_status: str) -> bool:
