@@ -848,59 +848,86 @@
             {# filtered) instead of the Twin's original. Otherwise clinician      #}
             {# sees "abi EXCLUIDA" in banner above AND "#1 abiraterone" below     #}
             {# simultaneously, defeating the safety guard.                        #}
+            {# BUG FIX 2026-05-17 — Patient Twin OS ahora marca explícitamente
+               regímenes contraindicados (is_contraindicated=True) con badge
+               warning + razón clínica + strikethrough. Mantiene visible en
+               lista (transparencia clínica) en lugar de filtrar silentemente.
+               Backend `_apply_contraindications` sink score a -1.0 para hard_block
+               → contraindicados aparecen al final por sort, NO en top picks. #}
             {% set _excluded_drugs = [] %}
             {% if decision_fusion and decision_fusion.has_conflicts and decision_fusion.excluded_regimens %}
                 {% for excl in decision_fusion.excluded_regimens %}{% set _ = _excluded_drugs.append(excl.drug|lower) %}{% endfor %}
             {% endif %}
             {% set _twin_rankings_to_render = patient_twin.regimen_rankings %}
-            {% if _excluded_drugs %}
-                {# Filter out excluded drugs from displayed Twin ranking #}
-                {% set _filtered = [] %}
-                {% for r in patient_twin.regimen_rankings %}
-                    {% set _drug = (r.primary_drug or r.regimen_name or '')|lower %}
-                    {% set _is_excluded = false %}
-                    {% for excl in _excluded_drugs %}{% if excl in _drug %}{% set _is_excluded = true %}{% endif %}{% endfor %}
-                    {% if not _is_excluded %}{% set _ = _filtered.append(r) %}{% endif %}
-                {% endfor %}
-                {% set _twin_rankings_to_render = _filtered %}
-            {% endif %}
+            {# Count contraindicated regimens for header label #}
+            {% set _contra_count = (_twin_rankings_to_render | selectattr('is_contraindicated') | list | length) %}
+            {% set _hard_block_count = (_twin_rankings_to_render | selectattr('contraindication_severity', 'equalto', 'hard_block') | list | length) %}
             {% if _twin_rankings_to_render %}
             <div style="margin-top:14px;">
                 <div style="font-size:.65rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:8px;" data-testid="twin-ranking-header">
-                    Ranking personalizado de regímenes
-                    {% if _excluded_drugs %}
+                    Ranking personalizado de regímenes (NCCN + preferencias paciente + contraindicaciones)
+                    {% if _hard_block_count > 0 %}
+                    <span style="color:rgb(252,165,165); font-weight:700; margin-left:8px;">· {{ _hard_block_count }} contraindicado(s) por gates pivotal</span>
+                    {% elif _excluded_drugs %}
                     <span style="color:rgb(252,165,165); font-weight:700; margin-left:8px;">· {{ _excluded_drugs|length }} regimen(es) excluido(s) por arbiter</span>
                     {% endif %}
                 </div>
-                {% for regimen in _twin_rankings_to_render[:5] %}
-                <div style="margin-bottom:8px; padding:10px 14px; border-radius:8px; {% if loop.index == 1 %}background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.32);{% elif regimen.tolerance_mismatches %}background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.32);{% else %}background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18);{% endif %}" data-testid="twin-regimen-{{ regimen.regimen_id }}">
+                {% if _hard_block_count > 0 %}
+                {# Banner explicativo cuando hay contraindicaciones — evita confusión clínica #}
+                <div style="margin-bottom:10px; padding:10px 14px; background:rgba(220,38,38,0.10); border:1px solid rgba(220,38,38,0.40); border-left:4px solid rgb(239,68,68); border-radius:8px; font-size:.78rem; color:rgb(252,165,165);" data-testid="twin-contraindication-banner">
+                    ⚠️ <strong>{{ _hard_block_count }} regimen(es) marcados como contraindicados</strong> por gates pivotal de seguridad clínica (hepatotoxicidad / CV severa / convulsiones / etc).
+                    Aparecen al final del ranking con razón clínica. Se preservan visibles para transparencia.
+                </div>
+                {% endif %}
+                {% for regimen in _twin_rankings_to_render[:7] %}
+                {% set _is_contra = regimen.is_contraindicated %}
+                {% set _is_hard = regimen.contraindication_severity == 'hard_block' %}
+                <div style="margin-bottom:8px; padding:10px 14px; border-radius:8px;
+                            {% if _is_hard %}background:rgba(220,38,38,0.12); border:1px solid rgba(220,38,38,0.50); border-left:4px solid rgb(239,68,68);
+                            {% elif _is_contra %}background:rgba(251,191,36,0.10); border:1px solid rgba(251,191,36,0.40); border-left:4px solid rgb(245,158,11);
+                            {% elif loop.index == 1 %}background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.32); border-left:4px solid rgb(16,185,129);
+                            {% elif regimen.tolerance_mismatches %}background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.32);
+                            {% else %}background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18);{% endif %}"
+                     data-testid="twin-regimen-{{ regimen.regimen_id }}"
+                     data-contraindicated="{{ '1' if _is_contra else '0' }}">
                     <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
                         <div style="flex:1;">
-                            <div style="display:flex; align-items:baseline; gap:8px;">
-                                <span style="font-size:.95rem; color:#f8fafc; font-weight:700;">#{{ loop.index }} {{ regimen.regimen_name }}</span>
+                            <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;">
+                                {% if _is_hard %}
+                                <span style="font-size:.6rem; padding:2px 8px; background:rgb(239,68,68); color:white; border-radius:999px; font-weight:800; letter-spacing:.08em;">⚠ CONTRAINDICADO</span>
+                                {% elif _is_contra %}
+                                <span style="font-size:.6rem; padding:2px 8px; background:rgb(245,158,11); color:#0b1325; border-radius:999px; font-weight:800; letter-spacing:.08em;">⚠ PRECAUCIÓN</span>
+                                {% endif %}
+                                <span style="font-size:.95rem; color:#f8fafc; font-weight:700; {% if _is_hard %}text-decoration:line-through; text-decoration-color:rgb(239,68,68); text-decoration-thickness:2px;{% endif %}">#{{ loop.index }} {{ regimen.regimen_name }}</span>
                                 <span style="font-size:.7rem; color:var(--pn-text-muted);">({{ regimen.trial_source }})</span>
                             </div>
-                            <div style="font-size:.78rem; color:var(--pn-text-muted); margin-top:3px;">
+                            {% if _is_contra and regimen.contraindication_reason %}
+                            <div style="margin-top:6px; padding:6px 10px; background:rgba(15,23,42,0.55); border-left:2px solid {% if _is_hard %}rgb(239,68,68){% else %}rgb(245,158,11){% endif %}; border-radius:4px; font-size:.74rem; color:#fef3c7; line-height:1.45;">
+                                <strong>{{ regimen.contraindication_gate_id or 'GATE' }}:</strong> {{ regimen.contraindication_reason }}
+                            </div>
+                            {% endif %}
+                            <div style="font-size:.78rem; color:var(--pn-text-muted); margin-top:6px;">
                                 OS gain esperada: <span style="color:#f8fafc;">{% if regimen.predicted_os_gain_mo is not none %}{{ '%.1f' % regimen.predicted_os_gain_mo }}mo{% else %}—{% endif %}</span>
                             </div>
-                            {% if regimen.tolerance_mismatches %}
+                            {% if regimen.tolerance_mismatches and not _is_contra %}
                             <ul style="margin:6px 0 0; padding-left:18px; font-size:.75rem; color:rgb(252,165,165); list-style:disc;">
-                                {% for warn in regimen.tolerance_mismatches %}
-                                <li>⚠ {{ warn }}</li>
-                                {% endfor %}
+                                {% for warn in regimen.tolerance_mismatches %}<li>⚠ {{ warn }}</li>{% endfor %}
                             </ul>
                             {% endif %}
-                            {% if regimen.toxicity_warnings and not regimen.tolerance_mismatches %}
+                            {% if regimen.toxicity_warnings and not regimen.tolerance_mismatches and not _is_contra %}
                             <ul style="margin:6px 0 0; padding-left:18px; font-size:.75rem; color:rgb(252,211,77); list-style:disc;">
-                                {% for warn in regimen.toxicity_warnings %}
-                                <li>· {{ warn }}</li>
-                                {% endfor %}
+                                {% for warn in regimen.toxicity_warnings %}<li>· {{ warn }}</li>{% endfor %}
                             </ul>
                             {% endif %}
                         </div>
                         <div style="text-align:right;">
+                            {% if _is_hard %}
+                            <div style="font-size:1.1rem; font-weight:700; color:rgb(239,68,68);">N/A</div>
+                            <div style="font-size:.62rem; color:rgb(252,165,165);">contraindicado</div>
+                            {% else %}
                             <div style="font-size:1.5rem; font-weight:700; color:{% if regimen.score >= 7 %}rgb(52,211,153){% elif regimen.score >= 5 %}rgb(34,211,238){% elif regimen.score >= 3 %}rgb(251,191,36){% else %}rgb(244,63,94){% endif %};">{{ '%.1f' % regimen.score }}</div>
                             <div style="font-size:.65rem; color:var(--pn-text-muted);">/ 10</div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>

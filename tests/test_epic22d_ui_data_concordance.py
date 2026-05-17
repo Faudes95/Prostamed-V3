@@ -88,6 +88,7 @@ STATIC_NO_DATA_BINDING: set[str] = {
     "suspected-low-psa-card-preferred", "suspected-elevated-psa-ww-card-preferred",
     "neg-biopsy-age-lt45-card-preferred",
     "twin-ranking-header",  # EPIC 25.1 — header that shows "X regimens excluded by arbiter"
+    "twin-contraindication-banner",  # BUG FIX 2026-05-17 — banner cuando hay regímenes hard_block
     "patient-twin-low-capture",  # nested chip under patient-twin-os-card
     "patient-twin-readiness-pct",  # nested chip under patient-twin-os-card
     "risk-strat-preferred-therapy",  # nested label under risk-stratified card

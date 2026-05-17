@@ -234,6 +234,14 @@ class RegimenScore:
     rationale: str = ""
     trial_source: str = ""
     indications_match: bool = True
+    # BUG FIX 2026-05-17 — contraindication awareness (paciente Frin reported)
+    # Pre-fix: Patient Twin OS rankeaba abiraterona #1 incluso con
+    # Gate G07 (hepatotoxicidad ALT 6.2× LSN) active. Inconsistencia clínica
+    # peligrosa: el clínico veía contraindicación + #1 ranking simultáneamente.
+    is_contraindicated: bool = False
+    contraindication_severity: str = ""  # "hard_block" | "soft_warning" | ""
+    contraindication_reason: str = ""
+    contraindication_gate_id: str = ""
 
 
 @dataclass
@@ -430,6 +438,179 @@ def _find_fact(facts: list[Mapping[str, Any]], key: str) -> Any:
 
 
 # ─────────────────── Regimen scoring ───────────────────
+
+
+def _resolve_clinical_facts_for_twin(patient_record: Mapping[str, Any]) -> dict[str, Any]:
+    """Extract relevant clinical facts dict from patient_record for contraindication checks."""
+    facts: dict[str, Any] = {}
+    # Baseline
+    baseline = patient_record.get("baseline") or {}
+    if isinstance(baseline, Mapping):
+        facts.update({k: v for k, v in baseline.items() if v is not None})
+    # patient_clinical_facts table records
+    pcf = patient_record.get("patient_clinical_facts") or patient_record.get("clinical_facts") or []
+    if isinstance(pcf, list):
+        for row in pcf:
+            if not isinstance(row, Mapping):
+                continue
+            fk = row.get("fact_key") or row.get("key")
+            val = row.get("normalized_value_text") or row.get("value") or row.get("value_json")
+            if fk and val is not None and not facts.get(fk):
+                facts[fk] = val
+    # Latest assessment
+    la = patient_record.get("latest_assessment") or {}
+    if isinstance(la, Mapping):
+        for k in ("state", "reconciled_state"):
+            if la.get(k) and not facts.get(k):
+                facts[k] = la.get(k)
+    return facts
+
+
+def _apply_contraindications(
+    rankings: list[RegimenScore], patient_record: Mapping[str, Any]
+) -> list[RegimenScore]:
+    """BUG FIX 2026-05-17 — Apply pivotal contraindication gates to regimen
+    rankings. Marks regimens as contraindicated and sinks their score to -1.
+
+    Rules applied (mirroring pivotal_contraindication_gates_catalog):
+      - G07 HEPATIC HARD: ALT or AST > 120 U/L (3× LSN ~40) OR active_liver_disease
+        OR cirrhosis → ABIRATERONE contraindicated (mineralocorticoid hepatotox)
+      - G54 CV HARD: NYHA III-IV OR recent MI <6mo OR uncontrolled arrhythmia
+        OR LVEF <40% → ABIRATERONE contraindicated (mineralocorticoid CV load)
+      - COG SOFT: cognitive_impairment_documented → ENZALUTAMIDE soft warning
+        (fatigue/falls/cognitive AEs)
+      - SEIZ HARD: seizure_history → ENZALUTAMIDE contraindicated
+        (lowers seizure threshold — AFFIRM excluded)
+      - RENAL CrCl<30 SOFT: RUCAPARIB contraindicated (renal clearance)
+
+    Defense-in-depth: also respects pre-computed Recommendation Arbiter
+    EPIC 23 conflicts if available in patient_record['arbitrated_exclusions'].
+
+    Returns new list with contraindicated regimens marked + score sunk to -1.0.
+    NO eliminamos del ranking (transparencia clínica — clínico VE qué se evaluó
+    y por qué se descartó).
+    """
+    facts = _resolve_clinical_facts_for_twin(patient_record)
+
+    def _truthy(v: Any) -> bool:
+        if v is None:
+            return False
+        s = str(v).strip().lower()
+        return s in ("true", "1", "yes", "y", "si", "sí", "present", "documented")
+
+    def _safe_float(v: Any) -> float | None:
+        try:
+            return float(v) if v not in (None, "", "unknown") else None
+        except (TypeError, ValueError):
+            return None
+
+    # ───── Hepatic contraindication (G07) ─────
+    alt = _safe_float(facts.get("alt_u_l") or facts.get("alt") or facts.get("lab_alt"))
+    ast = _safe_float(facts.get("ast_u_l") or facts.get("ast") or facts.get("lab_ast"))
+    bili = _safe_float(facts.get("bilirubin_total") or facts.get("bili"))
+    hepatic_block = (
+        _truthy(facts.get("active_liver_disease"))
+        or _truthy(facts.get("cirrhosis_or_portal_hypertension"))
+        or (alt is not None and alt > 120)  # 3× LSN ~40
+        or (ast is not None and ast > 120)
+        or (bili is not None and bili > 1.5)
+    )
+
+    # ───── CV contraindication (G54) ─────
+    nyha = str(facts.get("nyha_class") or facts.get("heart_failure_nyha") or "").strip()
+    lvef = _safe_float(facts.get("ejection_fraction_baseline") or facts.get("lvef"))
+    cv_block = (
+        _truthy(facts.get("severe_cv_disease"))
+        or nyha in ("III", "IV", "3", "4")
+        or _truthy(facts.get("recent_mi_lt_6mo") or facts.get("cv_event_history"))
+        or (lvef is not None and lvef < 40)
+        or _truthy(facts.get("uncontrolled_arrhythmia"))
+    )
+
+    # ───── Cognitive contraindication (soft warning enza) ─────
+    cog_soft = _truthy(facts.get("cognitive_impairment_documented"))
+
+    # ───── Seizure contraindication (hard enza) ─────
+    seizure_block = _truthy(
+        facts.get("seizure_history") or facts.get("comorbidity_seizure")
+    )
+
+    # ───── Renal contraindication (soft rucaparib) ─────
+    crcl = _safe_float(facts.get("renal_creatinine_clearance") or facts.get("crcl"))
+    renal_soft = crcl is not None and crcl < 30
+
+    # ───── Pre-computed arbiter exclusions ─────
+    arbiter_exclusions = patient_record.get("arbitrated_exclusions") or {}
+    if not isinstance(arbiter_exclusions, dict):
+        arbiter_exclusions = {}
+
+    # Apply per-regimen
+    for r in rankings:
+        drug = str(r.regimen_name).lower()
+        if "abirat" in drug:
+            if hepatic_block:
+                r.is_contraindicated = True
+                r.contraindication_severity = "hard_block"
+                _alt_str = f"ALT={alt:.0f}" if alt is not None else ""
+                _ast_str = f"AST={ast:.0f}" if ast is not None else ""
+                _bili_str = f"bili={bili:.1f}" if bili is not None else ""
+                _hep_detail = " · ".join(x for x in [_alt_str, _ast_str, _bili_str] if x)
+                r.contraindication_reason = (
+                    f"Hepatotoxicidad activa contraindica abiraterona (mineralocorticoide). "
+                    f"{_hep_detail}. Bloquea ADT_ABIRATERONE y NIRAPARIB_ABIRATERONE."
+                )
+                r.contraindication_gate_id = "G07"
+                r.score = -1.0
+            elif cv_block:
+                r.is_contraindicated = True
+                r.contraindication_severity = "hard_block"
+                r.contraindication_reason = (
+                    "Enfermedad CV severa (NYHA III-IV / MI<6mo / LVEF<40% / arritmia "
+                    "no controlada) contraindica abiraterona por carga mineralocorticoide."
+                )
+                r.contraindication_gate_id = "G54"
+                r.score = -1.0
+        elif "enzalut" in drug:
+            if seizure_block:
+                r.is_contraindicated = True
+                r.contraindication_severity = "hard_block"
+                r.contraindication_reason = (
+                    "Historia de convulsiones contraindica enzalutamida (umbral convulsivo "
+                    "disminuido — AFFIRM excluyó esta población)."
+                )
+                r.contraindication_gate_id = "GSEIZ"
+                r.score = -1.0
+            elif cog_soft:
+                r.is_contraindicated = True  # Marked but as soft warning (not score=-1)
+                r.contraindication_severity = "soft_warning"
+                r.contraindication_reason = (
+                    "Deterioro cognitivo documentado: enzalutamida puede empeorar fatiga, "
+                    "caídas y AEs cognitivos. Preferir abi (si LFT OK) o daro."
+                )
+                r.contraindication_gate_id = "GCOG"
+                # No reducimos score — solo soft warning
+        elif "rucaparib" in drug:
+            if renal_soft:
+                r.is_contraindicated = True
+                r.contraindication_severity = "soft_warning"
+                r.contraindication_reason = (
+                    f"Aclaramiento creatinina <30 mL/min (actual={crcl:.0f}) requiere "
+                    "ajuste dose o evitar rucaparib."
+                )
+                r.contraindication_gate_id = "GRENAL"
+
+        # Apply arbiter-precomputed exclusion if present (defense-in-depth)
+        if drug in arbiter_exclusions:
+            ex = arbiter_exclusions[drug]
+            if not r.is_contraindicated:
+                r.is_contraindicated = True
+                r.contraindication_severity = str(ex.get("severity") or "hard_block")
+                r.contraindication_reason = str(ex.get("reason") or "Arbiter EPIC 23: excluded.")
+                r.contraindication_gate_id = str(ex.get("gate_id") or "EPIC23")
+                if r.contraindication_severity == "hard_block":
+                    r.score = -1.0
+
+    return rankings
 
 
 def score_regimen(
@@ -838,7 +1019,18 @@ def build_patient_twin_view(
             patient_state=patient_state,
         )
         rankings.append(score)
-    # Sort descending by score
+
+    # 4b. BUG FIX 2026-05-17 — Apply pivotal contraindications BEFORE sort.
+    # Patient Twin OS originally ranked drugs purely by OS/QoL/AI score,
+    # ignoring hard_block gates (hepatotox, CV, cognitive, seizure, etc.).
+    # Resulting in clinical contradiction visible to user (paciente Frin:
+    # abiraterona #1 with score 10.0/10 SIMULTÁNEO con gate G07
+    # "Abiraterona contraindicada"). Now: mark contraindicated regimens
+    # AND drop their score below 0 so they sink to the END of the ranking
+    # (transparency — clínico ve qué se evaluó pero NO en top picks).
+    rankings = _apply_contraindications(rankings, patient_record)
+
+    # Sort descending by score (contraindicated regimens go to end via score=-1)
     rankings.sort(key=lambda r: r.score, reverse=True)
 
     # 5. Detect re-decision alerts
