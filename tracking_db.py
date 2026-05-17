@@ -203,11 +203,24 @@ def _parse_iso_date(value):
 
 
 def _fact_row_priority(row):
+    # EPIC 34.A Phase 4.5 (compound value smoke bug fix) — candidate_row (incoming
+    # nuevo fact) NO tiene `id` real hasta DESPUÉS del INSERT. Si usamos
+    # `row.get("id") or 0`, el existing.id (real, > 0) siempre gana ties contra
+    # incoming (id=0). Resultado: clinician quick capture queda como shadow
+    # (is_active=0) si el legacy fact tiene mismo certainty + mismo source_date.
+    #
+    # Bug detectado: capturar HRR positive con record_hrr_capture quedaba
+    # shadow porque hrr_status=negative previo tenía mismo source_date (today).
+    # Para incoming (candidate_row), usar sys.maxsize como id placeholder
+    # asegura que incoming SIEMPRE gana ties (clinician's nueva captura es
+    # autoritativa sobre el dato previo).
+    import sys as _sys_priority
+    row_id = row.get("id")
     return (
         certainty_rank(row.get("certainty_tier")),
         _parse_iso_date(row.get("source_date")) or datetime.min,
         _parse_iso_date(row.get("observed_at")) or datetime.min,
-        int(row.get("id") or 0),
+        int(row_id) if row_id else _sys_priority.maxsize,
     )
 
 
@@ -956,6 +969,194 @@ def get_latest_hrr_for_patient(nss_or_id) -> dict | None:
                 "BRCA1", "BRCA2", "ATM", "PALB2", "CHEK2", "CDK12",
                 "FANCA", "RAD51B", "RAD51C", "RAD51D", "BARD1",
             ) if gene_value else False,
+        }
+    finally:
+        conn.close()
+
+
+def record_castration_capture(
+    nss_or_id,
+    castration_status: str,
+    *,
+    testosterone_value: float | None = None,
+    testosterone_unit: str = "ng/dL",
+    sample_date: str | None = None,
+    source_type: str = "quick_capture_ui",
+    actor_user_id: int | None = None,
+    actor_session_id: str | None = None,
+    clinician_verified: bool = True,
+    notes: str = "",
+) -> dict:
+    """EPIC 34.A Phase 5 — Captura rápida de castration status + testosterone value.
+
+    Sin confirmación de castración, clasificación CRPC es shaky. Solo 15% de
+    pacientes en cohorte actual (63/424) tiene castrate_testosterone_status
+    documentado. Captura aquí desbloquea:
+    - Clasificación correcta CRPC vs HSPC en arbiter
+    - Trials nmCRPC/mCRPC eligibility (SPARTAN, PROSPER, ARAMIS, etc.)
+    - PSA rising interpretation correcta (CRPC vs hormonal escape)
+
+    Args:
+        castration_status: 'confirmed_castrate' | 'non_castrate' | 'pending' | 'not_assessed'
+        testosterone_value: optional numeric (typically <50 ng/dL = castrate per AUA)
+        testosterone_unit: 'ng/dL' (default) | 'nmol/L'
+    """
+    VALID_STATUS = {"confirmed_castrate", "non_castrate", "pending", "not_assessed"}
+    if not castration_status or str(castration_status).lower().strip() not in VALID_STATUS:
+        return {"success": False, "error": "invalid_castration_status",
+                "valid_values": list(VALID_STATUS)}
+    status_clean = str(castration_status).lower().strip()
+    sample_date = sample_date or utc_now_iso()[:10]
+
+    # Validate testosterone if provided
+    testo_value_clean = None
+    if testosterone_value is not None:
+        try:
+            testo_value_clean = float(testosterone_value)
+            if testo_value_clean < 0 or testo_value_clean > 5000:
+                return {"success": False, "error": "testosterone_out_of_plausible_range"}
+        except (ValueError, TypeError):
+            return {"success": False, "error": "invalid_testosterone_value"}
+
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return {"success": False, "error": "patient_not_found"}
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+
+        payload = {
+            "castrate_testosterone_status": status_clean,
+            "castration_status": status_clean,  # alias for some classifiers
+        }
+        if testo_value_clean is not None:
+            payload["testosterone"] = str(testo_value_clean)
+            payload["testosterone_value"] = str(testo_value_clean)
+            payload["testosterone_unit"] = testosterone_unit
+            payload["testosterone_sample_date"] = sample_date
+            # Auto-classification consistency check
+            if testosterone_unit == "ng/dL":
+                if testo_value_clean < 50 and status_clean == "non_castrate":
+                    notes = (notes + " · [WARN: testo<50 ng/dL pero status non_castrate — verificar]").strip()
+                elif testo_value_clean >= 50 and status_clean == "confirmed_castrate":
+                    notes = (notes + " · [WARN: testo≥50 ng/dL pero status castrate — verificar]").strip()
+        persisted = _persist_canonical_facts_from_payload(
+            cursor,
+            patient_id,
+            payload,
+            source_type=source_type,
+            source_record_type="quick_capture",
+            source_date=sample_date,
+            observed_at=utc_now_iso(),
+            certainty_tier="structured_result",
+            clinician_verified=clinician_verified,
+            verification_note=notes,
+        )
+        try:
+            _append_patient_fact_lineage_event(
+                cursor,
+                patient_id,
+                "castrate_testosterone_status",
+                "quick_captured",
+                event_note=f"Castration {status_clean}" + (f" (T={testo_value_clean} {testosterone_unit})" if testo_value_clean else "") + f" via {source_type}",
+                payload={
+                    "castration_status": status_clean,
+                    "testosterone": testo_value_clean,
+                    "unit": testosterone_unit,
+                    "sample_date": sample_date,
+                    "source": source_type,
+                    "notes": notes,
+                },
+                actor_user_id=actor_user_id,
+                actor_session_id=actor_session_id,
+                actor_role="clinician_quick_capture",
+            )
+        except Exception as exc:
+            logger.debug(f"Lineage event castration audit failed: {exc}")
+        conn.commit()
+        return {
+            "success": True,
+            "patient_id": patient_id,
+            "castration_status": status_clean,
+            "testosterone_value": testo_value_clean,
+            "testosterone_unit": testosterone_unit if testo_value_clean else None,
+            "sample_date": sample_date,
+            "facts_persisted": len(persisted) if persisted else 0,
+            "warning": notes.split("[WARN:")[1].split("]")[0].strip() if "[WARN:" in notes else None,
+        }
+    finally:
+        conn.close()
+
+
+def get_latest_castration_for_patient(nss_or_id) -> dict | None:
+    """Returns latest castration status + testosterone + age. None si no documented."""
+    conn = _connect()
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return None
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+        cursor.execute(
+            """
+            SELECT normalized_value_text, source_date, observed_at, updated_at,
+                   source_type, clinician_verified
+            FROM patient_clinical_facts
+            WHERE patient_id = ?
+              AND fact_key IN ('castrate_testosterone_status', 'castration_status')
+              AND is_active = 1
+            ORDER BY COALESCE(source_date, observed_at, updated_at) DESC, id DESC
+            LIMIT 1
+            """,
+            (patient_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        from datetime import date as _d
+        status_raw = (row[0] if hasattr(row, "__getitem__") else row.get("normalized_value_text")) or ""
+        sample_date_str = (row[1] if hasattr(row, "__getitem__") else row.get("source_date")) or ""
+
+        # Latest testosterone
+        cursor.execute(
+            """
+            SELECT normalized_value_text, source_date
+            FROM patient_clinical_facts
+            WHERE patient_id = ?
+              AND fact_key IN ('testosterone', 'testosterone_value')
+              AND is_active = 1
+            ORDER BY COALESCE(source_date, observed_at, updated_at) DESC, id DESC
+            LIMIT 1
+            """,
+            (patient_id,),
+        )
+        testo_row = cursor.fetchone()
+        testo_value = None
+        testo_date = None
+        if testo_row:
+            raw_t = testo_row[0] if hasattr(testo_row, "__getitem__") else testo_row.get("normalized_value_text")
+            try:
+                testo_value = float(raw_t)
+            except (TypeError, ValueError):
+                testo_value = None
+            testo_date = (testo_row[1] if hasattr(testo_row, "__getitem__") else testo_row.get("source_date")) or None
+
+        age_days = None
+        try:
+            d = _d.fromisoformat(str(sample_date_str)[:10])
+            age_days = (utc_today() - d).days
+        except (ValueError, TypeError):
+            pass
+        return {
+            "status": status_raw.lower(),
+            "testosterone_value": testo_value,
+            "testosterone_date": str(testo_date)[:10] if testo_date else None,
+            "sample_date": str(sample_date_str)[:10] if sample_date_str else None,
+            "age_days": age_days,
+            "source_type": row[4] if hasattr(row, "__getitem__") else row.get("source_type"),
+            "clinician_verified": bool(row[5] if hasattr(row, "__getitem__") else row.get("clinician_verified")),
+            "is_castrate_confirmed": status_raw.lower() == "confirmed_castrate",
         }
     finally:
         conn.close()

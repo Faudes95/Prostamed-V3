@@ -132,6 +132,11 @@ CARD_TO_BUNDLE_KEY: dict[str, str] = {
     "suspected-low-psa-card": "suspected_low_psa_no_biopsy",
     "suspected-elevated-psa-ww-card": "suspected_elevated_psa_watchful_wait",
     "neg-biopsy-age-lt45-card": "negative_biopsy_age_lt_45",
+    # EPIC 34.A Phase 2/3/4 — Quick capture cards + Trial Matcher
+    "ecog-quick-capture-card": "ecog_capture_cta",            # Phase 2 — ECOG gating
+    "hrr-quick-capture-card": "hrr_capture_cta",              # Phase 4 — HRR/germline gating
+    "trial-matcher-card": "trial_matches",                    # Phase 3 — Trial Matcher MVP
+    "castration-quick-capture-card": "castration_capture_cta", # Phase 5 — Castration confirmation
 }
 
 

@@ -1285,6 +1285,59 @@ def patient_profile(nss):
                 logger.debug(f"EPIC 34.A Phase 3 trial matches build failed: {e}")
                 v2_ctx["trial_matches"] = {"positive_match_count": 0, "matches": [], "ineligible": [], "error": str(e)}
 
+            # EPIC 34.A Phase 5 — Castration confirmation quick capture gating
+            try:
+                import tracking_db as _td_e34p5
+                _identity_id_e34p5 = (data.get("identity") or {}).get("id")
+                latest_castration = _td_e34p5.get_latest_castration_for_patient(_identity_id_e34p5) if _identity_id_e34p5 else None
+                # Show CTA si paciente está bajo ADT/ARPI (debe confirmar castration)
+                # SIN castration_status documentado (o stale >90d)
+                # Phase 5 fix: NO depender de fact_map_e34p3 (puede no existir si Phase 3 falló)
+                state_str_p5 = str((data.get("latest_assessment") or {}).get("state") or "").lower()
+                if not state_str_p5 and _identity_id_e34p5:
+                    # Hidratar state independientemente
+                    try:
+                        _facts_p5 = _td_e34p5.get_patient_clinical_facts(_identity_id_e34p5, active_only=True)
+                        for _f in _facts_p5:
+                            if isinstance(_f, dict) and _f.get("fact_key") == "reconciled_state":
+                                state_str_p5 = str(_f.get("normalized_value_text") or "").lower()
+                                break
+                    except Exception:
+                        pass
+                # Pacientes que NECESITAN castration confirmation:
+                # - mCSPC/mCRPC/BCR + ADT/ARPI activo
+                needs_castration_check = False
+                for tx in (data.get("treatments") or []):
+                    drug = str(tx.get("drug_scheme") or "").upper()
+                    if any(t in drug for t in ("ADT", "ABIRATERONE", "ENZALUTAMIDE", "APALUTAMIDE", "DAROLUTAMIDE", "LEUPROLIDE", "GOSERELIN", "DEGARELIX")):
+                        if not tx.get("end_date") or str(tx.get("outcome", "")).lower() in ("ongoing", ""):
+                            needs_castration_check = True
+                            break
+                castration_missing = (latest_castration is None) or (
+                    latest_castration.get("status") in (None, "", "pending", "not_assessed")
+                )
+                castration_stale = (
+                    latest_castration and
+                    latest_castration.get("age_days") is not None and
+                    latest_castration["age_days"] > 90
+                )
+                show_castration_cta = needs_castration_check and (castration_missing or castration_stale)
+                v2_ctx["castration_capture_cta"] = {
+                    "available": show_castration_cta,
+                    "needs_castration_check": needs_castration_check,
+                    "latest_castration": latest_castration,
+                    "castration_missing": castration_missing,
+                    "castration_stale": castration_stale,
+                    "reason": (
+                        "Castration missing en paciente bajo ADT/ARPI" if castration_missing and needs_castration_check
+                        else f"Castration stale ({latest_castration['age_days']}d)" if castration_stale
+                        else "Castration confirmada reciente"
+                    ),
+                }
+            except Exception as e:
+                logger.debug(f"EPIC 34.A Phase 5 castration CTA build failed: {e}")
+                v2_ctx["castration_capture_cta"] = {"available": False, "error": str(e)}
+
             # EPIC 34.A Phase 4 — HRR quick capture gating
             try:
                 import tracking_db as _td_e34p4
@@ -2533,6 +2586,48 @@ def _build_patient_decision_today_for_api(patient_ref, *, force_recompute=False)
         "decision_today": decision_today,
         "resolved": resolved,
     }, None
+
+
+@app.route('/api/patients/<patient_ref>/castration-capture', methods=['POST'])
+def api_patient_castration_capture(patient_ref):
+    """EPIC 34.A Phase 5 — Quick capture castration status + testosterone.
+
+    Body: {castration_status: 'confirmed_castrate'|'non_castrate'|'pending'|'not_assessed',
+           testosterone_value?: float, testosterone_unit?: 'ng/dL'|'nmol/L',
+           sample_date?, notes?, actor_session_id?}
+    """
+    import tracking_db as _td
+    try:
+        payload = request.get_json(silent=True) or {}
+    except Exception:
+        payload = {}
+    status = payload.get('castration_status')
+    if not status:
+        return jsonify({'success': False, 'error': 'missing_castration_status'}), 400
+    res = _td.record_castration_capture(
+        patient_ref,
+        status,
+        testosterone_value=payload.get('testosterone_value'),
+        testosterone_unit=payload.get('testosterone_unit', 'ng/dL'),
+        sample_date=payload.get('sample_date'),
+        source_type=payload.get('source_type', 'quick_capture_ui'),
+        actor_session_id=payload.get('actor_session_id'),
+        notes=payload.get('notes', ''),
+    )
+    code = 200 if res.get('success') else (
+        404 if res.get('error') == 'patient_not_found' else 400
+    )
+    return jsonify(res), code
+
+
+@app.route('/api/patients/<patient_ref>/castration-latest', methods=['GET'])
+def api_patient_castration_latest(patient_ref):
+    """EPIC 34.A Phase 5 — Get latest castration + testosterone status."""
+    import tracking_db as _td
+    res = _td.get_latest_castration_for_patient(patient_ref)
+    if res is None:
+        return jsonify({'success': True, 'has_castration': False}), 200
+    return jsonify({'success': True, 'has_castration': True, **res}), 200
 
 
 @app.route('/api/patients/<patient_ref>/hrr-capture', methods=['POST'])

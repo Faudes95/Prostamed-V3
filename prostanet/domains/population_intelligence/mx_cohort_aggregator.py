@@ -415,7 +415,91 @@ KPI_REGISTRY: dict[str, dict[str, Any]] = {
         "builder": lambda: aggregate_hrr_capture_coverage(),
         "args": {},
     },
+    # EPIC 34.A Phase 5 — Castration confirmation coverage
+    "castration_confirmation_coverage": {
+        "label": "Cobertura castración confirmada (cohorte ADT/ARPI)",
+        "category": "capture_completeness",
+        "builder": lambda: aggregate_castration_capture_coverage(),
+        "args": {},
+    },
 }
+
+
+def aggregate_castration_capture_coverage() -> dict[str, Any]:
+    """EPIC 34.A Phase 5 — Cobertura confirmación castración en cohorte ADT/ARPI.
+
+    Sin esto, clasificación CRPC vs HSPC es shaky → arbiter no puede recomendar
+    correctamente + SPARTAN/PROSPER/ARAMIS bloqueados.
+    Target: 90% (CRPC classification es fundamental para todas las decisiones downstream).
+    """
+    conn = sqlite3.connect(_db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        # Eligible: pacientes con cualquier tratamiento ADT/ARPI activo
+        eligible = conn.execute(
+            """
+            SELECT DISTINCT patient_id FROM treatment_history
+            WHERE drug_scheme IS NOT NULL AND drug_scheme != ''
+              AND (drug_scheme LIKE '%ABIRATERONE%' OR drug_scheme LIKE '%ENZALUTAMIDE%'
+                   OR drug_scheme LIKE '%APALUTAMIDE%' OR drug_scheme LIKE '%DAROLUTAMIDE%'
+                   OR drug_scheme LIKE '%ADT%' OR drug_scheme LIKE '%LEUPROLIDE%'
+                   OR drug_scheme LIKE '%GOSERELIN%' OR drug_scheme LIKE '%DEGARELIX%')
+            """
+        ).fetchall()
+        n_eligible = len(eligible)
+        if n_eligible == 0:
+            return {
+                "kpi_id": "castration_confirmation_coverage",
+                "kpi_label": "Cobertura castración confirmada (Phase 5 target 90%)",
+                "category": "capture_completeness",
+                "n_eligible": 0, "n_confirmed": 0, "coverage_pct": 0.0,
+                "target_pct": 90.0, "status": "no_eligible_cohort",
+                "gap_to_target_patients": 0, "computed_at": utc_now_iso(),
+            }
+        pids = [r["patient_id"] for r in eligible]
+        placeholders = ",".join("?" * len(pids))
+        n_confirmed = conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT patient_id) FROM patient_clinical_facts
+            WHERE fact_key IN ('castrate_testosterone_status', 'castration_status')
+              AND is_active = 1
+              AND normalized_value_text = 'confirmed_castrate'
+              AND patient_id IN ({placeholders})
+            """,
+            pids,
+        ).fetchone()[0]
+        n_with_testo = conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT patient_id) FROM patient_clinical_facts
+            WHERE fact_key IN ('testosterone', 'testosterone_value')
+              AND is_active = 1
+              AND patient_id IN ({placeholders})
+            """,
+            pids,
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    coverage_pct = round(100 * n_confirmed / max(1, n_eligible), 1)
+    testo_pct = round(100 * n_with_testo / max(1, n_eligible), 1)
+    status = (
+        "target_achieved" if coverage_pct >= 90.0
+        else "below_target" if coverage_pct >= 50.0
+        else "critical_gap"
+    )
+    return {
+        "kpi_id": "castration_confirmation_coverage",
+        "kpi_label": "Cobertura castración confirmada (Phase 5 target 90%)",
+        "category": "capture_completeness",
+        "n_eligible": n_eligible,
+        "n_confirmed": n_confirmed,
+        "n_with_testosterone": n_with_testo,
+        "coverage_pct": coverage_pct,
+        "testosterone_coverage_pct": testo_pct,
+        "target_pct": 90.0,
+        "status": status,
+        "gap_to_target_patients": max(0, int(round((90.0 - coverage_pct) / 100 * n_eligible))),
+        "computed_at": utc_now_iso(),
+    }
 
 
 def aggregate_hrr_capture_coverage() -> dict[str, Any]:
