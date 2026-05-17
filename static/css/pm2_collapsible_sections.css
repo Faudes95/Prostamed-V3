@@ -1,0 +1,148 @@
+/* EPIC 33.A — Collapsible sections para patient_profile_v2.html
+ * Wrap-only strategy: NO eliminar contenido. Solo envolver <section>s grandes
+ * en <details> nativo con CSS para preservar el look-and-feel de las cards.
+ *
+ * Council concession (Critic): cada toggle dispara `clinical_view_audit`
+ * via JS para HIPAA §164.312(b) accountability.
+ * Council concession (Pragmatist): zero JS framework dependency, just
+ * native <details> + CSS animations + localStorage persistence.
+ */
+
+.pm2-section-collapsible {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+}
+
+.pm2-section-collapsible > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    background: linear-gradient(180deg, rgba(31,184,255,0.08) 0%, rgba(31,184,255,0.02) 100%);
+    border: 1px solid rgba(31,184,255,0.18);
+    border-radius: 12px 12px 0 0;
+    margin-bottom: 0;
+    user-select: none;
+    transition: background 200ms ease;
+    font-weight: 600;
+    color: #f8fafc;
+    font-size: 0.92rem;
+}
+
+.pm2-section-collapsible > summary:hover {
+    background: linear-gradient(180deg, rgba(31,184,255,0.15) 0%, rgba(31,184,255,0.05) 100%);
+}
+
+.pm2-section-collapsible > summary::-webkit-details-marker {
+    display: none;
+}
+
+.pm2-section-collapsible > summary::after {
+    content: '▼';
+    font-size: 0.7rem;
+    color: rgba(31,184,255,0.7);
+    transition: transform 200ms ease;
+    margin-left: 12px;
+}
+
+.pm2-section-collapsible[open] > summary::after {
+    transform: rotate(180deg);
+}
+
+.pm2-section-collapsible[open] > summary {
+    border-radius: 12px 12px 0 0;
+    border-bottom: 1px solid rgba(31,184,255,0.18);
+}
+
+.pm2-section-collapsible:not([open]) > summary {
+    border-radius: 12px;
+    margin-bottom: 12px;
+}
+
+.pm2-section-collapsible .pm2-section-meta-chip {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--pn-text-muted, #94a3b8);
+    background: rgba(148, 163, 184, 0.1);
+    padding: 2px 8px;
+    border-radius: 8px;
+    margin-left: 8px;
+}
+
+.pm2-section-collapsible[data-importance="critical"] > summary {
+    border-left: 3px solid var(--clinical-success, #10b981);
+}
+
+.pm2-section-collapsible[data-importance="archival"] > summary {
+    border-left: 3px solid var(--pn-text-muted, #64748b);
+    opacity: 0.85;
+}
+
+/* Importance badge */
+.pm2-section-collapsible[data-importance="critical"] > summary::before {
+    content: 'CRITICAL';
+    font-size: 0.6rem;
+    color: var(--clinical-success, #10b981);
+    background: rgba(16, 185, 129, 0.1);
+    padding: 1px 6px;
+    border-radius: 6px;
+    margin-right: 8px;
+    letter-spacing: 0.5px;
+}
+
+.pm2-section-collapsible[data-importance="archival"] > summary::before {
+    content: 'ARCHIVAL';
+    font-size: 0.6rem;
+    color: var(--pn-text-muted, #64748b);
+    background: rgba(100, 116, 139, 0.12);
+    padding: 1px 6px;
+    border-radius: 6px;
+    margin-right: 8px;
+    letter-spacing: 0.5px;
+}
+
+/* Sticky section navigation at top */
+.pm2-section-nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(31, 184, 255, 0.15);
+    padding: 8px 14px;
+    margin: 0 -14px 12px;
+    overflow-x: auto;
+    white-space: nowrap;
+    display: flex;
+    gap: 8px;
+    font-size: 0.72rem;
+}
+
+.pm2-section-nav a {
+    color: var(--pn-text-muted, #94a3b8);
+    text-decoration: none;
+    padding: 4px 10px;
+    border-radius: 6px;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+}
+
+.pm2-section-nav a:hover {
+    background: rgba(31, 184, 255, 0.12);
+    color: #f8fafc;
+}
+
+.pm2-section-nav a.is-critical {
+    border-left: 2px solid var(--clinical-success, #10b981);
+    padding-left: 8px;
+}
+
+/* Sentinel for data freshness when section collapsed */
+.pm2-section-collapsible[data-data-changed-while-collapsed="true"]:not([open]) > summary::after {
+    content: '● ▼';
+    color: var(--clinical-warning, #fbbf24);
+}

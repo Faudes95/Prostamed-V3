@@ -1225,6 +1225,24 @@ def patient_profile(nss):
                 logger.warning(f"EPIC 19 v2 twin build failed: {e}")
                 v2_ctx["patient_twin"] = {"available": False}
 
+            # EPIC 33.B — ARPI Response Window (@ 2mo + @ 6mo)
+            try:
+                from prostanet.domains.patient_tracking.arpi_response_window import (
+                    compute_arpi_response_at_window,
+                )
+                # Hidratar clinical_facts si no presente
+                if "clinical_facts" not in data:
+                    import tracking_db as _td_e33b
+                    identity_id = (data.get("identity") or {}).get("id")
+                    if identity_id:
+                        data["clinical_facts"] = _td_e33b.get_patient_clinical_facts(identity_id, active_only=False)
+                v2_ctx["arpi_response_2mo"] = compute_arpi_response_at_window(data, weeks=8)
+                v2_ctx["arpi_response_6mo"] = compute_arpi_response_at_window(data, weeks=24)
+            except Exception as e:
+                logger.debug(f"EPIC 33.B ARPI response window failed: {e}")
+                v2_ctx["arpi_response_2mo"] = {"available": False, "error": str(e)}
+                v2_ctx["arpi_response_6mo"] = {"available": False, "error": str(e)}
+
             # EPIC 20: Clinical Trajectory Recognition — 5 copilot bundles
             # Each copilot self-gates via available=False when patient doesn't qualify
             v2_ctx["risk_stratified_localized"] = {"available": False}
@@ -2396,6 +2414,89 @@ def _build_patient_decision_today_for_api(patient_ref, *, force_recompute=False)
         "decision_today": decision_today,
         "resolved": resolved,
     }, None
+
+
+@app.route('/api/population/cohort-dashboard', methods=['GET'])
+def api_population_cohort_dashboard():
+    """EPIC 33.C — MX Cohort Exploratory Dashboard.
+
+    Query params:
+      - kpis: comma-separated list of KPI ids (default: all registered)
+
+    Returns: bundle con exploratory_disclaimer + kpis dict.
+    """
+    try:
+        from prostanet.domains.population_intelligence.mx_cohort_aggregator import (
+            compute_all_kpis,
+            KPI_REGISTRY,
+        )
+        kpis_param = request.args.get('kpis', '').strip()
+        kpi_ids = [k.strip() for k in kpis_param.split(',') if k.strip()] if kpis_param else None
+        bundle = compute_all_kpis(kpi_ids)
+        bundle["registry_available"] = list(KPI_REGISTRY.keys())
+        return jsonify({"success": True, **bundle})
+    except Exception as exc:
+        logger.exception("Population cohort dashboard failed")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+@app.route('/api/patients/<patient_ref>/arpi-response/<int:weeks>', methods=['GET'])
+def api_patient_arpi_response(patient_ref, weeks):
+    """EPIC 33.B — Calcular respuesta ARPI a ventana pivotal (2 o 6 meses).
+
+    weeks ∈ {8, 24}. Otros valores aceptados pero con warning.
+    Returns: dict con baseline_psa, actual_psa, psa_decline_pct,
+    psa50/psa90_response, ECOG baseline+actual+change, evidence_quality.
+    """
+    if weeks not in (4, 8, 12, 16, 24, 36, 52):
+        return jsonify({"success": False, "error": "weeks_must_be_canonical_window",
+                         "accepted": [8, 24]}), 400
+    try:
+        from prostanet.domains.patient_tracking.arpi_response_window import (
+            compute_arpi_response_at_window,
+        )
+        import tracking_db as _td
+        patient_data = _td.get_patient_full_record(patient_ref)
+        if not patient_data:
+            return jsonify({"success": False, "error": "patient_not_found"}), 404
+        # Hidratar clinical_facts (necesario para ECOG history)
+        identity_id = (patient_data.get("identity") or {}).get("id")
+        if identity_id:
+            patient_data["clinical_facts"] = _td.get_patient_clinical_facts(identity_id, active_only=False)
+        result = compute_arpi_response_at_window(patient_data, weeks=weeks)
+        return jsonify({"success": True, **result})
+    except Exception as exc:
+        logger.exception("ARPI response window failed")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+@app.route('/api/clinical-view-audit', methods=['POST'])
+def api_clinical_view_audit():
+    """EPIC 33.A — Log open/collapse events de `<details>` colapsibles en
+    patient_profile_v2. Cumple HIPAA §164.312(b) accountability.
+
+    Body: {patient_nss, section_key, action, importance?, actor_session_id?}
+    Returns: {success, audit_id}
+    """
+    import tracking_db as _td
+    try:
+        payload = request.get_json(silent=True) or {}
+    except Exception:
+        payload = {}
+    patient_nss = str(payload.get('patient_nss') or payload.get('patient_id') or '').strip()
+    section_key = str(payload.get('section_key') or '').strip()
+    action = str(payload.get('action') or '').strip()
+    importance = payload.get('importance')
+    actor_session_id = payload.get('actor_session_id')
+    if not patient_nss or not section_key or not action:
+        return jsonify({'success': False, 'error': 'missing_required_fields'}), 400
+    res = _td.record_clinical_view_audit(
+        patient_nss, section_key, action,
+        importance=importance,
+        actor_session_id=actor_session_id,
+    )
+    status = 200 if res.get('success') else (404 if res.get('error') == 'patient_not_found' else 400)
+    return jsonify(res), status
 
 
 @app.route('/api/patients/<patient_ref>/decision-today', methods=['GET'])

@@ -21,6 +21,9 @@
     {# LXCI Fase 6 — Transitions framework + hover prefetch #}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2_transitions.css') }}">
     <script src="{{ url_for('static', filename='js/pm2_prefetch.js') }}" defer></script>
+    {# EPIC 33.A — Collapsible sections + HIPAA audit log #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/pm2_collapsible_sections.css', v='epic33a_20260516') }}">
+    <script src="{{ url_for('static', filename='js/pm2_collapsible_persistence.js', v='epic33a_20260516') }}" defer></script>
 </head>
 <body class="bg-slate-950 text-slate-100 antialiased">
 <a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
@@ -781,6 +784,9 @@
 
         {# EPIC 19 — Patient Twin OS card (v2 layout): preference-personalized regimen rankings + redecision alerts #}
         {% if patient_twin and patient_twin.available %}
+        {# EPIC 33.A — Wrap in collapsible (critical=always open, audit-logged) #}
+        <details class="pm2-section-collapsible" data-section-key="patient_twin_os" data-importance="critical" data-section-label="Patient Twin OS" open>
+        <summary>Patient Twin OS · EPIC 19 — Decisión compartida personalizada <span class="pm2-section-meta-chip">{{ (patient_twin.regimen_rankings or [])|length }} regímenes ranked</span></summary>
         <section id="pm2PatientTwinOS" class="pm2-patient-twin-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(168,85,247,0.10), rgba(15,23,42,0.66)); border: 1px solid rgba(168,85,247,0.32); border-left: 6px solid rgb(168,85,247); border-radius: 14px;" aria-label="Patient Twin OS" data-testid="patient-twin-os-card">
             <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
                 <div>
@@ -929,10 +935,82 @@
             </div>
             {% endif %}
         </section>
+        </details>
+        {% endif %}
+
+        {# EPIC 33.B — ARPI Response Window cards (2mo + 6mo) #}
+        {% if (arpi_response_2mo and arpi_response_2mo.available) or (arpi_response_6mo and arpi_response_6mo.available) %}
+        <details class="pm2-section-collapsible" data-section-key="arpi_response_window" data-importance="critical" data-section-label="Respuesta ARPI 2/6mo" open>
+        <summary>Respuesta ARPI · Ventanas 2mo + 6mo <span class="pm2-section-meta-chip">EPIC 33.B</span></summary>
+        <section style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(244,114,182,.06), rgba(15,23,42,.62)); border: 1px solid rgba(244,114,182,.28); border-left: 6px solid rgb(244,114,182); border-radius: 14px;" aria-label="ARPI Response Window">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
+                <div>
+                    <div style="font-size:.7rem; color:#f9a8d4; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">ARPI Response Window</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.05rem; color:#f8fafc; margin:5px 0 0;">Beneficio ARPI a 2 meses y 6 meses</h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.78rem; line-height:1.5;">
+                        PSA decline % + ECOG change desde baseline de la línea ARPI actual. Ventana ±14d (NO interpolación · PCWG3 + AUA-ASTRO). EPIC 33.B.
+                    </p>
+                </div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+                {% for window_data, label, weeks in [(arpi_response_2mo, '2 meses', 8), (arpi_response_6mo, '6 meses', 24)] %}
+                <div style="padding:14px; background:rgba(15,23,42,.5); border:1px solid rgba(244,114,182,.18); border-radius:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;">
+                        <strong style="color:#f8fafc; font-size:.95rem;">{{ label }} ({{ weeks }}sem)</strong>
+                        {% if window_data and window_data.available %}
+                            <span style="font-size:.65rem; color:#cbd5e1;">{{ window_data.regimen_arpi or '—' }}</span>
+                        {% endif %}
+                    </div>
+                    {% if window_data and window_data.available %}
+                        {% if window_data.psa_decline_pct is not none %}
+                        <div style="margin-bottom:6px;">
+                            <span style="color:var(--pn-text-muted); font-size:.74rem;">PSA decline:</span>
+                            <strong style="color:{{ '#10b981' if window_data.psa50_response else '#fbbf24' }}; font-size:1.1rem; margin-left:6px;">{{ window_data.psa_decline_pct }}%</strong>
+                            {% if window_data.psa90_response %}
+                                <span class="pm2-state-chip" style="background:rgba(16,185,129,.2); color:#86efac; font-size:.6rem; margin-left:6px;">PSA90</span>
+                            {% elif window_data.psa50_response %}
+                                <span class="pm2-state-chip" style="background:rgba(16,185,129,.15); color:#86efac; font-size:.6rem; margin-left:6px;">PSA50</span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                        <div style="font-size:.72rem; color:var(--pn-text-muted); margin-bottom:4px;">
+                            Baseline {{ window_data.baseline_psa or '—' }} → Actual {{ window_data.actual_psa or '—' }} ({{ window_data.actual_psa_date or '—' }})
+                        </div>
+                        {% if window_data.ecog_change_from_baseline is not none %}
+                        <div style="font-size:.72rem; color:var(--pn-text-muted); margin-bottom:4px;">
+                            ECOG: {{ window_data.baseline_ecog }} → {{ window_data.actual_ecog }}
+                            <span style="color:{{ '#10b981' if window_data.ecog_change_from_baseline < 0 else ('#fbbf24' if window_data.ecog_change_from_baseline > 0 else '#cbd5e1') }};">
+                                ({{ '+' if window_data.ecog_change_from_baseline > 0 else '' }}{{ window_data.ecog_change_from_baseline }})
+                            </span>
+                        </div>
+                        {% endif %}
+                        <div style="font-size:.65rem; color:var(--pn-text-muted); margin-top:8px; padding-top:6px; border-top:1px solid rgba(148,163,184,.1);">
+                            <span style="color:#7dd3fc;">{{ window_data.evidence_quality }}</span>
+                            · offset {{ window_data.window_offset_days or 0 }}d · target {{ window_data.target_date }}
+                        </div>
+                    {% else %}
+                        <div style="color:var(--pn-text-muted); font-size:.78rem; line-height:1.45;">
+                            {{ window_data.reason if window_data else 'No disponible' }}
+                            {% if window_data and window_data.days_until_target %}
+                            <br><span style="font-size:.66rem;">{{ window_data.days_until_target }} días hasta target.</span>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            <div style="margin-top:10px; padding:8px 10px; background:rgba(251,191,36,.06); border-left:3px solid rgba(251,191,36,.4); border-radius:6px; font-size:.66rem; color:#fde68a;">
+                ⚠ Ventana ±14d sin interpolación. Si <code>evidence_quality=closest_outside_window</code>, el dato más cercano está fuera de tolerancia. PCWG3 Scher JCO 2016 + AUA-ASTRO 2024.
+            </div>
+        </section>
+        </details>
         {% endif %}
 
         {% set _tb_recommendation = _tumor_board.get('recommendation', {}) if _tumor_board else {} %}
         {% if _tumor_board and _tb_options %}
+        {# EPIC 33.A — Wrap Tumor Board OS (standard, default open, persistible) #}
+        <details class="pm2-section-collapsible" data-section-key="tumor_board_os" data-importance="standard" data-section-label="Tumor Board OS" open>
+        <summary>Tumor Board OS · Alternativas terapéuticas <span class="pm2-section-meta-chip">{{ (_tb_options or [])|length }} opciones</span></summary>
         <section id="pm2TumorBoardOS" class="pm2-tumor-board-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(34,211,238,.08), rgba(15,23,42,.62)); border: 1px solid rgba(34,211,238,.28); border-radius: 14px;" aria-label="Tumor Board OS">
             <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
                 <div>
@@ -980,6 +1058,7 @@
                 {% endfor %}
             </div>
         </section>
+        </details>
         {% endif %}
 
         {% set _care_pathway = care_pathway_os or profile_view_raw.get('care_pathway_os', {}) %}
@@ -987,6 +1066,9 @@
         {% set _cp_actions = _care_pathway.get('pathway_actions', []) if _care_pathway else [] %}
         {% set _cp_triggers = _care_pathway.get('redecision_triggers', []) if _care_pathway else [] %}
         {% if _care_pathway and _cp_actions %}
+        {# EPIC 33.A — Wrap Care Pathway OS (standard, default open, persistible) #}
+        <details class="pm2-section-collapsible" data-section-key="care_pathway_os" data-importance="standard" data-section-label="Care Pathway OS" open>
+        <summary>Care Pathway OS · Próximos pasos clínicos <span class="pm2-section-meta-chip">{{ _cp_actions|length }} acciones</span></summary>
         <section id="pm2CarePathwayOS" class="pm2-care-pathway-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(16,185,129,.08), rgba(15,23,42,.66)); border: 1px solid rgba(16,185,129,.28); border-radius: 14px;" aria-label="Care Pathway OS">
             <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
                 <div>
@@ -1056,6 +1138,7 @@
             </div>
             {% endif %}
         </section>
+        </details>
         {% endif %}
 
         {% set _clinical_memory = clinical_memory_os or profile_view_raw.get('clinical_memory_os', {}) %}
@@ -1067,6 +1150,9 @@
         {% set _cm_episodes = _clinical_memory.get('decision_episodes', []) if _clinical_memory else [] %}
         {% set _cm_redecision = _clinical_memory.get('redecision_reasons', []) if _clinical_memory else [] %}
         {% if _clinical_memory %}
+        {# EPIC 33.A — Wrap Clinical Memory OS (archival, collapsed default) #}
+        <details class="pm2-section-collapsible" data-section-key="clinical_memory_os" data-importance="archival" data-section-label="Clinical Memory OS">
+        <summary>Clinical Memory OS · Histórico de decisiones <span class="pm2-section-meta-chip">{{ (_cm_episodes or [])|length }} episodios</span></summary>
         <section id="pm2ClinicalMemoryOS" class="pm2-clinical-memory-panel" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(14,165,233,.08), rgba(15,23,42,.66)); border: 1px solid rgba(14,165,233,.28); border-radius: 14px;" aria-label="Clinical Memory OS">
             <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
                 <div>
@@ -1128,8 +1214,12 @@
             </div>
             {% endif %}
         </section>
+        </details>
         {% endif %}
 
+        {# EPIC 33.A — Wrap Voice Clinical OS (standard, persistible) #}
+        <details class="pm2-section-collapsible" data-section-key="voice_clinical_os" data-importance="standard" data-section-label="Voice Clinical OS" open>
+        <summary>Voice Clinical OS · Cortana captura con revisión médica <span class="pm2-section-meta-chip">STT local first</span></summary>
         <section id="pm2VoiceClinicalOS" class="pm2-voice-os-panel" data-pm2-voice-os data-patient-ref="{{ identity.nss }}" data-surface="patient_profile_v2" aria-label="Cortana clínica">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
                 <div>
@@ -1276,6 +1366,7 @@
                 </div>
             </div>
         </section>
+        </details>
 
         {% set _surface = surface_consistency or {} %}
         {% if _surface.should_show %}
@@ -1770,6 +1861,9 @@
         {% set _ad_summary = _autodrive.get('summary', {}) if _autodrive else {} %}
         {% set _ad_queue = _autodrive.get('today_queue', []) if _autodrive else [] %}
         {% set _ad_top = _ad_queue[0] if _ad_queue else {} %}
+        {# EPIC 33.A — Wrap Autodrive Command Center (standard, default open) #}
+        <details class="pm2-section-collapsible" data-section-key="autodrive_command_center" data-importance="standard" data-section-label="Autodrive Command Center" open>
+        <summary>Autodrive Command Center · Decision Today Fusion Kernel <span class="pm2-section-meta-chip">{{ _ad_queue|length }} en cola</span></summary>
         <section id="pm2AutodriveCommandCenter" data-decision-today-fusion style="margin: var(--space-4) var(--space-6); padding: var(--space-5); background: linear-gradient(135deg, rgba(14,165,233,0.08), rgba(15,23,42,0.58)); border: 1px solid rgba(14,165,233,0.32); border-left: 6px solid var(--clinical-info); border-radius: 14px;">
             <div style="display:flex;justify-content:space-between;gap:var(--space-3);align-items:flex-start;flex-wrap:wrap;margin-bottom:var(--space-3);">
                 <div style="min-width:220px;flex:1">
@@ -1811,6 +1905,7 @@
                 <a href="/api/patients/{{ identity.nss }}/autodrive" class="pm2-btn pm2-btn--ghost" style="text-decoration:none">Ver JSON auditable</a>
             </div>
         </section>
+        </details>
 
         {# ── Faubot LXXXVI #67F — Next Best Action ejecutivo (B-fix Fase 4) ── #}
         {% if next_best_action.available %}
@@ -1879,6 +1974,9 @@
         {# (a) muestra los datos canonicalizados si ya fueron capturados, y         #}
         {# (b) siempre ofrece el CTA "Capturar reporte" → moment=biopsy_capture.    #}
         {# NO elimina ningún campo existente; sólo añade superficie de captura.     #}
+        {# EPIC 33.A — Wrap Biopsy Diagnostics (critical, always open) #}
+        <details class="pm2-section-collapsible" data-section-key="biopsy_diagnostics" data-importance="critical" data-section-label="Biopsy Diagnostics" open>
+        <summary>Biopsy Diagnostics · Reporte histopatológico estructurado <span class="pm2-section-meta-chip">EPIC 22b</span></summary>
         <section id="pm2BiopsyDiagnostics" class="pm2-biopsy-panel"
                  style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(244,114,182,0.08), rgba(15,23,42,0.6)); border: 1px solid rgba(244,114,182,0.30); border-left: 6px solid rgb(244,114,182); border-radius: 14px;"
                  aria-label="Biopsy diagnostics and capture surface"
@@ -1967,6 +2065,7 @@
             </div>
             {% endif %}
         </section>
+        </details>
 
         {# ── Tumor Board OS — What-if simulator card ── #}
         <section style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(168,85,247,0.06), rgba(15,23,42,0.5)); border: 1px solid rgba(168,85,247,0.3); border-left: 4px solid rgb(168,85,247); border-radius: 12px;">

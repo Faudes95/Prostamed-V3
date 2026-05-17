@@ -13736,6 +13736,115 @@ Pre-EPIC32: 42+ instances de `datetime.utcnow()` (deprecated 3.12+) y `datetime.
 ### Constraint del usuario respetado
 0 líneas de lógica clínica eliminadas. Append/repair only. 4 nuevos helpers/modules introducidos sin tocar entry points pre-existentes (backward compat 100%).
 
+---
+
+## EPIC 33 — Tablero Ejecutivo Poblacional + Ventanas ARPI @ 2/6mo + Decongestión Patient Profile
+
+> Fecha: 2026-05-17 · FAUBOT_RELEASE bump: `2026-05-16 CIII` → `2026-05-16 CIV`
+>
+> Plan integrado tras: Phase 1 Explore (1 agent) + Phase 2 council (4 voces: Architect+Skeptic+Pragmatist+Critic) + Phase 3 synthesis con concesiones a Critic (HIPAA + estadística) y Pragmatist (reuso `loop_monitor_dashboard.html`).
+>
+> **Scope final: 3 sub-EPICs** (reducido de 5 propuestos inicialmente por council convergence).
+
+### EPIC 33.A — Patient Profile Decongestion (`<details>` + HIPAA audit log)
+
+| Cambio | Archivo |
+|--------|---------|
+| Nueva tabla SQLite `clinical_view_audit` (HIPAA §164.312(b) accountability) | `tracking_db.py` |
+| Helper `record_clinical_view_audit()` con utc_now_iso() | `tracking_db.py` |
+| Endpoint `POST /api/clinical-view-audit` (sendBeacon-compatible) | `app.py` |
+| Nuevo CSS `pm2_collapsible_sections.css` (~150 líneas, badges critical/archival, sticky section nav) | `static/css/` |
+| Nuevo JS `pm2_collapsible_persistence.js` (~140 líneas, localStorage + audit log + auto-build nav) | `static/js/` |
+| **7 secciones envueltas** en `<details>` (0 deletions): Patient Twin OS, Tumor Board, Care Pathway, Clinical Memory, Voice Clinical, Autodrive, Biopsy Diagnostics | `templates/patient_profile_v2.html` |
+
+**Importance strategy**:
+- Critical (always open, override localStorage): Patient Twin OS, Biopsy Diagnostics
+- Standard (default open, persistible): Tumor Board, Care Pathway, Voice Clinical, Autodrive
+- Archival (default collapsed): Clinical Memory OS
+
+### EPIC 33.B — ARPI Response Window Builder (@ 2mo + @ 6mo)
+
+| Cambio | Archivo |
+|--------|---------|
+| Nueva tabla SQLite `arpi_response_windows` (UNIQUE patient×regimen×weeks) | `tracking_db.py` |
+| Nuevo módulo `arpi_response_window.py` (compute_arpi_response_at_window, NO interpolation) | `prostanet/domains/patient_tracking/` |
+| Endpoint `GET /api/patients/<nss>/arpi-response/<weeks>` | `app.py` |
+| Hydration en app.py patient_profile route con `arpi_response_2mo`/`6mo` keys | `app.py:1224-1244` |
+| UI card en patient_profile_v2.html (envuelta en `<details>` critical) | `templates/patient_profile_v2.html` |
+
+**Concesiones Critic**:
+- Ventana ±14 días sin interpolación (PSA es log-no-lineal, no fabricamos)
+- `evidence_quality` ∈ {`in_window`, `closest_outside_window`, `no_data`, `target_in_future`, `no_arpi_line`, `no_current_line`}
+- `actual_vs_target_window_days` siempre presente
+
+**Smoke validation**:
+- Paciente sintético ABIRATERONE baseline 20→3 PSA @ 2mo correctamente: PSA decline 60%, PSA50=True
+- ECOG 2→1 (improvement -1) correctamente captado de clinical_facts history
+- 6mo correctamente reporta `target_in_future` si fecha aún no alcanzada
+
+### EPIC 33.C — Exploratory MX Cohort Aggregator + Dashboard Extension
+
+| Cambio | Archivo |
+|--------|---------|
+| Nuevo paquete `prostanet/domains/population_intelligence/` (3 archivos) | new |
+| `suppression.py`: Wilson CI exact, normal_ci_mean, suppress_if_below, proportion_with_ci | new |
+| `mx_cohort_aggregator.py`: 5 KPI builders + KPI_REGISTRY extensible framework | new |
+| `mx_population_kpis_roadmap.yaml`: 5 MVP + 15 roadmap KPIs documentados con clinical rationale + PMIDs | new |
+| Endpoint `GET /api/population/cohort-dashboard?kpis=...` | `app.py` |
+| Sección **Cohorte Exploratoria MX** extendiendo `loop_monitor_dashboard.html` (banner permanente + 5 KPI cards rendered via JS) | `templates/loop_monitor_dashboard.html` |
+
+**5 MVP KPIs implementados**:
+1. `patients_by_regimen` — counts por ARPI + ADT_ONLY + OTHER (Wilson CI)
+2. `psa_response_8wk` — mean PSA decline + PSA50 rate per ARPI @ 2mo (suppress n<5)
+3. `psa_response_24wk` — idem @ 6mo
+4. `ecog_change_24wk` — improved/stable/worsened % per ARPI (Wilson CI)
+5. `clinical_state_distribution` — counts por reconciled_state (54 estados)
+
+**15 roadmap KPIs** documentados en YAML (Kaplan-Meier per ARPI, HRR prevalence, germline testing rate, voice intake adoption, castration confirmed rate, time-to-treatment, comorbidity prevalence, capture completeness, risk stratification, imaging modality, PSA at presentation, Gleason/ISUP distribution, trial enrollment funnel, vital status, surgical margin).
+
+**Concesiones Critic integradas**:
+- Banner permanente "⚠ Cohorte exploratoria · NO evidencia inferencial · n<5 suprimido (HIPAA Safe Harbor §164.514)"
+- Footer reminder "Use para identificar gaps de captura y prioridades de investigación, NO usar como evidencia clínica"
+- Cada KPI con `suppressed: True/False` + `display: 'n<5 suprimido'` cuando aplica
+
+### Visual Validation EPIC 33 (Playwright capture)
+
+- `epic33_visual_validation/01_patient_profile_collapsibles.png` — 7 `<details>` colapsibles + section nav sticky con 7 links · Patient Twin OS expanded como CRITICAL · ranking #1 abiraterona visible
+- `epic33_visual_validation/02_mx_cohort_dashboard.png` — Banner exploratorio + KPI 1 Pacientes por ARPI (424 DB · 0 con régimen documentado = gap captura) · KPI 2 PSA response @ 2mo con `n<5 suprimido` por ABIRATERONE/APALUTAMIDE
+
+### Tests EPIC 33
+
+- 208/208 EPIC 22-32 sweep pass (+ 1 xfailed legacy + 1 pre-existing test_epic26 inspect.py issue documentado EPIC 31)
+- Smoke `compute_arpi_response_at_window(patient, weeks=8)` con paciente sintético → PSA50=True correcto
+- Smoke `compute_all_kpis()` con DB actual → 5 KPIs computados, suppression aplicada correctamente
+- Smoke endpoint `/api/clinical-view-audit` → `{"audit_id": 3, "success": true}`
+- Smoke endpoint `/api/population/cohort-dashboard` → bundle con 5 KPIs + exploratory_disclaimer
+- Visual Playwright: 7 collapsibles detectados + section_nav 7 links + cards_rendered=5 en dashboard
+
+### Diferimientos a EPIC 34+ (post N≥500 pacientes documentados)
+
+- **Tabla persistida `patient_research_lines`** (currently solo derivador on-the-fly disponible) — Critic veto hasta validación clínica con N≥500
+- **15 KPIs adicionales** del roadmap YAML — implementados como tickets atómicos via KPI_REGISTRY
+- **Mexican subgroup comparison vs trials internacionales** (LATITUDE, ENZAMET, ARASENS) — SOLO mostrar cuando N≥30 por subgrupo
+- **Promotion de cohorte exploratoria a inferencial** — requiere statistical review board sign-off
+- **Multi-language support en UI banner** (currently solo español)
+
+### Constraint del usuario respetado
+✅ **0 líneas de lógica clínica eliminadas**. Append/repair only.
+- 7 secciones de patient_profile envueltas en `<details>` SIN tocar contenido interno
+- Extendido `loop_monitor_dashboard.html` SIN crear template nuevo (concesión Pragmatist)
+- 4 nuevos módulos/files introducidos sin tocar entry points pre-existentes
+- Backward compat 100%: si JS falla, `<details>` rendran con default attribute; si endpoint falla, dashboard muestra "Failed" graceful
+
+### Council voices integrated (Phase 2)
+
+| Voz | Concesión |
+|-----|-----------|
+| **Architect** | Cedo 5→3 sub-EPICs |
+| **Skeptic** | Diferir research_lines table a EPIC 34 (n<100 insufficient) |
+| **Pragmatist** | Orden invertido E→B→C (decongestion first 30min impact); reusar loop_monitor_dashboard.html + disease_course_outcomes |
+| **Critic** | clinical_view_audit table + HIPAA actor_id; banner exploratory permanente; NO interpolación PSA; ventana ±14d explicit |
+
 ### Resumen acumulado EPIC 30 + 31 + 32
 
 | EPIC | Hallazgos cerrados | Pendientes |

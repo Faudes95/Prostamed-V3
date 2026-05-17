@@ -644,6 +644,54 @@ def _persist_verified_document_facts_to_canonical(
     )
 
 
+def record_clinical_view_audit(
+    nss_or_id,
+    section_key: str,
+    action: str,
+    *,
+    importance: str | None = None,
+    actor_user_id: int | None = None,
+    actor_session_id: str | None = None,
+) -> dict:
+    """EPIC 33.A — Log open/collapse/viewed_collapsed para `<details>` colapsibles
+    en patient_profile_v2. Cumple HIPAA §164.312(b) accountability.
+
+    Returns: {success, audit_id} o {success: False, error}
+    """
+    if action not in ("opened", "collapsed", "viewed_collapsed"):
+        return {"success": False, "error": "invalid_action"}
+    if not section_key:
+        return {"success": False, "error": "missing_section_key"}
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return {"success": False, "error": "patient_not_found"}
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+        cursor.execute(
+            '''
+            INSERT INTO clinical_view_audit
+                (patient_id, section_key, action, importance,
+                 actor_user_id, actor_session_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (
+                patient_id,
+                str(section_key)[:120],
+                action,
+                (importance or "")[:40] if importance else None,
+                actor_user_id,
+                (actor_session_id or "")[:120] if actor_session_id else None,
+                utc_now_iso(),
+            ),
+        )
+        conn.commit()
+        return {"success": True, "audit_id": cursor.lastrowid}
+    finally:
+        conn.close()
+
+
 def get_patient_clinical_facts(patient_id, *, active_only=True):
     conn = _connect()
     cursor = conn.cursor()
@@ -4058,6 +4106,69 @@ def init_tracking_db():
         except Exception:
             # Already exists or DB doesn't yet have base table — both ok
             pass
+    # EPIC 33.A — clinical_view_audit: HIPAA §164.312(b) + 21 CFR Part 11 §11.10(e)
+    # Concesión Critic council: cuando `<details>` colapsa una sección crítica
+    # del patient_profile (PSA Tower, Patient Twin, etc.), debemos loggear
+    # el evento de open/close para reconstrucción forense post-hoc. Sin esto,
+    # defensa legal en mala praxis ("¿qué vio realmente el clínico?") es
+    # imposible.
+    c.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS clinical_view_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL,
+            section_key TEXT NOT NULL,
+            action TEXT NOT NULL,
+            importance TEXT,
+            actor_user_id INTEGER,
+            actor_session_id TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(patient_id) REFERENCES patient_identity(id)
+        )
+        '''
+    )
+    c.execute(
+        '''
+        CREATE INDEX IF NOT EXISTS clinical_view_audit_patient_idx
+        ON clinical_view_audit(patient_id, created_at DESC)
+        '''
+    )
+    # EPIC 33.B — arpi_response_windows cache: snapshots de respuesta ARPI a
+    # ventanas pivotal (8 semanas = 2mo, 24 semanas = 6mo). UNIQUE por
+    # (patient, regimen, target_weeks) permite recompute al recibir nuevo PSA
+    # (invalidation hook ya wired EPIC 31.A EXP-1).
+    c.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS arpi_response_windows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL,
+            regimen_code TEXT NOT NULL,
+            target_weeks INTEGER NOT NULL,
+            target_date TEXT NOT NULL,
+            line_start_date TEXT,
+            baseline_psa REAL,
+            actual_psa REAL,
+            actual_psa_date TEXT,
+            psa_decline_pct REAL,
+            psa50_response INTEGER,
+            psa90_response INTEGER,
+            actual_ecog INTEGER,
+            baseline_ecog INTEGER,
+            ecog_change_from_baseline INTEGER,
+            window_offset_days INTEGER,
+            evidence_quality TEXT,
+            computed_at TEXT NOT NULL,
+            UNIQUE(patient_id, regimen_code, target_weeks),
+            FOREIGN KEY(patient_id) REFERENCES patient_identity(id)
+        )
+        '''
+    )
+    c.execute(
+        '''
+        CREATE INDEX IF NOT EXISTS arpi_response_windows_regimen_idx
+        ON arpi_response_windows(regimen_code, target_weeks)
+        '''
+    )
     c.execute(
         '''
         CREATE TABLE IF NOT EXISTS patient_fact_conflicts (

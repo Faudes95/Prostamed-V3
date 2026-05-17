@@ -2099,6 +2099,176 @@
       </div>
       {% endif %}
     </section>
+
+    {# ───────────────────────────────────────────────────────────────────
+       EPIC 33.C — Cohorte Exploratoria MX (KPI_REGISTRY framework)
+       Banner permanente "NO inferencial" (concesión Critic council).
+       ─────────────────────────────────────────────────────────────────── #}
+    <section style="margin-top:24px; padding:20px; background:linear-gradient(135deg,rgba(168,85,247,.06),rgba(15,23,42,.6)); border:1px solid rgba(168,85,247,.28); border-left:6px solid rgb(168,85,247); border-radius:14px;" aria-label="Cohorte Exploratoria MX">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:14px;">
+        <div>
+          <div style="font-size:.7rem; color:#c4b5fd; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">EPIC 33.C · Population Intelligence</div>
+          <h3 style="font-family:var(--pm-font-display,sans-serif); font-size:1.25rem; color:#f8fafc; margin:5px 0 0;">Cohorte Exploratoria MX · Distribución terapéutica + Respuesta ARPI</h3>
+          <p style="margin:6px 0 0; color:#94a3b8; font-size:.82rem; line-height:1.5; max-width:78ch;">
+            KPI_REGISTRY extensible: 5 KPIs core (counts ARPI, response 2/6mo, ECOG change, distribución estados). Roadmap +15 KPIs en <code>mx_population_kpis_roadmap.yaml</code>.
+          </p>
+        </div>
+        <button type="button" id="cohortRefreshBtn" onclick="loadCohortDashboard()" style="padding:8px 14px; background:rgba(168,85,247,.18); border:1px solid rgba(168,85,247,.4); color:#e9d5ff; border-radius:8px; cursor:pointer; font-size:.78rem;">
+          Refresh KPIs
+        </button>
+      </div>
+
+      <div style="margin-bottom:14px; padding:10px 14px; background:rgba(251,191,36,.07); border-left:3px solid rgba(251,191,36,.5); border-radius:6px; font-size:.74rem; color:#fde68a;">
+        ⚠ <strong>Cohorte exploratoria · NO evidencia inferencial</strong> · n&lt;5 suprimido (HIPAA Safe Harbor §164.514). Use para identificar gaps de captura y prioridades de investigación, NO como evidencia clínica. IC95% Wilson exact.
+      </div>
+
+      <div id="cohortDashboardLoading" style="text-align:center; padding:20px; color:#94a3b8;">
+        Cargando KPIs poblacionales… (suprimir n&lt;5)
+      </div>
+      <div id="cohortDashboardContent" style="display:none;">
+        <!-- Populated by JS -->
+      </div>
+
+      <div style="margin-top:14px; padding:10px 14px; background:rgba(15,23,42,.5); border:1px solid rgba(148,163,184,.2); border-radius:6px; font-size:.7rem; color:#94a3b8;">
+        <strong style="color:#cbd5e1;">Roadmap KPIs adicionales (15):</strong>
+        Kaplan-Meier per ARPI · HRR prevalence (BRCA/ATM/Lynch) · Germline testing rate · Voice intake adoption ·
+        Castration confirmed vs assumed · Time-from-Dx-to-treatment · Comorbidity prevalence (CV/hepatic/DM) ·
+        Capture completeness per section · Risk stratification (5 tiers) · Imaging modality adoption ·
+        Mean PSA at presentation · Gleason/ISUP distribution · Trial enrollment funnel · Vital status snapshot ·
+        Surgical margin status. Cada uno como ticket atómico post-MVP.
+      </div>
+    </section>
+
+    <script>
+      // EPIC 33.C — KPI dashboard JS
+      function fmtPercent(p, low, high) {
+        if (p === null || p === undefined) return '—';
+        const pct = (100 * p).toFixed(1);
+        if (low !== undefined && high !== undefined && low !== null) {
+          return pct + '% <small style="color:#94a3b8">(IC95% ' + (100*low).toFixed(1) + '–' + (100*high).toFixed(1) + '%)</small>';
+        }
+        return pct + '%';
+      }
+
+      function renderRegimenKPI(kpi) {
+        const breakdown = kpi.breakdown || {};
+        const rows = Object.entries(breakdown).map(([label, data]) => {
+          const prop = data.proportion || {};
+          const cell = data.suppressed
+            ? '<span style="color:#fbbf24;">' + (data.count || 0) + ' (n&lt;5)</span>'
+            : '<strong>' + data.count + '</strong> · ' + fmtPercent(prop.p_hat, prop.ci_low, prop.ci_high);
+          return `<tr><td style="padding:6px 10px;color:#cbd5e1;">${label}</td><td style="padding:6px 10px;color:#f8fafc;">${cell}</td></tr>`;
+        }).join('');
+        return `
+          <div style="background:rgba(15,23,42,.4); padding:14px; border-radius:8px; border:1px solid rgba(148,163,184,.15);">
+            <h4 style="color:#f8fafc; font-size:.95rem; margin:0 0 4px;">${kpi.kpi_label}</h4>
+            <div style="font-size:.66rem; color:#94a3b8; margin-bottom:10px;">
+              Total DB: ${kpi.total_patients_in_db} · Con régimen documentado: ${kpi.patients_with_regimen_documented} (${kpi.coverage_pct}%)
+            </div>
+            <table style="width:100%; font-size:.78rem; border-collapse:collapse;">${rows}</table>
+          </div>
+        `;
+      }
+
+      function renderResponseKPI(kpi) {
+        const breakdown = kpi.breakdown || {};
+        const rows = Object.entries(breakdown).map(([label, data]) => {
+          if (data.suppressed) {
+            return `<tr><td style="padding:6px 10px;color:#cbd5e1;">${label}</td><td colspan="2" style="padding:6px 10px;color:#fbbf24;font-size:.75rem;">${data.display || 'n<5 suprimido'}</td></tr>`;
+          }
+          const mean = data.mean_decline_pct?.mean !== null ? data.mean_decline_pct?.mean + '%' : '—';
+          const ci = data.mean_decline_pct?.ci_low !== null ? `<small style="color:#94a3b8">(IC95% ${data.mean_decline_pct?.ci_low}–${data.mean_decline_pct?.ci_high})</small>` : '';
+          const psa50 = data.psa50_rate?.display || '—';
+          return `<tr>
+            <td style="padding:6px 10px;color:#cbd5e1;">${label}</td>
+            <td style="padding:6px 10px;color:#f8fafc;">n=${data.n} · ${mean} ${ci}</td>
+            <td style="padding:6px 10px;color:#86efac;font-size:.74rem;">PSA50: ${psa50}</td>
+          </tr>`;
+        }).join('');
+        return `
+          <div style="background:rgba(15,23,42,.4); padding:14px; border-radius:8px; border:1px solid rgba(148,163,184,.15);">
+            <h4 style="color:#f8fafc; font-size:.95rem; margin:0 0 10px;">${kpi.kpi_label}</h4>
+            <table style="width:100%; font-size:.78rem; border-collapse:collapse;">${rows}</table>
+          </div>
+        `;
+      }
+
+      function renderECOGKPI(kpi) {
+        const breakdown = kpi.breakdown || {};
+        const rows = Object.entries(breakdown).map(([label, data]) => {
+          if (data.suppressed) {
+            return `<tr><td style="padding:6px 10px;color:#cbd5e1;">${label}</td><td colspan="3" style="padding:6px 10px;color:#fbbf24;font-size:.75rem;">${data.display}</td></tr>`;
+          }
+          return `<tr>
+            <td style="padding:6px 10px;color:#cbd5e1;">${label}</td>
+            <td style="padding:6px 10px;color:#86efac;font-size:.72rem;">↓ ${data.improved_pct?.display || '—'}</td>
+            <td style="padding:6px 10px;color:#cbd5e1;font-size:.72rem;">= ${data.stable_pct?.display || '—'}</td>
+            <td style="padding:6px 10px;color:#fbbf24;font-size:.72rem;">↑ ${data.worsened_pct?.display || '—'}</td>
+          </tr>`;
+        }).join('');
+        return `
+          <div style="background:rgba(15,23,42,.4); padding:14px; border-radius:8px; border:1px solid rgba(148,163,184,.15);">
+            <h4 style="color:#f8fafc; font-size:.95rem; margin:0 0 10px;">${kpi.kpi_label}</h4>
+            <table style="width:100%; font-size:.78rem; border-collapse:collapse;">${rows}</table>
+          </div>
+        `;
+      }
+
+      function renderStateDistKPI(kpi) {
+        const breakdown = kpi.breakdown || [];
+        const rows = breakdown.slice(0, 20).map(item => {
+          const cell = item.suppressed ? `<span style="color:#fbbf24">${item.display}</span>` : `<strong>${item.n}</strong>`;
+          return `<tr><td style="padding:4px 10px;color:#cbd5e1; font-size:.74rem;">${item.state}</td><td style="padding:4px 10px;color:#f8fafc;">${cell}</td></tr>`;
+        }).join('');
+        return `
+          <div style="background:rgba(15,23,42,.4); padding:14px; border-radius:8px; border:1px solid rgba(148,163,184,.15);">
+            <h4 style="color:#f8fafc; font-size:.95rem; margin:0 0 4px;">${kpi.kpi_label}</h4>
+            <div style="font-size:.66rem; color:#94a3b8; margin-bottom:10px;">
+              ${kpi.total_classified}/${kpi.total_patients_in_db} clasificados (${kpi.coverage_pct}%) · ${kpi.states_documented} estados únicos
+            </div>
+            <table style="width:100%; border-collapse:collapse;">${rows}</table>
+          </div>
+        `;
+      }
+
+      function loadCohortDashboard() {
+        const loadingEl = document.getElementById('cohortDashboardLoading');
+        const contentEl = document.getElementById('cohortDashboardContent');
+        if (loadingEl) loadingEl.style.display = 'block';
+        if (contentEl) contentEl.style.display = 'none';
+        fetch('/api/population/cohort-dashboard')
+          .then(r => r.json())
+          .then(bundle => {
+            if (!bundle.success) {
+              contentEl.innerHTML = `<div style="color:#fbbf24;padding:14px;">Error: ${bundle.error || 'unknown'}</div>`;
+              loadingEl.style.display = 'none';
+              contentEl.style.display = 'block';
+              return;
+            }
+            const kpis = bundle.kpis || {};
+            const cards = [];
+            if (kpis.patients_by_regimen) cards.push(renderRegimenKPI(kpis.patients_by_regimen));
+            if (kpis.psa_response_8wk) cards.push(renderResponseKPI(kpis.psa_response_8wk));
+            if (kpis.psa_response_24wk) cards.push(renderResponseKPI(kpis.psa_response_24wk));
+            if (kpis.ecog_change_24wk) cards.push(renderECOGKPI(kpis.ecog_change_24wk));
+            if (kpis.clinical_state_distribution) cards.push(renderStateDistKPI(kpis.clinical_state_distribution));
+            contentEl.innerHTML = `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap:14px;">${cards.join('')}</div>`;
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'block';
+          })
+          .catch(err => {
+            contentEl.innerHTML = `<div style="color:#fbbf24;padding:14px;">Failed: ${err.message}</div>`;
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'block';
+          });
+      }
+      // Auto-load on mount
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', loadCohortDashboard);
+      } else {
+        loadCohortDashboard();
+      }
+    </script>
   </div>
 </div>
 {% endblock %}

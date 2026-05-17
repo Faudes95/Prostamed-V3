@@ -1,0 +1,275 @@
+# MX Population KPIs Roadmap — EPIC 33.C
+#
+# Catalog de KPIs implementados (MVP core 5) + roadmap (15 adicionales).
+# Cada KPI documentado con: rationale clínico, evidence (PMIDs cuando aplica),
+# data sources requeridas, suppression policy, statistical method.
+#
+# Concesión Critic council: cohorte exploratoria SIEMPRE banner "NO inferencial".
+# Concesión Pragmatist: framework KPI_REGISTRY permite añadir KPIs como tickets atómicos.
+# Concesión DS-Stats: Wilson CI para proporciones, normal CI para medias, n<5 suppress.
+
+version: "1.0.0"
+release_date: "2026-05-17"
+faubot_release: "2026-05-16 CIV"
+exploratory_disclaimer: |
+  Cohorte exploratoria · NO evidencia inferencial · n<5 suprimido (HIPAA Safe Harbor §164.514).
+  Para identificar gaps de captura y prioridades de investigación, NO usar como evidencia clínica.
+  IC95% Wilson exact para proporciones, normal aproximación para medias.
+
+# ────────────────────────────────────────────────────────────────
+# MVP Core KPIs (5) — implementados en mx_cohort_aggregator.py
+# ────────────────────────────────────────────────────────────────
+
+mvp_core_kpis:
+  - kpi_id: patients_by_regimen
+    label: "Pacientes por ARPI (counts + IC95%)"
+    category: treatment_distribution
+    clinical_rationale: |
+      Distribución de pacientes en cada ARPI activo permite identificar gaps
+      poblacionales (¿hay sub-prescripción de daro?) y oportunidades de
+      research (¿qué N tenemos para análisis comparativo?).
+    data_sources:
+      - patient_clinical_facts.fact_key='current_treatment_regimen'
+      - treatments (fallback más reciente por patient)
+    suppression: "n<5 individual ARPI suprimido"
+    statistical_method: "Counts + Wilson CI sobre denominador (pacientes con régimen documentado)"
+
+  - kpi_id: psa_response_8wk
+    label: "Respuesta PSA @ 2 meses por ARPI"
+    category: efficacy
+    clinical_rationale: |
+      Decisión crítica de switch ARPI a 8 semanas (EAU 2026 §6.3.2 + NCCN PROS-K).
+      Si PSA decline <50% a 2mo, considerar cambio de línea o intensificación.
+    data_sources:
+      - arpi_response_windows (cached EPIC 33.B)
+    suppression: "n<5 por ARPI suprimido"
+    statistical_method: "Mean PSA decline % + IC95% (normal); PSA50 rate + Wilson CI"
+    evidence_pmid: ["26921877"]  # PCWG3 Scher JCO 2016
+
+  - kpi_id: psa_response_24wk
+    label: "Respuesta PSA @ 6 meses por ARPI"
+    category: efficacy
+    clinical_rationale: |
+      Endpoint de respuesta sostenida. PSA50 a 6mo correlaciona con OS
+      en mCRPC (Bubley JCO 1999 PMID 10561345).
+    data_sources:
+      - arpi_response_windows (cached EPIC 33.B)
+    suppression: "n<5 por ARPI suprimido"
+    statistical_method: "Mean PSA decline % + IC95%; PSA50/PSA90 rates + Wilson CI"
+    evidence_pmid: ["10561345", "26921877"]
+
+  - kpi_id: ecog_change_24wk
+    label: "Cambio ECOG baseline → @ 6 meses por ARPI"
+    category: qol
+    clinical_rationale: |
+      QoL impact per ARPI en población mexicana. ECOG decline correlaciona
+      con tolerabilidad y reduce dosis o switch ARPI.
+    data_sources:
+      - arpi_response_windows.ecog_change_from_baseline
+      - patient_clinical_facts.fact_key='ecog_performance_status'
+    suppression: "n<5 por ARPI suprimido"
+    statistical_method: "Mean change + IC95%; improved/stable/worsened proportions + Wilson CI"
+
+  - kpi_id: clinical_state_distribution
+    label: "Distribución por estado clínico (54 estados taxonomía EPIC 22c)"
+    category: epidemiology
+    clinical_rationale: |
+      Distribución de phenotypes permite priorizar copilots a desarrollar.
+      Si N en mcspc_high_volume_sync >> N en post_brachy_hdr, refleja
+      realidad de la cohorte y guía investigación.
+    data_sources:
+      - latest_assessment.state (primary)
+      - patient_clinical_facts.fact_key='reconciled_state' (fallback)
+    suppression: "Estados con n<5 suprimidos individualmente"
+    statistical_method: "Counts; top 30 estados mostrados"
+
+# ────────────────────────────────────────────────────────────────
+# Roadmap KPIs (15) — tickets atómicos post-MVP
+# ────────────────────────────────────────────────────────────────
+
+roadmap_kpis:
+  - kpi_id: kaplan_meier_per_arpi
+    label: "Kaplan-Meier survival per ARPI"
+    category: survival
+    clinical_rationale: |
+      Comparación OS/PFS entre ARPIs en cohorte MX. Log-rank test para
+      diferencias estadísticas (mínimo n≥30 por arm para significancia).
+    data_sources:
+      - vital_status + date_of_death + last_contact_date
+      - treatments (line start/end)
+    statistical_method: "KM estimator + log-rank test + IC95% Greenwood"
+    min_n_per_arm: 30
+    estimated_implementation: "2-3h"
+
+  - kpi_id: hrr_prevalence
+    label: "Prevalencia HRR pathogenic variants (BRCA1/2, ATM, PALB2, Lynch)"
+    category: molecular
+    clinical_rationale: |
+      Identifica candidatos a PARP (PROfound) y pembrolizumab (KEYNOTE-158).
+      Si HRR positive rate << 12% literatura, indicates germline testing gap.
+    data_sources:
+      - patient_clinical_facts.fact_key='hrr_status', 'hrr_gene', 'msi_status'
+    statistical_method: "Counts + Wilson CI"
+    evidence_pmid: ["32343890", "31682550"]
+    estimated_implementation: "1h"
+
+  - kpi_id: germline_testing_rate
+    label: "Tasa de germline testing (tested/not_tested/pending)"
+    category: capture_completeness
+    clinical_rationale: |
+      NCCN 2026 v2 recomienda germline testing universal en PCa avanzado.
+      Gap indica oportunidad de mejora educativa.
+    data_sources:
+      - patient_clinical_facts.fact_key='germline_testing_status'
+    statistical_method: "Proportion + Wilson CI"
+    estimated_implementation: "1h"
+
+  - kpi_id: voice_intake_adoption
+    label: "Adopción Voice Intake (% pacientes con voice session)"
+    category: operations
+    clinical_rationale: |
+      Métrica de adopción tech. Baja adoption indica usability issue
+      o resistencia clínica.
+    data_sources:
+      - intake_voice_sessions (EPIC 32.A)
+      - voice_encounter_sessions
+    statistical_method: "Coverage % + Wilson CI"
+    estimated_implementation: "1h"
+
+  - kpi_id: castration_confirmed_rate
+    label: "Castración confirmada vs asumida"
+    category: data_quality
+    clinical_rationale: |
+      Calidad de captura: ¿cuántos pacientes tienen testosterone confirmando
+      castración vs assumed? Gap → CRPC classification puede ser incorrecta.
+    data_sources:
+      - patient_clinical_facts.fact_key='castrate_testosterone_status', 'testosterone'
+    statistical_method: "Proportion + Wilson CI; sub-analysis por state"
+    estimated_implementation: "1.5h"
+
+  - kpi_id: time_to_first_treatment
+    label: "Tiempo Dx → primer tratamiento (mean + IC95%)"
+    category: operations
+    clinical_rationale: |
+      Indicador de care delay. >90 días asociado con upstaging y peor OS.
+    data_sources:
+      - patient_identity.diagnosis_date
+      - treatments.start_date (earliest)
+    statistical_method: "Mean days + IC95%; histogram by quartile"
+    estimated_implementation: "1.5h"
+
+  - kpi_id: comorbidity_prevalence
+    label: "Prevalencia comorbilidades (CV, hepática, DM, ICC)"
+    category: epidemiology
+    clinical_rationale: |
+      Comorbidities prevalence en MX cohort permite priorizar safety guards
+      (ej. abi+pred contraindicado en hepatic severe).
+    data_sources:
+      - patient_clinical_facts.fact_key in ('severe_cardiovascular_disease', 'cirrhosis_or_portal_hypertension', 'diabetes_mellitus', 'heart_failure')
+    statistical_method: "Counts + Wilson CI per comorbidity"
+    estimated_implementation: "1.5h"
+
+  - kpi_id: capture_completeness_per_section
+    label: "Completeness % por sección clínica (PSA, biopsy, imaging, germline, ECOG)"
+    category: capture_completeness
+    clinical_rationale: |
+      Roadmap de captura: qué secciones tienen <80% coverage → priorizar UX
+      improvements en quick capture forms.
+    data_sources:
+      - patient_clinical_facts cross-key analysis
+    statistical_method: "Coverage % por section + Wilson CI"
+    estimated_implementation: "2h"
+
+  - kpi_id: risk_stratification_distribution
+    label: "Distribución por risk stratification (NCCN 5 tiers)"
+    category: epidemiology
+    clinical_rationale: |
+      ¿Cohorte MX skewed hacia high-risk o low-risk? Determina mix de
+      copilots prioritarios.
+    data_sources:
+      - clinical_state_classifier.risk_group
+      - capra_score
+    statistical_method: "Counts + Wilson CI per tier"
+    estimated_implementation: "1h"
+
+  - kpi_id: imaging_modality_adoption
+    label: "Adopción modalidades imaging (PSMA-PET vs MRI vs CT/bone)"
+    category: operations
+    clinical_rationale: |
+      ¿Cuántos pacientes acceden a PSMA-PET? Gap → captura de oligo
+      podría estar perdida (visible solo con PSMA-PET).
+    data_sources:
+      - patient_clinical_facts.fact_key in ('psma_pet_done', 'conventional_imaging_modality')
+    statistical_method: "Counts + Wilson CI"
+    estimated_implementation: "1.5h"
+
+  - kpi_id: mean_psa_at_presentation
+    label: "PSA al diagnóstico (mean + IQR + histogram)"
+    category: epidemiology
+    clinical_rationale: |
+      PSA al Dx >20 ng/mL indica late presentation. MX cohort vs literature
+      benchmark (US/EU mean ~10-15) sugiere screening gap.
+    data_sources:
+      - patient_clinical_facts.fact_key='baseline_psa'
+    statistical_method: "Mean + IC95% + IQR + histogram bins"
+    estimated_implementation: "1.5h"
+
+  - kpi_id: gleason_isup_distribution
+    label: "Distribución Gleason / ISUP (1-5)"
+    category: epidemiology
+    clinical_rationale: |
+      ISUP distribution indica severity al Dx. Skew hacia ISUP 4-5 sugiere
+      late detection o screening insuficiente.
+    data_sources:
+      - patient_clinical_facts.fact_key='isup_grade', 'gleason_score'
+    statistical_method: "Counts + Wilson CI per ISUP tier"
+    estimated_implementation: "1.5h"
+
+  - kpi_id: trial_enrollment_funnel
+    label: "Trial enrollment funnel (eligible vs enrolled vs completed)"
+    category: research
+    clinical_rationale: |
+      Research engagement metric. Si eligible >> enrolled, indica barriers
+      operacionales (consent, IRB delays, drug access).
+    data_sources:
+      - trial_matching_engine + clinical_trials_enrollment (when available)
+    statistical_method: "Funnel counts + step-by-step Wilson CI"
+    estimated_implementation: "3h (requires new table)"
+
+  - kpi_id: vital_status_snapshot
+    label: "Vital status snapshot (alive/dead/loss_to_followup)"
+    category: survival
+    clinical_rationale: |
+      Outcomes proxy. Mortality rate per state per ARPI complemento a KM.
+    data_sources:
+      - patient_identity.vital_status, date_of_death, last_contact_date
+    statistical_method: "Counts + Wilson CI; sub-analysis por state"
+    estimated_implementation: "1.5h"
+
+  - kpi_id: surgical_margin_status
+    label: "Surgical margin status post-RP (positive vs negative vs unknown)"
+    category: epidemiology
+    clinical_rationale: |
+      Indicador de tech quirúrgica + screening severity. Margin+ → salvage RT.
+    data_sources:
+      - patient_clinical_facts.fact_key='margin_status'
+      - structured_biopsy_sessions
+    statistical_method: "Proportion + Wilson CI"
+    estimated_implementation: "1h"
+
+# ────────────────────────────────────────────────────────────────
+# Notes on Mexican population context
+# ────────────────────────────────────────────────────────────────
+
+mexican_population_notes:
+  - "ProstaNet MX cohort será comparable a trials internacionales solo cuando N≥30 por subgrupo (LATITUDE, ENZAMET, etc.)"
+  - "Currently DB tiene <100 pacientes; mayoría de subgrupos suprimidos (n<5)"
+  - "Comparison side-by-side MX vs trial original SOLO mostrar cuando N≥30 (concesión Critic council)"
+  - "Mexican subset stratification: idealmente añadir region_mx (norte/centro/sur) + ethnicity para análisis subgroup futuro"
+
+statistical_rigor:
+  proportions: "Wilson score interval (1927) — robust for small n + extreme proportions"
+  means: "Normal approximation con t-distribution para n<30"
+  survival: "Kaplan-Meier + Greenwood variance + log-rank test"
+  multiple_comparisons: "Bonferroni o Benjamini-Hochberg cuando >3 KPIs comparados simultáneamente"
+  suppression: "HIPAA Safe Harbor §164.514: n<5 individual cell suprimida"
