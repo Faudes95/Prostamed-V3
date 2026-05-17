@@ -198,7 +198,21 @@ def _get_clinical_t_stage(facts: Mapping[str, Any]) -> str:
 
 
 def _get_metastasis_flags(facts: Mapping[str, Any]) -> dict[str, Any]:
-    """Extract metastasis flags."""
+    """Extract metastasis flags.
+
+    EPIC 35 — añade reconocimiento de `m_substage_resolved` y
+    `metastatic_stage_resolved` (raw imaging substages M1/M1a/M1b/M1c) como
+    indicadores de metastasis_present. Pre-EPIC35, sólo se contaban bone_count
+    / visceral_present / nonregional_nodal_count → pacientes con substage
+    M1b documentado pero sin desglose lesional eran clasificados como
+    no-metastásicos por el classifier.
+    """
+    substage_raw = str(
+        facts.get("m_substage_resolved")
+        or facts.get("metastatic_stage_resolved")
+        or ""
+    ).upper()
+    m_substage_indicates_distant = substage_raw in ("M1", "M1A", "M1B", "M1C")
     return {
         "bone_count": int(facts.get("bone_lesion_count_total") or 0),
         "visceral_present": bool(facts.get("visceral_metastasis_present")),
@@ -206,15 +220,85 @@ def _get_metastasis_flags(facts: Mapping[str, Any]) -> dict[str, Any]:
         "conventional_m0": bool(facts.get("conventional_imaging_m0")),
         "psma_pet_positive": bool(facts.get("psma_pet_positive")),
         "psma_pet_uptake": str(facts.get("psma_pet_uptake_intensity") or "").lower(),
+        # EPIC 35 — raw imaging substage indicators
+        "m_substage_raw": substage_raw,
+        "m_substage_indicates_distant": m_substage_indicates_distant,
     }
 
 
 def _get_castration_resistance(facts: Mapping[str, Any]) -> bool:
-    return bool(
+    """EPIC 35 — Castration resistance detection con fallback inferencial.
+
+    Pre-EPIC35: sólo retornaba True si `castration_resistance_confirmed` /
+    `crpc_confirmed` estaban explícitos. 55 pacientes con M1+ + confirmed_castrate
+    + ARPI activo + PSA rising eran clasificados como NO-CRPC porque ningún
+    flag explícito estaba documentado.
+
+    EPIC 35 inferencial (conservador): si paciente tiene confirmed_castrate +
+    M1+ substage + (ARPI activo OR PSA rising signal), se infiere CRPC con
+    bandera `_crpc_inferred=True` (que `_classify_mcrpc_subtypes` puede
+    consultar para downgrade confidence si necesario).
+
+    Conservadurismo: NO over-call mCRPC en pacientes recién castrados (mHSPC)
+    sin evidencia de progresión.
+    """
+    if bool(
         facts.get("castration_resistance_confirmed")
         or facts.get("crpc_confirmed")
         or (facts.get("current_state") in ("m0_crpc", "m1_crpc"))
+    ):
+        return True
+    # Inferential fallback (EPIC 35)
+    castrate = str(facts.get("castrate_testosterone_status") or "").lower() == "confirmed_castrate"
+    if not castrate:
+        return False
+    if _is_testosterone_stale(facts, max_age_days=180):
+        # Don't infer CRPC if testosterone is too stale to trust castration
+        return False
+    mets = {
+        "bone_count": int(facts.get("bone_lesion_count_total") or 0),
+        "visceral_present": bool(facts.get("visceral_metastasis_present")),
+        "nonregional_nodal_count": int(facts.get("nonregional_nodal_count") or 0),
+        "m_substage_indicates_distant": str(
+            facts.get("m_substage_resolved")
+            or facts.get("metastatic_stage_resolved")
+            or ""
+        ).upper() in ("M1", "M1A", "M1B", "M1C"),
+    }
+    has_distant = (
+        mets["bone_count"] > 0
+        or mets["visceral_present"]
+        or mets["nonregional_nodal_count"] > 0
+        or mets["m_substage_indicates_distant"]
     )
+    if not has_distant:
+        return False
+    # Progression signals (any of):
+    # - PSA rising trend explicit fact
+    # - current_adt_context mentions 'progressing' / 'biochemical_failure'
+    # - phoenix_delta >= 2.0
+    # - PSA current >> nadir (>= 2x with delta >= 2 ng/mL)
+    psa_signal = False
+    psa_rising_raw = str(facts.get("psa_rising_trend") or "").lower()
+    if psa_rising_raw in ("true", "1", "yes", "rising"):
+        psa_signal = True
+    adt_ctx = str(facts.get("current_adt_context") or "").lower()
+    if any(t in adt_ctx for t in ("progress", "biochemical_failure", "failure", "rebound")):
+        psa_signal = True
+    try:
+        phoenix = float(facts.get("phoenix_delta") or 0)
+        if phoenix >= 2.0:
+            psa_signal = True
+    except (TypeError, ValueError):
+        pass
+    try:
+        psa_curr = float(facts.get("current_psa") or 0)
+        psa_nadir = float(facts.get("psa_nadir") or 0)
+        if psa_nadir > 0 and psa_curr >= 2 * psa_nadir and (psa_curr - psa_nadir) >= 2.0:
+            psa_signal = True  # PCWG3-style rising signal
+    except (TypeError, ValueError):
+        pass
+    return psa_signal
 
 
 def _is_testosterone_stale(facts: Mapping[str, Any], max_age_days: int = 90) -> bool:
@@ -440,11 +524,22 @@ def _classify_mcspc_refinements(facts: Mapping[str, Any]) -> ClinicalStateClassi
 
 
 def _classify_mcrpc_subtypes(facts: Mapping[str, Any]) -> ClinicalStateClassification | None:
-    """NCCN 2026 PROS-J — mCRPC subtypes (5 new states)."""
+    """NCCN 2026 PROS-J — mCRPC subtypes (5 new states).
+
+    EPIC 35 — has_distant ahora también acepta `m_substage_indicates_distant`
+    (raw imaging substage M1*) además de bone/visceral/nonregional counts.
+    Esto permite clasificar pacientes con M1b documentado pero sin desglose
+    lesional explícito.
+    """
     if not _get_castration_resistance(facts):
         return None
     mets = _get_metastasis_flags(facts)
-    has_distant = mets["bone_count"] > 0 or mets["visceral_present"] or mets["nonregional_nodal_count"] > 0
+    has_distant = (
+        mets["bone_count"] > 0
+        or mets["visceral_present"]
+        or mets["nonregional_nodal_count"] > 0
+        or mets.get("m_substage_indicates_distant", False)
+    )
     if not has_distant:
         return None  # Likely m0_crpc handled by baseline classifier
 

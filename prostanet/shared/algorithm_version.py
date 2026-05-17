@@ -36,8 +36,9 @@ from typing import Any
 # 50 hallazgos sin bump — audit trail post-hoc indistinguible.
 # Histórico: 2026-04-30 LXCIX → 2026-05-15 C (pre-EPIC30) → 2026-05-16 CI
 # (post-EPIC 30: PSA Tower + GodiBot pass-5) → 2026-05-16 CII (post-EPIC 31)
-# → CIII-CIX (EPIC 33 + EPIC 34.A Phases 1-5) → CX (Phase 6: PSMA-PET capture).
-FAUBOT_RELEASE = "2026-05-17 CX"
+# → CIII-CIX (EPIC 33 + EPIC 34.A Phases 1-5) → CX (Phase 6: PSMA-PET capture)
+# → CXI (EPIC 35: classifier alignment — M1+ + castrate + progression infiere CRPC).
+FAUBOT_RELEASE = "2026-05-17 CXI"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (
