@@ -1006,6 +1006,87 @@
         </details>
         {% endif %}
 
+        {# EPIC 34.A Phase 3 — Trial Matcher MVP (least regret jump - Critic council)
+           Info-only, no diagnostic claim, surface eligibility info siempre que haya catálogo.
+           Si no hay matches positivos, mostrar top 3 ineligible con missing-data reasons
+           para guiar captura siguiente. #}
+        {% if trial_matches %}
+        <details class="pm2-section-collapsible" data-section-key="trial_matcher" data-importance="standard" data-section-label="Trials Elegibles" open>
+        <summary>🔬 Trials Elegibles · Matcher info-only <span class="pm2-section-meta-chip">{{ trial_matches.positive_match_count or 0 }} matches · {{ trial_matches.total_trials_in_catalog or 0 }} catálogo</span></summary>
+        <section id="pm2TrialMatcher" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(14,165,233,.06), rgba(15,23,42,.6)); border: 1px solid rgba(14,165,233,.28); border-left: 6px solid rgb(14,165,233); border-radius: 14px;" aria-label="Trial Matcher" data-testid="trial-matcher-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
+                <div>
+                    <div style="font-size:.7rem; color:#7dd3fc; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">🔬 Trial Matcher · EPIC 34.A Phase 3</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.05rem; color:#f8fafc; margin:5px 0 0;">Ensayos clínicos elegibles (orientativo)</h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.78rem; line-height:1.5;">
+                        Catálogo curado de {{ trial_matches.total_trials_in_catalog or 0 }} ensayos pivotal. Filtrado por estado clínico + biomarkers + ECOG + comorbidities.
+                        <strong style="color:#7dd3fc;">Info-only · NO determina elegibilidad final.</strong>
+                    </p>
+                </div>
+            </div>
+
+            {% if trial_matches.matches and (trial_matches.matches|length) > 0 %}
+            <div style="margin-bottom:14px;">
+                <div style="font-size:.66rem; color:#86efac; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin-bottom:8px;">✓ Posibles matches ({{ trial_matches.positive_match_count }})</div>
+                {% for match in trial_matches.matches[:5] %}
+                <div style="margin-bottom:10px; padding:12px; background:rgba(16,185,129,.06); border:1px solid rgba(16,185,129,.3); border-left:3px solid #10b981; border-radius:8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px;">
+                        <strong style="color:#f8fafc; font-size:.92rem;">{{ match.trial_code }}</strong>
+                        <span style="font-size:.66rem; color:#cbd5e1;">{{ match.phase or '—' }} · {{ match.disease_scope|join(', ') }}</span>
+                    </div>
+                    <div style="font-size:.76rem; color:#d1fae5; margin-top:4px;">{{ match.title_short }}</div>
+                    {% if match.match_reasons %}
+                    <ul style="margin:6px 0 0; padding-left:18px; font-size:.72rem; color:#a7f3d0;">
+                        {% for reason in match.match_reasons[:3] %}<li>{{ reason }}</li>{% endfor %}
+                    </ul>
+                    {% endif %}
+                    <div style="margin-top:8px; display:flex; gap:10px; font-size:.66rem; color:#94a3b8; align-items:center; flex-wrap:wrap;">
+                        {% if match.nct_id %}<a href="https://clinicaltrials.gov/study/{{ match.nct_id }}" target="_blank" rel="noopener" style="color:#7dd3fc; text-decoration:none;">{{ match.nct_id }} ↗</a>{% endif %}
+                        {% if match.primary_reference %}<span>· {{ match.primary_reference[:80] }}</span>{% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {# Top 3 ineligible con razones — guía la siguiente captura #}
+            {% set _missing_data_trials = [] %}
+            {% for trial in (trial_matches.ineligible or [])[:20] %}
+              {% if trial.ineligibility_reasons %}
+                {% set _reason = trial.ineligibility_reasons[0]|lower %}
+                {% if 'falta' in _reason or 'pendiente' in _reason or 'desconocido' in _reason or 'missing' in _reason or 'sin documentar' in _reason or 'no documentad' in _reason %}
+                  {% set _ = _missing_data_trials.append(trial) %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {% if _missing_data_trials %}
+            <div style="margin-top:12px;">
+                <div style="font-size:.66rem; color:#fbbf24; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin-bottom:8px;">⚡ Bloqueados por captura faltante ({{ _missing_data_trials|length }})</div>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:8px;">
+                    {% for trial in _missing_data_trials[:4] %}
+                    <div style="padding:10px; background:rgba(251,191,36,.05); border:1px solid rgba(251,191,36,.2); border-radius:6px;">
+                        <strong style="color:#fde68a; font-size:.78rem;">{{ trial.trial_code }}</strong>
+                        <div style="font-size:.7rem; color:var(--pn-text-muted); margin-top:4px;">{{ trial.title_short[:60] }}</div>
+                        <div style="font-size:.66rem; color:#fbbf24; margin-top:4px;">⚡ {{ trial.ineligibility_reasons[0][:120] }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if not trial_matches.matches and not _missing_data_trials %}
+            <div style="padding:12px; color:var(--pn-text-muted); font-size:.78rem;">
+                Sin matches positivos ni ineligibilidades por captura faltante. Estado actual fuera del scope de los {{ trial_matches.total_trials_in_catalog or 0 }} trials curados. Revisar al avanzar línea terapéutica.
+            </div>
+            {% endif %}
+
+            <div style="margin-top:10px; padding:8px 10px; background:rgba(14,165,233,.06); border-left:3px solid rgba(14,165,233,.4); border-radius:6px; font-size:.66rem; color:#bae6fd;">
+                ⓘ <strong>Disclaimer:</strong> {{ trial_matches.disclaimer or 'Catálogo curado orientativo. Validar con protocolo vigente en ClinicalTrials.gov.' }}
+            </div>
+        </section>
+        </details>
+        {% endif %}
+
         {# EPIC 34.A Phase 2 — ECOG Quick Capture CTA (paciente con ARPI + ECOG missing/stale) #}
         {% if ecog_capture_cta and ecog_capture_cta.available %}
         <details class="pm2-section-collapsible" data-section-key="ecog_quick_capture" data-importance="critical" data-section-label="ECOG Quick Capture" open>

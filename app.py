@@ -1243,6 +1243,48 @@ def patient_profile(nss):
                 v2_ctx["arpi_response_2mo"] = {"available": False, "error": str(e)}
                 v2_ctx["arpi_response_6mo"] = {"available": False, "error": str(e)}
 
+            # EPIC 34.A Phase 3 — Trial Matcher MVP (Critic council least-regret jump)
+            try:
+                from prostanet.domains.research_intelligence.trial_matching_engine import (
+                    build_trial_matching_bundle,
+                )
+                import tracking_db as _td_e34p3
+                facts_e34p3 = data.get("clinical_facts") or []
+                if not facts_e34p3:
+                    _identity_id = (data.get("identity") or {}).get("id")
+                    if _identity_id:
+                        facts_e34p3 = _td_e34p3.get_patient_clinical_facts(_identity_id, active_only=True)
+                fact_map_e34p3 = {}
+                for f in facts_e34p3:
+                    if isinstance(f, dict):
+                        k = f.get("fact_key")
+                        v = f.get("normalized_value_text") or f.get("value_json")
+                        if k and v is not None:
+                            fact_map_e34p3[k] = v
+                normalized_patient = {
+                    **data,
+                    "state": (
+                        fact_map_e34p3.get("reconciled_state")
+                        or fact_map_e34p3.get("m_substage_resolved")
+                        or (data.get("latest_assessment") or {}).get("state")
+                        or ""
+                    ),
+                    "ecog_score": fact_map_e34p3.get("ecog_performance_status") or fact_map_e34p3.get("ecog_score"),
+                    "hrr_status": fact_map_e34p3.get("hrr_status"),
+                    "hrr_positive": fact_map_e34p3.get("hrr_positive") or (
+                        "1" if str(fact_map_e34p3.get("hrr_status", "")).lower() in ("positive", "pathogenic") else None
+                    ),
+                    "germline_pathogenic_variant": fact_map_e34p3.get("germline_pathogenic_variant") or fact_map_e34p3.get("hrr_gene"),
+                    "msi_status": fact_map_e34p3.get("msi_status"),
+                    "current_psa": fact_map_e34p3.get("current_psa"),
+                    "baseline_psa": fact_map_e34p3.get("baseline_psa"),
+                    "castrate_testosterone_status": fact_map_e34p3.get("castrate_testosterone_status"),
+                }
+                v2_ctx["trial_matches"] = build_trial_matching_bundle(normalized_patient)
+            except Exception as e:
+                logger.debug(f"EPIC 34.A Phase 3 trial matches build failed: {e}")
+                v2_ctx["trial_matches"] = {"positive_match_count": 0, "matches": [], "ineligible": [], "error": str(e)}
+
             # EPIC 34.A Phase 2 — ECOG quick capture gating
             # Show CTA card if patient on ARPI but ECOG missing or >90 days stale
             try:
@@ -2446,6 +2488,59 @@ def _build_patient_decision_today_for_api(patient_ref, *, force_recompute=False)
         "decision_today": decision_today,
         "resolved": resolved,
     }, None
+
+
+@app.route('/api/patients/<patient_ref>/trial-matches', methods=['GET'])
+def api_patient_trial_matches(patient_ref):
+    """EPIC 34.A Phase 3 — Trial eligibility matcher (Critic council 'least
+    regret jump': info-only, no diagnostic claim, sobrevive abandono especialista).
+
+    Returns: bundle con positive matches + ineligible + reasons en español.
+    """
+    import tracking_db as _td
+    try:
+        from prostanet.domains.research_intelligence.trial_matching_engine import (
+            build_trial_matching_bundle,
+        )
+        patient_data = _td.get_patient_full_record(patient_ref)
+        if not patient_data:
+            return jsonify({"success": False, "error": "patient_not_found"}), 404
+
+        # Hidratar fields desde clinical_facts para que el engine los lea
+        identity_id = (patient_data.get("identity") or {}).get("id")
+        facts = _td.get_patient_clinical_facts(identity_id, active_only=True) if identity_id else []
+        fact_map = {}
+        for f in facts:
+            k = f.get("fact_key")
+            v = f.get("normalized_value_text") or f.get("value_json")
+            if k and v is not None:
+                fact_map[k] = v
+        # Map facts to trial_matching_engine expected field names
+        normalized = {
+            **patient_data,
+            "state": (
+                fact_map.get("reconciled_state")
+                or fact_map.get("m_substage_resolved")
+                or (patient_data.get("latest_assessment") or {}).get("state")
+                or ""
+            ),
+            "ecog_score": fact_map.get("ecog_performance_status") or fact_map.get("ecog_score"),
+            "hrr_status": fact_map.get("hrr_status"),
+            "hrr_positive": fact_map.get("hrr_positive") or (
+                "1" if str(fact_map.get("hrr_status", "")).lower() in ("positive", "pathogenic") else None
+            ),
+            "germline_pathogenic_variant": fact_map.get("germline_pathogenic_variant") or fact_map.get("hrr_gene"),
+            "msi_status": fact_map.get("msi_status"),
+            "current_psa": fact_map.get("current_psa"),
+            "baseline_psa": fact_map.get("baseline_psa"),
+            "castrate_testosterone_status": fact_map.get("castrate_testosterone_status"),
+            "metastasis_site": fact_map.get("m_substage_resolved") or fact_map.get("metastatic_stage_resolved"),
+        }
+        bundle = build_trial_matching_bundle(normalized)
+        return jsonify({"success": True, **bundle})
+    except Exception as exc:
+        logger.exception("Trial matches endpoint failed")
+        return jsonify({"success": False, "error": str(exc)}), 500
 
 
 @app.route('/api/patients/<patient_ref>/ecog-capture', methods=['POST'])

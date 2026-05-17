@@ -401,7 +401,119 @@ KPI_REGISTRY: dict[str, dict[str, Any]] = {
         "builder": lambda: aggregate_ecog_capture_coverage(),
         "args": {},
     },
+    # EPIC 34.A Phase 3 — Trial eligibility funnel
+    "trial_eligibility_funnel": {
+        "label": "Trial eligibility funnel (cohorte ARPI)",
+        "category": "research",
+        "builder": lambda: aggregate_trial_eligibility_funnel(max_patients=100),
+        "args": {"max_patients": 100},
+    },
 }
+
+
+def aggregate_trial_eligibility_funnel(*, max_patients: int = 100) -> dict[str, Any]:
+    """EPIC 34.A Phase 3 — Trial eligibility funnel cross-cohort.
+
+    Para cada paciente con `treatment_history` o `state_classification` documentado:
+    - Run match_patient_to_trials()
+    - Count: eligible para ≥1 trial, blocked-by-missing-data, fuera-de-scope
+
+    Returns dashboard-ready dict con conteos + top 5 trials con más matches.
+    Limited to max_patients para mantener UI snappy (full scan en background CRON).
+    """
+    from prostanet.domains.research_intelligence.trial_matching_engine import (
+        match_patient_to_trials,
+    )
+    import tracking_db as _td
+    conn = sqlite3.connect(_db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        # Pacientes con treatment_history (proxy para "cohorte activa")
+        rows = conn.execute(
+            """
+            SELECT DISTINCT pi.id AS patient_id, pi.nss
+            FROM patient_identity pi
+            JOIN treatment_history th ON th.patient_id = pi.id
+            WHERE th.drug_scheme IS NOT NULL AND th.drug_scheme != ''
+            LIMIT ?
+            """,
+            (max_patients,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    eligible_for_any: int = 0
+    blocked_by_missing_data: int = 0
+    out_of_scope_all: int = 0
+    trial_match_counter: Counter[str] = Counter()
+    for row in rows:
+        try:
+            patient_data = _td.get_patient_full_record(row["patient_id"])
+            if not patient_data:
+                continue
+            facts = _td.get_patient_clinical_facts(row["patient_id"], active_only=True)
+            fact_map = {f.get("fact_key"): (f.get("normalized_value_text") or f.get("value_json"))
+                        for f in facts if isinstance(f, dict) and f.get("fact_key")}
+            normalized = {
+                **patient_data,
+                "state": fact_map.get("reconciled_state") or fact_map.get("m_substage_resolved") or "",
+                "ecog_score": fact_map.get("ecog_performance_status") or fact_map.get("ecog_score"),
+                "hrr_status": fact_map.get("hrr_status"),
+                "hrr_positive": fact_map.get("hrr_positive"),
+                "germline_pathogenic_variant": fact_map.get("germline_pathogenic_variant"),
+                "msi_status": fact_map.get("msi_status"),
+                "current_psa": fact_map.get("current_psa"),
+                "baseline_psa": fact_map.get("baseline_psa"),
+            }
+            matches = match_patient_to_trials(normalized)
+            positive = [m for m in matches if m.match]
+            if positive:
+                eligible_for_any += 1
+                for m in positive:
+                    trial_match_counter[m.trial_code] += 1
+            else:
+                # Check if any ineligibility was due to missing data
+                has_missing_data = False
+                for m in matches:
+                    for reason in m.ineligibility_reasons:
+                        rl = reason.lower()
+                        if any(t in rl for t in ("falta", "pendiente", "desconocido", "missing", "sin documentar", "no documentad")):
+                            has_missing_data = True
+                            break
+                    if has_missing_data:
+                        break
+                if has_missing_data:
+                    blocked_by_missing_data += 1
+                else:
+                    out_of_scope_all += 1
+        except Exception as exc:
+            logger.debug(f"trial funnel error pid={row['patient_id']}: {exc}")
+            continue
+
+    total_evaluated = len(rows)
+    top_trials = trial_match_counter.most_common(5)
+    return {
+        "kpi_id": "trial_eligibility_funnel",
+        "kpi_label": "Trial eligibility funnel (cohorte con treatment_history)",
+        "category": "research",
+        "total_evaluated": total_evaluated,
+        "eligible_for_any_trial": suppress_if_below(eligible_for_any),
+        "blocked_by_missing_data": suppress_if_below(blocked_by_missing_data),
+        "out_of_scope_all": suppress_if_below(out_of_scope_all),
+        "top_trials": [
+            {
+                "trial_code": code,
+                "patients_eligible": suppress_if_below(count),
+            }
+            for code, count in top_trials
+        ],
+        "interpretation": (
+            "blocked_by_missing_data señala dónde priorizar captura para "
+            "desbloquear más pacientes elegibles. Ejemplo: si X pacientes "
+            "bloqueados por 'germline desconocido', priorizar HRR capture."
+        ),
+        "computed_at": utc_now_iso(),
+    }
 
 
 def aggregate_ecog_capture_coverage() -> dict[str, Any]:

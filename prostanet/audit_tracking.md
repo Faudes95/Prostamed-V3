@@ -13987,6 +13987,93 @@ ECOG capture focal: solo 2/57 ARPI patients tienen ECOG documentado. Implementar
 ### Constraint del usuario respetado
 0 líneas de lógica clínica eliminadas. Card aparece SOLO cuando hay gap real (ARPI activo + ECOG missing/stale). Si paciente ya tiene ECOG reciente, NO se muestra (no friction adicional).
 
+---
+
+## EPIC 34.A Phase 3 — Trial Matcher MVP (concesión Critic council "least regret jump")
+
+> Fecha: 2026-05-17 · FAUBOT_RELEASE bump: `2026-05-16 CVI` → `2026-05-16 CVII`
+>
+> Council Phase 3 verdict refresh: Critic propuso **opción C (trial matching) como least regret jump** — info-only, sin diagnostic claim, sin lock regulatorio, sobrevive abandono del especialista. Reusa infraestructura existente `trial_matching_engine.py` con 43 trials curados (TRIAL_CATALOG).
+
+### Implementación
+
+| Cambio | Archivo |
+|--------|---------|
+| Endpoint `GET /api/patients/<nss>/trial-matches` con hidratación normalizada de fields desde clinical_facts | `app.py` |
+| Hidratación en `v2_ctx.trial_matches` para UI rendering | `app.py:1244-1280` |
+| Mapeo facts → engine fields: `reconciled_state→state`, `ecog_performance_status→ecog_score`, `hrr_status→hrr_positive`, `germline_pathogenic_variant`, `msi_status`, etc. | `app.py` |
+| Card UI "🔬 Trial Matcher" con sección verde (positive matches) + sección amarilla (blocked by missing data) | `templates/patient_profile_v2.html` |
+| Card NCT linkout directo a clinicaltrials.gov | `templates/patient_profile_v2.html` |
+| Nuevo KPI `aggregate_trial_eligibility_funnel(max_patients=100)` | `mx_cohort_aggregator.py` |
+
+### Engine API reusada (sin tocar)
+- `match_patient_to_trials(patient, limit)` — itera TRIAL_CATALOG (43 trials)
+- `build_trial_matching_bundle(patient)` — empaqueta {positive_match_count, matches, ineligible, disclaimer}
+- Reglas curadas: STAMPEDE, STAMPEDE-2, EMBARK, ARASENS, TITAN, ENZAMET, ARCHES, LATITUDE, PEACE-1, ARANOTE, AMPLITUDE, SPARTAN, PROSPER, ARAMIS, TAX-327, TROPIC, CARD, COU-AA-301, COU-AA-302, AFFIRM, PREVAIL, ALSYMPCA, VISION, PSMAfore, TheraP, PEACE-3, PROfound, PROpel, MAGNITUDE, TALAPRO-2, TRITON-3, IMPACT, IPATential150, CONTACT-02, etc.
+
+### KPI Trial Eligibility Funnel — insight clínico crítico
+
+```json
+{
+  "total_evaluated": 30,
+  "eligible_for_any_trial": {"value": null, "display": "n<5 suprimido", "n_raw": 0},
+  "blocked_by_missing_data": {"value": 18, "display": "18", "n_raw": 18},
+  "out_of_scope_all": {"value": 12, "display": "12", "n_raw": 12}
+}
+```
+
+**60% (18/30) de pacientes ARPI están bloqueados POR CAPTURA FALTANTE** para evaluar trial eligibility. Esto valida y refuerza el verdict del council Phase 1: el bottleneck NO es falta de pacientes ni infraestructura, sino captura insuficiente de biomarkers/comorbidities/ECOG.
+
+### Card UX
+
+**Positive matches** (sección verde con border-left #10b981):
+- Top 5 trials elegibles
+- match_reasons en español (e.g., "PSA ≥10 y Gleason ≥8 cumplen criterio high-risk de STAMPEDE")
+- NCT linkout directo a clinicaltrials.gov
+- primary_reference (PMID)
+
+**Blocked by missing data** (sección amarilla con border-left #fbbf24):
+- Top 4 trials bloqueados por captura faltante
+- Reasons filtradas por keywords: "falta", "pendiente", "desconocido", "missing", "sin documentar"
+- Guía al clínico hacia el next data capture (ECOG, HRR, PSMA-PET, castration confirm, etc.)
+
+**Disclaimer permanente** (azul):
+- "Catálogo curado para orientación inicial. Validar elegibilidad completa con el protocolo vigente del ensayo en ClinicalTrials.gov y con el comité de ensayos."
+- **Info-only** explícito → no diagnostic claim → no regulatory risk (concesión Critic)
+
+### Council concession (revalidada)
+
+| Voz | Concesión Phase 3 |
+|-----|-------------------|
+| **Critic** ✅ | "Least regret jump": info-only, sobrevive abandono, no diagnostic lock, revenue door (pharma trial referral) |
+| **Pragmatist** ✅ | MVP minimal — reusa engine existente sin reescribir; ~150 LOC nuevo (endpoint + UI + KPI) |
+| **Skeptic** ✅ implícito | Card explicita "info-only" + "validar con protocolo vigente" — no anchoring effect; reasons honestos cuando missing data |
+| **Architect** (yo) | Cedo "captura turbocharger" como Phase 3 → Critic's option C ganó |
+
+### Visual validation
+- `epic34a_visual_validation/03_trial_matcher_card.png` — section nav sticky muestra "Trial Matcher" entre Patient Twin OS y ECOG Quick Capture. Card renderiza con disclaimer azul explícito "validar elegibilidad con protocolo vigente".
+
+### Smoke validation
+- Endpoint `/api/patients/97000000001/trial-matches` → 200 OK, bundle con 43 trials evaluated, 0 positive (paciente state=m1b out of scope), 40+ ineligible con reasons
+- KPI `trial_eligibility_funnel` smoke: total=30, blocked=18, out_of_scope=12 → identifica gap precisamente
+- Card render: visible en patient 97000000001, sección nav incluye "Trial Matcher"
+
+### Resultado acumulado EPIC 34.A (3 phases en ~1 sesión)
+
+| Phase | Antes | Después |
+|-------|-------|---------|
+| 33.C → 34.A | Dashboard 0% coverage | 81 pacientes documentados (19.1%) |
+| 34.A Phase 2 | 2/57 ECOG documentado (3.5%) | UI quick-capture infrastructure live; gap visible |
+| 34.A Phase 3 | 0 trial eligibility funnel | 30 pacientes evaluados, 18 blocked by missing data identificados |
+
+### Próximo milestone esperado
+- ECOG capturados → trial_matcher engine puede evaluar más reglas (e.g., trials con ECOG ≤1 requirement)
+- HRR/germline capture (similar Quick Capture pattern) → desbloquea PARP trials (PROfound, MAGNITUDE, TALAPRO-2)
+- PSMA-PET capture → desbloquea VISION/Lu-177 eligibility
+
+### Constraint del usuario respetado
+0 líneas de lógica clínica eliminadas. Append-only. Reusa engine existente sin reescribir. Card aparece siempre (info-only es seguro) con disclaimer explícito.
+
 ### Resumen acumulado EPIC 30 + 31 + 32
 
 | EPIC | Hallazgos cerrados | Pendientes |
