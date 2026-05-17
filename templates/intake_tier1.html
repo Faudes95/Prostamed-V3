@@ -1,0 +1,463 @@
+{# EPIC 44.B FAUBOT 2026-05-17 CXXV — Tier 1 Clasificador rápido (<60s)
+
+   Single-page focused: 15 fields anchor NCCN/EAU para clasificar el paciente
+   en un estadio canónico. Tras submit POST → /api/intake/tier1/classify,
+   el endpoint retorna {state, confidence, next_tier_url} y la UI redirige
+   a /intake/tier2/<state>?patient_ref=... para refinement.
+
+   Diseño:
+     - 2-column desktop: form (left, 1fr) + summary/preview (right, 380px)
+     - Responsive: single-column en <768px
+     - Cada field rendera display_options (labels clínicamente densos EPIC 44.A)
+     - Conditional_visibility honored via data-cv (mismo patrón que progressive)
+     - Sticky CTA bottom: "Clasificar estadio (Enter)"
+     - Save Draft opcional → localStorage (consistente con Smart Capture)
+#}
+{% extends "layouts/base_clinical.html" %}
+{% from "components/pm2_sidebar.html" import pm2_sidebar %}
+
+{% block head_extra %}
+{{ super() if super }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
+<style>
+:root {
+  --t1-bg-deep: #0a0e1a;
+  --t1-bg-card: rgba(15, 23, 42, 0.7);
+  --t1-border: rgba(99, 102, 241, 0.3);
+  --t1-text-main: #e2e8f0;
+  --t1-text-dim: #94a3b8;
+  --t1-accent: rgb(99, 102, 241);
+  --t1-accent-soft: rgba(99, 102, 241, 0.15);
+  --t1-required: rgb(248, 113, 113);
+  --t1-success: rgb(74, 222, 128);
+}
+.t1-shell {
+  display: grid;
+  grid-template-columns: 280px 1fr 380px;
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--t1-bg-deep) 0%, #0f172a 100%);
+}
+@media (max-width: 1280px) { .t1-shell { grid-template-columns: 280px 1fr; } .t1-preview { display: none; } }
+@media (max-width: 768px)  { .t1-shell { grid-template-columns: 1fr; } .pm2-sidebar { display: none; } }
+
+.t1-main { padding: 1.5rem 2rem 4rem; min-width: 0; }
+.t1-preview {
+  background: rgba(0,0,0,0.3);
+  border-left: 1px solid var(--t1-border);
+  padding: 1.5rem 1.25rem;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+
+.t1-hero {
+  background: linear-gradient(135deg, var(--t1-bg-card) 0%, rgba(30, 41, 59, 0.6) 100%);
+  border: 1px solid var(--t1-border);
+  border-radius: 14px;
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 1.5rem;
+}
+.t1-hero h1 {
+  color: var(--t1-text-main); font-size: 1.5rem; margin: 0 0 0.25rem;
+  font-weight: 700; letter-spacing: -0.01em;
+}
+.t1-hero .t1-hero-tagline { color: var(--t1-text-dim); font-size: 0.875rem; margin: 0; }
+.t1-hero-metrics {
+  display: flex; gap: 1rem; margin-top: 1rem;
+  flex-wrap: wrap;
+}
+.t1-metric {
+  background: var(--t1-accent-soft);
+  border: 1px solid var(--t1-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.8125rem;
+  color: var(--t1-text-main);
+}
+.t1-metric strong { color: var(--t1-accent); font-weight: 700; }
+
+.t1-card {
+  background: var(--t1-bg-card);
+  border: 1px solid var(--t1-border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+}
+.t1-card-title {
+  color: var(--t1-text-main);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.15);
+  letter-spacing: 0.01em;
+}
+
+.t1-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem 1.25rem;
+}
+.t1-field { display: flex; flex-direction: column; gap: 0.375rem; }
+.t1-field.is-cv { opacity: 0; pointer-events: none; max-height: 0; overflow: hidden;
+                   transition: opacity 0.2s, max-height 0.25s; }
+.t1-field.is-cv.is-visible { opacity: 1; pointer-events: auto; max-height: 200px; }
+
+.t1-label {
+  color: var(--t1-text-main);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  display: flex; align-items: center; gap: 0.375rem;
+}
+.t1-required { color: var(--t1-required); font-weight: 700; }
+.t1-help-btn {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--t1-text-dim); padding: 0; font-size: 0.875rem;
+}
+.t1-help-btn:hover { color: var(--t1-accent); }
+
+.t1-input, .t1-select {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  color: var(--t1-text-main);
+  font-size: 0.875rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.t1-input:focus, .t1-select:focus {
+  outline: none; border-color: var(--t1-accent);
+  box-shadow: 0 0 0 3px var(--t1-accent-soft);
+}
+.t1-select option { background: #0f172a; color: var(--t1-text-main); }
+.t1-help-text {
+  color: var(--t1-text-dim); font-size: 0.75rem; margin: 0;
+  font-style: italic;
+}
+
+.t1-cta-bar {
+  position: sticky; bottom: 0; left: 0; right: 0;
+  background: linear-gradient(180deg, transparent 0%, var(--t1-bg-deep) 30%);
+  padding: 1.5rem 2rem 1rem;
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 1rem; margin-top: 2rem;
+}
+.t1-cta-status { color: var(--t1-text-dim); font-size: 0.8125rem; }
+.t1-btn {
+  background: var(--t1-accent);
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.t1-btn:hover { background: rgb(79, 82, 221); }
+.t1-btn:active { transform: scale(0.98); }
+.t1-btn:disabled { background: #475569; cursor: not-allowed; }
+.t1-btn-ghost {
+  background: transparent;
+  border: 1px solid var(--t1-border);
+  color: var(--t1-text-main);
+}
+.t1-btn-ghost:hover { background: var(--t1-accent-soft); }
+
+.t1-preview h3 {
+  color: var(--t1-text-main); margin: 0 0 0.75rem; font-size: 1rem;
+}
+.t1-preview-state {
+  background: var(--t1-bg-card); border: 1px solid var(--t1-border);
+  border-radius: 10px; padding: 1rem; margin-bottom: 1rem;
+}
+.t1-preview-state .t1-state-name {
+  color: var(--t1-accent); font-size: 1.125rem; font-weight: 700;
+}
+.t1-preview-state .t1-state-rule {
+  color: var(--t1-text-dim); font-size: 0.8125rem; margin-top: 0.5rem;
+  font-style: italic;
+}
+.t1-preview-empty {
+  color: var(--t1-text-dim); font-size: 0.875rem; font-style: italic;
+  padding: 1rem; text-align: center;
+  border: 1px dashed rgba(99, 102, 241, 0.2); border-radius: 8px;
+}
+.t1-progress-bar {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 8px; height: 8px; overflow: hidden; margin: 0.5rem 0 1rem;
+  border: 1px solid rgba(99, 102, 241, 0.15);
+}
+.t1-progress-fill {
+  background: linear-gradient(90deg, var(--t1-accent) 0%, var(--t1-success) 100%);
+  height: 100%; transition: width 0.3s;
+}
+.t1-alt-link {
+  color: var(--t1-text-dim); font-size: 0.8125rem; margin-top: 2rem;
+  border-top: 1px solid rgba(99, 102, 241, 0.15); padding-top: 1rem;
+}
+.t1-alt-link a { color: var(--t1-accent); text-decoration: none; }
+.t1-alt-link a:hover { text-decoration: underline; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="t1-shell">
+  {{ pm2_sidebar(active='intake_tier1') }}
+
+  <section class="t1-main" role="region" aria-label="Captura Tier 1">
+    <header class="t1-hero">
+      <h1>Tier 1 · Clasificador NCCN/EAU rápido</h1>
+      <p class="t1-hero-tagline">
+        {{ schema.description }}
+      </p>
+      <div class="t1-hero-metrics">
+        <span class="t1-metric"><strong>{{ schema.total_fields }}</strong> fields anchor</span>
+        <span class="t1-metric"><strong>&lt;60s</strong> objetivo a clasificación</span>
+        <span class="t1-metric"><strong>{{ schema.required_min_fields|length }}</strong> mínimo requerido</span>
+        <span class="t1-metric">FAUBOT <strong>CXXV</strong></span>
+      </div>
+    </header>
+
+    <form id="t1Form" novalidate>
+      {# Group fields por sección lógica preservando el orden del schema #}
+      {% set ns = namespace(current_group=None, opened=false) %}
+      {% for f in schema.fields %}
+        {% set group = f.group or 'Datos clínicos' %}
+        {% if group != ns.current_group %}
+          {% if ns.opened %}
+            </div></section>
+          {% endif %}
+          <section class="t1-card">
+            <h2 class="t1-card-title">{{ group }}</h2>
+            <div class="t1-field-grid">
+          {% set ns.current_group = group %}
+          {% set ns.opened = true %}
+        {% endif %}
+
+        {% set cv = f.conditional_visibility %}
+        <div class="t1-field{% if cv %} is-cv{% endif %}"
+             {% if cv %}data-cv='{{ cv|tojson|safe }}'{% endif %}
+             data-field-name="{{ f.name }}">
+          <label class="t1-label" for="t1-fld-{{ f.name }}">
+            {{ f.label }}
+            {% if f.name in schema.required_min_fields %}<span class="t1-required" aria-label="requerido">*</span>{% endif %}
+            {% if f.unit %}<span style="color:var(--t1-text-dim);font-weight:normal;">({{ f.unit }})</span>{% endif %}
+          </label>
+
+          {% set ftype = f.field_type %}
+          {% if ftype == 'select' %}
+          <select class="t1-select"
+                  id="t1-fld-{{ f.name }}"
+                  name="{{ f.name }}"
+                  data-t1-field="{{ f.name }}">
+            {% set _opts = f.display_options or f.options or [] %}
+            {% for opt in _opts %}
+              {% if opt is mapping %}
+                {% set _val = opt.value %}
+                {% set _lbl = opt.label if opt.label is not none else _val %}
+              {% else %}
+                {% set _val = opt %}{% set _lbl = opt %}
+              {% endif %}
+            <option value="{{ _val }}"{% if f.default == _val %} selected{% endif %}>{{ _lbl }}</option>
+            {% endfor %}
+          </select>
+          {% elif ftype == 'date' %}
+          <input type="date" class="t1-input" id="t1-fld-{{ f.name }}" name="{{ f.name }}" data-t1-field="{{ f.name }}">
+          {% elif ftype == 'number' %}
+          <input type="number" class="t1-input" id="t1-fld-{{ f.name }}" name="{{ f.name }}" data-t1-field="{{ f.name }}"
+                 {% if f.min_value is defined %}min="{{ f.min_value }}"{% endif %}
+                 {% if f.max_value is defined %}max="{{ f.max_value }}"{% endif %}
+                 step="{{ f.step or 'any' }}" placeholder="{{ f.placeholder or '' }}">
+          {% else %}
+          <input type="text" class="t1-input" id="t1-fld-{{ f.name }}" name="{{ f.name }}" data-t1-field="{{ f.name }}"
+                 value="{{ f.default if f.default is defined else '' }}" placeholder="{{ f.placeholder or '' }}">
+          {% endif %}
+
+          {% if f.help_text %}
+          <p class="t1-help-text">{{ f.help_text[:120] }}</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+      {% if ns.opened %}
+        </div></section>
+      {% endif %}
+
+      <div class="t1-cta-bar">
+        <div class="t1-cta-status" id="t1Status">
+          Completa los campos marcados con <span class="t1-required">*</span> para clasificar
+        </div>
+        <div>
+          <button type="button" class="t1-btn t1-btn-ghost" id="t1SaveDraft">Guardar borrador</button>
+          <button type="submit" class="t1-btn" id="t1Classify">Clasificar estadio →</button>
+        </div>
+      </div>
+    </form>
+
+    <p class="t1-alt-link">
+      ¿Necesitas captura completa (104 fields, vista experta)?
+      <a href="/intake/smart">Abrir Smart Capture</a> ·
+      ¿Wizard guiado paso-a-paso? <a href="/intake-wizard">Progressive Intake</a>
+    </p>
+  </section>
+
+  <aside class="t1-preview" aria-label="Preview clasificación en vivo">
+    <h3>Preview del estadio</h3>
+    <div class="t1-progress-bar"><div class="t1-progress-fill" id="t1Progress" style="width: 0%;"></div></div>
+    <div id="t1PreviewBody">
+      <div class="t1-preview-empty">
+        Captura los <strong>{{ schema.required_min_fields|length }}</strong>
+        fields mínimos para ver la clasificación NCCN/EAU sugerida en vivo.
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script>
+(function() {
+  const REQUIRED = {{ schema.required_min_fields|tojson|safe }};
+  const ALL_FIELDS = {{ schema.fields|map(attribute='name')|list|tojson|safe }};
+  const STORAGE_KEY = 'prostanet_tier1_draft_v1';
+  const form = document.getElementById('t1Form');
+  const status = document.getElementById('t1Status');
+  const previewBody = document.getElementById('t1PreviewBody');
+  const progressFill = document.getElementById('t1Progress');
+  const classifyBtn = document.getElementById('t1Classify');
+  const saveDraftBtn = document.getElementById('t1SaveDraft');
+
+  function readForm() {
+    const fd = new FormData(form);
+    const out = {};
+    for (const [k, v] of fd.entries()) {
+      if (v !== '' && v !== undefined && v !== null) out[k] = v;
+    }
+    return out;
+  }
+
+  function isVisible(el) {
+    const cv = el.dataset.cv;
+    if (!cv) return true;
+    try {
+      const spec = JSON.parse(cv);
+      const data = readForm();
+      return Object.entries(spec).every(([k, allowed]) =>
+        Array.isArray(allowed) ? allowed.includes(data[k]) : data[k] === allowed
+      );
+    } catch (e) { return true; }
+  }
+
+  function applyConditionalVisibility() {
+    document.querySelectorAll('.t1-field.is-cv').forEach(el => {
+      if (isVisible(el)) el.classList.add('is-visible');
+      else el.classList.remove('is-visible');
+    });
+  }
+
+  function updateProgress() {
+    const data = readForm();
+    const filled = REQUIRED.filter(k => data[k] !== undefined && data[k] !== '').length;
+    const pct = Math.round((filled / REQUIRED.length) * 100);
+    progressFill.style.width = pct + '%';
+    if (filled === REQUIRED.length) {
+      status.innerHTML = '✓ Mínimo completo · Listo para clasificar';
+      status.style.color = 'var(--t1-success)';
+      classifyBtn.disabled = false;
+    } else {
+      status.innerHTML = `${filled}/${REQUIRED.length} requeridos · faltan: ${REQUIRED.filter(k => !data[k] || data[k] === '').slice(0,3).join(', ')}`;
+      status.style.color = 'var(--t1-text-dim)';
+    }
+  }
+
+  function saveDraft() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        ts: new Date().toISOString(),
+        data: readForm(),
+      }));
+    } catch (e) { /* quota exceeded — ignore */ }
+  }
+
+  function restoreDraft() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const { data } = JSON.parse(raw);
+      for (const [k, v] of Object.entries(data || {})) {
+        const el = form.querySelector(`[name="${k}"]`);
+        if (el) el.value = v;
+      }
+    } catch (e) { /* malformed — ignore */ }
+  }
+
+  async function previewClassify() {
+    const data = readForm();
+    if (REQUIRED.some(k => !data[k])) return;
+    try {
+      const resp = await fetch('/api/state-classifier', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const res = await resp.json();
+      if (res && res.state) {
+        previewBody.innerHTML = `
+          <div class="t1-preview-state">
+            <div class="t1-state-name">${res.state}</div>
+            <div class="t1-state-rule">${res.classification_reason || res.audit_note || ''}</div>
+          </div>
+          <p style="color:var(--t1-text-dim);font-size:0.8125rem;">
+            Al clasificar, Tier 2 expone los fields específicos de
+            <strong style="color:var(--t1-text-main);">${res.state}</strong> sin repetir los ${ALL_FIELDS.length} de Tier 1.
+          </p>`;
+      }
+    } catch (e) { /* preview is best-effort — silent fail */ }
+  }
+
+  async function submitClassify(ev) {
+    ev.preventDefault();
+    const data = readForm();
+    if (REQUIRED.some(k => !data[k])) {
+      status.textContent = 'Falta llenar campos mínimos';
+      status.style.color = 'var(--t1-required)';
+      return;
+    }
+    classifyBtn.disabled = true;
+    classifyBtn.textContent = 'Clasificando...';
+    try {
+      const resp = await fetch('/api/intake/tier1/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const res = await resp.json();
+      if (res && res.success && res.next_tier_url) {
+        window.location.href = res.next_tier_url;
+      } else {
+        status.textContent = res.error || 'Error al clasificar';
+        status.style.color = 'var(--t1-required)';
+        classifyBtn.disabled = false;
+        classifyBtn.textContent = 'Clasificar estadio →';
+      }
+    } catch (e) {
+      status.textContent = 'Error de red — verifica conexión';
+      status.style.color = 'var(--t1-required)';
+      classifyBtn.disabled = false;
+      classifyBtn.textContent = 'Clasificar estadio →';
+    }
+  }
+
+  // Wire events
+  form.addEventListener('change', () => { applyConditionalVisibility(); updateProgress(); saveDraft(); previewClassify(); });
+  form.addEventListener('input', () => { updateProgress(); });
+  saveDraftBtn.addEventListener('click', () => {
+    saveDraft();
+    saveDraftBtn.textContent = '✓ Guardado';
+    setTimeout(() => saveDraftBtn.textContent = 'Guardar borrador', 1500);
+  });
+  form.addEventListener('submit', submitClassify);
+
+  // Init
+  restoreDraft();
+  applyConditionalVisibility();
+  updateProgress();
+})();
+</script>
+{% endblock %}

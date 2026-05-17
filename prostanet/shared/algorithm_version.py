@@ -59,7 +59,16 @@ from typing import Any
 # Backend compat preservado: value="0"/"1"/"unknown" sigue intacto en submit
 # → voice extractors EPIC 36 + JS auto-save no rompen. 60/60 tests + 541
 # regression PASS + Playwright sweep pending).
-FAUBOT_RELEASE = "2026-05-17 CXXIV"
+# → CXXV (EPIC 44.B: Tier 1 Clasificador rápido — single-page focused con
+# 15 fields anchor NCCN/EAU strict minimum. NUEVO route GET /intake/tier1
+# + endpoint POST /api/intake/tier1/classify que wraps StateClassifierService
+# y retorna {state, confidence, next_tier_url} para navegación Tier 1→Tier 2.
+# NUEVO template intake_tier1.html (450 LOC) con 2-col layout, live preview
+# rail, progress bar, localStorage draft, conditional_visibility honored,
+# display_options EPIC 44.A propagados. Beneficio clínico tangible:
+# captura de paciente nuevo 15-20min → <60s a estadio canónico. 17/17 tests
+# EPIC 44.B + 558 regression PASS).
+FAUBOT_RELEASE = "2026-05-17 CXXV"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

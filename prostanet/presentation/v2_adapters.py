@@ -3888,6 +3888,119 @@ def quick_classify_schema() -> dict[str, Any]:
     return _with_display_options(schema)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# EPIC 44.B FAUBOT 2026-05-17 CXXV — Tier 1 Clasificador rápido (strict minimum)
+# ─────────────────────────────────────────────────────────────────────────────
+# Whitelist NCCN strict minimum para clasificar paciente en <60 segundos.
+# Subset de `quick_classify_schema` (104 fields → 15 fields). Cada field aquí
+# debe ser indispensable para que `StateClassifierService.classify()` rute al
+# estadio correcto en TODOS los 18 estadios canónicos. Si quitamos un field,
+# algún estadio queda inaccesible o ambiguo.
+#
+# Diseño:
+#   - 11 "anchor" always_visible (identidad + ECOG + Dx + TNM + Gleason + PSA)
+#   - 4 conditionally_visible (terapia local + ADT + metástasis viscera)
+#   - Conditional visibility se preserva del quick_classify_schema original
+#   - Cada field mantiene su `display_options` enriquecido (EPIC 44.A)
+#
+# Lo NO incluido (queda para Tier 2 post-clasificación):
+#   - Histología detallada (variantes raras, neuroendocrine, ductal)
+#   - Comorbilidades (CV, hepático, cognitivo, frailty Fried)
+#   - Familia + germline (delegado a 2nd visit usualmente)
+#   - PROs baseline (EPIC-26)
+#   - DDI review status (manejo farmacéutico post-Tx)
+#   - Imaging modality / extension (mpMRI / bone scan / CT done)
+#   - Preferencias paciente (SDM en visita estructurada)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Names ordenados para preservar UX (identidad primero, decisión clínica al final)
+_TIER1_FIELD_NAMES_ORDERED: tuple[str, ...] = (
+    # Identidad (3) — UI section 1
+    "nss",
+    "full_name",
+    "dob",
+    # Performance (1) — UI section 2
+    "ecog_score",
+    # Confirmación oncológica (2) — UI section 3 (gate hacia Dx confirmado)
+    "known_cancer_diagnosis",
+    "histology_subtype",
+    # TNM + Gleason + PSA (6) — UI section 4 (clinical anchor)
+    "psa_baseline_ng_ml",
+    "gleason_primary",
+    "gleason_secondary",
+    "clinical_tstage",
+    "nodal_status",
+    "metastasis_site",
+    # Historia terapéutica (1) — UI section 5 (rutea post-RP/RT/none)
+    "prior_local_therapy",
+    # Tratamiento sistémico actual (1) — UI section 6 (rutea CRPC vs naive)
+    "current_adt_context",
+    # Metástasis visceral si M+ (1) — UI section 7 (rutea bajo/alto vol CHAARTED)
+    "visceral_metastasis_present",
+)
+
+TIER1_REQUIRED_MIN_FIELDS: frozenset[str] = frozenset({
+    "nss", "full_name", "dob", "ecog_score", "known_cancer_diagnosis",
+    "clinical_tstage", "metastasis_site",
+})
+"""Mínimo absoluto que debe llenarse para que `/api/intake/tier1/classify` no
+falle. El resto puede quedar vacío si conditional_visibility lo permite."""
+
+
+def tier1_classifier_schema() -> dict[str, Any]:
+    """EPIC 44.B — Subset estricto de quick_classify_schema (15 fields NCCN).
+
+    Filtra `quick_classify_schema()` a la whitelist de los 15 fields anchor
+    que `StateClassifierService.classify()` necesita para routear a los 18
+    estadios canónicos. Preserva conditional_visibility + display_options
+    + group + group_order del schema padre — el clínico ve la misma UI
+    pero con 7x menos campos.
+
+    Returns dict shape:
+      {
+        "title": "Tier 1 · Clasificador NCCN/EAU rápido (<60s)",
+        "description": "...",
+        "fields": [...15 field dicts...],
+        "total_fields": 15,
+        "required_min_fields": [...7 strings...],
+        "next_step": "/api/intake/tier1/classify (POST) → /intake/tier2/<state>",
+        "tier": 1,
+      }
+    """
+    base = quick_classify_schema()
+    base_by_name = {f["name"]: f for f in base["fields"]}
+
+    tier1_fields: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for fn in _TIER1_FIELD_NAMES_ORDERED:
+        if fn not in base_by_name:
+            missing.append(fn)
+            continue
+        f = dict(base_by_name[fn])
+        # Marca explícita para downstream filtering en Tier 2 overlap detection.
+        f["tier"] = 1
+        f["tier1_anchor"] = True
+        tier1_fields.append(f)
+
+    return {
+        "title": "Tier 1 · Clasificador NCCN/EAU rápido",
+        "description": (
+            "15 campos anchor para clasificar el estadio canónico del paciente "
+            "en <60 segundos. Tras clasificar, el Tier 2 expone los fields "
+            "específicos del estadio resultante (sin repetir estos)."
+        ),
+        "fields": tier1_fields,
+        "total_fields": len(tier1_fields),
+        "required_min_fields": sorted(TIER1_REQUIRED_MIN_FIELDS),
+        "expected_field_names": list(_TIER1_FIELD_NAMES_ORDERED),
+        "missing_from_base_schema": missing,
+        "next_step": "/api/intake/tier1/classify (POST) → /intake/tier2/<state>",
+        "tier": 1,
+        "tier_label": "Tier 1 · Clasificador",
+        "faubot_release_added": "2026-05-17 CXXV",
+    }
+
+
 def stage_specific_intake_schema(state: str) -> dict[str, Any]:
     """Carga el SCHEMA COMPLETO del estadio clasificado.
 

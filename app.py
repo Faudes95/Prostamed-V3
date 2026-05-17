@@ -7458,6 +7458,126 @@ def intake_wizard():
     return redirect("/clinical-hub#pm2OfficialClassifier", code=302)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# EPIC 44.B FAUBOT 2026-05-17 CXXV — Tier 1 Clasificador rápido
+# ─────────────────────────────────────────────────────────────────────────────
+# UX: 15 fields NCCN strict minimum → clasificación en <60 segundos →
+# redirige a Tier 2 con el estadio resuelto. Wraps `/api/state-classifier`
+# para añadir `next_tier_url` que el frontend usa para navegar.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.route("/intake/tier1", methods=["GET"])
+def intake_tier1():
+    """EPIC 44.B — Tier 1 Clasificador rápido (single-page focused, <60s).
+
+    Renderiza `templates/intake_tier1.html` con el schema filtrado a los
+    15 fields anchor NCCN/EAU. Tras submit, el JS POSTea a
+    `/api/intake/tier1/classify` y redirige a `/intake/tier2/<state>` con
+    el estadio canónico devuelto.
+
+    Beneficio clínico tangible: el clínico nuevo captura los datos
+    indispensables para clasificación (TNM + Gleason + PSA + ECOG +
+    historia terapéutica) en menos de un minuto, sin abrumarse con los
+    104 fields del Smart Capture o los 30+ del Stage-Aware Wizard.
+    """
+    from prostanet.presentation.v2_adapters import tier1_classifier_schema
+    try:
+        page_chrome = build_page_chrome(
+            "intake_tier1",
+            "Tier 1 · Clasificador NCCN/EAU rápido",
+            "15 campos anchor para clasificar el estadio canónico en menos "
+            "de 60 segundos. Tras clasificar, Tier 2 expone los fields "
+            "específicos del estadio resultante.",
+            content_width_class="max-w-7xl",
+        )
+    except NameError:
+        page_chrome = {
+            "title": "Tier 1 Clasificador", "subtitle": "Rápido <60s",
+            "content_width_class": "max-w-7xl",
+        }
+    schema = tier1_classifier_schema()
+    return render_template(
+        "intake_tier1.html",
+        page_chrome=page_chrome,
+        schema=schema,
+    )
+
+
+@app.route("/api/intake/tier1/classify", methods=["POST"])
+def api_intake_tier1_classify():
+    """EPIC 44.B — Endpoint Tier 1: clasifica + retorna next_tier_url.
+
+    Body JSON: payload con los 15 fields Tier 1 llenos (mínimo 7 required).
+    Returns:
+      200 → {success: true, state: "<canonical>", confidence: float,
+             classification_reason: str, next_tier_url: "/intake/tier2/<state>",
+             tier: 1, tier1_fields_submitted: int}
+      400 → {success: false, error: "Missing required fields: [...]"}
+
+    Internal: wraps `StateClassifierService.classify()` con coercion de
+    types (UI envía todos los selects como strings). NO duplica lógica
+    del state classifier — solo agrega navegación Tier 1 → Tier 2.
+    """
+    from prostanet.domains.state_classifier.service import StateClassifierService
+    from prostanet.presentation.v2_adapters import TIER1_REQUIRED_MIN_FIELDS
+
+    payload = request.get_json(silent=True) or {}
+
+    # Validate required minimum
+    missing = sorted([f for f in TIER1_REQUIRED_MIN_FIELDS
+                      if not str(payload.get(f) or "").strip()])
+    if missing:
+        return jsonify({
+            "success": False,
+            "tier": 1,
+            "error": f"Faltan campos mínimos requeridos: {missing}",
+            "missing_fields": missing,
+        }), 400
+
+    # Coerce numerics (UI sends strings)
+    for key in ("psa_baseline_ng_ml", "ecog_score", "gleason_primary",
+                "gleason_secondary"):
+        if key in payload and isinstance(payload[key], str) and payload[key].strip():
+            try:
+                payload[key] = (float(payload[key]) if "." in payload[key]
+                                else int(payload[key]))
+            except ValueError:
+                pass
+
+    try:
+        result = StateClassifierService().classify(payload)
+    except Exception as exc:
+        logger.exception(f"tier1-classify failed: {exc}")
+        return jsonify({
+            "success": False, "tier": 1,
+            "error": f"Clasificación falló: {exc}",
+        }), 400
+
+    state = result.get("state") or "diagnostic_workup"
+    confidence = result.get("confidence", 0.85)  # rule-based deterministic
+
+    # Build next_tier_url. If we have a patient_ref/nss, pass it through so
+    # Tier 2 can resume the same patient. Otherwise Tier 2 starts blank.
+    nss = str(payload.get("nss") or "").strip()
+    next_url = f"/intake/tier2/{state}"
+    if nss:
+        next_url = f"{next_url}?nss={nss}"
+
+    return jsonify({
+        "success": True,
+        "tier": 1,
+        "state": state,
+        "confidence": confidence,
+        "classification_reason": result.get("classification_reason")
+                                  or result.get("audit_note", ""),
+        "derived_metastatic_context": result.get("derived_metastatic_context"),
+        "next_tier_url": next_url,
+        "tier1_fields_submitted": len([k for k, v in payload.items() if v]),
+        "audit_note": f"Tier 1 classify · FAUBOT CXXV · state={state}",
+    })
+
+
 @app.route("/intake/smart", methods=["GET"])
 def intake_smart_capture():
     """EPIC 43.4 — Smart Capture intake (single-page, dynamic, intelligent).
