@@ -49,7 +49,17 @@ from typing import Any
 # para los 41 estados sin schema dedicado, 782 fields totales · Smart Capture
 # UX single-page con sidebar nav + auto-save + Cmd-K + voice per section +
 # reasoning trail inline + WCAG AA — preservando los 104 fields del intake).
-FAUBOT_RELEASE = "2026-05-17 CXXIII"
+# → CXX-CXXIII (EPIC 33 + decision_today + compass + template-gates fixes)
+# → CXXIV (EPIC 44.A: intake friendly labels — fix template
+# intake_smart_capture.html que renderizaba f.options crudo en lugar de
+# f.display_options; enrich BOOLEAN_CONTEXTUAL_OPTION_LABELS + OPTION_LABELS
+# con ~30 labels clínicamente densos para campos críticos NCCN/EAU 2026.
+# Anti-pattern reportado por urólogo: "BCR detectada: 0/1" sin labels.
+# Post-fix: "BCR detectada: Sin BCR confirmada / BCR confirmada".
+# Backend compat preservado: value="0"/"1"/"unknown" sigue intacto en submit
+# → voice extractors EPIC 36 + JS auto-save no rompen. 60/60 tests + 541
+# regression PASS + Playwright sweep pending).
+FAUBOT_RELEASE = "2026-05-17 CXXIV"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

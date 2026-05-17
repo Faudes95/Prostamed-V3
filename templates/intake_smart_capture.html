@@ -128,8 +128,19 @@
                                 data-isc-field="{{ f.name }}"
                                 data-isc-label="{{ f.label }}"
                                 {% if f.required %}data-isc-required="1"{% endif %}>
-                            {% for opt in f.options %}
-                            <option value="{{ opt }}"{% if f.default == opt %} selected{% endif %}>{{ opt }}</option>
+                            {# EPIC 44.A FAUBOT 2026-05-17 CXXIV — render display_options (value+label) #}
+                            {# en vez de f.options crudas. Backend compat: value sigue siendo "0"/"1"/etc, #}
+                            {# pero el clínico ve "Sin BCR confirmada" en lugar de "0". #}
+                            {% set _opts = f.display_options or f.options or [] %}
+                            {% for opt in _opts %}
+                                {% if opt is mapping %}
+                                    {% set _val = opt.value %}
+                                    {% set _lbl = opt.label if opt.label is not none else _val %}
+                                {% else %}
+                                    {% set _val = opt %}
+                                    {% set _lbl = opt %}
+                                {% endif %}
+                            <option value="{{ _val }}"{% if f.default == _val %} selected{% endif %}>{{ _lbl }}</option>
                             {% endfor %}
                         </select>
                         {% elif ftype == 'textarea' %}
