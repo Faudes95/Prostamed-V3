@@ -77,7 +77,14 @@ from typing import Any
 # (350 LOC) con banner contextual "X fields nuevos para tu paciente <state>"
 # + chip Tier 1 capturado + role accordions (required/decision_refiner/
 # monitoring/optional). 16/16 tests EPIC 44.C + 574 regression PASS).
-FAUBOT_RELEASE = "2026-05-17 CXXVI"
+# → CXXVII (EPIC 44.D: Smart Capture deprecation-aware banner — hero
+# subtitle ahora identifica el flujo como "Vista experta" + banner top
+# 2-tier con CTAs a /intake/tier1 (primaria) y /intake-wizard (alternativa).
+# NO se elimina funcionalidad: Smart Capture sigue exponiendo los 104 fields
+# en una sola pantalla para usuarios que prefieren single-page sin overhead
+# de navegación tier-to-tier. ADITIVO: el clínico elige el flujo según su
+# caso. 6/6 tests EPIC 44.D + 106 regression EPIC 44 + 22d concordance PASS).
+FAUBOT_RELEASE = "2026-05-17 CXXVII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

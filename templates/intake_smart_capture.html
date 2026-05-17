@@ -54,7 +54,7 @@
         {# Hero #}
         <header class="isc-hero">
             <div style="font-size:.7rem; color:#a5b4fc; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">
-                EPIC 43.4 · Smart Capture
+                EPIC 43.4 · Smart Capture · Vista experta
             </div>
             <h1>Ingreso clínico inteligente · NCCN/EAU 2026</h1>
             <p>
@@ -67,6 +67,49 @@
                 <span id="iscClassificationBadge" style="display:none; padding:3px 10px; background:rgba(99,102,241,.18); border-radius:999px; color:#c7d2fe;"></span>
             </div>
         </header>
+
+        {# EPIC 44.D FAUBOT 2026-05-17 CXXVII — Alternativas 2-tier para captura rápida.
+           Smart Capture sigue disponible como "vista experta" sin restricciones,
+           pero ofrecemos al clínico el flujo 2-tier optimizado al top, antes
+           que se pierda en los 104 fields. NO se elimina nada: el clínico
+           elige el flujo según su caso (paciente nuevo rápido vs revisión
+           completa exhaustiva). #}
+        <aside class="isc-tier-alternatives" role="complementary"
+               aria-label="Flujos alternativos de captura"
+               style="background:linear-gradient(135deg, rgba(99,102,241,0.10) 0%, rgba(168,85,247,0.08) 100%);
+                      border:1px solid rgba(99,102,241,0.25); border-radius:12px;
+                      padding:1rem 1.25rem; margin-bottom:1.25rem;
+                      display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+            <div style="flex:1; min-width:280px;">
+                <div style="font-size:0.7rem; color:#a5b4fc; font-weight:800;
+                            letter-spacing:0.14em; text-transform:uppercase; margin-bottom:0.25rem;">
+                    ¿Paciente nuevo en clínica? Captura más rápida disponible
+                </div>
+                <div style="color:#e2e8f0; font-size:0.875rem; line-height:1.5;">
+                    <strong style="color:rgb(99,102,241);">Tier 1 Clasificador</strong>
+                    captura 15 fields NCCN anchor en
+                    <strong>&lt;60 segundos</strong> → llega al estadio canónico,
+                    luego <strong style="color:rgb(168,85,247);">Tier 2 Asistente</strong>
+                    refina solo lo nuevo (sin repetir lo que ya capturaste).
+                </div>
+            </div>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <a href="/intake/tier1"
+                   data-testid="intake-smart-cta-tier1"
+                   style="background:rgb(99,102,241); color:white; padding:0.5rem 1rem;
+                          border-radius:8px; text-decoration:none; font-size:0.875rem;
+                          font-weight:600;">
+                    Tier 1 Clasificador →
+                </a>
+                <a href="/intake-wizard"
+                   data-testid="intake-smart-cta-wizard"
+                   style="background:transparent; color:#cbd5e1; padding:0.5rem 1rem;
+                          border-radius:8px; text-decoration:none; font-size:0.875rem;
+                          border:1px solid rgba(203,213,225,0.3);">
+                    Wizard guiado
+                </a>
+            </div>
+        </aside>
 
         {# Voice composite hub #}
         <div class="isc-voice-hub" data-testid="isc-voice-hub">
