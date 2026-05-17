@@ -2797,6 +2797,79 @@ def api_patient_psma_pet_latest(patient_ref):
     return jsonify({'success': True, 'has_psma_pet': True, **res}), 200
 
 
+# ─────────────────── BUG FIX 2026-05-17 — pivotal gates per-patient API ───────────────────
+
+@app.route('/api/patients/<patient_ref>/pivotal-gates', methods=['GET'])
+def api_patient_pivotal_gates(patient_ref):
+    """Backend-driven pivotal gates evaluation per-patient.
+
+    Pre-fix (BUG identificado 2026-05-17): templates/patient_profile_v2.html
+    renderizaba gates HARDCODED (G07, G55, G47, G53, G14, G29, G54) idénticos
+    para TODOS los pacientes, mockup demo. Clínicos veían 'ALT 6.2× LSN'
+    aunque el paciente NO tuviera ALT documentado.
+
+    Post-fix: este endpoint corre `evaluate_pivotal_contraindication_gates()`
+    sobre los facts reales del paciente y retorna SOLO los gates triggered
+    realmente.
+
+    Returns:
+        {
+          "success": bool,
+          "patient_nss": str,
+          "evaluation_timestamp": ISO8601,
+          "gates_triggered": [
+            {code, title, severity, reason, trial_refs, evidence_tag,
+             trigger_type, affected_regimen_codes}, ...
+          ],
+          "summary": {total, hard_block_count, soft_warning_count,
+                      informational_count, by_class_count}
+        }
+    """
+    import tracking_db as _td
+    from datetime import datetime as _dt, timezone as _tz
+    try:
+        patient = _td.get_patient_full_record(patient_ref)
+        if not patient:
+            return jsonify({'success': False, 'error': 'patient_not_found'}), 404
+        try:
+            from prostanet.domains.patient_tracking.profile_compass import (
+                build_patient_profile_view_model,
+            )
+            longitudinal = _td.refresh_longitudinal_intelligence(
+                patient_ref, force_recompute=False, record=patient,
+                include_live_benchmark=False,
+            )
+            pv = build_patient_profile_view_model(
+                patient=patient,
+                latest_assessment_raw=patient.get('latest_assessment') or {},
+                latest_assessment={},
+                state_timeline=[],
+                care_overlays=[],
+                longitudinal_bundle=longitudinal,
+            )
+            from prostanet.presentation.v2_adapters import _gates_panel, _gate_counts
+            gates_all = _gates_panel(pv, limit=50)
+            counts = _gate_counts(pv)
+            return jsonify({
+                'success': True,
+                'patient_nss': patient_ref,
+                'evaluation_timestamp': _dt.now(_tz.utc).isoformat(),
+                'gates_triggered': gates_all,
+                'gates_total': len(gates_all),
+                'summary': counts,
+            })
+        except Exception as exc:
+            logger.exception('pivotal-gates endpoint inner build failed')
+            return jsonify({
+                'success': False,
+                'error': 'gates_evaluation_failed',
+                'message': str(exc),
+            }), 500
+    except Exception as exc:
+        logger.exception('pivotal-gates endpoint failed')
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
 # ─────────────────── EPIC 42.C — Real patient consent + cohort breakdown ───────────────────
 
 @app.route('/api/cohort/breakdown', methods=['GET'])

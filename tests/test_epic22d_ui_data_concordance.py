@@ -89,6 +89,13 @@ STATIC_NO_DATA_BINDING: set[str] = {
     "neg-biopsy-age-lt45-card-preferred",
     "twin-ranking-header",  # EPIC 25.1 — header that shows "X regimens excluded by arbiter"
     "twin-contraindication-banner",  # BUG FIX 2026-05-17 — banner cuando hay regímenes hard_block
+    # BUG FIX 2026-05-17 — Pivotal gates dynamic render (3 secciones + endpoint)
+    "pivotal-gates-meta",                  # header meta del card "Gates pivotal activos"
+    "pivotal-gates-active-list",           # sección activa con loop {% for gate in gates_top %}
+    "pivotal-gates-detailed-list",         # vista detallada con loop {% for gate in gates_all %}
+    "pivotal-gates-evidence-table",        # tabla per-gate evidence drill-down dinámica
+    "pivotal-gates-contextualizados",      # sidebar gates contextualizados
+    "catalog-inventory-gates",             # catálogo del sistema (metadata, no per-patient)
     "patient-twin-low-capture",  # nested chip under patient-twin-os-card
     "patient-twin-readiness-pct",  # nested chip under patient-twin-os-card
     "risk-strat-preferred-therapy",  # nested label under risk-stratified card

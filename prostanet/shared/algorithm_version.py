@@ -49,7 +49,7 @@ from typing import Any
 # para los 41 estados sin schema dedicado, 782 fields totales · Smart Capture
 # UX single-page con sidebar nav + auto-save + Cmd-K + voice per section +
 # reasoning trail inline + WCAG AA — preservando los 104 fields del intake).
-FAUBOT_RELEASE = "2026-05-17 CXXII"
+FAUBOT_RELEASE = "2026-05-17 CXXIII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

@@ -3137,76 +3137,53 @@
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--pn-accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                             Gates pivotal activos
                         </h3>
-                        <span class="pm2-head-meta">5 / 55 evaluados</span>
+                        <span class="pm2-head-meta" data-testid="pivotal-gates-meta">
+                            {# BUG FIX 2026-05-17 — render dinámico de gates evaluados por
+                               backend per-paciente. Pre-fix: HTML hardcoded mostraba G07/G55/
+                               G47/G53/G14 mockup demo idéntico para TODOS los pacientes
+                               (e.g., paciente Frin sin ALT alta veía "ALT 6.2× LSN" demo).
+                               Post-fix: lee gate_counts + gates_top del v2 context que
+                               proviene de evaluate_pivotal_contraindication_gates(). #}
+                            {% if gate_counts and gate_counts.total %}
+                                {{ gate_counts.total }} gate{% if gate_counts.total != 1 %}s{% endif %} triggered ·
+                                {% if gate_counts.hard_block %}<span style="color:#fca5a5;">{{ gate_counts.hard_block }} hard_block</span>{% endif %}
+                                {% if gate_counts.soft_warning %} · <span style="color:#fde68a;">{{ gate_counts.soft_warning }} soft</span>{% endif %}
+                                {% if gate_counts.informational %} · <span style="color:#a5b4fc;">{{ gate_counts.informational }} info</span>{% endif %}
+                            {% else %}
+                                Sin gates triggered en este paciente
+                            {% endif %}
+                        </span>
                     </div>
-                    <div style="display:flex;flex-direction:column">
-                        <div class="pm2-gate-card" data-severity="hard_block" style="border-radius:0;border-bottom:1px solid var(--border-default)">
-                            <div class="pm2-gate-card-head">
-                                <span class="pm2-gate-code">G07</span>
-                                <span class="pm2-gate-badge" data-severity="hard_block">hard_block</span>
+                    <div style="display:flex;flex-direction:column" data-testid="pivotal-gates-active-list">
+                        {% if gates_top %}
+                            {% for gate in gates_top %}
+                            <div class="pm2-gate-card" data-severity="{{ gate.severity }}" data-gate-code="{{ gate.code }}" style="border-radius:0;{% if not loop.last %}border-bottom:1px solid var(--border-default);{% endif %}">
+                                <div class="pm2-gate-card-head">
+                                    <span class="pm2-gate-code">{{ gate.code|truncate(18, true, '') }}</span>
+                                    <span class="pm2-gate-badge" data-severity="{{ gate.severity }}">{{ gate.severity }}</span>
+                                </div>
+                                <h4>{{ gate.title or gate.class_label or gate.code }}</h4>
+                                {% if gate.reason %}
+                                <div class="pm2-gate-msg">{{ gate.reason|truncate(280, true, '…') }}</div>
+                                {% endif %}
+                                <div class="pm2-gate-foot">
+                                    {% for ref in gate.trial_refs[:4] %}
+                                    <a href="{{ ref.url or '#' }}" {% if ref.url and ref.url != '#' %}target="_blank" rel="noopener"{% endif %} class="pm2-trial-link">{{ ref.ref }}</a>
+                                    {% endfor %}
+                                    {% if gate.evidence_tag and gate.evidence_tag != '—' %}
+                                    <span class="pm2-gate-badge" data-severity="informational" style="cursor:default" title="evidence_tag: {{ gate.evidence_tag }}">{{ gate.trigger_type or 'evaluated' }}</span>
+                                    {% endif %}
+                                </div>
                             </div>
-                            <h4>Hepatotoxicidad — abiraterona contraindicada</h4>
-                            <div class="pm2-gate-msg">ALT 6.2× LSN supera umbral seguro. Bloquea ADT_ABIRATERONE y NIRAPARIB_ABIRATERONE.</div>
-                            <div class="pm2-gate-foot">
-                                <a href="https://pubmed.ncbi.nlm.nih.gov/28296438/" target="_blank" rel="noopener" class="pm2-trial-link">PMID 28296438</a>
-                                <a href="#" class="pm2-trial-link">NCCN PROS-N</a>
-                                <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">truthy_flag</span>
+                            {% endfor %}
+                        {% else %}
+                            <div style="padding: 24px 18px; text-align: center; color: var(--pn-text-muted); font-size: .82rem;">
+                                <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin: 0 auto 8px; display: block; opacity: .5;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                <div style="color: #86efac; font-weight: 600;">Sin gates pivotal triggered</div>
+                                <div style="margin-top: 4px;">El paciente NO disparó contraindicaciones del catálogo evaluado.</div>
+                                <div style="margin-top: 6px; font-size: .7rem; color: var(--pn-text-faint);">99 gates en catálogo · evaluación per-paciente · backend-driven</div>
                             </div>
-                        </div>
-
-                        <div class="pm2-gate-card" data-severity="soft_warning" style="border-radius:0;border-bottom:1px solid var(--border-default)">
-                            <div class="pm2-gate-card-head">
-                                <span class="pm2-gate-code">G55</span>
-                                <span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span>
-                            </div>
-                            <h4>PSADT ≤ 10 m — iniciar ARPI en m0CRPC</h4>
-                            <div class="pm2-gate-msg">Cinética agresiva sugiere apalutamida/enzalutamida/darolutamida (SPARTAN/PROSPER/ARAMIS).</div>
-                            <div class="pm2-gate-foot">
-                                <a href="#" class="pm2-trial-link">SPARTAN</a>
-                                <a href="#" class="pm2-trial-link">PROSPER</a>
-                                <a href="#" class="pm2-trial-link">ARAMIS</a>
-                                <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">numeric_threshold</span>
-                            </div>
-                        </div>
-
-                        <div class="pm2-gate-card" data-severity="soft_warning" style="border-radius:0;border-bottom:1px solid var(--border-default)">
-                            <div class="pm2-gate-card-head">
-                                <span class="pm2-gate-code">G47</span>
-                                <span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span>
-                            </div>
-                            <h4>PSA flare ARPI — pseudoprogresión</h4>
-                            <div class="pm2-gate-msg">Subida transitoria de PSA en primeras 12 sem post-ARPI puede no indicar progresión.</div>
-                            <div class="pm2-gate-foot">
-                                <a href="#" class="pm2-trial-link">PMID 31816320</a>
-                                <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">numeric_baseline_delta_rise_above</span>
-                            </div>
-                        </div>
-
-                        <div class="pm2-gate-card" data-severity="informational" style="border-radius:0;border-bottom:1px solid var(--border-default)">
-                            <div class="pm2-gate-card-head">
-                                <span class="pm2-gate-code">G53</span>
-                                <span class="pm2-gate-badge" data-severity="informational">informational</span>
-                            </div>
-                            <h4>BCR agresivo post-RP — considerar salvage temprano</h4>
-                            <div class="pm2-gate-msg">PSA velocity sugiere ventana de RT salvage con mejor outcome (Stephenson JCO 2009).</div>
-                            <div class="pm2-gate-foot">
-                                <a href="#" class="pm2-trial-link">Stephenson JCO 2009</a>
-                                <a href="#" class="pm2-trial-link">RTOG-9601</a>
-                            </div>
-                        </div>
-
-                        <div class="pm2-gate-card" data-severity="informational" style="border-radius:0">
-                            <div class="pm2-gate-card-head">
-                                <span class="pm2-gate-code">G14</span>
-                                <span class="pm2-gate-badge" data-severity="informational">informational</span>
-                            </div>
-                            <h4>HRR status pendiente — considerar test germline</h4>
-                            <div class="pm2-gate-msg">BRCA1/2 desconocido en mCRPC habilitaría OLAPARIB y TALAZOPARIB+ENZA.</div>
-                            <div class="pm2-gate-foot">
-                                <a href="#" class="pm2-trial-link">PROfound</a>
-                                <a href="#" class="pm2-trial-link">TALAPRO-2</a>
-                            </div>
-                        </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -3498,96 +3475,46 @@
                 <h2>Gates triggered · vista detallada</h2>
                 <span class="pm2-sub">Cada gate muestra severity 3-tier · trial_refs live · trigger_type · override</span>
             </div>
-            <div class="pm2-gate-grid">
-                <div class="pm2-gate-card" data-severity="hard_block">
-                    <div class="pm2-gate-card-head">
-                        <span class="pm2-gate-code">G07</span>
-                        <span class="pm2-gate-badge" data-severity="hard_block">hard_block</span>
-                        <span class="pm2-state-chip" style="margin-left:auto;font-size:.62rem">since LXIV</span>
+            {# BUG FIX 2026-05-17 — render dinámico per-paciente.
+               Pre-fix: HTML hardcoded mostraba G07/G29/G55/G47/G54/G14 idénticos
+               para TODOS los pacientes (mockup). Post-fix: usa gates_all del
+               v2 context (limit=50) que viene de evaluate_pivotal_contraindication_gates(). #}
+            <div class="pm2-gate-grid" data-testid="pivotal-gates-detailed-list">
+                {% set _detailed_gates = gates_all or gates_top or [] %}
+                {% if _detailed_gates %}
+                    {% for gate in _detailed_gates[:20] %}
+                    <div class="pm2-gate-card" data-severity="{{ gate.severity }}" data-gate-code="{{ gate.code }}">
+                        <div class="pm2-gate-card-head">
+                            <span class="pm2-gate-code">{{ gate.code|truncate(22, true, '') }}</span>
+                            <span class="pm2-gate-badge" data-severity="{{ gate.severity }}">{{ gate.severity }}</span>
+                            {% if gate.class_label and gate.class_label != '—' %}
+                            <span class="pm2-state-chip" style="margin-left:auto;font-size:.62rem">{{ gate.class_label|truncate(28, true, '') }}</span>
+                            {% endif %}
+                        </div>
+                        <h4>{{ gate.title or gate.code }}</h4>
+                        {% if gate.reason %}
+                        <div class="pm2-gate-msg">{{ gate.reason }}</div>
+                        {% endif %}
+                        <div class="pm2-gate-foot">
+                            {% if gate.trigger_type and gate.trigger_type != '—' %}
+                            <span class="pm2-gate-badge" data-severity="informational" style="cursor:default" title="evidence_tag: {{ gate.evidence_tag or 'n/a' }}">trigger: {{ gate.trigger_type }}</span>
+                            {% endif %}
+                            {% for ref in gate.trial_refs %}
+                            <a href="{{ ref.url or '#' }}" {% if ref.url and ref.url != '#' %}target="_blank" rel="noopener"{% endif %} class="pm2-trial-link">{{ ref.ref }}</a>
+                            {% endfor %}
+                        </div>
                     </div>
-                    <h4>Hepatotoxicidad — abiraterona contraindicada</h4>
-                    <div class="pm2-gate-msg">ALT 6.2 × LSN supera umbral seguro (≤5 × LSN). Bloquea ADT_ABIRATERONE y NIRAPARIB_ABIRATERONE en mHSPC y mCRPC.</div>
-                    <div class="pm2-gate-foot">
-                        <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">trigger: numeric_threshold</span>
-                        <a href="https://pubmed.ncbi.nlm.nih.gov/28296438/" target="_blank" rel="noopener" class="pm2-trial-link">PMID 28296438</a>
-                        <a href="#" class="pm2-trial-link">NCCN PROS-N v2.2026</a>
-                        <a href="#" class="pm2-trial-link">EAU 2026 §6.3</a>
+                    {% endfor %}
+                {% else %}
+                    <div style="grid-column: 1 / -1; padding: 32px 18px; text-align: center; color: var(--pn-text-muted); font-size: .82rem; background: rgba(16,185,129,0.05); border: 1px solid rgba(16,185,129,0.20); border-radius: 10px;">
+                        <svg width="40" height="40" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin: 0 auto 10px; display: block; color: #86efac;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <div style="color: #86efac; font-weight: 700; font-size: .95rem;">✓ Sin gates triggered</div>
+                        <div style="margin-top: 8px; max-width: 480px; margin-left: auto; margin-right: auto;">
+                            La evaluación de los 99 gates del catálogo NCCN/EAU 2026 NO detectó contraindicaciones activas para este paciente.
+                            Si nuevos datos clínicos se capturan (LFTs, NYHA, PSADT, etc.), gates podrían dispararse en re-evaluación.
+                        </div>
                     </div>
-                </div>
-
-                <div class="pm2-gate-card" data-severity="hard_block">
-                    <div class="pm2-gate-card-head">
-                        <span class="pm2-gate-code">G29</span>
-                        <span class="pm2-gate-badge" data-severity="hard_block">hard_block</span>
-                    </div>
-                    <h4>Insuficiencia cardiaca NYHA III–IV — enzalutamida no recomendada</h4>
-                    <div class="pm2-gate-msg">Riesgo de HTA y eventos cardiovasculares mayores. Considerar darolutamida (perfil CV mejorado).</div>
-                    <div class="pm2-gate-foot">
-                        <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">trigger: any_of</span>
-                        <a href="#" class="pm2-trial-link">ARAMIS NEJM 2018</a>
-                        <a href="#" class="pm2-trial-link">PMID 31039765</a>
-                    </div>
-                </div>
-
-                <div class="pm2-gate-card" data-severity="soft_warning">
-                    <div class="pm2-gate-card-head">
-                        <span class="pm2-gate-code">G55</span>
-                        <span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span>
-                        <span class="pm2-state-chip" style="margin-left:auto;font-size:.62rem">since LXIV #63A</span>
-                    </div>
-                    <h4>PSADT ≤ 10 m en m0CRPC — iniciar ARPI</h4>
-                    <div class="pm2-gate-msg">Cinética agresiva. SPARTAN/PROSPER/ARAMIS demuestran beneficio MFS con apalutamida/enzalutamida/darolutamida.</div>
-                    <div class="pm2-gate-foot">
-                        <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">trigger: numeric_below</span>
-                        <a href="#" class="pm2-trial-link">SPARTAN</a>
-                        <a href="#" class="pm2-trial-link">PROSPER</a>
-                        <a href="#" class="pm2-trial-link">ARAMIS</a>
-                    </div>
-                </div>
-
-                <div class="pm2-gate-card" data-severity="soft_warning">
-                    <div class="pm2-gate-card-head">
-                        <span class="pm2-gate-code">G47</span>
-                        <span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span>
-                        <span class="pm2-state-chip" style="margin-left:auto;font-size:.62rem">since LVIII #62</span>
-                    </div>
-                    <h4>PSA flare ARPI · pseudoprogresión</h4>
-                    <div class="pm2-gate-msg">Subida transitoria de PSA en primeras 12 semanas post-ARPI no debe interpretarse como progresión real. Re-evaluar a sem 12.</div>
-                    <div class="pm2-gate-foot">
-                        <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">trigger: numeric_baseline_delta_rise_above</span>
-                        <a href="#" class="pm2-trial-link">PMID 31816320</a>
-                    </div>
-                </div>
-
-                <div class="pm2-gate-card" data-severity="soft_warning">
-                    <div class="pm2-gate-card-head">
-                        <span class="pm2-gate-code">G54</span>
-                        <span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span>
-                        <span class="pm2-state-chip" style="margin-left:auto;font-size:.62rem">since LXIV</span>
-                    </div>
-                    <h4>PSA bounce post-RT · pseudoprogresión</h4>
-                    <div class="pm2-gate-msg">Bounce típico 12–24 m post-RT puede confundirse con BCR. Esperar 3 mediciones consecutivas (Phoenix 2006).</div>
-                    <div class="pm2-gate-foot">
-                        <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">trigger: numeric_baseline_delta_above</span>
-                        <a href="#" class="pm2-trial-link">Crook IJROBP 2010</a>
-                        <a href="#" class="pm2-trial-link">Phoenix 2006</a>
-                    </div>
-                </div>
-
-                <div class="pm2-gate-card" data-severity="informational">
-                    <div class="pm2-gate-card-head">
-                        <span class="pm2-gate-code">G14</span>
-                        <span class="pm2-gate-badge" data-severity="informational">informational</span>
-                    </div>
-                    <h4>HRR status pendiente</h4>
-                    <div class="pm2-gate-msg">BRCA1/2 desconocido. En mCRPC habilitaría OLAPARIB / TALAZOPARIB+ENZA / NIRAPARIB+ABI. Recomendar test germline + somatic.</div>
-                    <div class="pm2-gate-foot">
-                        <span class="pm2-gate-badge" data-severity="informational" style="cursor:default">trigger: all_of_falsy</span>
-                        <a href="#" class="pm2-trial-link">PROfound</a>
-                        <a href="#" class="pm2-trial-link">TALAPRO-2</a>
-                        <a href="#" class="pm2-trial-link">MAGNITUDE</a>
-                    </div>
-                </div>
+                {% endif %}
             </div>
         </section>
 
@@ -3619,47 +3546,44 @@
                 <span class="pm2-sub">Cada gate expone trial_refs_with_links + evidence_tag_link + citation_count</span>
             </div>
 
+            {# BUG FIX 2026-05-17 — per-gate evidence drill-down dynamic.
+               Pre-fix: tabla hardcoded con G07/G55/G47/G54/G14 idénticos para
+               todos los pacientes. Post-fix: tabla dinámica desde gates_all
+               (gates triggered del paciente). #}
             <div class="pm2-tab-card">
-                <table class="pm2-tbl">
-                    <thead><tr><th>Gate</th><th>Class label</th><th>Trial refs (live)</th><th>Evidence tag</th><th>Citations</th></tr></thead>
+                <table class="pm2-tbl" data-testid="pivotal-gates-evidence-table">
+                    <thead><tr><th>Gate</th><th>Class label</th><th>Trial refs</th><th>Evidence tag</th><th>Refs</th></tr></thead>
                     <tbody>
-                        <tr>
-                            <td><span class="pm2-gate-code">G07</span></td>
-                            <td>Hepatic toxicity contraindication</td>
-                            <td><a class="pm2-trial-link" href="https://pubmed.ncbi.nlm.nih.gov/28296438/" target="_blank">PMID 28296438</a> <a class="pm2-trial-link" href="https://clinicaltrials.gov/study/NCT00638690" target="_blank">NCT00638690</a></td>
-                            <td><a class="pm2-trial-link">cougar_aa_302_safety</a></td>
-                            <td class="pm2-num">3</td>
-                        </tr>
-                        <tr>
-                            <td><span class="pm2-gate-code">G55</span></td>
-                            <td>m0CRPC PSADT-driven ARPI</td>
-                            <td><a class="pm2-trial-link">SPARTAN (NCT01946204)</a> <a class="pm2-trial-link">PROSPER (NCT02003924)</a> <a class="pm2-trial-link">ARAMIS (NCT02200614)</a></td>
-                            <td><a class="pm2-trial-link">spartan_prosper_aramis_NEJM_2018</a></td>
-                            <td class="pm2-num">5</td>
-                        </tr>
-                        <tr>
-                            <td><span class="pm2-gate-code">G47</span></td>
-                            <td>PSA flare ARPI</td>
-                            <td><a class="pm2-trial-link">PMID 31816320</a></td>
-                            <td><a class="pm2-trial-link">arpi_psa_flare_pseudoprogression</a></td>
-                            <td class="pm2-num">2</td>
-                        </tr>
-                        <tr>
-                            <td><span class="pm2-gate-code">G54</span></td>
-                            <td>PSA bounce post-RT</td>
-                            <td><a class="pm2-trial-link">Crook IJROBP 2010</a> <a class="pm2-trial-link">Phoenix 2006 RTOG-ASTRO</a></td>
-                            <td><a class="pm2-trial-link">phoenix_definition_bcr</a></td>
-                            <td class="pm2-num">2</td>
-                        </tr>
-                        <tr>
-                            <td><span class="pm2-gate-code">G14</span></td>
-                            <td>HRR test pending</td>
-                            <td><a class="pm2-trial-link">PROfound (NCT02987543)</a> <a class="pm2-trial-link">TALAPRO-2</a> <a class="pm2-trial-link">MAGNITUDE</a></td>
-                            <td><a class="pm2-trial-link">hrr_test_recommendation</a></td>
-                            <td class="pm2-num">4</td>
-                        </tr>
+                        {% set _evidence_gates = gates_all or gates_top or [] %}
+                        {% if _evidence_gates %}
+                            {% for gate in _evidence_gates[:15] %}
+                            <tr data-gate-code="{{ gate.code }}">
+                                <td><span class="pm2-gate-code">{{ gate.code|truncate(22, true, '') }}</span></td>
+                                <td>{{ gate.title or gate.class_label or '—' }}</td>
+                                <td>
+                                    {% for ref in gate.trial_refs[:5] %}
+                                    <a class="pm2-trial-link" {% if ref.url and ref.url != '#' %}href="{{ ref.url }}" target="_blank" rel="noopener"{% endif %}>{{ ref.ref }}</a>
+                                    {% endfor %}
+                                    {% if not gate.trial_refs %}<span style="color:var(--pn-text-faint);font-size:.72rem">sin trial refs</span>{% endif %}
+                                </td>
+                                <td><a class="pm2-trial-link" title="{{ gate.evidence_tag }}">{{ gate.evidence_tag|truncate(28, true, '…') }}</a></td>
+                                <td class="pm2-num">{{ gate.trial_refs|length }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="5" style="text-align:center; padding:24px; color:var(--pn-text-muted);">
+                                    Sin gates triggered con drill-down disponible para este paciente.
+                                </td>
+                            </tr>
+                        {% endif %}
                     </tbody>
                 </table>
+                {% if _evidence_gates %}
+                <div style="padding:8px 14px; font-size:.7rem; color:var(--pn-text-faint); border-top:1px solid var(--border-subtle);">
+                    Showing top {{ _evidence_gates[:15]|length }} of {{ _evidence_gates|length }} triggered gates · backend-driven · per-patient evaluation
+                </div>
+                {% endif %}
             </div>
 
             <div class="pm2-section-h">
@@ -3967,24 +3891,34 @@
             </div>
 
             <div class="pm2-grid-3-2">
-                <div class="pm2-tab-card">
+                <div class="pm2-tab-card" data-testid="catalog-inventory-gates">
                     <div class="pm2-tab-card-head">
-                        <h3>Active gate codes · per-gate YAML SHA</h3>
-                        <span class="pm2-head-meta">52 / 55 yaml-loaded</span>
+                        <h3>📚 Catálogo del sistema · gates pivotal disponibles</h3>
+                        <span class="pm2-head-meta" style="color:#a5b4fc;">99 gates en catálogo NCCN/EAU 2026</span>
                     </div>
-                    <div style="padding:0;max-height:480px;overflow-y:auto">
+                    {# BUG FIX 2026-05-17 — Esta tabla es METADATA DEL CATÁLOGO del sistema
+                       (gates disponibles para evaluar), NO gates triggered del paciente.
+                       Para gates triggered → ver sección "Gates pivotal activos" arriba.
+                       Mostramos sample del catálogo para auditoría del catálogo.
+                       Para inventory completo del catálogo: ver pivotal_gates_catalog/*.yaml. #}
+                    <div style="padding:10px 16px 0; background:rgba(99,102,241,0.08); border-bottom:1px solid var(--border-subtle);">
+                        <div style="font-size:.72rem; color:#a5b4fc; line-height:1.4;">
+                            ℹ Esta tabla muestra el catálogo del sistema (gates evaluables). Los gates TRIGGERED para este paciente aparecen arriba en "Gates pivotal activos" (backend-driven). El catálogo completo (99 gates) puede consultarse vía <code style="font-size:.7rem">pivotal_gates_catalog/*.yaml</code>.
+                        </div>
+                    </div>
+                    <div style="padding:0;max-height:420px;overflow-y:auto">
                         <table class="pm2-tbl">
                             <thead><tr><th>Code</th><th>Class label</th><th>Severity</th><th>YAML SHA</th><th>Since</th></tr></thead>
                             <tbody>
-                                <tr><td><span class="pm2-gate-code">G07</span></td><td>Hepatic toxicity contraindication</td><td><span class="pm2-gate-badge" data-severity="hard_block">hard_block</span></td><td class="pm2-mono">e8a9f12c</td><td>LXII</td></tr>
-                                <tr><td><span class="pm2-gate-code">G14</span></td><td>HRR test recommendation</td><td><span class="pm2-gate-badge" data-severity="informational">informational</span></td><td class="pm2-mono">b3c7d401</td><td>LV</td></tr>
-                                <tr><td><span class="pm2-gate-code">G29</span></td><td>NYHA III–IV enza warning</td><td><span class="pm2-gate-badge" data-severity="hard_block">hard_block</span></td><td class="pm2-mono">f1d203ae</td><td>LIX</td></tr>
-                                <tr><td><span class="pm2-gate-code">G47</span></td><td>PSA flare ARPI pseudoprogression</td><td><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></td><td class="pm2-mono">c7e91802</td><td>LVIII #62</td></tr>
-                                <tr><td><span class="pm2-gate-code">G53</span></td><td>BCR aggressive post-RP</td><td><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></td><td class="pm2-mono">a912fb38</td><td>LXIV #63A</td></tr>
-                                <tr><td><span class="pm2-gate-code">G54</span></td><td>PSA bounce post-RT</td><td><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></td><td class="pm2-mono">d4e02c19</td><td>LXIV #63A</td></tr>
-                                <tr><td><span class="pm2-gate-code">G55</span></td><td>m0CRPC PSADT-driven ARPI</td><td><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></td><td class="pm2-mono">9b1afe70</td><td>LXIV #63A</td></tr>
-                                <tr><td><span class="pm2-gate-code">G19</span></td><td>Cabazitaxel post-Doce/ARPI</td><td><span class="pm2-gate-badge" data-severity="informational">informational</span></td><td class="pm2-mono">82e3a514</td><td>LIV</td></tr>
-                                <tr><td colspan="5" style="text-align:center;color:var(--pn-text-muted);font-style:italic;padding:16px">+ 47 gates más (catálogo completo ver versioning_dashboard)</td></tr>
+                                <tr><td><span class="pm2-gate-code">G07</span></td><td>Hepatic toxicity contraindication (catalog sample)</td><td><span class="pm2-gate-badge" data-severity="hard_block">hard_block</span></td><td class="pm2-mono">e8a9f12c</td><td>LXII</td></tr>
+                                <tr><td><span class="pm2-gate-code">G14</span></td><td>HRR test recommendation (catalog sample)</td><td><span class="pm2-gate-badge" data-severity="informational">informational</span></td><td class="pm2-mono">b3c7d401</td><td>LV</td></tr>
+                                <tr><td><span class="pm2-gate-code">G29</span></td><td>NYHA III–IV enza warning (catalog sample)</td><td><span class="pm2-gate-badge" data-severity="hard_block">hard_block</span></td><td class="pm2-mono">f1d203ae</td><td>LIX</td></tr>
+                                <tr><td><span class="pm2-gate-code">G47</span></td><td>PSA flare ARPI pseudoprogression (catalog sample)</td><td><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></td><td class="pm2-mono">c7e91802</td><td>LVIII</td></tr>
+                                <tr><td><span class="pm2-gate-code">G53</span></td><td>BCR aggressive post-RP (catalog sample)</td><td><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></td><td class="pm2-mono">a912fb38</td><td>LXIV</td></tr>
+                                <tr><td><span class="pm2-gate-code">G54</span></td><td>PSA bounce post-RT (catalog sample)</td><td><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></td><td class="pm2-mono">d4e02c19</td><td>LXIV</td></tr>
+                                <tr><td><span class="pm2-gate-code">G55</span></td><td>m0CRPC PSADT-driven ARPI (catalog sample)</td><td><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></td><td class="pm2-mono">9b1afe70</td><td>LXIV</td></tr>
+                                <tr><td><span class="pm2-gate-code">G19</span></td><td>Cabazitaxel post-Doce/ARPI (catalog sample)</td><td><span class="pm2-gate-badge" data-severity="informational">informational</span></td><td class="pm2-mono">82e3a514</td><td>LIV</td></tr>
+                                <tr><td colspan="5" style="text-align:center;color:var(--pn-text-muted);font-style:italic;padding:16px">+ 91 gates más en catálogo completo · ver <code style="font-size:.7rem">/api/patients/&lt;nss&gt;/pivotal-gates</code> para evaluación per-patient</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -4364,15 +4298,22 @@
         <div class="pm2-kv"><span>estado</span><strong>{{ 'calculable' if psa_cohort_reference and psa_cohort_reference.applicable_combos else 'sin cohorte aplicable' }}</strong></div>
 
         <h4>Gates contextualizados</h4>
-        <div style="display:flex;flex-direction:column;gap:8px">
-            <div class="pm2-gate-card" data-severity="soft_warning" style="padding:10px">
-                <div class="pm2-gate-card-head"><span class="pm2-gate-code">G55</span><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></div>
-                <div class="pm2-gate-msg" style="font-size:.74rem">PSADT 11.2 m supera umbral m0CRPC, pero paciente está en mHSPC L2 → no aplica directamente.</div>
-            </div>
-            <div class="pm2-gate-card" data-severity="soft_warning" style="padding:10px">
-                <div class="pm2-gate-card-head"><span class="pm2-gate-code">G47</span><span class="pm2-gate-badge" data-severity="soft_warning">soft_warning</span></div>
-                <div class="pm2-gate-msg" style="font-size:.74rem">PSA flare detectado en sem 4 post-rotación → no interpretado como progresión real.</div>
-            </div>
+        {# BUG FIX 2026-05-17 — dynamic gates desde backend (no demo G55/G47 hardcoded) #}
+        <div style="display:flex;flex-direction:column;gap:8px" data-testid="pivotal-gates-contextualizados">
+            {% set _ctx_gates = gates_top or [] %}
+            {% if _ctx_gates %}
+                {% for gate in _ctx_gates[:3] %}
+                <div class="pm2-gate-card" data-severity="{{ gate.severity }}" data-gate-code="{{ gate.code }}" style="padding:10px">
+                    <div class="pm2-gate-card-head">
+                        <span class="pm2-gate-code">{{ gate.code|truncate(18, true, '') }}</span>
+                        <span class="pm2-gate-badge" data-severity="{{ gate.severity }}">{{ gate.severity }}</span>
+                    </div>
+                    <div class="pm2-gate-msg" style="font-size:.74rem">{{ gate.reason|truncate(180, true, '…') if gate.reason else gate.title }}</div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div style="padding:10px; color:#86efac; font-size:.74rem;">✓ Sin gates triggered para este paciente.</div>
+            {% endif %}
         </div>
     </div>
 </aside>
