@@ -882,14 +882,17 @@
                 {% for regimen in _twin_rankings_to_render[:7] %}
                 {% set _is_contra = regimen.is_contraindicated %}
                 {% set _is_hard = regimen.contraindication_severity == 'hard_block' %}
+                {% set _is_compass = regimen.compass_recommended %}
                 <div style="margin-bottom:8px; padding:10px 14px; border-radius:8px;
                             {% if _is_hard %}background:rgba(220,38,38,0.12); border:1px solid rgba(220,38,38,0.50); border-left:4px solid rgb(239,68,68);
                             {% elif _is_contra %}background:rgba(251,191,36,0.10); border:1px solid rgba(251,191,36,0.40); border-left:4px solid rgb(245,158,11);
+                            {% elif _is_compass %}background:rgba(99,102,241,0.10); border:1px solid rgba(99,102,241,0.50); border-left:4px solid rgb(99,102,241);
                             {% elif loop.index == 1 %}background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.32); border-left:4px solid rgb(16,185,129);
                             {% elif regimen.tolerance_mismatches %}background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.32);
                             {% else %}background:rgba(15,23,42,0.5); border:1px solid rgba(148,163,184,0.18);{% endif %}"
                      data-testid="twin-regimen-{{ regimen.regimen_id }}"
-                     data-contraindicated="{{ '1' if _is_contra else '0' }}">
+                     data-contraindicated="{{ '1' if _is_contra else '0' }}"
+                     data-compass-recommended="{{ '1' if _is_compass else '0' }}">
                     <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
                         <div style="flex:1;">
                             <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;">
@@ -897,6 +900,8 @@
                                 <span style="font-size:.6rem; padding:2px 8px; background:rgb(239,68,68); color:white; border-radius:999px; font-weight:800; letter-spacing:.08em;">⚠ CONTRAINDICADO</span>
                                 {% elif _is_contra %}
                                 <span style="font-size:.6rem; padding:2px 8px; background:rgb(245,158,11); color:#0b1325; border-radius:999px; font-weight:800; letter-spacing:.08em;">⚠ PRECAUCIÓN</span>
+                                {% elif _is_compass %}
+                                <span style="font-size:.6rem; padding:2px 8px; background:rgb(99,102,241); color:white; border-radius:999px; font-weight:800; letter-spacing:.08em;" title="Recomendado por classifier oficial NCCN/EAU del estadio">✓ COMPASS NCCN</span>
                                 {% endif %}
                                 <span style="font-size:.95rem; color:#f8fafc; font-weight:700; {% if _is_hard %}text-decoration:line-through; text-decoration-color:rgb(239,68,68); text-decoration-thickness:2px;{% endif %}">#{{ loop.index }} {{ regimen.regimen_name }}</span>
                                 <span style="font-size:.7rem; color:var(--pn-text-muted);">({{ regimen.trial_source }})</span>

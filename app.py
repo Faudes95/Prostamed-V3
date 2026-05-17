@@ -1232,9 +1232,16 @@ def patient_profile(nss):
             patient_for_v2["biopsies"] = data.get("biopsies") or []
             v2_ctx = bundle_to_v2_profile_full(profile_view, patient_for_v2)
             # EPIC 19: Patient Twin OS — also expose to v2 template
+            # BUG FIX 2026-05-17 — inyectar clinical_compass al patient_data
+            # para que Patient Twin pueda hacer compass-headline boost del
+            # régimen recomendado (mismo patrón que decision_today_fusion_kernel).
             try:
                 from prostanet.domains.patient_tracking.patient_twin_os import build_patient_twin_view as _build_twin_v2
-                v2_ctx["patient_twin"] = _build_twin_v2(data)
+                _data_for_twin = dict(data)
+                _compass_for_twin = profile_view.get("clinical_compass") if hasattr(profile_view, "get") else None
+                if _compass_for_twin:
+                    _data_for_twin["clinical_compass"] = _compass_for_twin
+                v2_ctx["patient_twin"] = _build_twin_v2(_data_for_twin)
             except Exception as e:
                 logger.warning(f"EPIC 19 v2 twin build failed: {e}")
                 v2_ctx["patient_twin"] = {"available": False}

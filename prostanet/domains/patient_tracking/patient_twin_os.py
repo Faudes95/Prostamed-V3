@@ -242,6 +242,13 @@ class RegimenScore:
     contraindication_severity: str = ""  # "hard_block" | "soft_warning" | ""
     contraindication_reason: str = ""
     contraindication_gate_id: str = ""
+    # BUG FIX 2026-05-17 — compass-aware ranking
+    # Si clinical_compass.structured_decision_headline recomienda un régimen
+    # específico, lo marcamos para que aparezca #1 en el sort (priority field).
+    # NO usa score (que tiene cap 10.0 y puede colisionar) — usa boolean flag
+    # con sort multi-key (compass_recommended DESC, score DESC).
+    compass_recommended: bool = False
+    compass_recommendation_source: str = ""  # "headline" | "family" | "alternative"
 
 
 @dataclass
@@ -464,6 +471,83 @@ def _resolve_clinical_facts_for_twin(patient_record: Mapping[str, Any]) -> dict[
             if la.get(k) and not facts.get(k):
                 facts[k] = la.get(k)
     return facts
+
+
+def _apply_compass_headline_boost(
+    rankings: list[RegimenScore], patient_record: Mapping[str, Any]
+) -> list[RegimenScore]:
+    """BUG FIX 2026-05-17 — Boost score del régimen recomendado por
+    clinical_compass.structured_decision_headline / recommendation_family.
+
+    El clinical_compass es el classifier oficial NCCN/EAU del estadio. Su
+    structured_decision_headline (e.g., 'Priorizar ADT + enzalutamida' para
+    mcspc_low_volume_sync_oligo) ES la decisión clínica oficial. Pre-fix,
+    Patient Twin OS rankeaba por OS_gain × QoL × AI ignorando este compass →
+    abiraterone aparecía #1 incluso cuando compass recomendaba enzalutamida.
+
+    Post-fix:
+      - Si compass headline menciona un régimen específico → +1.0 al score
+        del regimen.regimen_name match (case-insensitive substring)
+      - Si compass.acceptable_alternatives menciona regímenes → +0.3 a cada uno
+      - Marca el regimen con compass_recommended=True para UI display
+      - NO modifica regímenes contraindicados (siguen en -1.0)
+
+    Sin compass disponible: noop (preserva ranking original).
+    """
+    compass = patient_record.get("clinical_compass") or {}
+    if not isinstance(compass, Mapping):
+        return rankings
+
+    # Extract recommendation signals from compass
+    headline = str(compass.get("structured_decision_headline") or "").lower()
+    rec_family = str(compass.get("recommendation_family") or "").lower()
+    rec_direction = str(compass.get("recommended_direction") or "").lower()
+    acceptable_alts = compass.get("acceptable_alternatives") or []
+    if isinstance(acceptable_alts, str):
+        acceptable_alts = [acceptable_alts]
+    acceptable_alts_str = " ".join(str(a).lower() for a in acceptable_alts)
+
+    # Combined signal text for matching
+    primary_signal = f"{headline} {rec_family}".strip()
+    secondary_signal = f"{rec_direction} {acceptable_alts_str}".strip()
+
+    if not primary_signal and not secondary_signal:
+        return rankings
+
+    # Drug-name aliases for matching
+    DRUG_ALIASES: dict[str, list[str]] = {
+        "abiraterone": ["abiraterone", "abiraterona", "abi", "zytiga"],
+        "enzalutamide": ["enzalutamide", "enzalutamida", "enza", "xtandi"],
+        "apalutamide": ["apalutamide", "apalutamida", "apa", "erleada"],
+        "darolutamide": ["darolutamide", "darolutamida", "daro", "nubeqa"],
+        "darolutamide_docetaxel": ["darolutamide", "darolutamida", "arasens", "daro+doce"],
+        "docetaxel": ["docetaxel", "doce", "taxotere", "chaarted"],
+        "olaparib": ["olaparib", "lynparza", "parp"],
+        "pembrolizumab": ["pembrolizumab", "pembro", "keytruda"],
+    }
+
+    for r in rankings:
+        # Skip contraindicated regimens — no boost / no compass_recommended flag
+        if getattr(r, "is_contraindicated", False) and getattr(r, "contraindication_severity", "") == "hard_block":
+            continue
+        drug_key = str(r.regimen_name).lower()
+        aliases = DRUG_ALIASES.get(drug_key, [drug_key])
+        primary_match = any(a in primary_signal for a in aliases)
+        secondary_match = any(a in secondary_signal for a in aliases)
+        if primary_match:
+            # Mark as compass-recommended (sort priority) + small score boost
+            r.compass_recommended = True
+            r.compass_recommendation_source = "headline" if any(a in headline for a in aliases) else "family"
+            r.score = min(10.0, (r.score or 0.0) + 1.0)
+            tag = f"✓ Recomendado por compass clínico NCCN/EAU: '{(headline or rec_family).strip()[:80]}'"
+            if r.rationale and tag not in r.rationale:
+                r.rationale = f"{r.rationale} · {tag}"
+            elif not r.rationale:
+                r.rationale = tag
+        elif secondary_match:
+            r.score = min(10.0, (r.score or 0.0) + 0.3)
+
+    return rankings
 
 
 def _apply_contraindications(
@@ -1030,8 +1114,25 @@ def build_patient_twin_view(
     # (transparency — clínico ve qué se evaluó pero NO en top picks).
     rankings = _apply_contraindications(rankings, patient_record)
 
-    # Sort descending by score (contraindicated regimens go to end via score=-1)
-    rankings.sort(key=lambda r: r.score, reverse=True)
+    # 4c. BUG FIX 2026-05-17 — Boost compass-recommended regimen al top.
+    # Patient Twin OS rankeaba por OS_gain × QoL × AI sin saber de la decisión
+    # clínica del compass (clinical_compass.structured_decision_headline). Esto
+    # generaba inconsistencia: hero decía "Priorizar ADT + enzalutamida" pero
+    # Twin rankeaba abiraterone #1 con score más alto. Para coherencia clínica:
+    # si el compass headline menciona un régimen específico (e.g.,
+    # "Priorizar ADT + enzalutamida"), le damos boost +0.5 al score del régimen
+    # match y +0.3 a alternativas mencionadas, preservando la lógica ranker.
+    rankings = _apply_compass_headline_boost(rankings, patient_record)
+
+    # Sort multi-key (BUG FIX 2026-05-17):
+    #   1. compass_recommended DESC (compass-recommended regimens FIRST)
+    #   2. score DESC (then by score)
+    # Contraindicated regimens go to end via score=-1 (compass_recommended=False
+    # for them per _apply_compass_headline_boost guard).
+    rankings.sort(
+        key=lambda r: (getattr(r, "compass_recommended", False), r.score),
+        reverse=True,
+    )
 
     # 5. Detect re-decision alerts
     alerts = detect_redecision_alerts(patient_record, preferences)
