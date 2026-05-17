@@ -422,6 +422,13 @@ KPI_REGISTRY: dict[str, dict[str, Any]] = {
         "builder": lambda: aggregate_castration_capture_coverage(),
         "args": {},
     },
+    # EPIC 34.A Phase 6 — PSMA-PET capture coverage (último gap estructural)
+    "psma_pet_capture_coverage": {
+        "label": "Cobertura PSMA-PET (cohorte BCR/CRPC/oligo, NCCN PROS-D)",
+        "category": "capture_completeness",
+        "builder": lambda: aggregate_psma_pet_capture_coverage(),
+        "args": {},
+    },
 }
 
 
@@ -499,6 +506,138 @@ def aggregate_castration_capture_coverage() -> dict[str, Any]:
         "status": status,
         "gap_to_target_patients": max(0, int(round((90.0 - coverage_pct) / 100 * n_eligible))),
         "computed_at": utc_now_iso(),
+    }
+
+
+def aggregate_psma_pet_capture_coverage() -> dict[str, Any]:
+    """EPIC 34.A Phase 6 — Cobertura PSMA-PET en cohorte elegible BCR/CRPC/oligo.
+
+    NCCN PROS-D v5.2026 + EAU 6.5 recomiendan PSMA-PET preferred over conventional
+    imaging para BCR (PSA≥0.2 post-RP, Phoenix post-RT) y staging mCRPC.
+
+    Target 60% (intermedio — real-world availability mixta en MX para Ga-68 PSMA-11
+    y F-18 PYL). Sin esto:
+      - VISION / PSMAfore (Lu-177 PSMA-617) inelegibles → Trial Matcher (Phase 3) blocked
+      - STOMP / ORIOLE SBRT en oligometastatic no aplicable
+      - Salvage RT post-RP planning sin target volume preciso
+      - PROpSMA (Hofman 2020) NPV alto desperdiciado para de-escalación ADT en BCR baja-PSA
+
+    Cohorte elegible:
+      - reconciled_state IN ('recurrence_bcr', 'post_rt_bcr', 'post_rp_bcr',
+                              'm0_crpc', 'm1_crpc') OR contains 'oligo' OR 'mcspc'
+      - OR PSA rising trend documentado
+    """
+    conn = sqlite3.connect(_db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        # Eligible cohort: PSMA-actionable states stored in patient_state_timeline.state
+        # (NOT patient_clinical_facts.fact_key='reconciled_state' which is empty in current DB).
+        # Discovery 2026-05-17: classifier emits state into clinical_assessments + timeline,
+        # not into facts. Reuse same path as v2_ctx gating uses via get_patient_full_record.
+        eligible = conn.execute(
+            """
+            SELECT DISTINCT patient_id FROM patient_state_timeline
+            WHERE LOWER(state) IN (
+                    'recurrence_bcr','post_rt_bcr','post_rp_bcr',
+                    'm0_crpc','m1_crpc','post_radiotherapy_or_local_salvage',
+                    'adt_progression_verification')
+               OR LOWER(state) LIKE '%oligo%'
+               OR LOWER(state) LIKE '%mcspc%'
+            UNION
+            SELECT DISTINCT pcf.patient_id
+            FROM patient_clinical_facts pcf
+            WHERE pcf.is_active = 1
+              AND (
+                (pcf.fact_key = 'psa_rising_trend' AND LOWER(pcf.normalized_value_text) IN ('true','1','yes','rising'))
+                OR (pcf.fact_key = 'phoenix_delta' AND CAST(pcf.normalized_value_text AS REAL) >= 2.0)
+              )
+            """
+        ).fetchall()
+        n_eligible = len(eligible)
+        if n_eligible == 0:
+            return {
+                "kpi_id": "psma_pet_capture_coverage",
+                "kpi_label": "Cobertura PSMA-PET (Phase 6 target 60%)",
+                "category": "capture_completeness",
+                "n_eligible": 0, "n_documented": 0, "n_positive": 0,
+                "coverage_pct": 0.0, "positivity_pct": 0.0,
+                "target_pct": 60.0, "status": "no_eligible_cohort",
+                "gap_to_target_patients": 0, "computed_at": utc_now_iso(),
+            }
+        pids = [r["patient_id"] for r in eligible]
+        placeholders = ",".join("?" * len(pids))
+        # Documented: any of the PSMA facts present with actionable status
+        n_documented = conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT patient_id) FROM patient_clinical_facts
+            WHERE is_active = 1
+              AND patient_id IN ({placeholders})
+              AND (
+                (fact_key = 'psma_pet_status' AND LOWER(normalized_value_text) IN (
+                    'positive_metastatic','positive_oligometastatic','positive_local_recurrence','negative'))
+                OR (fact_key = 'psma_pet_done' AND LOWER(normalized_value_text) IN ('true','1','yes'))
+              )
+            """,
+            pids,
+        ).fetchone()[0]
+        n_positive = conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT patient_id) FROM patient_clinical_facts
+            WHERE is_active = 1
+              AND patient_id IN ({placeholders})
+              AND (
+                (fact_key = 'psma_pet_status' AND LOWER(normalized_value_text) LIKE 'positive_%')
+                OR (fact_key = 'psma_positive' AND LOWER(normalized_value_text) IN ('true','1','yes'))
+              )
+            """,
+            pids,
+        ).fetchone()[0]
+        n_oligo = conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT patient_id) FROM patient_clinical_facts
+            WHERE is_active = 1
+              AND patient_id IN ({placeholders})
+              AND fact_key = 'psma_pet_status'
+              AND LOWER(normalized_value_text) = 'positive_oligometastatic'
+            """,
+            pids,
+        ).fetchone()[0]
+        n_with_suvmax = conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT patient_id) FROM patient_clinical_facts
+            WHERE is_active = 1
+              AND patient_id IN ({placeholders})
+              AND fact_key = 'psma_index_lesion_suvmax'
+            """,
+            pids,
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    coverage_pct = round(100 * n_documented / max(1, n_eligible), 1)
+    positivity_pct = round(100 * n_positive / max(1, n_documented), 1) if n_documented else 0.0
+    suvmax_completeness_pct = round(100 * n_with_suvmax / max(1, n_positive), 1) if n_positive else 0.0
+    status = (
+        "target_achieved" if coverage_pct >= 60.0
+        else "below_target" if coverage_pct >= 30.0
+        else "critical_gap"
+    )
+    return {
+        "kpi_id": "psma_pet_capture_coverage",
+        "kpi_label": "Cobertura PSMA-PET (Phase 6 target 60%)",
+        "category": "capture_completeness",
+        "n_eligible": n_eligible,
+        "n_documented": n_documented,
+        "n_positive": n_positive,
+        "n_oligometastatic": n_oligo,
+        "n_with_suvmax": n_with_suvmax,
+        "coverage_pct": coverage_pct,
+        "positivity_pct": positivity_pct,
+        "suvmax_completeness_pct": suvmax_completeness_pct,
+        "target_pct": 60.0,
+        "status": status,
+        "gap_to_target_patients": max(0, int(round((60.0 - coverage_pct) / 100 * n_eligible))),
+        "computed_at": utc_now_iso(),
+        "note": "Target 60% intermedio (real-world availability mixta en MX). NCCN PROS-D v2026 + EAU 6.5.",
     }
 
 
@@ -970,6 +1109,11 @@ __all__ = [
     "aggregate_psa_response_by_regimen",
     "aggregate_ecog_change_by_regimen",
     "aggregate_clinical_state_distribution",
+    "aggregate_castration_capture_coverage",
+    "aggregate_hrr_capture_coverage",
+    "aggregate_ecog_capture_coverage",
+    "aggregate_psma_pet_capture_coverage",
+    "aggregate_trial_eligibility_funnel",
     "ARPI_LABELS",
     "_classify_drug_scheme",
 ]

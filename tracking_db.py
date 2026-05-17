@@ -1162,6 +1162,330 @@ def get_latest_castration_for_patient(nss_or_id) -> dict | None:
         conn.close()
 
 
+def record_psma_pet_capture(
+    nss_or_id,
+    psma_status: str,
+    *,
+    pet_date: str | None = None,
+    tracer_used: str | None = None,
+    lesion_count: int | None = None,
+    suv_max_value: float | None = None,
+    source_type: str = "quick_capture_ui",
+    actor_user_id: int | None = None,
+    actor_session_id: str | None = None,
+    clinician_verified: bool = True,
+    notes: str = "",
+) -> dict:
+    """EPIC 34.A Phase 6 — Captura rápida PSMA-PET (último gap estructural
+    identificado en discovery).
+
+    Sin PSMA-PET documentado, los siguientes flujos están bloqueados:
+    - VISION / PSMAfore eligibility (Lu-177 PSMA-617) — requiere psma_positive
+    - STOMP/ORIOLE SBRT en oligometastatic (≤5 lesiones)
+    - Salvage RT planning post-RP BCR si recurrence local PSMA-avid
+    - De-escalación ADT en BCR baja-PSA con PSMA-PET negativo (PROpSMA high NPV)
+
+    Status taxonomy (5 valores, NCCN 2026 PROS-A/PROS-D + EAU 6.5):
+      - positive_metastatic       → M1 multilesional, psma_positive=true
+      - positive_oligometastatic  → ≤5 lesiones, candidato STOMP/ORIOLE
+      - positive_local_recurrence → solo cama prostática (salvage RT field)
+      - negative                  → sin PSMA-avid (Hofman 2020 high NPV)
+      - pending | not_performed   → ordenado / declinado / no disponible
+
+    Populates EXISTING FactSpecs (clinical_fact_registry.py L91-94):
+      - psma_pet_done, psma_study_date, psma_positive,
+        psma_negative_dominant_lesions
+    Plus optional aux facts read by trial_matching_engine._psma_positive():
+      - psma_lesion_count, psma_index_lesion_suvmax, psma_tracer
+
+    Refs: NCCN Prostate v2026 PROS-A & PROS-D, EAU 2026 §6.5,
+    PROpSMA (Hofman Lancet 2020 PMID 32209449), VISION (Sartor NEJM 2021
+    PMID 34161051), PSMAfore (Sartor ASCO 2024 LBA5000).
+    """
+    VALID_STATUS = {
+        "positive_metastatic",
+        "positive_oligometastatic",
+        "positive_local_recurrence",
+        "negative",
+        "pending",
+        "not_performed",
+    }
+    if not psma_status or str(psma_status).lower().strip() not in VALID_STATUS:
+        return {"success": False, "error": "invalid_psma_status",
+                "valid_values": sorted(VALID_STATUS)}
+    status_clean = str(psma_status).lower().strip()
+    pet_date = pet_date or utc_now_iso()[:10]
+
+    # Validate optional numeric fields
+    lesion_count_clean = None
+    if lesion_count is not None:
+        try:
+            lesion_count_clean = int(lesion_count)
+            if lesion_count_clean < 0 or lesion_count_clean > 500:
+                return {"success": False, "error": "lesion_count_out_of_plausible_range"}
+        except (ValueError, TypeError):
+            return {"success": False, "error": "invalid_lesion_count"}
+    suv_max_clean = None
+    if suv_max_value is not None:
+        try:
+            suv_max_clean = float(suv_max_value)
+            if suv_max_clean < 0 or suv_max_clean > 200:
+                return {"success": False, "error": "suv_max_out_of_plausible_range"}
+        except (ValueError, TypeError):
+            return {"success": False, "error": "invalid_suv_max_value"}
+    tracer_clean = None
+    VALID_TRACERS = {"ga-68_psma-11", "f-18_pyl", "f-18_dcfpyl", "f-18_rhpsma-7.3",
+                     "ga-68_psma-617", "other"}
+    if tracer_used:
+        t = str(tracer_used).lower().strip().replace(" ", "_")
+        if t in VALID_TRACERS:
+            tracer_clean = t
+        else:
+            # Don't reject — accept as 'other' with verbatim notes
+            tracer_clean = "other"
+            notes = (notes + f" · [tracer_raw={tracer_used}]").strip()
+
+    # Auto-warning consistency checks (do NOT block — flag for clinician review)
+    warning_msgs = []
+    if status_clean == "positive_metastatic" and lesion_count_clean is not None and lesion_count_clean <= 5:
+        warning_msgs.append(f"lesion_count={lesion_count_clean} ≤5 sugiere reclasificar como positive_oligometastatic (STOMP/ORIOLE candidato)")
+    if status_clean == "positive_oligometastatic" and lesion_count_clean is not None and lesion_count_clean > 5:
+        warning_msgs.append(f"lesion_count={lesion_count_clean} >5 contradice oligometastatic — verificar")
+    if status_clean == "negative" and suv_max_clean is not None and suv_max_clean >= 5:
+        warning_msgs.append(f"SUVmax={suv_max_clean} ≥5 contradice negative status — verificar")
+    if warning_msgs:
+        notes = (notes + " · [WARN: " + "; ".join(warning_msgs) + "]").strip()
+
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return {"success": False, "error": "patient_not_found"}
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+
+        # Build payload populating EXISTING FactSpecs for downstream compat
+        is_positive = status_clean.startswith("positive_")
+        is_negative = status_clean == "negative"
+        is_done = status_clean not in ("not_performed",)
+        payload: dict[str, str] = {
+            "psma_pet_done": "true" if is_done else "false",
+            "psma_pet_status": status_clean,  # auxiliary granular fact
+        }
+        if is_done:
+            payload["psma_study_date"] = pet_date
+        if is_positive:
+            payload["psma_positive"] = "true"
+            # Explicit clear of negative-dominant flag (gate 93 contraindication)
+            payload["psma_negative_dominant_lesions"] = "false"
+        elif is_negative:
+            payload["psma_positive"] = "false"
+            payload["psma_negative_dominant_lesions"] = "true"
+        if lesion_count_clean is not None:
+            payload["psma_lesion_count"] = str(lesion_count_clean)
+        if suv_max_clean is not None:
+            payload["psma_index_lesion_suvmax"] = str(suv_max_clean)
+        if tracer_clean is not None:
+            payload["psma_tracer"] = tracer_clean
+
+        persisted = _persist_canonical_facts_from_payload(
+            cursor,
+            patient_id,
+            payload,
+            source_type=source_type,
+            source_record_type="quick_capture",
+            source_date=pet_date,
+            observed_at=utc_now_iso(),
+            certainty_tier="structured_result",
+            clinician_verified=clinician_verified,
+            verification_note=notes,
+        )
+        try:
+            _append_patient_fact_lineage_event(
+                cursor,
+                patient_id,
+                "psma_pet_status",
+                "quick_captured",
+                event_note=(
+                    f"PSMA-PET {status_clean}"
+                    + (f" · {lesion_count_clean} lesiones" if lesion_count_clean is not None else "")
+                    + (f" · SUVmax {suv_max_clean}" if suv_max_clean is not None else "")
+                    + (f" · {tracer_clean}" if tracer_clean else "")
+                    + f" via {source_type}"
+                ),
+                payload={
+                    "psma_status": status_clean,
+                    "pet_date": pet_date,
+                    "tracer": tracer_clean,
+                    "lesion_count": lesion_count_clean,
+                    "suv_max": suv_max_clean,
+                    "source": source_type,
+                    "warnings": warning_msgs,
+                    "notes": notes,
+                },
+                actor_user_id=actor_user_id,
+                actor_session_id=actor_session_id,
+                actor_role="clinician_quick_capture",
+            )
+        except Exception as exc:
+            logger.debug(f"Lineage event PSMA-PET audit failed: {exc}")
+        conn.commit()
+        return {
+            "success": True,
+            "patient_id": patient_id,
+            "psma_status": status_clean,
+            "pet_date": pet_date,
+            "tracer_used": tracer_clean,
+            "lesion_count": lesion_count_clean,
+            "suv_max_value": suv_max_clean,
+            "facts_persisted": len(persisted) if persisted else 0,
+            "warning": "; ".join(warning_msgs) if warning_msgs else None,
+        }
+    finally:
+        conn.close()
+
+
+def get_latest_psma_pet_for_patient(nss_or_id) -> dict | None:
+    """Returns latest PSMA-PET snapshot or None.
+
+    EPIC 34.A Phase 6 — Reads canonical facts persisted by record_psma_pet_capture
+    plus any pre-existing facts from imaging history that populated
+    psma_pet_done / psma_positive / psma_study_date (graceful coexistence).
+    """
+    conn = _connect()
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return None
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+
+        # Latest granular status (preferred — from quick capture)
+        cursor.execute(
+            """
+            SELECT normalized_value_text, source_date, observed_at, updated_at,
+                   source_type, clinician_verified
+            FROM patient_clinical_facts
+            WHERE patient_id = ?
+              AND fact_key = 'psma_pet_status'
+              AND is_active = 1
+            ORDER BY COALESCE(source_date, observed_at, updated_at) DESC, id DESC
+            LIMIT 1
+            """,
+            (patient_id,),
+        )
+        granular_row = cursor.fetchone()
+        granular_status = None
+        granular_date = None
+        granular_source = None
+        granular_verified = None
+        if granular_row:
+            granular_status = (
+                granular_row[0] if hasattr(granular_row, "__getitem__")
+                else granular_row.get("normalized_value_text")
+            ) or ""
+            granular_date = (
+                granular_row[1] if hasattr(granular_row, "__getitem__")
+                else granular_row.get("source_date")
+            ) or None
+            granular_source = (
+                granular_row[4] if hasattr(granular_row, "__getitem__")
+                else granular_row.get("source_type")
+            )
+            granular_verified = bool(
+                granular_row[5] if hasattr(granular_row, "__getitem__")
+                else granular_row.get("clinician_verified")
+            )
+
+        # Fallback: read existing legacy facts (psma_pet_done + psma_positive)
+        # so this helper also reports state for patients with imported imaging hx
+        cursor.execute(
+            """
+            SELECT fact_key, normalized_value_text, source_date
+            FROM patient_clinical_facts
+            WHERE patient_id = ?
+              AND fact_key IN ('psma_pet_done','psma_positive','psma_study_date',
+                               'psma_negative_dominant_lesions','psma_lesion_count',
+                               'psma_index_lesion_suvmax','psma_tracer')
+              AND is_active = 1
+            ORDER BY COALESCE(source_date, observed_at, updated_at) DESC, id DESC
+            """,
+            (patient_id,),
+        )
+        legacy_rows = cursor.fetchall() or []
+        legacy_map: dict[str, tuple[str | None, str | None]] = {}
+        for r in legacy_rows:
+            k = (r[0] if hasattr(r, "__getitem__") else r.get("fact_key")) or ""
+            if k and k not in legacy_map:
+                v = r[1] if hasattr(r, "__getitem__") else r.get("normalized_value_text")
+                d = r[2] if hasattr(r, "__getitem__") else r.get("source_date")
+                legacy_map[k] = (v, d)
+
+        # If neither granular nor legacy → nothing to report
+        if granular_status is None and not legacy_map:
+            return None
+
+        # Derive consolidated status if granular missing
+        if granular_status:
+            consolidated_status = granular_status.lower()
+        else:
+            # Reconstruct from legacy binary facts
+            done = (legacy_map.get("psma_pet_done", (None, None))[0] or "").lower() in ("true", "1", "yes")
+            pos = (legacy_map.get("psma_positive", (None, None))[0] or "").lower() in ("true", "1", "yes")
+            neg_dom = (legacy_map.get("psma_negative_dominant_lesions", (None, None))[0] or "").lower() in ("true", "1", "yes")
+            if not done:
+                consolidated_status = "not_performed"
+            elif pos:
+                consolidated_status = "positive_metastatic"  # safe default — clinician will refine
+            elif neg_dom:
+                consolidated_status = "negative"
+            else:
+                consolidated_status = "pending"
+
+        sample_date_str = granular_date or legacy_map.get("psma_study_date", (None, None))[1] or legacy_map.get("psma_study_date", (None, None))[0] or None
+
+        # Parse optional aux fields from legacy_map
+        def _opt_int(key: str) -> int | None:
+            raw = legacy_map.get(key, (None, None))[0]
+            try:
+                return int(raw) if raw not in (None, "") else None
+            except (TypeError, ValueError):
+                return None
+        def _opt_float(key: str) -> float | None:
+            raw = legacy_map.get(key, (None, None))[0]
+            try:
+                return float(raw) if raw not in (None, "") else None
+            except (TypeError, ValueError):
+                return None
+
+        lesion_count_val = _opt_int("psma_lesion_count")
+        suv_max_val = _opt_float("psma_index_lesion_suvmax")
+        tracer_val = legacy_map.get("psma_tracer", (None, None))[0]
+
+        age_days = None
+        try:
+            from datetime import date as _d
+            d = _d.fromisoformat(str(sample_date_str)[:10])
+            age_days = (utc_today() - d).days
+        except (ValueError, TypeError):
+            pass
+
+        return {
+            "status": consolidated_status,
+            "pet_date": str(sample_date_str)[:10] if sample_date_str else None,
+            "tracer_used": tracer_val,
+            "lesion_count": lesion_count_val,
+            "suv_max_value": suv_max_val,
+            "age_days": age_days,
+            "source_type": granular_source,
+            "clinician_verified": granular_verified if granular_verified is not None else False,
+            "is_positive": consolidated_status.startswith("positive_"),
+            "is_oligometastatic": consolidated_status == "positive_oligometastatic",
+        }
+    finally:
+        conn.close()
+
+
 def record_clinical_view_audit(
     nss_or_id,
     section_key: str,

@@ -1186,6 +1186,135 @@
         </script>
         {% endif %}
 
+        {# EPIC 34.A Phase 6 — PSMA-PET Quick Capture CTA
+           Gating: paciente BCR/post-RT BCR/CRPC/oligo OR PSA rising trend + PSMA missing/stale (>180d).
+           Compound value: PSMA captured → desbloquea VISION/PSMAfore (Lu-177) en Trial Matcher,
+           STOMP/ORIOLE SBRT en oligometastatic, salvage RT planning si local recurrence.
+           Refs: NCCN PROS-A/PROS-D v2026, EAU 6.5, PROpSMA (Hofman Lancet 2020 PMID 32209449),
+           VISION (Sartor NEJM 2021 PMID 34161051). #}
+        {% if psma_pet_capture_cta and psma_pet_capture_cta.available %}
+        <details class="pm2-section-collapsible" data-section-key="psma_pet_quick_capture" data-importance="critical" data-section-label="PSMA-PET Quick Capture" open>
+        <summary>🎯 PSMA-PET Quick Capture · NCCN PROS-D v2026 <span class="pm2-section-meta-chip">EPIC 34.A Phase 6</span></summary>
+        <section id="pm2PsmaPetQuickCapture" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(244,114,182,.08), rgba(15,23,42,.6)); border: 1px solid rgba(244,114,182,.3); border-left: 6px solid rgb(244,114,182); border-radius: 14px;" aria-label="PSMA-PET Quick Capture" data-testid="psma-pet-quick-capture-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
+                <div>
+                    <div style="font-size:.7rem; color:#f9a8d4; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">🎯 PSMA-PET status</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.05rem; color:#f8fafc; margin:5px 0 0;">Captura resultado PSMA-PET</h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.78rem; line-height:1.5;">
+                        {{ psma_pet_capture_cta.reason }}.
+                        NCCN PROS-D v2026 prefiere PSMA-PET sobre imaging convencional en BCR (PSA≥0.2 post-RP, Phoenix post-RT) y staging mCRPC.
+                        Captura desbloquea: <strong>VISION/PSMAfore</strong> (Lu-177 PSMA-617) si M1+, <strong>STOMP/ORIOLE SBRT</strong> si oligometastatic (≤5 lesiones), <strong>salvage RT planning</strong> si recurrence local.
+                    </p>
+                </div>
+            </div>
+
+            <div style="margin-bottom:14px;">
+                <div style="font-size:.66rem; color:#f9a8d4; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin-bottom:8px;">Resultado PSMA-PET</div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button type="button" class="pm2-psma-status-btn" data-status="positive_metastatic" data-patient-nss="{{ identity.nss }}" style="padding:10px 18px; background:rgba(239,68,68,.1); border:2px solid #ef4444; color:#fca5a5; border-radius:8px; cursor:pointer; font-size:.84rem; font-weight:600;">✦ Positivo · M1 multilesional</button>
+                    <button type="button" class="pm2-psma-status-btn" data-status="positive_oligometastatic" data-patient-nss="{{ identity.nss }}" style="padding:10px 18px; background:rgba(251,191,36,.1); border:2px solid #fbbf24; color:#fde68a; border-radius:8px; cursor:pointer; font-size:.84rem; font-weight:600;">✦ Positivo · Oligometastatic (≤5)</button>
+                    <button type="button" class="pm2-psma-status-btn" data-status="positive_local_recurrence" data-patient-nss="{{ identity.nss }}" style="padding:10px 18px; background:rgba(168,85,247,.1); border:2px solid #a855f7; color:#e9d5ff; border-radius:8px; cursor:pointer; font-size:.84rem; font-weight:600;">✦ Positivo · Recurrencia local</button>
+                    <button type="button" class="pm2-psma-status-btn" data-status="negative" data-patient-nss="{{ identity.nss }}" style="padding:10px 18px; background:rgba(16,185,129,.1); border:2px solid #10b981; color:#86efac; border-radius:8px; cursor:pointer; font-size:.84rem; font-weight:600;">○ Negativo (sin PSMA-avid)</button>
+                    <button type="button" class="pm2-psma-status-btn" data-status="pending" data-patient-nss="{{ identity.nss }}" style="padding:10px 18px; background:rgba(148,163,184,.1); border:2px solid #94a3b8; color:#cbd5e1; border-radius:8px; cursor:pointer; font-size:.84rem; font-weight:600;">⏳ Pending (ordenado)</button>
+                    <button type="button" class="pm2-psma-status-btn" data-status="not_performed" data-patient-nss="{{ identity.nss }}" style="padding:10px 18px; background:rgba(100,116,139,.08); border:2px solid #64748b; color:#cbd5e1; border-radius:8px; cursor:pointer; font-size:.84rem; font-weight:600;">⊘ Not performed</button>
+                </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; margin-bottom:14px;">
+                <div>
+                    <div style="font-size:.66rem; color:#f9a8d4; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin-bottom:6px;">Fecha estudio</div>
+                    <input type="date" id="pm2PsmaPetDate" max="{{ current_date_iso or '2026-12-31' }}" style="width:100%; padding:8px 10px; background:rgba(15,23,42,.6); border:1px solid rgba(148,163,184,.3); color:#f8fafc; border-radius:6px; font-size:.82rem;">
+                </div>
+                <div>
+                    <div style="font-size:.66rem; color:#f9a8d4; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin-bottom:6px;">Trazador (opcional)</div>
+                    <select id="pm2PsmaPetTracer" style="width:100%; padding:8px 10px; background:rgba(15,23,42,.6); border:1px solid rgba(148,163,184,.3); color:#f8fafc; border-radius:6px; font-size:.82rem;">
+                        <option value="">— Seleccionar —</option>
+                        <option value="Ga-68_PSMA-11">Ga-68 PSMA-11</option>
+                        <option value="F-18_PYL">F-18 PYL (DCFPyL)</option>
+                        <option value="F-18_rhPSMA-7.3">F-18 rhPSMA-7.3</option>
+                        <option value="Ga-68_PSMA-617">Ga-68 PSMA-617</option>
+                        <option value="other">Otro</option>
+                    </select>
+                </div>
+                <div>
+                    <div style="font-size:.66rem; color:#f9a8d4; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin-bottom:6px;">Lesiones (opcional)</div>
+                    <input type="number" id="pm2PsmaPetLesions" min="0" max="500" step="1" placeholder="ej. 3" style="width:100%; padding:8px 10px; background:rgba(15,23,42,.6); border:1px solid rgba(148,163,184,.3); color:#f8fafc; border-radius:6px; font-size:.82rem;">
+                </div>
+                <div>
+                    <div style="font-size:.66rem; color:#f9a8d4; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin-bottom:6px;">SUVmax (opcional)</div>
+                    <input type="number" id="pm2PsmaPetSuv" min="0" max="200" step="0.1" placeholder="ej. 12.5" style="width:100%; padding:8px 10px; background:rgba(15,23,42,.6); border:1px solid rgba(148,163,184,.3); color:#f8fafc; border-radius:6px; font-size:.82rem;">
+                </div>
+            </div>
+
+            <div id="pm2PsmaPetFeedback" style="margin-top:10px; font-size:.74rem; color:#cbd5e1; min-height:18px;"></div>
+
+            <div style="margin-top:10px; padding:8px 10px; background:rgba(244,114,182,.06); border-left:3px solid rgba(244,114,182,.4); border-radius:6px; font-size:.66rem; color:#fbcfe8;">
+                ⓘ <strong>NCCN PROS-D v5.2026 + EAU 6.5</strong> · PSMA-PET preferred over conventional imaging para BCR y staging mCRPC.
+                Auto-warning si lesion_count ≤5 con status metastatic, o SUVmax ≥5 con status negative.
+                <strong>Captura clinician-verified · HIPAA audit logged.</strong> Aparece solo en pacientes BCR/CRPC/oligo o PSA rising sin PSMA documentado (o >180d).
+            </div>
+        </section>
+        </details>
+        <script>
+        (function() {
+            const btns = document.querySelectorAll('.pm2-psma-status-btn');
+            const dateInput = document.getElementById('pm2PsmaPetDate');
+            const tracerSelect = document.getElementById('pm2PsmaPetTracer');
+            const lesionsInput = document.getElementById('pm2PsmaPetLesions');
+            const suvInput = document.getElementById('pm2PsmaPetSuv');
+            const feedback = document.getElementById('pm2PsmaPetFeedback');
+            btns.forEach(btn => {
+                btn.addEventListener('click', async function() {
+                    const status = btn.dataset.status;
+                    const nss = btn.dataset.patientNss;
+                    const petDate = dateInput.value || null;
+                    const tracer = tracerSelect.value || null;
+                    const lesions = lesionsInput.value ? parseInt(lesionsInput.value, 10) : null;
+                    const suv = suvInput.value ? parseFloat(suvInput.value) : null;
+                    btns.forEach(b => b.disabled = true);
+                    feedback.textContent = `Guardando PSMA ${status}...`;
+                    feedback.style.color = '#cbd5e1';
+                    try {
+                        const resp = await fetch(`/api/patients/${nss}/psma-pet-capture`, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                psma_status: status,
+                                pet_date: petDate,
+                                tracer_used: tracer,
+                                lesion_count: lesions,
+                                suv_max_value: suv,
+                                source_type: 'quick_capture_ui',
+                                actor_session_id: sessionStorage.getItem('pm2_session_id') || ''
+                            })
+                        });
+                        const data = await resp.json();
+                        if (data.success) {
+                            let msg = `✓ PSMA ${status} guardado`;
+                            if (lesions !== null) msg += ` · ${lesions} lesiones`;
+                            if (suv !== null) msg += ` · SUVmax ${suv}`;
+                            msg += '.';
+                            if (data.warning) msg += ` ⚠ ${data.warning}`;
+                            msg += ' Refrescando...';
+                            feedback.textContent = msg;
+                            feedback.style.color = data.warning ? '#fbbf24' : '#10b981';
+                            setTimeout(() => location.reload(), 1800);
+                        } else {
+                            feedback.textContent = `Error: ${data.error || 'unknown'}`;
+                            feedback.style.color = '#ef4444';
+                            btns.forEach(b => b.disabled = false);
+                        }
+                    } catch (err) {
+                        feedback.textContent = `Falló: ${err.message}`;
+                        feedback.style.color = '#ef4444';
+                        btns.forEach(b => b.disabled = false);
+                    }
+                });
+            });
+        })();
+        </script>
+        {% endif %}
+
         {# EPIC 34.A Phase 4 — HRR/Germline Quick Capture CTA
            Gating: paciente con ARPI activo OR estado avanzado (mCSPC/mCRPC/BCR) + HRR missing.
            Compound value: HRR captured → desbloquea PARP trials en Phase 3 Trial Matcher. #}

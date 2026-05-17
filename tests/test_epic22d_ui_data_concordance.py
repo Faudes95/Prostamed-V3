@@ -137,6 +137,7 @@ CARD_TO_BUNDLE_KEY: dict[str, str] = {
     "hrr-quick-capture-card": "hrr_capture_cta",              # Phase 4 — HRR/germline gating
     "trial-matcher-card": "trial_matches",                    # Phase 3 — Trial Matcher MVP
     "castration-quick-capture-card": "castration_capture_cta", # Phase 5 — Castration confirmation
+    "psma-pet-quick-capture-card": "psma_pet_capture_cta",     # Phase 6 — PSMA-PET capture
 }
 
 

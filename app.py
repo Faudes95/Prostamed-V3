@@ -1261,14 +1261,40 @@ def patient_profile(nss):
                         v = f.get("normalized_value_text") or f.get("value_json")
                         if k and v is not None:
                             fact_map_e34p3[k] = v
+                # EPIC 34.A Phase 6 — Derive prior_arpi/prior_taxane/prior_docetaxel
+                # de treatments list. Sin esto, VISION/PSMAfore/TheraP bloqueados aún
+                # con ARPI/taxano en historia.
+                _prior_arpi_p3 = False
+                _prior_docetaxel_p3 = False
+                _prior_cabazitaxel_p3 = False
+                for _tx_p3 in (data.get("treatments") or []):
+                    _drug_p3 = str(_tx_p3.get("drug_scheme") or "").upper()
+                    if any(t in _drug_p3 for t in ("ABIRATERONE", "ENZALUTAMIDE", "APALUTAMIDE", "DAROLUTAMIDE")):
+                        _prior_arpi_p3 = True
+                    if "DOCETAXEL" in _drug_p3:
+                        _prior_docetaxel_p3 = True
+                    if "CABAZITAXEL" in _drug_p3:
+                        _prior_cabazitaxel_p3 = True
+                _prior_taxane_p3 = _prior_docetaxel_p3 or _prior_cabazitaxel_p3
+
                 normalized_patient = {
                     **data,
+                    # EPIC 34.A Phase 6 fix — latest_assessment.state (classifier-emitted)
+                    # debe ganar sobre m_substage_resolved (raw M-substage imaging).
+                    # Estos son CONCEPTOS DISTINTOS: classifier "m1_crpc" vs imaging "M1b".
+                    # Pre-fix: m_substage_resolved="M0" sobrescribía latest_assessment="m1_crpc"
+                    # → engine no clasificaba como mCRPC → VISION/PSMAfore bloqueados.
                     "state": (
-                        fact_map_e34p3.get("reconciled_state")
+                        (data.get("latest_assessment") or {}).get("state")
+                        or fact_map_e34p3.get("reconciled_state")
                         or fact_map_e34p3.get("m_substage_resolved")
-                        or (data.get("latest_assessment") or {}).get("state")
                         or ""
                     ),
+                    # Prior therapy derivation
+                    "prior_arpi": _prior_arpi_p3,
+                    "prior_taxane": _prior_taxane_p3,
+                    "prior_docetaxel": _prior_docetaxel_p3,
+                    "prior_cabazitaxel": _prior_cabazitaxel_p3,
                     "ecog_score": fact_map_e34p3.get("ecog_performance_status") or fact_map_e34p3.get("ecog_score"),
                     "hrr_status": fact_map_e34p3.get("hrr_status"),
                     "hrr_positive": fact_map_e34p3.get("hrr_positive") or (
@@ -1279,6 +1305,13 @@ def patient_profile(nss):
                     "current_psa": fact_map_e34p3.get("current_psa"),
                     "baseline_psa": fact_map_e34p3.get("baseline_psa"),
                     "castrate_testosterone_status": fact_map_e34p3.get("castrate_testosterone_status"),
+                    # EPIC 34.A Phase 6 — PSMA-PET hydration (desbloquea VISION/PSMAfore/TheraP)
+                    "psma_positive": fact_map_e34p3.get("psma_positive"),
+                    "psma_negative_dominant_lesions": fact_map_e34p3.get("psma_negative_dominant_lesions"),
+                    "psma_index_lesion_suvmax": fact_map_e34p3.get("psma_index_lesion_suvmax"),
+                    "psma_pet_status": fact_map_e34p3.get("psma_pet_status"),
+                    "psma_lesion_count": fact_map_e34p3.get("psma_lesion_count"),
+                    "psma_tracer": fact_map_e34p3.get("psma_tracer"),
                 }
                 v2_ctx["trial_matches"] = build_trial_matching_bundle(normalized_patient)
             except Exception as e:
@@ -1337,6 +1370,73 @@ def patient_profile(nss):
             except Exception as e:
                 logger.debug(f"EPIC 34.A Phase 5 castration CTA build failed: {e}")
                 v2_ctx["castration_capture_cta"] = {"available": False, "error": str(e)}
+
+            # EPIC 34.A Phase 6 — PSMA-PET quick capture gating (último gap
+            # estructural identificado en discovery). Cohorte elegible:
+            # BCR / post-RT BCR / m0_crpc / m1_crpc / oligo* / post_rp con PSA rising.
+            # NCCN 2026 PROS-D recomienda PSMA-PET preferred over conventional
+            # imaging para BCR (PSA≥0.2 post-RP, Phoenix post-RT) y mCRPC staging.
+            try:
+                import tracking_db as _td_e34p6
+                _identity_id_e34p6 = (data.get("identity") or {}).get("id")
+                latest_psma = _td_e34p6.get_latest_psma_pet_for_patient(_identity_id_e34p6) if _identity_id_e34p6 else None
+                # Estado (re-use state_str_p5 si ya hidratado)
+                state_str_p6 = state_str_p5 if "state_str_p5" in dir() and state_str_p5 else ""
+                if not state_str_p6 and _identity_id_e34p6:
+                    try:
+                        _facts_p6 = _td_e34p6.get_patient_clinical_facts(_identity_id_e34p6, active_only=True)
+                        for _f in _facts_p6:
+                            if isinstance(_f, dict) and _f.get("fact_key") == "reconciled_state":
+                                state_str_p6 = str(_f.get("normalized_value_text") or "").lower()
+                                break
+                    except Exception:
+                        pass
+                # Cohorte elegible: estados donde PSMA-PET cambia conducta clínica
+                psma_eligible_states = (
+                    "recurrence_bcr", "post_rt_bcr", "post_rp_bcr",
+                    "m0_crpc", "m1_crpc", "oligo", "mcspc",
+                )
+                state_psma_eligible = any(t in state_str_p6 for t in psma_eligible_states)
+                # PSA rising en post-local también dispara (Phoenix criterion / BCR signaling)
+                # Reuse derivative facts to check
+                psa_signal = False
+                try:
+                    if _identity_id_e34p6:
+                        _facts_psa = _td_e34p6.get_patient_clinical_facts(_identity_id_e34p6, active_only=True)
+                        for _f in _facts_psa:
+                            if isinstance(_f, dict) and _f.get("fact_key") in ("psa_rising_trend", "phoenix_delta", "biopsy_proven_local_recurrence"):
+                                val = str(_f.get("normalized_value_text") or "").lower()
+                                if val in ("true", "1", "yes", "rising") or (val and val.replace(".", "").replace("-", "").isdigit() and float(val) >= 2.0):
+                                    psa_signal = True
+                                    break
+                except Exception:
+                    pass
+                psma_missing = (latest_psma is None) or (
+                    latest_psma.get("status") in (None, "", "pending", "not_performed")
+                )
+                psma_stale = (
+                    latest_psma and
+                    latest_psma.get("age_days") is not None and
+                    latest_psma["age_days"] > 180  # NCCN: PSMA-PET ≤6mo for actionability
+                )
+                show_psma_cta = (state_psma_eligible or psa_signal) and (psma_missing or psma_stale)
+                v2_ctx["psma_pet_capture_cta"] = {
+                    "available": show_psma_cta,
+                    "state_psma_eligible": state_psma_eligible,
+                    "psa_signal": psa_signal,
+                    "latest_psma_pet": latest_psma,
+                    "psma_missing": psma_missing,
+                    "psma_stale": bool(psma_stale),
+                    "reason": (
+                        "PSMA-PET missing en paciente BCR/CRPC/oligo" if psma_missing and state_psma_eligible
+                        else "PSMA-PET missing por PSA rising trend" if psma_missing and psa_signal
+                        else f"PSMA-PET stale ({latest_psma['age_days']}d, >180d cutoff NCCN)" if psma_stale
+                        else "PSMA-PET reciente documentado"
+                    ),
+                }
+            except Exception as e:
+                logger.debug(f"EPIC 34.A Phase 6 PSMA-PET CTA build failed: {e}")
+                v2_ctx["psma_pet_capture_cta"] = {"available": False, "error": str(e)}
 
             # EPIC 34.A Phase 4 — HRR quick capture gating
             try:
@@ -2630,6 +2730,59 @@ def api_patient_castration_latest(patient_ref):
     return jsonify({'success': True, 'has_castration': True, **res}), 200
 
 
+@app.route('/api/patients/<patient_ref>/psma-pet-capture', methods=['POST'])
+def api_patient_psma_pet_capture(patient_ref):
+    """EPIC 34.A Phase 6 — Quick capture PSMA-PET status + optional lesion
+    count + SUVmax + tracer (último gap estructural identificado en discovery).
+
+    Body: {psma_status: 'positive_metastatic'|'positive_oligometastatic'|
+                       'positive_local_recurrence'|'negative'|'pending'|'not_performed',
+           pet_date?: 'YYYY-MM-DD',
+           tracer_used?: 'Ga-68_PSMA-11'|'F-18_PYL'|'F-18_DCFPyL'|'F-18_rhPSMA-7.3'|'Ga-68_PSMA-617'|'other',
+           lesion_count?: int (0-500),
+           suv_max_value?: float (0-200),
+           notes?, actor_session_id?}
+
+    Compound value: PSMA-PET captured + reconciled_state advanced desbloquea
+    VISION/PSMAfore (Lu-177 PSMA-617) elegibilidad en Trial Matcher, +
+    STOMP/ORIOLE SBRT en oligometastatic, + salvage RT planning si local recurrence.
+    """
+    import tracking_db as _td
+    try:
+        payload = request.get_json(silent=True) or {}
+    except Exception:
+        payload = {}
+    status = payload.get('psma_status')
+    if not status:
+        return jsonify({'success': False, 'error': 'missing_psma_status'}), 400
+    res = _td.record_psma_pet_capture(
+        patient_ref,
+        status,
+        pet_date=payload.get('pet_date'),
+        tracer_used=payload.get('tracer_used'),
+        lesion_count=payload.get('lesion_count'),
+        suv_max_value=payload.get('suv_max_value'),
+        source_type=payload.get('source_type', 'quick_capture_ui'),
+        actor_session_id=payload.get('actor_session_id'),
+        notes=payload.get('notes', ''),
+    )
+    code = 200 if res.get('success') else (
+        404 if res.get('error') == 'patient_not_found' else 400
+    )
+    return jsonify(res), code
+
+
+@app.route('/api/patients/<patient_ref>/psma-pet-latest', methods=['GET'])
+def api_patient_psma_pet_latest(patient_ref):
+    """EPIC 34.A Phase 6 — Get latest PSMA-PET snapshot (granular status +
+    aux fields). Returns has_psma_pet=False si paciente sin imaging hx PSMA."""
+    import tracking_db as _td
+    res = _td.get_latest_psma_pet_for_patient(patient_ref)
+    if res is None:
+        return jsonify({'success': True, 'has_psma_pet': False}), 200
+    return jsonify({'success': True, 'has_psma_pet': True, **res}), 200
+
+
 @app.route('/api/patients/<patient_ref>/hrr-capture', methods=['POST'])
 def api_patient_hrr_capture(patient_ref):
     """EPIC 34.A Phase 4 — Quick capture HRR/germline status (compound value:
@@ -2697,15 +2850,38 @@ def api_patient_trial_matches(patient_ref):
             v = f.get("normalized_value_text") or f.get("value_json")
             if k and v is not None:
                 fact_map[k] = v
+        # EPIC 34.A Phase 6 — Derive prior_arpi / prior_taxane / prior_docetaxel
+        # de treatments list. Sin esto, VISION/PSMAfore/TheraP bloqueados aún con
+        # PSMA-PET captured + ENZALUTAMIDE/ABIRATERONE/DOCETAXEL en historia.
+        _prior_arpi = False
+        _prior_docetaxel = False
+        _prior_cabazitaxel = False
+        for _tx in (patient_data.get("treatments") or []):
+            _drug = str(_tx.get("drug_scheme") or "").upper()
+            if any(t in _drug for t in ("ABIRATERONE", "ENZALUTAMIDE", "APALUTAMIDE", "DAROLUTAMIDE")):
+                _prior_arpi = True
+            if "DOCETAXEL" in _drug:
+                _prior_docetaxel = True
+            if "CABAZITAXEL" in _drug:
+                _prior_cabazitaxel = True
+        _prior_taxane = _prior_docetaxel or _prior_cabazitaxel
+
         # Map facts to trial_matching_engine expected field names
         normalized = {
             **patient_data,
+            # EPIC 34.A Phase 6 fix — latest_assessment.state primero (classifier-emitted)
+            # sobre m_substage_resolved (raw M-substage). Ver razón en v2_ctx hydration.
             "state": (
-                fact_map.get("reconciled_state")
+                (patient_data.get("latest_assessment") or {}).get("state")
+                or fact_map.get("reconciled_state")
                 or fact_map.get("m_substage_resolved")
-                or (patient_data.get("latest_assessment") or {}).get("state")
                 or ""
             ),
+            # Prior therapy derivation (EPIC 34.A Phase 6)
+            "prior_arpi": _prior_arpi,
+            "prior_taxane": _prior_taxane,
+            "prior_docetaxel": _prior_docetaxel,
+            "prior_cabazitaxel": _prior_cabazitaxel,
             "ecog_score": fact_map.get("ecog_performance_status") or fact_map.get("ecog_score"),
             "hrr_status": fact_map.get("hrr_status"),
             "hrr_positive": fact_map.get("hrr_positive") or (
@@ -2717,6 +2893,15 @@ def api_patient_trial_matches(patient_ref):
             "baseline_psa": fact_map.get("baseline_psa"),
             "castrate_testosterone_status": fact_map.get("castrate_testosterone_status"),
             "metastasis_site": fact_map.get("m_substage_resolved") or fact_map.get("metastatic_stage_resolved"),
+            # EPIC 34.A Phase 6 — PSMA-PET hydration → desbloquea VISION/PSMAfore/TheraP
+            # en _rule_vision, _rule_psmafore. Sin esto, captura Phase 6 no surface
+            # en Trial Matcher aunque exista en patient_clinical_facts.
+            "psma_positive": fact_map.get("psma_positive"),
+            "psma_negative_dominant_lesions": fact_map.get("psma_negative_dominant_lesions"),
+            "psma_index_lesion_suvmax": fact_map.get("psma_index_lesion_suvmax"),
+            "psma_pet_status": fact_map.get("psma_pet_status"),
+            "psma_lesion_count": fact_map.get("psma_lesion_count"),
+            "psma_tracer": fact_map.get("psma_tracer"),
         }
         bundle = build_trial_matching_bundle(normalized)
         return jsonify({"success": True, **bundle})

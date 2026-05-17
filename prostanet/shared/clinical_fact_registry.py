@@ -92,6 +92,15 @@ FACT_SPECS: dict[str, FactSpec] = {
     "psma_study_date": FactSpec("psma_study_date", "precision", "date", ("psma_pet_date",), False, ("precision_pathway", "profile")),
     "psma_positive": FactSpec("psma_positive", "precision", "boolean", (), False, ("precision_pathway", "profile")),
     "psma_negative_dominant_lesions": FactSpec("psma_negative_dominant_lesions", "precision", "boolean", (), False, ("precision_pathway", "profile")),
+    # EPIC 34.A Phase 6 — Granular PSMA-PET specs introducidos para record_psma_pet_capture
+    # (status taxonómico de 6 valores + count + SUVmax + tracer). Estos facts son leídos
+    # por trial_matching_engine._psma_positive() (psma_index_lesion_suvmax) y por gate 71
+    # (psma_lesion_count). Sin registry entry, _persist_canonical_facts_from_payload los
+    # dropea silenciosamente.
+    "psma_pet_status": FactSpec("psma_pet_status", "precision", "text", (), False, ("precision_pathway", "profile", "trial_matcher")),
+    "psma_lesion_count": FactSpec("psma_lesion_count", "precision", "number", (), False, ("precision_pathway", "profile", "trial_matcher")),
+    "psma_index_lesion_suvmax": FactSpec("psma_index_lesion_suvmax", "precision", "number", ("psma_suvmax",), False, ("precision_pathway", "profile", "trial_matcher")),
+    "psma_tracer": FactSpec("psma_tracer", "precision", "text", (), False, ("precision_pathway", "profile")),
     "current_adt_context": FactSpec("current_adt_context", "systemic_context", "text", (), True, ("decision_input_requirements", "governance")),
     "current_medications": FactSpec("current_medications", "supportive", "text", (), False, ("governance", "profile")),
     "ddi_review_status": FactSpec("ddi_review_status", "supportive", "text", ("drug_interaction_reviewed",), False, ("governance", "profile")),
@@ -429,6 +438,11 @@ def extract_canonical_fact_candidates(
         "psma_study_date",
         "psma_positive",
         "psma_negative_dominant_lesions",
+        # EPIC 34.A Phase 6 — granular PSMA-PET capture aux facts
+        "psma_pet_status",
+        "psma_lesion_count",
+        "psma_index_lesion_suvmax",
+        "psma_tracer",
         "current_adt_context",
         "current_medications",
         "ddi_review_status",
