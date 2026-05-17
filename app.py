@@ -2783,6 +2783,104 @@ def api_patient_psma_pet_latest(patient_ref):
     return jsonify({'success': True, 'has_psma_pet': True, **res}), 200
 
 
+# ─────────────────── EPIC 36 — Voice quick-capture PoC ───────────────────
+
+@app.route('/api/voice/quick-capture/<field>', methods=['POST'])
+def api_voice_quick_capture(field):
+    """EPIC 36 — Voice → quick-capture extraction PoC.
+
+    Accepts: multipart/form-data con file 'audio' (WebM/WAV/Opus, ≤25MB)
+             OR application/json con {transcript: "...", patient_ref: "..."}
+             para skip STT (útil para testing + dictado pre-transcrito).
+
+    Path param: field ∈ {ecog, castration, hrr, psma_pet}
+
+    Returns:
+      {success, field, transcript, extraction: {<field-specific dict>},
+       extractor_version, patient_ref (echo si proporcionado)}
+
+    Flow:
+      1. Si JSON con transcript → skip STT, parse directo
+      2. Si multipart con audio → LocalSTTEngine.transcribe_bytes(language='es')
+      3. Run quick_capture_intent.extract_for_field(transcript, field)
+      4. Return extraction + transcript (NO auto-commit — usuario revisa)
+
+    Privacy: audio bytes NO se persisten en DB. Solo transcript se incluye
+    en respuesta para que UI muestre al usuario qué se entendió.
+    """
+    from prostanet.voice.quick_capture_intent import extract_for_field, QUICK_CAPTURE_EXTRACTORS
+    if field not in QUICK_CAPTURE_EXTRACTORS:
+        return jsonify({
+            'success': False,
+            'error': 'invalid_field',
+            'valid_fields': sorted(QUICK_CAPTURE_EXTRACTORS.keys()),
+        }), 400
+
+    transcript = ''
+    patient_ref = None
+    transcript_source = 'unknown'
+
+    # Path A: JSON con transcript pre-existente (testing + voice review flow)
+    if request.is_json:
+        try:
+            payload = request.get_json(silent=True) or {}
+            transcript = str(payload.get('transcript') or '').strip()
+            patient_ref = payload.get('patient_ref')
+            transcript_source = 'json_input'
+        except Exception:
+            pass
+
+    # Path B: multipart audio upload → STT transcription
+    if not transcript and 'audio' in request.files:
+        audio_file = request.files['audio']
+        audio_bytes = audio_file.read()
+        if len(audio_bytes) > 25 * 1024 * 1024:
+            return jsonify({'success': False, 'error': 'audio_too_large_max_25mb'}), 413
+        if not audio_bytes:
+            return jsonify({'success': False, 'error': 'audio_empty'}), 400
+        try:
+            from prostanet.voice.stt_engine import LocalSTTEngine
+            engine = LocalSTTEngine()
+            # Detect suffix from filename (default .webm para MediaRecorder)
+            filename = (audio_file.filename or '').lower()
+            suffix = '.webm'
+            for ext in ('.wav', '.mp3', '.opus', '.m4a', '.webm', '.ogg'):
+                if filename.endswith(ext):
+                    suffix = ext
+                    break
+            segments = engine.transcribe_bytes(audio_bytes, suffix=suffix, language='es')
+            transcript = ' '.join(s.text for s in segments if s.text).strip()
+            transcript_source = 'stt_whisper'
+        except Exception as exc:
+            logger.exception("EPIC 36 STT failed")
+            return jsonify({
+                'success': False,
+                'error': 'stt_failed',
+                'message': str(exc),
+                'hint': 'Verifica que faster-whisper esté instalado o que el sidecar STT funcione',
+            }), 503
+        # Try to read patient_ref from form data
+        patient_ref = request.form.get('patient_ref') or patient_ref
+
+    if not transcript:
+        return jsonify({
+            'success': False,
+            'error': 'no_transcript_available',
+            'hint': 'Provee {transcript: "..."} en JSON o sube audio en form-data["audio"]',
+        }), 400
+
+    # Run the field-specific extractor
+    extraction = extract_for_field(transcript, field)
+    return jsonify({
+        'success': True,
+        'field': field,
+        'transcript': transcript,
+        'transcript_source': transcript_source,
+        'extraction': extraction,
+        'patient_ref': patient_ref,
+    })
+
+
 @app.route('/api/patients/<patient_ref>/hrr-capture', methods=['POST'])
 def api_patient_hrr_capture(patient_ref):
     """EPIC 34.A Phase 4 — Quick capture HRR/germline status (compound value:

@@ -37,9 +37,10 @@ from typing import Any
 # Histórico: 2026-04-30 LXCIX → 2026-05-15 C (pre-EPIC30) → 2026-05-16 CI
 # (post-EPIC 30: PSA Tower + GodiBot pass-5) → 2026-05-16 CII (post-EPIC 31)
 # → CIII-CIX (EPIC 33 + EPIC 34.A Phases 1-5) → CX (Phase 6: PSMA-PET capture)
-# → CXI (EPIC 35: classifier alignment) → CXII (EPIC 37: dashboard render
-# 10 KPIs + Chart.js capture coverage snapshot).
-FAUBOT_RELEASE = "2026-05-17 CXII"
+# → CXI (EPIC 35: classifier alignment) → CXII (EPIC 37: dashboard)
+# → CXIII (EPIC 36: voice quick-capture PoC — Whisper STT + 4 extractors
+# (ECOG/HRR/Castration/PSMA) + ECOG mic UI).
+FAUBOT_RELEASE = "2026-05-17 CXIII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

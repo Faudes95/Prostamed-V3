@@ -1465,10 +1465,25 @@
                 </button>
                 {% endfor %}
             </div>
+
+            {# EPIC 36 — Voice dictation PoC para ECOG quick-capture #}
+            <div style="margin-top:12px; padding:10px 12px; background:rgba(168,85,247,.06); border:1px solid rgba(168,85,247,.25); border-radius:8px;">
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <button type="button" id="pm2EcogVoiceBtn" data-patient-nss="{{ identity.nss }}" data-field="ecog" data-recording="false"
+                        style="padding:8px 14px; background:rgba(168,85,247,.15); border:1px solid #a855f7; color:#e9d5ff; border-radius:8px; cursor:pointer; font-size:.78rem; font-weight:600; display:inline-flex; align-items:center; gap:6px;">
+                        <span id="pm2EcogVoiceIcon">🎤</span>
+                        <span id="pm2EcogVoiceLabel">Dictar ECOG</span>
+                    </button>
+                    <span id="pm2EcogVoiceStatus" style="font-size:.7rem; color:#94a3b8;">EPIC 36 · Voice PoC · Whisper STT + intent extraction</span>
+                </div>
+                <div id="pm2EcogVoiceResult" style="margin-top:10px; display:none; padding:8px 10px; background:rgba(15,23,42,.4); border-radius:6px; font-size:.75rem; color:#cbd5e1;"></div>
+            </div>
+
             <div id="ecogQuickCaptureFeedback" style="margin-top:10px; font-size:.74rem; color:#cbd5e1; min-height:18px;"></div>
             <div style="margin-top:10px; padding:8px 10px; background:rgba(251,191,36,.06); border-left:3px solid rgba(251,191,36,.4); border-radius:6px; font-size:.66rem; color:#fde68a;">
                 ⓘ ECOG estándar 0-4 (Oken 1982 PMID 7165009). Captura clinician-verified · HIPAA audit logged.
                 Solo aparece para pacientes ARPI con ECOG missing o &gt;90d stale.
+                <br><strong>Voice dictation</strong> (EPIC 36): di "ECOG 2" o "performance status uno" — Whisper transcribe + intent extractor detecta el valor.
             </div>
         </section>
         </details>
@@ -1509,6 +1524,143 @@
                         btn.disabled = false;
                     }
                 });
+            });
+
+            // EPIC 36 — Voice dictation PoC para ECOG quick-capture
+            const voiceBtn = document.getElementById('pm2EcogVoiceBtn');
+            if (!voiceBtn) return;
+            const voiceIcon = document.getElementById('pm2EcogVoiceIcon');
+            const voiceLabel = document.getElementById('pm2EcogVoiceLabel');
+            const voiceStatus = document.getElementById('pm2EcogVoiceStatus');
+            const voiceResult = document.getElementById('pm2EcogVoiceResult');
+            let mediaRecorder = null;
+            let audioChunks = [];
+            let mediaStream = null;
+
+            async function startRecording() {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    voiceStatus.textContent = '✗ Tu navegador no soporta MediaRecorder/getUserMedia.';
+                    voiceStatus.style.color = '#ef4444';
+                    return;
+                }
+                try {
+                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                } catch (err) {
+                    voiceStatus.textContent = '✗ Permiso de micrófono denegado: ' + err.message;
+                    voiceStatus.style.color = '#ef4444';
+                    return;
+                }
+                audioChunks = [];
+                try {
+                    mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm' });
+                } catch (e) {
+                    // Fallback: default mime
+                    mediaRecorder = new MediaRecorder(mediaStream);
+                }
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) audioChunks.push(e.data);
+                };
+                mediaRecorder.onstop = async () => {
+                    voiceIcon.textContent = '⏳';
+                    voiceLabel.textContent = 'Transcribiendo...';
+                    voiceStatus.textContent = 'Whisper STT (es) + intent extraction';
+                    voiceStatus.style.color = '#a855f7';
+                    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const form = new FormData();
+                    form.append('audio', blob, 'ecog_dictation.webm');
+                    form.append('patient_ref', voiceBtn.dataset.patientNss);
+                    try {
+                        const resp = await fetch('/api/voice/quick-capture/ecog', { method: 'POST', body: form });
+                        const data = await resp.json();
+                        await renderExtraction(data);
+                    } catch (err) {
+                        voiceStatus.textContent = '✗ STT falló: ' + err.message;
+                        voiceStatus.style.color = '#ef4444';
+                    } finally {
+                        voiceIcon.textContent = '🎤';
+                        voiceLabel.textContent = 'Dictar ECOG';
+                        voiceBtn.dataset.recording = 'false';
+                        if (mediaStream) {
+                            mediaStream.getTracks().forEach(t => t.stop());
+                            mediaStream = null;
+                        }
+                    }
+                };
+                mediaRecorder.start();
+                voiceBtn.dataset.recording = 'true';
+                voiceIcon.textContent = '⏺';
+                voiceLabel.textContent = 'Parar y transcribir';
+                voiceStatus.textContent = '🔴 Grabando · di "ECOG 2" o "performance status uno"';
+                voiceStatus.style.color = '#ef4444';
+                // Auto-stop at 10 seconds
+                setTimeout(() => {
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {
+                        mediaRecorder.stop();
+                    }
+                }, 10000);
+            }
+
+            async function renderExtraction(data) {
+                voiceResult.style.display = 'block';
+                if (!data || !data.success) {
+                    voiceResult.innerHTML = `<strong style="color:#ef4444">Falló:</strong> ${(data && data.error) || 'unknown'}` +
+                        ((data && data.hint) ? `<br><span style="color:#94a3b8">${data.hint}</span>` : '');
+                    return;
+                }
+                const ext = data.extraction || {};
+                const transcript = data.transcript || '(vacío)';
+                if (ext.value === null || ext.value === undefined) {
+                    voiceResult.innerHTML = `<strong>Transcripción:</strong> ${transcript}<br>` +
+                        `<span style="color:#fbbf24">⚠ No detecté un valor ECOG en el dictado. Intenta de nuevo o usa los botones manuales.</span>`;
+                    return;
+                }
+                const conf = (ext.confidence * 100).toFixed(0);
+                voiceResult.innerHTML =
+                    `<strong>Transcripción:</strong> "${transcript}"<br>` +
+                    `<strong style="color:#86efac">✓ Detecté ECOG ${ext.value}</strong> ` +
+                    `<span style="color:#94a3b8">(confianza ${conf}%, patrón ${ext.source_pattern || 'n/a'})</span><br>` +
+                    `<button type="button" id="pm2EcogVoiceConfirm" data-ecog="${ext.value}" data-patient-nss="${data.patient_ref}" ` +
+                    `style="margin-top:6px; padding:6px 14px; background:rgba(16,185,129,.15); border:1px solid #10b981; color:#86efac; border-radius:6px; cursor:pointer; font-size:.75rem; font-weight:600;">` +
+                    `✓ Aplicar ECOG ${ext.value}</button>`;
+                const confirmBtn = document.getElementById('pm2EcogVoiceConfirm');
+                confirmBtn.addEventListener('click', async () => {
+                    // Reuse existing /ecog-capture endpoint
+                    const nss = confirmBtn.dataset.patientNss;
+                    const ecog = parseInt(confirmBtn.dataset.ecog, 10);
+                    confirmBtn.disabled = true;
+                    confirmBtn.textContent = 'Guardando...';
+                    try {
+                        const resp = await fetch(`/api/patients/${nss}/ecog-capture`, {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                ecog_value: ecog, source_type: 'voice_quick_capture_epic36',
+                                notes: `Voice: "${transcript.substring(0, 100)}"`,
+                                actor_session_id: sessionStorage.getItem('pm2_session_id') || ''
+                            })
+                        });
+                        const r = await resp.json();
+                        if (r.success) {
+                            confirmBtn.textContent = `✓ ECOG ${ecog} guardado. Refrescando…`;
+                            setTimeout(() => location.reload(), 1500);
+                        } else {
+                            confirmBtn.textContent = '✗ Error: ' + (r.error || 'unknown');
+                            confirmBtn.disabled = false;
+                        }
+                    } catch (err) {
+                        confirmBtn.textContent = '✗ ' + err.message;
+                        confirmBtn.disabled = false;
+                    }
+                });
+            }
+
+            voiceBtn.addEventListener('click', () => {
+                if (voiceBtn.dataset.recording === 'true') {
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {
+                        mediaRecorder.stop();
+                    }
+                } else {
+                    startRecording();
+                }
             });
         })();
         </script>
