@@ -6135,6 +6135,11 @@ def longitudinal_capture_v2(nss: str):
         or decision_lane_filter
         or ""
     ).strip()
+    # BUG FIX (smoke 2026-05-17) — CTA "Reporte de Patología" en patient_profile_v2
+    # apunta a /longitudinal-capture/<nss>?moment=biopsy_capture pero el endpoint
+    # ignoraba `moment`. Ahora extraemos y pasamos al template para auto-open la
+    # sección correspondiente (biopsy_capture / psa_new / etc).
+    moment_filter = (request.args.get("moment") or "").strip().lower()
 
     # Build longitudinal-specific context from real bundle
     cb = data.get("baseline") or {}
@@ -6280,7 +6285,11 @@ def longitudinal_capture_v2(nss: str):
             {"key": "pro_scores", "label": "PRO scores (BPI · ESAS)", "freq": "Cada visita", "last_capture": "—"},
             {"key": "dexa", "label": "DEXA / densidad ósea", "freq": "Cada 24m bajo ADT", "last_capture": "—"},
             {"key": "ctcae", "label": "Toxicidad CTCAE v5", "freq": "Cada visita", "last_capture": "—"},
+            {"key": "biopsy_capture", "label": "Reporte histopatológico (biopsia)",
+             "freq": "Por evento", "last_capture": "—"},
         ],
+        # BUG FIX (smoke 2026-05-17) — pass moment to template para auto-open section
+        "moment_filter": moment_filter,
     }
     return render_template("demos/longitudinal_capture_v2_demo.html", **long_ctx)
 

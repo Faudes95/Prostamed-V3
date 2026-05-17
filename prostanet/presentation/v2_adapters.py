@@ -1496,11 +1496,23 @@ def _psa_observability(profile_view: Mapping[str, Any]) -> dict[str, Any]:
     for p in points:
         if not isinstance(p, Mapping):
             continue
+        # BUG FIX (smoke 2026-05-17 patient 3344557788) — build_psa_by_treatment_line
+        # retorna `psa: 2.0` (not `value`, not `psa_value`). Pre-fix, esta cadena
+        # caía a `0` → torre de vigilancia mostraba puntos PSA en value=0
+        # (invisibles en chart). Add `p.get("psa")` y `p.get("psa_value")` paths.
+        _val = p.get("value")
+        if _val is None:
+            _val = p.get("psa")
+        if _val is None:
+            _val = p.get("psa_value")
+        if _val is None:
+            _val = 0
         series.append({
             "date": p.get("sample_date") or p.get("date") or "",
-            "value": p.get("value") or p.get("psa_value") or 0,
-            "line": p.get("treatment_line_number"),
-            "context": p.get("context") or p.get("clinical_context") or "",
+            "value": _val,
+            "line": p.get("treatment_line_number") or p.get("line"),
+            "context": p.get("context") or p.get("clinical_context")
+                       or p.get("treatment_line_label") or "",
         })
 
     line_segments = _safe_get(psa, "line_segments", default=[]) or []

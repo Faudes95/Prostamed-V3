@@ -291,8 +291,124 @@
         </section>
         {% endif %}
 
+        {# ── Biopsy / Pathology Report section (BUG FIX 2026-05-17) ──
+           CTA "Reporte de Patología" en patient_profile_v2 apuntaba a
+           /longitudinal-capture/<nss>?moment=biopsy_capture pero NO existía
+           sección HTML para captura. Schema = BIOPSY_CAPTURE_FORM
+           (moment_capture_schemas.py:489) con 11 fields clínicos.
+           Submit a POST /api/longitudinal/<nss>/append con kind="biopsy".
+        #}
+        <section id="section-biopsy_capture" class="pm2-append-section"
+                 {% if moment_filter == 'biopsy_capture' %}data-auto-open="1"{% endif %}>
+            <div class="pm2-append-section-head">
+                <div class="pm2-append-section-icon">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                </div>
+                <div>
+                    <h2 class="pm2-append-section-title">Reporte histopatológico (biopsia)</h2>
+                    <p class="pm2-append-section-meta">11 fields clínicos · Gleason + cores + márgenes · escribe a clinical_fact_registry vía /api/longitudinal/&lt;nss&gt;/append (kind=biopsy)</p>
+                </div>
+                <div class="pm2-append-section-action">
+                    <button class="pm2-btn pm2-btn--ghost" type="button"
+                            onclick="document.getElementById('biopsy_date_input').focus()">
+                        + Capturar reporte
+                    </button>
+                </div>
+            </div>
+            <div class="pm2-append-form" data-append-form="biopsy"
+                 style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;padding:14px;">
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--pn-text-muted)">
+                    Fecha biopsia <span style="color:#fbbf24">*</span>
+                    <input type="date" id="biopsy_date_input" class="pm2-append-form-input" name="biopsy_date" required>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--pn-text-muted)">
+                    Vía de biopsia <span style="color:#fbbf24">*</span>
+                    <select class="pm2-append-form-input" name="biopsy_route" required>
+                        <option value="">Seleccionar…</option>
+                        <option value="transrectal_systematic">Transrectal sistemática</option>
+                        <option value="transperineal_systematic">Transperineal sistemática</option>
+                        <option value="mri_fusion_targeted">MRI-fusión dirigida</option>
+                        <option value="mri_fusion_plus_systematic">MRI-fusión + sistemática</option>
+                        <option value="cognitive_targeted">Cognitivo dirigido</option>
+                    </select>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--pn-text-muted)">
+                    Contexto biopsia <span style="color:#fbbf24">*</span>
+                    <select class="pm2-append-form-input" name="biopsy_context" required>
+                        <option value="">Seleccionar…</option>
+                        <option value="diagnostic">Diagnóstica inicial</option>
+                        <option value="confirmatory_as">Confirmatoria (AS)</option>
+                        <option value="surveillance_as">Surveillance (AS)</option>
+                        <option value="salvage_post_rt">Post-RT salvage</option>
+                        <option value="post_focal_followup">Post-focal seguimiento</option>
+                    </select>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--pn-text-muted)">
+                    Gleason primario <span style="color:#fbbf24">*</span>
+                    <select class="pm2-append-form-input" name="gleason_primary" required>
+                        <option value="">…</option><option>3</option><option>4</option><option>5</option>
+                    </select>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--pn-text-muted)">
+                    Gleason secundario <span style="color:#fbbf24">*</span>
+                    <select class="pm2-append-form-input" name="gleason_secondary" required>
+                        <option value="">…</option><option>3</option><option>4</option><option>5</option>
+                    </select>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--pn-text-muted)">
+                    ISUP grade <span style="color:#fbbf24">*</span>
+                    <select class="pm2-append-form-input" name="isup_grade" required>
+                        <option value="">…</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>
+                    </select>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--pn-text-muted)">
+                    Total cores biopsiados <span style="color:#fbbf24">*</span>
+                    <input type="number" min="1" max="50" class="pm2-append-form-input"
+                           name="total_cores" placeholder="ej. 12" required>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--pn-text-muted)">
+                    Cores positivos <span style="color:#fbbf24">*</span>
+                    <input type="number" min="0" max="50" class="pm2-append-form-input"
+                           name="positive_cores" placeholder="ej. 4" required>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--pn-text-muted)">
+                    % patrón 4 (si aplica)
+                    <input type="number" min="0" max="100" class="pm2-append-form-input"
+                           name="percent_pattern_4" placeholder="0-100">
+                </label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--pn-text-muted)">
+                    Invasión perineural
+                    <select class="pm2-append-form-input" name="perineural_invasion">
+                        <option value="">…</option>
+                        <option value="0">Ausente</option>
+                        <option value="1">Presente</option>
+                    </select>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:.74rem;color:var(--pn-text-muted)">
+                    Margin status (post-RP solo)
+                    <select class="pm2-append-form-input" name="margin_status">
+                        <option value="">…</option>
+                        <option value="negative">Negativo</option>
+                        <option value="positive_focal">Positivo focal</option>
+                        <option value="positive_extensive">Positivo extenso</option>
+                        <option value="not_applicable">N/A (no RP)</option>
+                    </select>
+                </label>
+                <div style="grid-column: 1 / -1; display:flex; justify-content:flex-end; padding-top:8px;">
+                    <button type="button" class="pm2-btn pm2-btn--primary"
+                            onclick="pm2SaveBiopsyCapture(this)"
+                            style="padding:10px 20px;">
+                        💾 Guardar reporte histopatológico
+                    </button>
+                </div>
+                <div data-feedback="biopsy_capture"
+                     style="grid-column: 1 / -1; min-height:18px; font-size:.78rem; color:var(--pn-text-muted);"></div>
+            </div>
+        </section>
+
         {# ── PSA section ── #}
-        <section id="section-psa_new" class="pm2-append-section">
+        <section id="section-psa_new" class="pm2-append-section"
+                 {% if moment_filter == 'psa_new' %}data-auto-open="1"{% endif %}>
             <div class="pm2-append-section-head">
                 <div class="pm2-append-section-icon">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 17l6-6 4 4 8-8"/></svg>
@@ -337,12 +453,17 @@
                     <option>Siemens Atellica</option>
                 </select>
                 <input type="text" class="pm2-append-form-input" placeholder="Context (opcional)" name="psa_context">
-                <button type="button" class="pm2-btn pm2-btn--primary pm2-append-form-add" onclick="pm2AppendRow(this, 'psa')">+ Añadir</button>
+                <button type="button" class="pm2-btn pm2-btn--primary pm2-append-form-add"
+                        onclick="pm2AppendRow(this, 'psa')"
+                        style="padding:10px 18px; font-weight:700;">
+                    💾 Guardar medición PSA
+                </button>
             </div>
         </section>
 
         {# ── Testosterone section ── #}
-        <section id="section-testosterone_history" class="pm2-append-section">
+        <section id="section-testosterone_history" class="pm2-append-section"
+                 {% if moment_filter == 'testosterone' or moment_filter == 'testosterone_history' %}data-auto-open="1"{% endif %}>
             <div class="pm2-append-section-head">
                 <div class="pm2-append-section-icon">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v8m-4-4h8M7 3h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
@@ -379,7 +500,11 @@
                 <input type="date" class="pm2-append-form-input" name="date" required>
                 <input type="number" step="0.1" min="0" class="pm2-append-form-input" placeholder="Valor (ng/dL)" name="value" required>
                 <input type="text" class="pm2-append-form-input" placeholder="Context (ADT continua / verificación CRPC)" name="context">
-                <button type="button" class="pm2-btn pm2-btn--primary pm2-append-form-add" onclick="pm2AppendRow(this, 'testosterone')">+ Añadir</button>
+                <button type="button" class="pm2-btn pm2-btn--primary pm2-append-form-add"
+                        onclick="pm2AppendRow(this, 'testosterone')"
+                        style="padding:10px 18px; font-weight:700;">
+                    💾 Guardar testosterona
+                </button>
             </div>
         </section>
 
@@ -1333,6 +1458,115 @@ window.addEventListener('storage', (e) => {
         if (window.pm2Toast) window.pm2Toast('info', '↻ Datos longitudinales actualizados desde otra pestaña');
     }
 });
+
+/* ─────────────────────────────────────────────────────────────────────
+ * BUG FIX 2026-05-17 — Biopsy capture (Reporte de Patología)
+ * Wrapper dedicado para POST kind="biopsy" + auto-open de la sección
+ * cuando URL trae ?moment=biopsy_capture (CTA del patient_profile_v2).
+ * ───────────────────────────────────────────────────────────────────── */
+async function pm2SaveBiopsyCapture(btn) {
+    const form = btn.closest('.pm2-append-form');
+    if (!form) return;
+    const feedback = form.querySelector('[data-feedback="biopsy_capture"]');
+    const getVal = (name) => form.querySelector(`[name="${name}"]`)?.value || '';
+    const required = ['biopsy_date', 'biopsy_route', 'biopsy_context',
+                       'gleason_primary', 'gleason_secondary', 'isup_grade',
+                       'total_cores', 'positive_cores'];
+    const missing = required.filter(n => !getVal(n));
+    if (missing.length) {
+        if (feedback) {
+            feedback.style.color = '#ef4444';
+            feedback.textContent = '⚠ Faltan campos requeridos: ' + missing.join(', ');
+        }
+        return;
+    }
+    const totalCores = parseInt(getVal('total_cores'), 10);
+    const posCores = parseInt(getVal('positive_cores'), 10);
+    if (posCores > totalCores) {
+        if (feedback) {
+            feedback.style.color = '#ef4444';
+            feedback.textContent = '⚠ Cores positivos (' + posCores + ') no puede ser mayor que total cores (' + totalCores + ').';
+        }
+        return;
+    }
+    const payload = {
+        biopsy_date: getVal('biopsy_date'),
+        biopsy_route: getVal('biopsy_route'),
+        biopsy_context: getVal('biopsy_context'),
+        gleason_primary: parseInt(getVal('gleason_primary'), 10),
+        gleason_secondary: parseInt(getVal('gleason_secondary'), 10),
+        isup_grade: parseInt(getVal('isup_grade'), 10),
+        total_cores: totalCores,
+        positive_cores: posCores,
+    };
+    const pct4 = getVal('percent_pattern_4');
+    if (pct4 !== '') payload.percent_pattern_4 = parseInt(pct4, 10);
+    const pni = getVal('perineural_invasion');
+    if (pni !== '') payload.perineural_invasion = pni === '1';
+    const margin = getVal('margin_status');
+    if (margin !== '') payload.margin_status = margin;
+
+    btn.disabled = true;
+    const origLabel = btn.textContent;
+    btn.textContent = '⏳ Guardando…';
+    if (feedback) { feedback.style.color = '#94a3b8'; feedback.textContent = 'Guardando reporte histopatológico…'; }
+    try {
+        const res = await fetch(`/api/longitudinal/${encodeURIComponent(PM2_NSS)}/append`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind: 'biopsy', payload }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body.success === false) {
+            if (feedback) {
+                feedback.style.color = '#ef4444';
+                feedback.textContent = '✗ Error ' + res.status + ': ' + (body.error || 'unknown');
+            }
+            return;
+        }
+        if (feedback) {
+            feedback.style.color = '#10b981';
+            feedback.textContent = '✓ Reporte histopatológico guardado · ISUP ' +
+                payload.isup_grade + ' · ' + payload.positive_cores + '/' + payload.total_cores + ' cores positivos. Refrescando…';
+        }
+        if (window.pm2Toast) window.pm2Toast('success', '✓ Biopsia guardada · Decisión recomputada');
+        // Cross-tab broadcast
+        try {
+            localStorage.setItem('pm2_capture_event', JSON.stringify({
+                nss: PM2_NSS, kind: 'biopsy', ts: Date.now(),
+                decision_changed: !!body.decision_changed,
+            }));
+        } catch (e) { /* ignore quota */ }
+        setTimeout(() => { window.location.href = '/patient_profile/' + encodeURIComponent(PM2_NSS); }, 1500);
+    } catch (err) {
+        if (feedback) {
+            feedback.style.color = '#ef4444';
+            feedback.textContent = '✗ Network: ' + (err && err.message ? err.message : err);
+        }
+    } finally {
+        btn.disabled = false;
+        btn.textContent = origLabel;
+    }
+}
+
+/* Auto-scroll + highlight a la sección si URL trae ?moment=... */
+(function autoOpenMomentSection() {
+    const autoSec = document.querySelector('section[data-auto-open="1"]');
+    if (!autoSec) return;
+    setTimeout(() => {
+        autoSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        autoSec.style.transition = 'box-shadow 600ms ease, border-color 600ms ease';
+        autoSec.style.boxShadow = '0 0 0 3px rgba(99,102,241,.45)';
+        autoSec.style.borderColor = 'rgba(99,102,241,.85)';
+        setTimeout(() => {
+            autoSec.style.boxShadow = '';
+            autoSec.style.borderColor = '';
+            // Focus primer input requerido
+            const firstReq = autoSec.querySelector('input[required], select[required]');
+            if (firstReq) firstReq.focus();
+        }, 2200);
+    }, 250);
+})();
 </script>
 </body>
 </html>
