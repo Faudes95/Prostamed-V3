@@ -7578,6 +7578,107 @@ def api_intake_tier1_classify():
     })
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# EPIC 44.C FAUBOT 2026-05-17 CXXVI — Tier 2 Asistente por estadio (sin overlap)
+# ─────────────────────────────────────────────────────────────────────────────
+# UX: tras Tier 1 → state resolved → Tier 2 expone schema específico del
+# estadio EXCLUYENDO los 15 anchor ya capturados en Tier 1 (overlap filter).
+# Banner contextual: "X fields nuevos para tu paciente <state>".
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.route("/intake/tier2/<state>", methods=["GET"])
+def intake_tier2(state: str):
+    """EPIC 44.C — Tier 2 Asistente por estadio.
+
+    Renderiza `templates/intake_tier2.html` con el schema del estadio
+    EXCLUYENDO overlap Tier 1. Banner contextual indica cuántos fields
+    nuevos hay vs cuántos ya se capturaron en Tier 1.
+
+    Query params:
+      ?nss=<NSS>  → opcional, identifica al paciente para persist + redirect
+                    al perfil; si omitido el Tier 2 funciona en modo
+                    "captura standalone" (draft localStorage únicamente).
+
+    Beneficio clínico tangible: el clínico que viene de Tier 1 ve solo
+    los fields refinement que faltan para su paciente <state>, en lugar
+    de los 528-671 totales del estadio (que incluyen los 15 anchor ya
+    capturados + cross-cutting PROs/comorbidities/family).
+    """
+    from prostanet.presentation.v2_adapters import stage_specific_intake_schema
+
+    nss = (request.args.get("nss") or "").strip()
+    schema = stage_specific_intake_schema(state, exclude_tier1_overlap=True)
+
+    try:
+        page_chrome = build_page_chrome(
+            "intake_tier2",
+            f"Tier 2 · Asistente · {state}",
+            f"{schema['required_count'] + schema['decision_refiner_count']} "
+            f"fields nuevos para refinar la recomendación clínica de "
+            f"{state} (los anchor NCCN Tier 1 no se repiten).",
+            content_width_class="max-w-7xl",
+        )
+    except NameError:
+        page_chrome = {
+            "title": "Tier 2 Asistente", "subtitle": state,
+            "content_width_class": "max-w-7xl",
+        }
+
+    return render_template(
+        "intake_tier2.html",
+        page_chrome=page_chrome,
+        schema=schema,
+        nss=nss,
+    )
+
+
+@app.route("/api/intake/tier2/<state>", methods=["GET", "POST"])
+def api_intake_tier2(state: str):
+    """EPIC 44.C — Endpoint Tier 2 dual GET/POST.
+
+    GET → retorna schema filtrado (JSON) para consumo programático.
+    POST → persiste fields capturados al paciente identificado por ?nss=
+           (en modo MVP retorna echo del payload + nss + state para que
+           el frontend pueda confirmar; persistencia real delegada a
+           endpoint existente `/api/intake/persist-state-fields` cuando
+           esté wired — fuera del scope EPIC 44.C iteración 1).
+
+    Query params:
+      ?nss=<NSS> → identifica paciente para persist
+      ?include_tier1=1 → no filtra overlap (retorna schema completo)
+    """
+    from prostanet.presentation.v2_adapters import stage_specific_intake_schema
+
+    nss = (request.args.get("nss") or "").strip()
+    include_tier1 = request.args.get("include_tier1", "").strip() in ("1", "true", "yes")
+
+    if request.method == "GET":
+        schema = stage_specific_intake_schema(
+            state, exclude_tier1_overlap=not include_tier1,
+        )
+        return jsonify({
+            "success": True,
+            "tier": 2 if not include_tier1 else None,
+            "state": state,
+            "nss": nss or None,
+            "schema": schema,
+        })
+
+    # POST — echo + ack (persistencia real delegada)
+    payload = request.get_json(silent=True) or {}
+    return jsonify({
+        "success": True,
+        "tier": 2,
+        "state": state,
+        "nss": nss or None,
+        "fields_submitted": len([k for k, v in payload.items() if v]),
+        "received_keys": sorted(payload.keys()),
+        "audit_note": "Tier 2 POST · FAUBOT CXXVI · persistencia real en próxima iteración",
+        "next_action": f"/patient/{nss}?v=2" if nss else "/patients",
+    })
+
+
 @app.route("/intake/smart", methods=["GET"])
 def intake_smart_capture():
     """EPIC 43.4 — Smart Capture intake (single-page, dynamic, intelligent).

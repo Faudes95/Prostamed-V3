@@ -68,7 +68,16 @@ from typing import Any
 # display_options EPIC 44.A propagados. Beneficio clínico tangible:
 # captura de paciente nuevo 15-20min → <60s a estadio canónico. 17/17 tests
 # EPIC 44.B + 558 regression PASS).
-FAUBOT_RELEASE = "2026-05-17 CXXV"
+# → CXXVI (EPIC 44.C: Tier 2 Asistente por estadio sin overlap — extiende
+# stage_specific_intake_schema con `exclude_tier1_overlap=True` que filtra
+# fields cuyo nombre coincide con whitelist Tier 1 (3-8 fields por estadio
+# según overlap real). NUEVO route GET /intake/tier2/<state>?nss=<NSS>
+# + endpoint dual GET/POST /api/intake/tier2/<state> (GET retorna schema
+# JSON, POST echo con ack + next_action). NUEVO template intake_tier2.html
+# (350 LOC) con banner contextual "X fields nuevos para tu paciente <state>"
+# + chip Tier 1 capturado + role accordions (required/decision_refiner/
+# monitoring/optional). 16/16 tests EPIC 44.C + 574 regression PASS).
+FAUBOT_RELEASE = "2026-05-17 CXXVI"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

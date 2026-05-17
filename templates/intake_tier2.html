@@ -1,0 +1,399 @@
+{# EPIC 44.C FAUBOT 2026-05-17 CXXVI — Tier 2 Asistente por estadio (sin overlap)
+
+   Renderiza el schema específico del estadio resuelto en Tier 1,
+   EXCLUYENDO los fields ya capturados en Tier 1 (overlap=15 fields anchor).
+   Banner contextual: "Asistente · X fields nuevos para <state>".
+
+   Diseño:
+     - Hero con estado canónico (e.g., "mCSPC bajo volumen sincrónico"),
+       contador de fields nuevos, link "ver Tier 1" para editar el anchor
+     - Sections agrupadas por clinical_role (required → decision_refiner →
+       monitoring → optional) con accordions expandibles
+     - display_options (EPIC 44.A) propagados
+     - Conditional_visibility honored (data-cv)
+     - Footer link "ver schema completo (incluye Tier 1)" como Smart Capture
+#}
+{% extends "layouts/base_clinical.html" %}
+{% from "components/pm2_sidebar.html" import pm2_sidebar %}
+
+{% block head_extra %}
+{{ super() if super }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
+<style>
+:root {
+  --t2-bg-deep: #0a0e1a;
+  --t2-bg-card: rgba(15, 23, 42, 0.7);
+  --t2-border: rgba(168, 85, 247, 0.3);  /* purple-ish para diferenciar de Tier 1 indigo */
+  --t2-text-main: #e2e8f0;
+  --t2-text-dim: #94a3b8;
+  --t2-accent: rgb(168, 85, 247);
+  --t2-accent-soft: rgba(168, 85, 247, 0.15);
+  --t2-tier1-soft: rgba(99, 102, 241, 0.12);
+  --t2-required: rgb(248, 113, 113);
+  --t2-success: rgb(74, 222, 128);
+}
+.t2-shell { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh;
+            background: linear-gradient(135deg, var(--t2-bg-deep) 0%, #0f172a 100%); }
+@media (max-width: 768px) { .t2-shell { grid-template-columns: 1fr; } .pm2-sidebar { display: none; } }
+.t2-main { padding: 1.5rem 2rem 4rem; min-width: 0; }
+
+.t2-banner {
+  background: linear-gradient(135deg, var(--t2-bg-card) 0%, rgba(30, 41, 59, 0.6) 100%);
+  border: 1px solid var(--t2-border);
+  border-radius: 14px;
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 1.5rem;
+}
+.t2-tier-chip {
+  display: inline-block;
+  background: var(--t2-accent-soft);
+  border: 1px solid var(--t2-border);
+  color: var(--t2-accent);
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+.t2-banner h1 {
+  color: var(--t2-text-main); font-size: 1.5rem; margin: 0 0 0.25rem;
+  font-weight: 700; letter-spacing: -0.01em;
+}
+.t2-state-tag {
+  display: inline-block;
+  background: rgba(74, 222, 128, 0.15);
+  color: var(--t2-success);
+  padding: 0.125rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.8125rem; font-family: ui-monospace, "SF Mono", monospace;
+  font-weight: 600;
+  margin-left: 0.5rem;
+}
+.t2-banner-tagline { color: var(--t2-text-dim); font-size: 0.875rem; margin: 0.5rem 0 0; line-height: 1.5; }
+.t2-banner-metrics { display: flex; gap: 0.875rem; margin-top: 1rem; flex-wrap: wrap; }
+.t2-metric {
+  background: var(--t2-bg-deep);
+  border: 1px solid var(--t2-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.8125rem;
+  color: var(--t2-text-main);
+}
+.t2-metric strong { color: var(--t2-accent); font-weight: 700; }
+.t2-metric.t2-metric-tier1 { background: var(--t2-tier1-soft); border-color: rgba(99, 102, 241, 0.4); }
+.t2-metric.t2-metric-tier1 strong { color: rgb(165, 180, 252); }
+
+.t2-tier1-info {
+  background: var(--t2-tier1-soft);
+  border-left: 3px solid rgb(99, 102, 241);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.5rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  font-size: 0.8125rem; color: var(--t2-text-main);
+}
+.t2-tier1-info a { color: rgb(165, 180, 252); text-decoration: none; font-weight: 600; }
+.t2-tier1-info a:hover { text-decoration: underline; }
+
+.t2-role-section {
+  background: var(--t2-bg-card);
+  border: 1px solid var(--t2-border);
+  border-radius: 12px;
+  margin-bottom: 1.25rem;
+  overflow: hidden;
+}
+.t2-role-header {
+  padding: 1rem 1.5rem;
+  background: rgba(15, 23, 42, 0.6);
+  border-bottom: 1px solid rgba(168, 85, 247, 0.15);
+  display: flex; justify-content: space-between; align-items: center;
+  cursor: pointer;
+}
+.t2-role-title {
+  color: var(--t2-text-main); font-size: 0.9375rem; font-weight: 600;
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.t2-role-badge {
+  background: var(--t2-accent-soft); color: var(--t2-accent);
+  padding: 0.125rem 0.5rem; border-radius: 999px;
+  font-size: 0.6875rem; font-weight: 700;
+}
+.t2-role-body { padding: 1.25rem 1.5rem; }
+.t2-role-section.is-collapsed .t2-role-body { display: none; }
+.t2-role-toggle { background: none; border: none; color: var(--t2-text-dim); cursor: pointer;
+                   font-size: 1rem; padding: 0; }
+
+.t2-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem 1.25rem;
+}
+.t2-field { display: flex; flex-direction: column; gap: 0.375rem; }
+.t2-field.is-cv { opacity: 0; pointer-events: none; max-height: 0; overflow: hidden;
+                   transition: opacity 0.2s, max-height 0.25s; }
+.t2-field.is-cv.is-visible { opacity: 1; pointer-events: auto; max-height: 200px; }
+.t2-label { color: var(--t2-text-main); font-size: 0.8125rem; font-weight: 600;
+            display: flex; align-items: center; gap: 0.375rem; }
+.t2-required { color: var(--t2-required); font-weight: 700; }
+.t2-input, .t2-select {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  border-radius: 8px; padding: 0.5rem 0.75rem;
+  color: var(--t2-text-main); font-size: 0.875rem;
+}
+.t2-input:focus, .t2-select:focus {
+  outline: none; border-color: var(--t2-accent);
+  box-shadow: 0 0 0 3px var(--t2-accent-soft);
+}
+.t2-select option { background: #0f172a; color: var(--t2-text-main); }
+.t2-help-text { color: var(--t2-text-dim); font-size: 0.75rem; margin: 0; font-style: italic; }
+
+.t2-cta-bar {
+  position: sticky; bottom: 0;
+  background: linear-gradient(180deg, transparent 0%, var(--t2-bg-deep) 30%);
+  padding: 1.5rem 0 1rem;
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 1rem; margin-top: 2rem;
+}
+.t2-cta-status { color: var(--t2-text-dim); font-size: 0.8125rem; }
+.t2-btn { background: var(--t2-accent); color: white; border: none;
+          padding: 0.75rem 1.5rem; border-radius: 8px; font-size: 0.9375rem;
+          font-weight: 600; cursor: pointer; }
+.t2-btn:hover { background: rgb(147, 51, 234); }
+.t2-btn:disabled { background: #475569; cursor: not-allowed; }
+.t2-btn-ghost { background: transparent; border: 1px solid var(--t2-border); color: var(--t2-text-main); }
+.t2-btn-ghost:hover { background: var(--t2-accent-soft); }
+
+.t2-empty {
+  color: var(--t2-text-dim); padding: 2rem; text-align: center;
+  border: 1px dashed var(--t2-border); border-radius: 8px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="t2-shell">
+  {{ pm2_sidebar(active='intake_tier2') }}
+
+  <section class="t2-main" role="region" aria-label="Captura Tier 2 por estadio">
+    <header class="t2-banner">
+      <span class="t2-tier-chip">Tier 2 · Asistente</span>
+      <h1>
+        Refinement clínico para
+        <span class="t2-state-tag">{{ schema.state }}</span>
+      </h1>
+      <p class="t2-banner-tagline">
+        {% if schema.tier1_excluded_count and schema.tier1_excluded_count > 0 %}
+          <strong style="color:var(--t2-text-main);">
+            {{ schema.required_count + schema.decision_refiner_count }} fields nuevos
+          </strong>
+          que afinan la recomendación clínica para
+          <strong style="color:var(--t2-accent);">{{ schema.state }}</strong> ·
+          Los {{ schema.tier1_excluded_count }} anchor NCCN ya capturados en Tier 1
+          no se repiten aquí.
+        {% else %}
+          Schema completo del estadio <strong>{{ schema.state }}</strong>
+          (incluye los anchor Tier 1 — no se aplicó el filtro de overlap).
+        {% endif %}
+      </p>
+      <div class="t2-banner-metrics">
+        <span class="t2-metric"><strong>{{ schema.required_count }}</strong> requeridos</span>
+        <span class="t2-metric"><strong>{{ schema.decision_refiner_count }}</strong> afinan decisión</span>
+        <span class="t2-metric"><strong>{{ schema.monitoring_count }}</strong> monitoreo</span>
+        {% if schema.tier1_excluded_count and schema.tier1_excluded_count > 0 %}
+        <span class="t2-metric t2-metric-tier1">
+          <strong>{{ schema.tier1_excluded_count }}</strong> ya capturados en Tier 1
+        </span>
+        {% endif %}
+        <span class="t2-metric">FAUBOT <strong>CXXVI</strong></span>
+      </div>
+    </header>
+
+    {% if schema.tier1_excluded_count and schema.tier1_excluded_count > 0 %}
+    <div class="t2-tier1-info">
+      <div>
+        ✓ Tier 1 completado · Anchor NCCN capturados:
+        <code style="color:rgb(165, 180, 252);">{{ schema.tier1_captured_codes|join(', ') }}</code>
+      </div>
+      <a href="/intake/tier1{% if nss %}?nss={{ nss }}{% endif %}">Editar Tier 1 →</a>
+    </div>
+    {% endif %}
+
+    <form id="t2Form" novalidate>
+      {# Render por clinical_role (required → decision_refiner → monitoring → optional) #}
+      {% set roles_meta = [
+        ('required', 'Requeridos para refinar', 'Críticos NCCN/EAU', false),
+        ('decision_refiner', 'Afinan la recomendación', 'Decisión clínica', false),
+        ('monitoring', 'Monitoreo / seguimiento', 'PROs + lab + imagen', true),
+        ('optional', 'Opcionales / investigación', 'Bio / trial / SDM', true),
+      ] %}
+      {% for role_key, role_title, role_subtitle, collapsed_default in roles_meta %}
+        {% set role_fields = schema.by_role[role_key] %}
+        {% if role_fields %}
+        <section class="t2-role-section{% if collapsed_default %} is-collapsed{% endif %}"
+                 data-role="{{ role_key }}">
+          <header class="t2-role-header" onclick="this.parentElement.classList.toggle('is-collapsed')">
+            <div class="t2-role-title">
+              {{ role_title }}
+              <span class="t2-role-badge">{{ role_fields|length }}</span>
+            </div>
+            <button type="button" class="t2-role-toggle" aria-label="Expandir / colapsar">
+              {% if collapsed_default %}▸{% else %}▾{% endif %}
+            </button>
+          </header>
+          <div class="t2-role-body">
+            <div class="t2-field-grid">
+              {% for f in role_fields %}
+              {% set cv = f.conditional_visibility %}
+              <div class="t2-field{% if cv %} is-cv{% endif %}"
+                   {% if cv %}data-cv='{{ cv|tojson|safe }}'{% endif %}
+                   data-field-name="{{ f.name }}">
+                <label class="t2-label" for="t2-fld-{{ f.name }}">
+                  {{ f.label }}
+                  {% if f.required %}<span class="t2-required">*</span>{% endif %}
+                  {% if f.unit %}<span style="color:var(--t2-text-dim);font-weight:normal;">({{ f.unit }})</span>{% endif %}
+                </label>
+                {% set ftype = f.field_type %}
+                {% if ftype == 'select' %}
+                <select class="t2-select" id="t2-fld-{{ f.name }}" name="{{ f.name }}" data-t2-field="{{ f.name }}">
+                  {% set _opts = f.display_options or f.options or [] %}
+                  {% for opt in _opts %}
+                    {% if opt is mapping %}
+                      {% set _val = opt.value %}{% set _lbl = opt.label if opt.label is not none else _val %}
+                    {% else %}
+                      {% set _val = opt %}{% set _lbl = opt %}
+                    {% endif %}
+                  <option value="{{ _val }}"{% if f.default == _val %} selected{% endif %}>{{ _lbl }}</option>
+                  {% endfor %}
+                </select>
+                {% elif ftype == 'date' %}
+                <input type="date" class="t2-input" id="t2-fld-{{ f.name }}" name="{{ f.name }}" data-t2-field="{{ f.name }}">
+                {% elif ftype == 'number' %}
+                <input type="number" class="t2-input" id="t2-fld-{{ f.name }}" name="{{ f.name }}"
+                       data-t2-field="{{ f.name }}" step="{{ f.step or 'any' }}"
+                       {% if f.min_value is defined %}min="{{ f.min_value }}"{% endif %}
+                       {% if f.max_value is defined %}max="{{ f.max_value }}"{% endif %}>
+                {% elif ftype == 'textarea' %}
+                <textarea class="t2-input" id="t2-fld-{{ f.name }}" name="{{ f.name }}"
+                          data-t2-field="{{ f.name }}" rows="2"></textarea>
+                {% else %}
+                <input type="text" class="t2-input" id="t2-fld-{{ f.name }}" name="{{ f.name }}" data-t2-field="{{ f.name }}">
+                {% endif %}
+                {% if f.help_text %}<p class="t2-help-text">{{ f.help_text[:140] }}</p>{% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </section>
+        {% endif %}
+      {% endfor %}
+
+      {% if not schema.by_role.required and not schema.by_role.decision_refiner and not schema.by_role.monitoring and not schema.by_role.optional %}
+      <div class="t2-empty">
+        Schema vacío — Tier 1 ya capturó todo lo necesario para este estadio.
+        <br><br>
+        <a href="/{% if nss %}patient/{{ nss }}{% else %}patients{% endif %}"
+           style="color:var(--t2-accent);text-decoration:none;font-weight:600;">
+          Ir al perfil del paciente →
+        </a>
+      </div>
+      {% endif %}
+
+      <div class="t2-cta-bar">
+        <div class="t2-cta-status" id="t2Status">
+          {% if schema.required_count > 0 %}
+            Completa los <strong>{{ schema.required_count }}</strong> fields requeridos para guardar
+          {% else %}
+            Sin fields requeridos — guardar disponible cuando lo desees
+          {% endif %}
+        </div>
+        <div>
+          <button type="button" class="t2-btn t2-btn-ghost" id="t2SaveDraft">Guardar borrador</button>
+          <button type="submit" class="t2-btn" id="t2Submit">Guardar Tier 2 →</button>
+        </div>
+      </div>
+    </form>
+  </section>
+</div>
+
+<script>
+(function() {
+  const STATE = "{{ schema.state }}";
+  const NSS = "{{ nss or '' }}";
+  const STORAGE_KEY = 'prostanet_tier2_draft_' + STATE + '_' + NSS;
+  const form = document.getElementById('t2Form');
+  const status = document.getElementById('t2Status');
+  const saveDraftBtn = document.getElementById('t2SaveDraft');
+
+  function readForm() {
+    const fd = new FormData(form);
+    const out = {};
+    for (const [k, v] of fd.entries()) if (v !== '') out[k] = v;
+    return out;
+  }
+  function isVisible(el) {
+    const cv = el.dataset.cv;
+    if (!cv) return true;
+    try {
+      const spec = JSON.parse(cv);
+      const data = readForm();
+      return Object.entries(spec).every(([k, allowed]) =>
+        Array.isArray(allowed) ? allowed.includes(data[k]) : data[k] === allowed);
+    } catch (e) { return true; }
+  }
+  function applyConditionalVisibility() {
+    document.querySelectorAll('.t2-field.is-cv').forEach(el => {
+      el.classList.toggle('is-visible', isVisible(el));
+    });
+  }
+  function saveDraft() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        ts: new Date().toISOString(), state: STATE, nss: NSS, data: readForm(),
+      }));
+    } catch (e) {}
+  }
+  function restoreDraft() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const { data } = JSON.parse(raw);
+      for (const [k, v] of Object.entries(data || {})) {
+        const el = form.querySelector(`[name="${k}"]`);
+        if (el) el.value = v;
+      }
+    } catch (e) {}
+  }
+
+  form.addEventListener('change', () => { applyConditionalVisibility(); saveDraft(); });
+  saveDraftBtn.addEventListener('click', () => {
+    saveDraft();
+    saveDraftBtn.textContent = '✓ Guardado';
+    setTimeout(() => saveDraftBtn.textContent = 'Guardar borrador', 1500);
+  });
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    // For MVP: POST to /api/intake/tier2/<state>?nss=... (endpoint persists to facts)
+    const url = '/api/intake/tier2/' + STATE + (NSS ? '?nss=' + encodeURIComponent(NSS) : '');
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(readForm()),
+    }).then(r => r.json()).then(res => {
+      if (res.success) {
+        status.innerHTML = '✓ Tier 2 guardado — <a href="/patient/' + NSS + '?v=2" style="color:var(--t2-accent);">ver perfil</a>';
+      } else {
+        status.textContent = 'Error: ' + (res.error || 'desconocido');
+        status.style.color = 'var(--t2-required)';
+      }
+    }).catch(e => {
+      status.textContent = 'Error de red: ' + e.message;
+      status.style.color = 'var(--t2-required)';
+    });
+  });
+
+  restoreDraft();
+  applyConditionalVisibility();
+})();
+</script>
+{% endblock %}

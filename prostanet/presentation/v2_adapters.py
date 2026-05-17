@@ -4001,7 +4001,9 @@ def tier1_classifier_schema() -> dict[str, Any]:
     }
 
 
-def stage_specific_intake_schema(state: str) -> dict[str, Any]:
+def stage_specific_intake_schema(
+    state: str, *, exclude_tier1_overlap: bool = False
+) -> dict[str, Any]:
     """Carga el SCHEMA COMPLETO del estadio clasificado.
 
     Principio: NO ELIMINA campos. Sólo filtra al schema correspondiente al
@@ -4011,10 +4013,19 @@ def stage_specific_intake_schema(state: str) -> dict[str, Any]:
     Args:
         state: estado canónico retornado por state_classifier
             (e.g., "m1_crpc", "mcspc_high_volume_sync", "localized_initial").
+        exclude_tier1_overlap: si True (default False), filtra los fields
+            que coinciden EXACTAMENTE por nombre con el whitelist Tier 1
+            (EPIC 44.C). Útil para `/intake/tier2/<state>` que ya recibió
+            esos fields en Tier 1 y no debe re-pedirlos. Los fields
+            filtrados se reportan en `tier1_captured_codes` y
+            `tier1_excluded_count` para que la UI muestre "X fields ya
+            capturados en Tier 1".
 
     Returns:
         Dict con shape v2: {module, title, description, fields,
-                            field_groups, by_role, conditional_logic_count}.
+                            field_groups, by_role, conditional_logic_count,
+                            tier, tier1_captured_codes (solo si excluded),
+                            tier1_excluded_count}.
         Si state no se reconoce, retorna diagnostic_workup como fallback seguro.
     """
     import importlib
@@ -4054,6 +4065,28 @@ def stage_specific_intake_schema(state: str) -> dict[str, Any]:
             }
 
     fields = _with_display_options({"fields": list(schema.get("fields") or [])})["fields"]
+
+    # EPIC 44.C — Tier 2 overlap filtering. Si exclude_tier1_overlap=True,
+    # filtra los fields cuyo nombre coincide EXACTAMENTE con el whitelist
+    # Tier 1 (`_TIER1_FIELD_NAMES_ORDERED`). Esto evita re-pedir al clínico
+    # los 15 anchor que ya capturó. Los excluidos se exponen en
+    # `tier1_captured_codes` para que la UI muestre "ya capturado en Tier 1".
+    tier1_captured: list[str] = []
+    if exclude_tier1_overlap:
+        tier1_set = set(_TIER1_FIELD_NAMES_ORDERED)
+        kept: list[dict] = []
+        for f in fields:
+            fname = str(f.get("name") or "")
+            if fname in tier1_set:
+                tier1_captured.append(fname)
+                continue
+            # Mark survivor as tier=2 + tier2_exclusive=True para downstream
+            # filtering/sorting/UI badge.
+            f = dict(f)
+            f["tier"] = 2
+            f["tier2_exclusive"] = True
+            kept.append(f)
+        fields = kept
 
     # Group by clinical_role (required/decision_refiner/monitoring/optional)
     by_role: dict[str, list[dict]] = {
@@ -4098,6 +4131,11 @@ def stage_specific_intake_schema(state: str) -> dict[str, Any]:
         "optional_count": len(by_role["optional"]),
         "conditional_logic_count": conditional_count,
         "evidence_basis": "NCCN 5.2026 + EAU 2026 (schema nativo per stage)",
+        # EPIC 44.C — Tier 2 metadata (presente solo cuando exclude_tier1_overlap=True)
+        "tier": 2 if exclude_tier1_overlap else None,
+        "tier_label": "Tier 2 · Asistente por estadio" if exclude_tier1_overlap else None,
+        "tier1_excluded_count": len(tier1_captured),
+        "tier1_captured_codes": tier1_captured,
     }
 
 
