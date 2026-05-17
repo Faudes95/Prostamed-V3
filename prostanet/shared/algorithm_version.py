@@ -38,9 +38,12 @@ from typing import Any
 # (post-EPIC 30: PSA Tower + GodiBot pass-5) → 2026-05-16 CII (post-EPIC 31)
 # → CIII-CIX (EPIC 33 + EPIC 34.A Phases 1-5) → CX (Phase 6: PSMA-PET capture)
 # → CXI (EPIC 35: classifier alignment) → CXII (EPIC 37: dashboard)
-# → CXIII (EPIC 36: voice quick-capture PoC — Whisper STT + 4 extractors
-# (ECOG/HRR/Castration/PSMA) + ECOG mic UI).
-FAUBOT_RELEASE = "2026-05-17 CXIII"
+# → CXIII (EPIC 36: voice quick-capture PoC) → CXIV (EPIC 36.B-ext: mic UI
+# replicado en 4 cards via shared helper) → CXV (EPIC 38: STT smoke harness)
+# → CXVI (EPIC 39: visual validation harness 5/5 cards+dashboard)
+# → CXVII (EPIC 40: Cortana Dictation Hub — composite extractor + apply mode
+# + Trial Matcher diff before/after).
+FAUBOT_RELEASE = "2026-05-17 CXVII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

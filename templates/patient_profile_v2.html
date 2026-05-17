@@ -21,6 +21,8 @@
     {# LXCI Fase 6 — Transitions framework + hover prefetch #}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2_transitions.css') }}">
     <script src="{{ url_for('static', filename='js/pm2_prefetch.js') }}" defer></script>
+    {# EPIC 36.B-extended — Shared voice quick-capture helper para los 4 cards #}
+    <script src="{{ url_for('static', filename='js/pm2_voice_quick_capture.js') }}" defer></script>
     {# EPIC 33.A — Collapsible sections + HIPAA audit log #}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pm2_collapsible_sections.css', v='epic33a_20260516') }}">
     <script src="{{ url_for('static', filename='js/pm2_collapsible_persistence.js', v='epic33a_20260516') }}" defer></script>
@@ -1087,6 +1089,254 @@
         </details>
         {% endif %}
 
+        {# EPIC 40 — Cortana Dictation Hub
+           Composite voice: una sola transcripción → 4 extractores en paralelo
+           (ECOG + Castration + HRR + PSMA-PET) → dry-run preview → apply →
+           Trial Matcher diff con newly_eligible/newly_ineligible.
+           Disponible siempre (no gated por single card). #}
+        <details class="pm2-section-collapsible" data-section-key="cortana_dictation_hub" data-importance="standard" data-section-label="Cortana Dictation Hub" open>
+        <summary>🎙️ Cortana Dictation Hub · Compose 4 captures en 1 dictado <span class="pm2-section-meta-chip">EPIC 40</span></summary>
+        <section id="pm2CortanaDictationHub" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(99,102,241,.10), rgba(15,23,42,.6)); border: 1px solid rgba(99,102,241,.35); border-left: 6px solid rgb(99,102,241); border-radius: 14px;" aria-label="Cortana Dictation Hub" data-testid="cortana-dictation-hub-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
+                <div>
+                    <div style="font-size:.7rem; color:#a5b4fc; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">🎙️ Composite voice intake</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.05rem; color:#f8fafc; margin:5px 0 0;">Dicta el caso completo · Captura 4 fields + Trial Matcher diff</h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.78rem; line-height:1.5;">
+                        Una sola dictación natural → ProstaMed extrae <strong>ECOG + HRR + Castración + PSMA-PET</strong>
+                        en paralelo + (opcional) aplica todas las captures y muestra qué <strong>trials</strong>
+                        se vuelven elegibles en el Trial Matcher.
+                    </p>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:14px;">
+                <button type="button" id="pm2CortanaHubMicBtn" data-patient-nss="{{ identity.nss }}" data-recording="false"
+                    style="padding:10px 18px; background:rgba(99,102,241,.18); border:1px solid #6366f1; color:#c7d2fe; border-radius:8px; cursor:pointer; font-size:.85rem; font-weight:600; display:inline-flex; align-items:center; gap:6px;">
+                    <span id="pm2CortanaHubMicIcon">🎤</span>
+                    <span id="pm2CortanaHubMicLabel">Dictar caso completo</span>
+                </button>
+                <button type="button" id="pm2CortanaHubTextBtn"
+                    style="padding:10px 14px; background:rgba(15,23,42,.6); border:1px solid #94a3b8; color:#cbd5e1; border-radius:8px; cursor:pointer; font-size:.78rem;">
+                    ⌨ Pegar transcripción
+                </button>
+                <span id="pm2CortanaHubStatus" style="font-size:.7rem; color:#94a3b8;">EPIC 40 · Composite extractor · Whisper STT (es)</span>
+            </div>
+
+            <div id="pm2CortanaHubTextInput" style="display:none; margin-bottom:12px;">
+                <textarea id="pm2CortanaHubTranscriptText" rows="4" placeholder='Ej: "Paciente con ECOG 2, HRR positivo BRCA2 patogénica, PSMA-PET positivo metastásico 8 lesiones SUVmax 22, castración confirmada testosterona 18 ng/dL"'
+                    style="width:100%; padding:10px 12px; background:rgba(15,23,42,.6); border:1px solid rgba(148,163,184,.3); color:#f8fafc; border-radius:8px; font-size:.84rem; font-family:inherit; resize:vertical;"></textarea>
+                <button type="button" id="pm2CortanaHubTextSubmit"
+                    style="margin-top:6px; padding:6px 14px; background:rgba(99,102,241,.18); border:1px solid #6366f1; color:#c7d2fe; border-radius:6px; cursor:pointer; font-size:.78rem;">
+                    Procesar transcripción
+                </button>
+            </div>
+
+            <div id="pm2CortanaHubResult" style="display:none; margin-top:12px;"></div>
+
+            <div style="margin-top:12px; padding:8px 10px; background:rgba(99,102,241,.06); border-left:3px solid rgba(99,102,241,.45); border-radius:6px; font-size:.66rem; color:#c7d2fe;">
+                ⓘ <strong>Flujo</strong>: Dry-run preview → review extractions → "Aplicar todo" persiste 4 captures +
+                muestra Trial Matcher diff. <strong>Captura clinician-verified · HIPAA audit logged.</strong>
+                <br><strong>Compound value</strong>: dictando "HRR BRCA2 + PSMA+ + castrate" puede desbloquear PROfound + PSMAfore + VISION en un solo paso.
+            </div>
+        </section>
+        </details>
+        <script>
+        (function() {
+            const micBtn = document.getElementById('pm2CortanaHubMicBtn');
+            const micIcon = document.getElementById('pm2CortanaHubMicIcon');
+            const micLabel = document.getElementById('pm2CortanaHubMicLabel');
+            const statusEl = document.getElementById('pm2CortanaHubStatus');
+            const resultEl = document.getElementById('pm2CortanaHubResult');
+            const textBtn = document.getElementById('pm2CortanaHubTextBtn');
+            const textInputWrap = document.getElementById('pm2CortanaHubTextInput');
+            const textArea = document.getElementById('pm2CortanaHubTranscriptText');
+            const textSubmit = document.getElementById('pm2CortanaHubTextSubmit');
+            if (!micBtn) return;
+            const patientNss = micBtn.dataset.patientNss;
+
+            let mediaRecorder = null;
+            let audioChunks = [];
+            let mediaStream = null;
+            let lastTranscript = null;
+
+            textBtn.addEventListener('click', () => {
+                textInputWrap.style.display = (textInputWrap.style.display === 'none') ? 'block' : 'none';
+            });
+
+            textSubmit.addEventListener('click', async () => {
+                const txt = textArea.value.trim();
+                if (!txt) {
+                    statusEl.textContent = '⚠ Pega o dicta un texto primero.';
+                    statusEl.style.color = '#fbbf24';
+                    return;
+                }
+                await runDryRun(txt, 'text_input');
+            });
+
+            async function startRecording() {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    statusEl.textContent = '✗ MediaRecorder no soportado.';
+                    statusEl.style.color = '#ef4444';
+                    return;
+                }
+                try {
+                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                } catch (err) {
+                    statusEl.textContent = '✗ Permiso mic denegado: ' + err.message;
+                    statusEl.style.color = '#ef4444';
+                    return;
+                }
+                audioChunks = [];
+                try {
+                    mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm' });
+                } catch (e) {
+                    mediaRecorder = new MediaRecorder(mediaStream);
+                }
+                mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) audioChunks.push(e.data); };
+                mediaRecorder.onstop = async () => {
+                    micIcon.textContent = '⏳';
+                    micLabel.textContent = 'Transcribiendo y extrayendo...';
+                    statusEl.textContent = 'Whisper STT + 4 extractores en paralelo';
+                    statusEl.style.color = '#a855f7';
+                    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const form = new FormData();
+                    form.append('audio', blob, 'cortana_dictation.webm');
+                    form.append('apply_mode', 'dry_run');
+                    try {
+                        const resp = await fetch(`/api/voice/cortana-dictation/${patientNss}`, {
+                            method: 'POST', body: form,
+                        });
+                        const data = await resp.json();
+                        renderResult(data, 'dry_run');
+                    } catch (err) {
+                        statusEl.textContent = '✗ Falló: ' + err.message;
+                        statusEl.style.color = '#ef4444';
+                    } finally {
+                        micIcon.textContent = '🎤';
+                        micLabel.textContent = 'Dictar caso completo';
+                        micBtn.dataset.recording = 'false';
+                        if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+                    }
+                };
+                mediaRecorder.start();
+                micBtn.dataset.recording = 'true';
+                micIcon.textContent = '⏺';
+                micLabel.textContent = 'Parar (10s máx) y procesar';
+                statusEl.textContent = '🔴 Grabando · habla todo el caso en bloque';
+                statusEl.style.color = '#ef4444';
+                setTimeout(() => {
+                    if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+                }, 10000);
+            }
+
+            async function runDryRun(transcript, source) {
+                statusEl.textContent = '⏳ Procesando...';
+                statusEl.style.color = '#a855f7';
+                try {
+                    const resp = await fetch(`/api/voice/cortana-dictation/${patientNss}`, {
+                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({ transcript: transcript, apply_mode: 'dry_run' }),
+                    });
+                    const data = await resp.json();
+                    renderResult(data, 'dry_run');
+                } catch (err) {
+                    statusEl.textContent = '✗ Falló: ' + err.message;
+                    statusEl.style.color = '#ef4444';
+                }
+            }
+
+            function renderResult(data, mode) {
+                resultEl.style.display = 'block';
+                lastTranscript = data.transcript || '';
+                if (!data || !data.success) {
+                    resultEl.innerHTML = `<div style="color:#ef4444; padding:10px;">✗ ${(data && data.error) || 'unknown error'}</div>`;
+                    return;
+                }
+                statusEl.textContent = `✓ ${data.actionable_count} extracción(es) detectada(s) en dry-run`;
+                statusEl.style.color = '#10b981';
+                const ext = data.extractions || {};
+                const fieldRender = (key, label, color, ext) => {
+                    const primary = ext.value !== undefined ? ext.value : ext.status;
+                    if (primary === null || primary === undefined) {
+                        return `<div style="padding:8px 12px; background:rgba(15,23,42,.4); border-radius:6px; border-left:3px solid ${color}; opacity:.5;">
+                            <strong style="color:#94a3b8">${label}</strong>: <span style="font-style:italic">no detectado</span>
+                        </div>`;
+                    }
+                    let extra = '';
+                    if (ext.gene) extra += ` (${ext.gene})`;
+                    if (ext.lesion_count !== null && ext.lesion_count !== undefined) extra += ` · ${ext.lesion_count} lesiones`;
+                    if (ext.suv_max_value !== null && ext.suv_max_value !== undefined) extra += ` · SUVmax ${ext.suv_max_value}`;
+                    if (ext.testosterone_value !== null && ext.testosterone_value !== undefined) extra += ` · T=${ext.testosterone_value} ${ext.testosterone_unit || ''}`;
+                    return `<div style="padding:8px 12px; background:rgba(15,23,42,.4); border-radius:6px; border-left:3px solid ${color};">
+                        <strong style="color:${color}">${label}</strong>: <strong style="color:#86efac">${primary}${extra}</strong>
+                        <small style="color:#94a3b8"> · conf ${(ext.confidence*100).toFixed(0)}%</small>
+                    </div>`;
+                };
+                let html = `<div style="background:rgba(15,23,42,.4); padding:10px 12px; border-radius:6px; margin-bottom:10px;">
+                    <strong style="color:#a5b4fc">Transcripción:</strong> "${data.transcript}"
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:8px; margin-bottom:12px;">
+                    ${fieldRender('ecog', 'ECOG', '#fbbf24', ext.ecog || {})}
+                    ${fieldRender('hrr', 'HRR', '#a855f7', ext.hrr || {})}
+                    ${fieldRender('castration', 'Castración', '#22d3ee', ext.castration || {})}
+                    ${fieldRender('psma_pet', 'PSMA-PET', '#f472b6', ext.psma_pet || {})}
+                </div>`;
+                if (mode === 'dry_run' && data.actionable_count > 0) {
+                    html += `<button type="button" id="pm2CortanaHubApplyBtn"
+                        style="margin-top:6px; padding:8px 16px; background:rgba(16,185,129,.18); border:1px solid #10b981; color:#86efac; border-radius:6px; cursor:pointer; font-size:.84rem; font-weight:600;">
+                        ✓ Aplicar ${data.actionable_count} captura(s) + ver Trial Matcher diff
+                    </button>`;
+                }
+                if (data.trial_matches_diff) {
+                    const diff = data.trial_matches_diff;
+                    html += `<div style="margin-top:12px; padding:10px 12px; background:rgba(16,185,129,.06); border:1px solid rgba(16,185,129,.3); border-radius:6px;">
+                        <strong style="color:#86efac">Trial Matcher diff</strong>: ${diff.before_count} → ${diff.after_count} elegibles
+                        ${diff.newly_eligible.length ? `<br>✨ <strong>Newly eligible</strong>: ${diff.newly_eligible.map(t => `<code style="background:rgba(16,185,129,.15); padding:2px 6px; border-radius:3px;">${t}</code>`).join(' ')}` : ''}
+                        ${diff.newly_ineligible.length ? `<br>⚠ Newly ineligible: ${diff.newly_ineligible.join(', ')}` : ''}
+                        ${(!diff.newly_eligible.length && !diff.newly_ineligible.length) ? '<br><span style="color:#94a3b8">Sin cambios en elegibilidad</span>' : ''}
+                    </div>`;
+                }
+                if (data.captures_applied) {
+                    const okCount = data.captures_applied.filter(c => c.success).length;
+                    html += `<div style="margin-top:10px; font-size:.78rem; color:#94a3b8;">
+                        ${okCount}/${data.captures_applied.length} captures aplicadas a DB.
+                    </div>`;
+                }
+                resultEl.innerHTML = html;
+
+                // Wire apply button if present
+                const applyBtn = document.getElementById('pm2CortanaHubApplyBtn');
+                if (applyBtn) {
+                    applyBtn.addEventListener('click', async () => {
+                        applyBtn.disabled = true;
+                        applyBtn.textContent = 'Aplicando captures...';
+                        try {
+                            const resp = await fetch(`/api/voice/cortana-dictation/${patientNss}`, {
+                                method: 'POST', headers: {'Content-Type':'application/json'},
+                                body: JSON.stringify({ transcript: lastTranscript, apply_mode: 'apply' }),
+                            });
+                            const d2 = await resp.json();
+                            renderResult(d2, 'apply');
+                            // After apply, queue a reload to refresh other cards
+                            setTimeout(() => location.reload(), 3500);
+                        } catch (err) {
+                            applyBtn.textContent = '✗ ' + err.message;
+                            applyBtn.disabled = false;
+                        }
+                    });
+                }
+            }
+
+            micBtn.addEventListener('click', () => {
+                if (micBtn.dataset.recording === 'true') {
+                    if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+                } else {
+                    startRecording();
+                }
+            });
+        })();
+        </script>
+
         {# EPIC 34.A Phase 5 — Castration Confirmation Quick Capture CTA
            Gating: paciente bajo ADT/ARPI activo + castration missing/stale.
            Compound value: castration confirmed → arbiter clasifica CRPC vs HSPC
@@ -1129,9 +1379,23 @@
 
             <div id="pm2CastrationFeedback" style="margin-top:10px; font-size:.74rem; color:#cbd5e1; min-height:18px;"></div>
 
+            {# EPIC 36.B-extended — Voice dictation Castration #}
+            <div style="margin-top:12px; padding:10px 12px; background:rgba(168,85,247,.06); border:1px solid rgba(168,85,247,.25); border-radius:8px;">
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <button type="button" id="pm2CastrationVoiceBtn" data-patient-nss="{{ identity.nss }}" data-recording="false"
+                        style="padding:8px 14px; background:rgba(168,85,247,.15); border:1px solid #a855f7; color:#e9d5ff; border-radius:8px; cursor:pointer; font-size:.78rem; font-weight:600; display:inline-flex; align-items:center; gap:6px;">
+                        <span id="pm2CastrationVoiceIcon">🎤</span>
+                        <span id="pm2CastrationVoiceLabel">Dictar Castración</span>
+                    </button>
+                    <span id="pm2CastrationVoiceStatus" style="font-size:.7rem; color:#94a3b8;">EPIC 36 · Voice PoC · Whisper STT</span>
+                </div>
+                <div id="pm2CastrationVoiceResult" style="margin-top:10px; display:none; padding:8px 10px; background:rgba(15,23,42,.4); border-radius:6px; font-size:.75rem; color:#cbd5e1;"></div>
+            </div>
+
             <div style="margin-top:10px; padding:8px 10px; background:rgba(34,211,238,.06); border-left:3px solid rgba(34,211,238,.4); border-radius:6px; font-size:.66rem; color:#a5f3fc;">
                 ⓘ <strong>AUA standard</strong>: testosterona &lt;50 ng/dL = castración bioquímica. <strong>Captura clinician-verified · HIPAA audit logged.</strong>
                 Warning automático si testo+status inconsistentes. Solo aparece para pacientes ADT/ARPI activos sin castration documentado.
+                <br><strong>Voice</strong> (EPIC 36): di "castración confirmada" o "testosterona 18 ng por decilitro" para auto-detección.
             </div>
         </section>
         </details>
@@ -1182,6 +1446,36 @@
                     }
                 });
             });
+
+            // EPIC 36.B-extended — Voice dictation Castración
+            if (window.pm2SetupVoiceQuickCapture) {
+                window.pm2SetupVoiceQuickCapture({
+                    buttonId: 'pm2CastrationVoiceBtn',
+                    iconId: 'pm2CastrationVoiceIcon',
+                    labelId: 'pm2CastrationVoiceLabel',
+                    statusId: 'pm2CastrationVoiceStatus',
+                    resultId: 'pm2CastrationVoiceResult',
+                    field: 'castration',
+                    fieldLabel: 'Castración',
+                    dictExample: 'castración confirmada testosterona 18 ng/dL',
+                    captureEndpoint: (nss) => `/api/patients/${nss}/castration-capture`,
+                    extractIsEmpty: (ext) => !ext.status,
+                    extractValueLabel: (ext) => {
+                        const t = ext.testosterone_value !== null && ext.testosterone_value !== undefined
+                            ? ` (T=${ext.testosterone_value} ${ext.testosterone_unit || 'ng/dL'})` : '';
+                        return `${ext.status}${t}`;
+                    },
+                    extractConfidenceText: (ext) => `confianza ${(ext.confidence*100).toFixed(0)}%`,
+                    buildCaptureBody: (ext, transcript) => ({
+                        castration_status: ext.status,
+                        testosterone_value: ext.testosterone_value,
+                        testosterone_unit: ext.testosterone_unit || 'ng/dL',
+                        source_type: 'voice_quick_capture_epic36',
+                        notes: `Voice: "${transcript.substring(0, 100)}"`,
+                        actor_session_id: sessionStorage.getItem('pm2_session_id') || '',
+                    }),
+                });
+            }
         })();
         </script>
         {% endif %}
@@ -1248,10 +1542,24 @@
 
             <div id="pm2PsmaPetFeedback" style="margin-top:10px; font-size:.74rem; color:#cbd5e1; min-height:18px;"></div>
 
+            {# EPIC 36.B-extended — Voice dictation PSMA-PET #}
+            <div style="margin-top:12px; padding:10px 12px; background:rgba(168,85,247,.06); border:1px solid rgba(168,85,247,.25); border-radius:8px;">
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <button type="button" id="pm2PsmaVoiceBtn" data-patient-nss="{{ identity.nss }}" data-recording="false"
+                        style="padding:8px 14px; background:rgba(168,85,247,.15); border:1px solid #a855f7; color:#e9d5ff; border-radius:8px; cursor:pointer; font-size:.78rem; font-weight:600; display:inline-flex; align-items:center; gap:6px;">
+                        <span id="pm2PsmaVoiceIcon">🎤</span>
+                        <span id="pm2PsmaVoiceLabel">Dictar PSMA</span>
+                    </button>
+                    <span id="pm2PsmaVoiceStatus" style="font-size:.7rem; color:#94a3b8;">EPIC 36 · Voice PoC · Whisper STT</span>
+                </div>
+                <div id="pm2PsmaVoiceResult" style="margin-top:10px; display:none; padding:8px 10px; background:rgba(15,23,42,.4); border-radius:6px; font-size:.75rem; color:#cbd5e1;"></div>
+            </div>
+
             <div style="margin-top:10px; padding:8px 10px; background:rgba(244,114,182,.06); border-left:3px solid rgba(244,114,182,.4); border-radius:6px; font-size:.66rem; color:#fbcfe8;">
                 ⓘ <strong>NCCN PROS-D v5.2026 + EAU 6.5</strong> · PSMA-PET preferred over conventional imaging para BCR y staging mCRPC.
                 Auto-warning si lesion_count ≤5 con status metastatic, o SUVmax ≥5 con status negative.
                 <strong>Captura clinician-verified · HIPAA audit logged.</strong> Aparece solo en pacientes BCR/CRPC/oligo o PSA rising sin PSMA documentado (o >180d).
+                <br><strong>Voice</strong> (EPIC 36): di "PSMA positivo metastásico 8 lesiones SUVmax 22" o "PSMA negativo" para auto-detección.
             </div>
         </section>
         </details>
@@ -1311,6 +1619,37 @@
                     }
                 });
             });
+
+            // EPIC 36.B-extended — Voice dictation PSMA-PET
+            if (window.pm2SetupVoiceQuickCapture) {
+                window.pm2SetupVoiceQuickCapture({
+                    buttonId: 'pm2PsmaVoiceBtn',
+                    iconId: 'pm2PsmaVoiceIcon',
+                    labelId: 'pm2PsmaVoiceLabel',
+                    statusId: 'pm2PsmaVoiceStatus',
+                    resultId: 'pm2PsmaVoiceResult',
+                    field: 'psma_pet',
+                    fieldLabel: 'PSMA',
+                    dictExample: 'PSMA positivo metastásico 8 lesiones SUVmax 22',
+                    captureEndpoint: (nss) => `/api/patients/${nss}/psma-pet-capture`,
+                    extractIsEmpty: (ext) => !ext.status,
+                    extractValueLabel: (ext) => {
+                        let label = ext.status;
+                        if (ext.lesion_count !== null && ext.lesion_count !== undefined) label += ` · ${ext.lesion_count} lesiones`;
+                        if (ext.suv_max_value !== null && ext.suv_max_value !== undefined) label += ` · SUVmax ${ext.suv_max_value}`;
+                        return label;
+                    },
+                    extractConfidenceText: (ext) => `confianza ${(ext.confidence*100).toFixed(0)}%`,
+                    buildCaptureBody: (ext, transcript) => ({
+                        psma_status: ext.status,
+                        lesion_count: ext.lesion_count,
+                        suv_max_value: ext.suv_max_value,
+                        source_type: 'voice_quick_capture_epic36',
+                        notes: `Voice: "${transcript.substring(0, 100)}"`,
+                        actor_session_id: sessionStorage.getItem('pm2_session_id') || '',
+                    }),
+                });
+            }
         })();
         </script>
         {% endif %}
@@ -1358,10 +1697,24 @@
 
             <div id="pm2HrrFeedback" style="margin-top:10px; font-size:.74rem; color:#cbd5e1; min-height:18px;"></div>
 
+            {# EPIC 36.B-extended — Voice dictation HRR/Germline #}
+            <div style="margin-top:12px; padding:10px 12px; background:rgba(168,85,247,.10); border:1px solid rgba(168,85,247,.35); border-radius:8px;">
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <button type="button" id="pm2HrrVoiceBtn" data-patient-nss="{{ identity.nss }}" data-recording="false"
+                        style="padding:8px 14px; background:rgba(168,85,247,.18); border:1px solid #a855f7; color:#e9d5ff; border-radius:8px; cursor:pointer; font-size:.78rem; font-weight:600; display:inline-flex; align-items:center; gap:6px;">
+                        <span id="pm2HrrVoiceIcon">🎤</span>
+                        <span id="pm2HrrVoiceLabel">Dictar HRR</span>
+                    </button>
+                    <span id="pm2HrrVoiceStatus" style="font-size:.7rem; color:#94a3b8;">EPIC 36 · Voice PoC · Whisper STT</span>
+                </div>
+                <div id="pm2HrrVoiceResult" style="margin-top:10px; display:none; padding:8px 10px; background:rgba(15,23,42,.4); border-radius:6px; font-size:.75rem; color:#cbd5e1;"></div>
+            </div>
+
             <div style="margin-top:10px; padding:8px 10px; background:rgba(168,85,247,.06); border-left:3px solid rgba(168,85,247,.4); border-radius:6px; font-size:.66rem; color:#ddd6fe;">
                 ⓘ <strong>NCCN PROS-A v5.2026</strong> · Germline testing universal en PCa avanzado/metastásico/familia high-risk.
                 <strong>Captura clinician-verified · HIPAA audit logged.</strong>
                 Solo aparece para pacientes ARPI/advanced sin HRR documentado.
+                <br><strong>Voice</strong> (EPIC 36): di "HRR positivo BRCA2 patogénica" o "HRR negativo wild type" para auto-detección.
             </div>
         </section>
         </details>
@@ -1433,6 +1786,31 @@
                     submitHrr(selectedStatus, gene);
                 });
             });
+
+            // EPIC 36.B-extended — Voice dictation HRR/Germline
+            if (window.pm2SetupVoiceQuickCapture) {
+                window.pm2SetupVoiceQuickCapture({
+                    buttonId: 'pm2HrrVoiceBtn',
+                    iconId: 'pm2HrrVoiceIcon',
+                    labelId: 'pm2HrrVoiceLabel',
+                    statusId: 'pm2HrrVoiceStatus',
+                    resultId: 'pm2HrrVoiceResult',
+                    field: 'hrr',
+                    fieldLabel: 'HRR',
+                    dictExample: 'HRR positivo BRCA2 patogénica',
+                    captureEndpoint: (nss) => `/api/patients/${nss}/hrr-capture`,
+                    extractIsEmpty: (ext) => !ext.status,
+                    extractValueLabel: (ext) => `HRR ${ext.status}${ext.gene ? ' (' + ext.gene + ')' : ''}`,
+                    extractConfidenceText: (ext) => `confianza ${(ext.confidence*100).toFixed(0)}%`,
+                    buildCaptureBody: (ext, transcript) => ({
+                        hrr_status: ext.status,
+                        hrr_gene: ext.gene,
+                        source_type: 'voice_quick_capture_epic36',
+                        notes: `Voice: "${transcript.substring(0, 100)}"`,
+                        actor_session_id: sessionStorage.getItem('pm2_session_id') || '',
+                    }),
+                });
+            }
         })();
         </script>
         {% endif %}
@@ -1526,142 +1904,29 @@
                 });
             });
 
-            // EPIC 36 — Voice dictation PoC para ECOG quick-capture
-            const voiceBtn = document.getElementById('pm2EcogVoiceBtn');
-            if (!voiceBtn) return;
-            const voiceIcon = document.getElementById('pm2EcogVoiceIcon');
-            const voiceLabel = document.getElementById('pm2EcogVoiceLabel');
-            const voiceStatus = document.getElementById('pm2EcogVoiceStatus');
-            const voiceResult = document.getElementById('pm2EcogVoiceResult');
-            let mediaRecorder = null;
-            let audioChunks = [];
-            let mediaStream = null;
-
-            async function startRecording() {
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    voiceStatus.textContent = '✗ Tu navegador no soporta MediaRecorder/getUserMedia.';
-                    voiceStatus.style.color = '#ef4444';
-                    return;
-                }
-                try {
-                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                } catch (err) {
-                    voiceStatus.textContent = '✗ Permiso de micrófono denegado: ' + err.message;
-                    voiceStatus.style.color = '#ef4444';
-                    return;
-                }
-                audioChunks = [];
-                try {
-                    mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm' });
-                } catch (e) {
-                    // Fallback: default mime
-                    mediaRecorder = new MediaRecorder(mediaStream);
-                }
-                mediaRecorder.ondataavailable = (e) => {
-                    if (e.data && e.data.size > 0) audioChunks.push(e.data);
-                };
-                mediaRecorder.onstop = async () => {
-                    voiceIcon.textContent = '⏳';
-                    voiceLabel.textContent = 'Transcribiendo...';
-                    voiceStatus.textContent = 'Whisper STT (es) + intent extraction';
-                    voiceStatus.style.color = '#a855f7';
-                    const blob = new Blob(audioChunks, { type: 'audio/webm' });
-                    const form = new FormData();
-                    form.append('audio', blob, 'ecog_dictation.webm');
-                    form.append('patient_ref', voiceBtn.dataset.patientNss);
-                    try {
-                        const resp = await fetch('/api/voice/quick-capture/ecog', { method: 'POST', body: form });
-                        const data = await resp.json();
-                        await renderExtraction(data);
-                    } catch (err) {
-                        voiceStatus.textContent = '✗ STT falló: ' + err.message;
-                        voiceStatus.style.color = '#ef4444';
-                    } finally {
-                        voiceIcon.textContent = '🎤';
-                        voiceLabel.textContent = 'Dictar ECOG';
-                        voiceBtn.dataset.recording = 'false';
-                        if (mediaStream) {
-                            mediaStream.getTracks().forEach(t => t.stop());
-                            mediaStream = null;
-                        }
-                    }
-                };
-                mediaRecorder.start();
-                voiceBtn.dataset.recording = 'true';
-                voiceIcon.textContent = '⏺';
-                voiceLabel.textContent = 'Parar y transcribir';
-                voiceStatus.textContent = '🔴 Grabando · di "ECOG 2" o "performance status uno"';
-                voiceStatus.style.color = '#ef4444';
-                // Auto-stop at 10 seconds
-                setTimeout(() => {
-                    if (mediaRecorder && mediaRecorder.state === 'recording') {
-                        mediaRecorder.stop();
-                    }
-                }, 10000);
-            }
-
-            async function renderExtraction(data) {
-                voiceResult.style.display = 'block';
-                if (!data || !data.success) {
-                    voiceResult.innerHTML = `<strong style="color:#ef4444">Falló:</strong> ${(data && data.error) || 'unknown'}` +
-                        ((data && data.hint) ? `<br><span style="color:#94a3b8">${data.hint}</span>` : '');
-                    return;
-                }
-                const ext = data.extraction || {};
-                const transcript = data.transcript || '(vacío)';
-                if (ext.value === null || ext.value === undefined) {
-                    voiceResult.innerHTML = `<strong>Transcripción:</strong> ${transcript}<br>` +
-                        `<span style="color:#fbbf24">⚠ No detecté un valor ECOG en el dictado. Intenta de nuevo o usa los botones manuales.</span>`;
-                    return;
-                }
-                const conf = (ext.confidence * 100).toFixed(0);
-                voiceResult.innerHTML =
-                    `<strong>Transcripción:</strong> "${transcript}"<br>` +
-                    `<strong style="color:#86efac">✓ Detecté ECOG ${ext.value}</strong> ` +
-                    `<span style="color:#94a3b8">(confianza ${conf}%, patrón ${ext.source_pattern || 'n/a'})</span><br>` +
-                    `<button type="button" id="pm2EcogVoiceConfirm" data-ecog="${ext.value}" data-patient-nss="${data.patient_ref}" ` +
-                    `style="margin-top:6px; padding:6px 14px; background:rgba(16,185,129,.15); border:1px solid #10b981; color:#86efac; border-radius:6px; cursor:pointer; font-size:.75rem; font-weight:600;">` +
-                    `✓ Aplicar ECOG ${ext.value}</button>`;
-                const confirmBtn = document.getElementById('pm2EcogVoiceConfirm');
-                confirmBtn.addEventListener('click', async () => {
-                    // Reuse existing /ecog-capture endpoint
-                    const nss = confirmBtn.dataset.patientNss;
-                    const ecog = parseInt(confirmBtn.dataset.ecog, 10);
-                    confirmBtn.disabled = true;
-                    confirmBtn.textContent = 'Guardando...';
-                    try {
-                        const resp = await fetch(`/api/patients/${nss}/ecog-capture`, {
-                            method: 'POST', headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({
-                                ecog_value: ecog, source_type: 'voice_quick_capture_epic36',
-                                notes: `Voice: "${transcript.substring(0, 100)}"`,
-                                actor_session_id: sessionStorage.getItem('pm2_session_id') || ''
-                            })
-                        });
-                        const r = await resp.json();
-                        if (r.success) {
-                            confirmBtn.textContent = `✓ ECOG ${ecog} guardado. Refrescando…`;
-                            setTimeout(() => location.reload(), 1500);
-                        } else {
-                            confirmBtn.textContent = '✗ Error: ' + (r.error || 'unknown');
-                            confirmBtn.disabled = false;
-                        }
-                    } catch (err) {
-                        confirmBtn.textContent = '✗ ' + err.message;
-                        confirmBtn.disabled = false;
-                    }
+            // EPIC 36.B-extended — Voice dictation usando helper compartido
+            if (window.pm2SetupVoiceQuickCapture) {
+                window.pm2SetupVoiceQuickCapture({
+                    buttonId: 'pm2EcogVoiceBtn',
+                    iconId: 'pm2EcogVoiceIcon',
+                    labelId: 'pm2EcogVoiceLabel',
+                    statusId: 'pm2EcogVoiceStatus',
+                    resultId: 'pm2EcogVoiceResult',
+                    field: 'ecog',
+                    fieldLabel: 'ECOG',
+                    dictExample: 'ECOG 2 o performance status uno',
+                    captureEndpoint: (nss) => `/api/patients/${nss}/ecog-capture`,
+                    extractIsEmpty: (ext) => ext.value === null || ext.value === undefined,
+                    extractValueLabel: (ext) => `ECOG ${ext.value}`,
+                    extractConfidenceText: (ext) => `confianza ${(ext.confidence*100).toFixed(0)}%, patrón ${ext.source_pattern || 'n/a'}`,
+                    buildCaptureBody: (ext, transcript) => ({
+                        ecog_value: ext.value,
+                        source_type: 'voice_quick_capture_epic36',
+                        notes: `Voice: "${transcript.substring(0, 100)}"`,
+                        actor_session_id: sessionStorage.getItem('pm2_session_id') || '',
+                    }),
                 });
             }
-
-            voiceBtn.addEventListener('click', () => {
-                if (voiceBtn.dataset.recording === 'true') {
-                    if (mediaRecorder && mediaRecorder.state === 'recording') {
-                        mediaRecorder.stop();
-                    }
-                } else {
-                    startRecording();
-                }
-            });
         })();
         </script>
         {% endif %}

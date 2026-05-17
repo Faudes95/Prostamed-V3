@@ -138,6 +138,8 @@ CARD_TO_BUNDLE_KEY: dict[str, str] = {
     "trial-matcher-card": "trial_matches",                    # Phase 3 — Trial Matcher MVP
     "castration-quick-capture-card": "castration_capture_cta", # Phase 5 — Castration confirmation
     "psma-pet-quick-capture-card": "psma_pet_capture_cta",     # Phase 6 — PSMA-PET capture
+    # EPIC 40 — Cortana Dictation Hub (composite voice intake, no gating)
+    "cortana-dictation-hub-card": "identity",                  # Always rendered, uses identity.nss for patient
 }
 
 

@@ -2783,6 +2783,241 @@ def api_patient_psma_pet_latest(patient_ref):
     return jsonify({'success': True, 'has_psma_pet': True, **res}), 200
 
 
+# ─────────────────── EPIC 40 — Cortana dictation hub ───────────────────
+
+@app.route('/api/voice/cortana-dictation/<patient_ref>', methods=['POST'])
+def api_voice_cortana_dictation(patient_ref):
+    """EPIC 40 — Composite voice dictation: extrae los 4 fields (ECOG/castration/
+    HRR/PSMA-PET) en una sola transcripción + opcionalmente aplica captures y
+    surfaces Trial Matcher diff.
+
+    Body: JSON {transcript: "...", apply_mode: 'dry_run' | 'apply'}
+          OR multipart {audio: <file>, apply_mode: <string>, patient_ref?: <str>}
+
+    apply_mode (default 'dry_run'):
+      - 'dry_run': retorna extracciones sin escribir DB. UI muestra qué sería
+        aplicado para que clinician revise primero.
+      - 'apply': escribe captures via las 4 funciones existentes
+        (record_ecog/hrr/castration/psma_pet_capture), luego corre Trial Matcher
+        antes y después para calcular diff de trials newly_eligible/newly_ineligible.
+
+    Returns:
+      {
+        success, transcript, transcript_source,
+        extractions: {ecog: {...}, castration: {...}, hrr: {...}, psma_pet: {...}},
+        actionable_count: int (extractores con value/status detectado),
+        apply_mode: 'dry_run' | 'apply',
+        captures_applied?: [{field, success, ...}],  # solo apply
+        trial_matches_diff?: {                       # solo apply
+          before_count: int, after_count: int,
+          newly_eligible: [{trial_code, ...}],
+          newly_ineligible: [{trial_code, ...}],
+        }
+      }
+
+    Compound value (apply mode):
+      Un dictado clínico completo p.ej. "Paciente m1 CRPC ECOG 2, HRR BRCA2
+      positivo, PSMA positivo metastásico 8 lesiones, castración confirmada
+      testo 18" → 4 captures simultáneos → Trial Matcher cambia de "blocked
+      por data missing" a "PROpel/MAGNITUDE/TALAPRO-2/VISION" eligible.
+    """
+    import tracking_db as _td
+    from prostanet.voice.quick_capture_intent import QUICK_CAPTURE_EXTRACTORS
+
+    # Step 1: Get transcript (JSON or multipart audio)
+    transcript = ''
+    transcript_source = 'unknown'
+    apply_mode = 'dry_run'
+
+    if request.is_json:
+        try:
+            payload = request.get_json(silent=True) or {}
+            transcript = str(payload.get('transcript') or '').strip()
+            apply_mode = str(payload.get('apply_mode') or 'dry_run').lower()
+            transcript_source = 'json_input'
+        except Exception:
+            pass
+
+    if not transcript and 'audio' in request.files:
+        audio_file = request.files['audio']
+        audio_bytes = audio_file.read()
+        if len(audio_bytes) > 25 * 1024 * 1024:
+            return jsonify({'success': False, 'error': 'audio_too_large_max_25mb'}), 413
+        if not audio_bytes:
+            return jsonify({'success': False, 'error': 'audio_empty'}), 400
+        try:
+            from prostanet.voice.stt_engine import LocalSTTEngine
+            engine = LocalSTTEngine()
+            filename = (audio_file.filename or '').lower()
+            suffix = '.webm'
+            for ext in ('.wav', '.mp3', '.opus', '.m4a', '.webm', '.ogg'):
+                if filename.endswith(ext):
+                    suffix = ext
+                    break
+            segments = engine.transcribe_bytes(audio_bytes, suffix=suffix, language='es')
+            transcript = ' '.join(s.text for s in segments if s.text).strip()
+            transcript_source = 'stt_whisper'
+        except Exception as exc:
+            logger.exception("EPIC 40 STT failed")
+            return jsonify({
+                'success': False, 'error': 'stt_failed', 'message': str(exc),
+            }), 503
+        apply_mode = (request.form.get('apply_mode') or 'dry_run').lower()
+
+    if not transcript:
+        return jsonify({
+            'success': False, 'error': 'no_transcript_available',
+            'hint': 'Provee {transcript: "..."} o sube audio en form-data["audio"]',
+        }), 400
+
+    if apply_mode not in ('dry_run', 'apply'):
+        return jsonify({'success': False, 'error': 'invalid_apply_mode',
+                         'valid': ['dry_run', 'apply']}), 400
+
+    # Step 2: Verify patient exists (only required for apply mode, but helpful
+    # to surface in dry_run too)
+    patient_full = _td.get_patient_full_record(patient_ref)
+    if not patient_full:
+        return jsonify({'success': False, 'error': 'patient_not_found'}), 404
+
+    # Step 3: Run all 4 extractors on the transcript
+    extractions: dict[str, Any] = {}
+    actionable_count = 0
+    for field, extractor in QUICK_CAPTURE_EXTRACTORS.items():
+        result = extractor(transcript)
+        extractions[field] = result
+        # Count extractor as actionable if it returned a value/status with confidence
+        primary = result.get('value', result.get('status'))
+        if primary is not None and primary != '' and result.get('confidence', 0) > 0.0:
+            actionable_count += 1
+
+    response: dict[str, Any] = {
+        'success': True,
+        'patient_ref': patient_ref,
+        'transcript': transcript,
+        'transcript_source': transcript_source,
+        'extractions': extractions,
+        'actionable_count': actionable_count,
+        'apply_mode': apply_mode,
+    }
+
+    if apply_mode == 'dry_run':
+        return jsonify(response)
+
+    # ─── apply mode: write captures + compute trial matcher diff ───
+
+    # Snapshot trial matches BEFORE applying captures
+    def _build_trial_bundle():
+        try:
+            from prostanet.domains.research_intelligence.trial_matching_engine import (
+                build_trial_matching_bundle,
+            )
+            facts = _td.get_patient_clinical_facts(
+                (patient_full.get("identity") or {}).get("id"), active_only=True,
+            ) or []
+            fmap = {f.get('fact_key'): f.get('normalized_value_text') for f in facts if isinstance(f, dict)}
+            _prior_arpi = False
+            _prior_docetaxel = False
+            _prior_cabazitaxel = False
+            for _tx in (patient_full.get('treatments') or []):
+                _drug = str(_tx.get('drug_scheme') or '').upper()
+                if any(t in _drug for t in ('ABIRATERONE','ENZALUTAMIDE','APALUTAMIDE','DAROLUTAMIDE')):
+                    _prior_arpi = True
+                if 'DOCETAXEL' in _drug: _prior_docetaxel = True
+                if 'CABAZITAXEL' in _drug: _prior_cabazitaxel = True
+            normalized = {
+                **patient_full,
+                'state': (patient_full.get('latest_assessment') or {}).get('state')
+                         or fmap.get('reconciled_state') or fmap.get('m_substage_resolved') or '',
+                'prior_arpi': _prior_arpi,
+                'prior_taxane': _prior_docetaxel or _prior_cabazitaxel,
+                'prior_docetaxel': _prior_docetaxel,
+                'prior_cabazitaxel': _prior_cabazitaxel,
+                'ecog_score': fmap.get('ecog_performance_status') or fmap.get('ecog_score'),
+                'hrr_status': fmap.get('hrr_status'),
+                'hrr_positive': fmap.get('hrr_positive') or (
+                    '1' if str(fmap.get('hrr_status', '')).lower() in ('positive','pathogenic') else None
+                ),
+                'germline_pathogenic_variant': fmap.get('germline_pathogenic_variant') or fmap.get('hrr_gene'),
+                'msi_status': fmap.get('msi_status'),
+                'castrate_testosterone_status': fmap.get('castrate_testosterone_status'),
+                'psma_positive': fmap.get('psma_positive'),
+                'psma_negative_dominant_lesions': fmap.get('psma_negative_dominant_lesions'),
+                'psma_index_lesion_suvmax': fmap.get('psma_index_lesion_suvmax'),
+                'psma_pet_status': fmap.get('psma_pet_status'),
+            }
+            return build_trial_matching_bundle(normalized)
+        except Exception as e:
+            logger.exception("Trial matcher snapshot failed in EPIC 40")
+            return {'matches': [], 'positive_match_count': 0, 'error': str(e)}
+
+    bundle_before = _build_trial_bundle()
+    matches_before = {m.get('trial_code') for m in bundle_before.get('matches', [])}
+
+    # Apply each actionable extraction
+    captures_applied = []
+    notes_suffix = f' Voice (EPIC 40 dictation): "{transcript[:80]}…"'
+    actor_session = request.json.get('actor_session_id') if request.is_json else request.form.get('actor_session_id')
+
+    ecog_ext = extractions.get('ecog', {})
+    if ecog_ext.get('value') is not None:
+        r = _td.record_ecog_capture(
+            patient_ref, ecog_ext['value'],
+            source_type='voice_cortana_dictation_epic40',
+            actor_session_id=actor_session, notes=notes_suffix,
+        )
+        captures_applied.append({'field': 'ecog', **r})
+
+    cas_ext = extractions.get('castration', {})
+    if cas_ext.get('status'):
+        r = _td.record_castration_capture(
+            patient_ref, cas_ext['status'],
+            testosterone_value=cas_ext.get('testosterone_value'),
+            testosterone_unit=cas_ext.get('testosterone_unit') or 'ng/dL',
+            source_type='voice_cortana_dictation_epic40',
+            actor_session_id=actor_session, notes=notes_suffix,
+        )
+        captures_applied.append({'field': 'castration', **r})
+
+    hrr_ext = extractions.get('hrr', {})
+    if hrr_ext.get('status'):
+        r = _td.record_hrr_capture(
+            patient_ref, hrr_ext['status'],
+            hrr_gene=hrr_ext.get('gene'),
+            source_type='voice_cortana_dictation_epic40',
+            actor_session_id=actor_session, notes=notes_suffix,
+        )
+        captures_applied.append({'field': 'hrr', **r})
+
+    psma_ext = extractions.get('psma_pet', {})
+    if psma_ext.get('status'):
+        r = _td.record_psma_pet_capture(
+            patient_ref, psma_ext['status'],
+            lesion_count=psma_ext.get('lesion_count'),
+            suv_max_value=psma_ext.get('suv_max_value'),
+            source_type='voice_cortana_dictation_epic40',
+            actor_session_id=actor_session, notes=notes_suffix,
+        )
+        captures_applied.append({'field': 'psma_pet', **r})
+
+    # Snapshot trial matches AFTER applying captures
+    # Re-fetch full record since facts were just persisted
+    patient_full = _td.get_patient_full_record(patient_ref)
+    bundle_after = _build_trial_bundle()
+    matches_after = {m.get('trial_code') for m in bundle_after.get('matches', [])}
+
+    response['captures_applied'] = captures_applied
+    response['captures_applied_count'] = sum(1 for c in captures_applied if c.get('success'))
+    response['trial_matches_diff'] = {
+        'before_count': len(matches_before),
+        'after_count': len(matches_after),
+        'newly_eligible': sorted(matches_after - matches_before),
+        'newly_ineligible': sorted(matches_before - matches_after),
+        'unchanged_eligible': sorted(matches_before & matches_after),
+    }
+    return jsonify(response)
+
+
 # ─────────────────── EPIC 36 — Voice quick-capture PoC ───────────────────
 
 @app.route('/api/voice/quick-capture/<field>', methods=['POST'])
