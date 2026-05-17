@@ -2107,10 +2107,10 @@
     <section style="margin-top:24px; padding:20px; background:linear-gradient(135deg,rgba(168,85,247,.06),rgba(15,23,42,.6)); border:1px solid rgba(168,85,247,.28); border-left:6px solid rgb(168,85,247); border-radius:14px;" aria-label="Cohorte Exploratoria MX">
       <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:14px;">
         <div>
-          <div style="font-size:.7rem; color:#c4b5fd; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">EPIC 33.C · Population Intelligence</div>
-          <h3 style="font-family:var(--pm-font-display,sans-serif); font-size:1.25rem; color:#f8fafc; margin:5px 0 0;">Cohorte Exploratoria MX · Distribución terapéutica + Respuesta ARPI</h3>
+          <div style="font-size:.7rem; color:#c4b5fd; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">EPIC 33.C + EPIC 37 · Population Intelligence</div>
+          <h3 style="font-family:var(--pm-font-display,sans-serif); font-size:1.25rem; color:#f8fafc; margin:5px 0 0;">Cohorte Exploratoria MX · KPI Dashboard (10 KPIs activos)</h3>
           <p style="margin:6px 0 0; color:#94a3b8; font-size:.82rem; line-height:1.5; max-width:78ch;">
-            KPI_REGISTRY extensible: 5 KPIs core (counts ARPI, response 2/6mo, ECOG change, distribución estados). Roadmap +15 KPIs en <code>mx_population_kpis_roadmap.yaml</code>.
+            KPI_REGISTRY extensible: <strong>5 KPIs core</strong> (counts ARPI, response 2/6mo, ECOG change, distribución estados) + <strong>5 KPIs EPIC 34.A</strong> (ECOG/HRR/Castration/PSMA-PET capture coverage + Trial Eligibility Funnel). Roadmap +11 KPIs adicionales en <code>mx_population_kpis_roadmap.yaml</code>.
           </p>
         </div>
         <button type="button" id="cohortRefreshBtn" onclick="loadCohortDashboard()" style="padding:8px 14px; background:rgba(168,85,247,.18); border:1px solid rgba(168,85,247,.4); color:#e9d5ff; border-radius:8px; cursor:pointer; font-size:.78rem;">
@@ -2130,12 +2130,13 @@
       </div>
 
       <div style="margin-top:14px; padding:10px 14px; background:rgba(15,23,42,.5); border:1px solid rgba(148,163,184,.2); border-radius:6px; font-size:.7rem; color:#94a3b8;">
-        <strong style="color:#cbd5e1;">Roadmap KPIs adicionales (15):</strong>
-        Kaplan-Meier per ARPI · HRR prevalence (BRCA/ATM/Lynch) · Germline testing rate · Voice intake adoption ·
-        Castration confirmed vs assumed · Time-from-Dx-to-treatment · Comorbidity prevalence (CV/hepatic/DM) ·
-        Capture completeness per section · Risk stratification (5 tiers) · Imaging modality adoption ·
-        Mean PSA at presentation · Gleason/ISUP distribution · Trial enrollment funnel · Vital status snapshot ·
-        Surgical margin status. Cada uno como ticket atómico post-MVP.
+        <strong style="color:#86efac;">✓ Shipped (10/15):</strong> patients_by_regimen · psa_response_8wk · psa_response_24wk ·
+        ecog_change_24wk · clinical_state_distribution · ecog_capture_coverage · hrr_capture_coverage ·
+        castration_confirmation_coverage · psma_pet_capture_coverage · trial_eligibility_funnel.<br>
+        <strong style="color:#cbd5e1;">Pending (11+):</strong> Kaplan-Meier per ARPI · germline testing rate ·
+        voice intake adoption · time-from-Dx-to-treatment · comorbidity prevalence (CV/hepatic/DM) ·
+        risk stratification (5 tiers) · imaging modality adoption · mean PSA at presentation ·
+        Gleason/ISUP distribution · vital status snapshot · surgical margin status.
       </div>
     </section>
 
@@ -2231,6 +2232,148 @@
         `;
       }
 
+      // EPIC 37 — Capture completeness coverage card (ECOG/HRR/Castration/PSMA-PET)
+      // Format común: {n_eligible, n_documented/n_confirmed/n_with_ecog,
+      //                coverage_pct, target_pct, status, gap_to_target_patients}
+      function renderCaptureCoverageKPI(kpi, statusColors) {
+        const status = kpi.status || 'unknown';
+        const colors = statusColors || {
+          'target_achieved': '#10b981', 'below_target': '#fbbf24',
+          'critical_gap': '#ef4444', 'no_eligible_cohort': '#94a3b8',
+        };
+        const barColor = colors[status] || '#94a3b8';
+        const documented = kpi.n_documented ?? kpi.n_confirmed ?? kpi.n_with_ecog ?? 0;
+        const eligible = kpi.n_eligible || 0;
+        const pct = kpi.coverage_pct ?? 0;
+        const target = kpi.target_pct ?? 0;
+        const gap = kpi.gap_to_target_patients ?? 0;
+        const widthPct = Math.min(100, pct);
+        return `
+          <div style="background:rgba(15,23,42,.4); padding:14px; border-radius:8px; border:1px solid rgba(148,163,184,.15);">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:6px;">
+              <h4 style="color:#f8fafc; font-size:.92rem; margin:0; line-height:1.3;">${kpi.kpi_label || kpi.kpi_id}</h4>
+              <span style="font-size:.7rem; padding:2px 8px; background:${barColor}30; border:1px solid ${barColor}80; color:${barColor}; border-radius:4px; font-weight:700; text-transform:uppercase; letter-spacing:.08em;">${status.replace(/_/g,' ')}</span>
+            </div>
+            <div style="font-size:.7rem; color:#94a3b8; margin-bottom:8px;">
+              <strong style="color:#cbd5e1;">${documented}/${eligible}</strong> documentados · target <strong>${target}%</strong> · gap <strong style="color:${barColor}">${gap}</strong> pacientes
+            </div>
+            <div style="background:rgba(148,163,184,.15); border-radius:8px; overflow:hidden; height:18px; position:relative;">
+              <div style="width:${widthPct}%; height:100%; background:linear-gradient(90deg, ${barColor}aa, ${barColor}); transition:width .4s;"></div>
+              <span style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font-size:.7rem; color:#f8fafc; font-weight:700; text-shadow:0 0 4px rgba(0,0,0,.6);">${pct}%</span>
+            </div>
+            ${kpi.note ? `<div style="margin-top:8px; font-size:.66rem; color:#94a3b8; font-style:italic;">${kpi.note}</div>` : ''}
+          </div>
+        `;
+      }
+
+      // EPIC 37 — Trial Eligibility Funnel card
+      function renderTrialFunnelKPI(kpi) {
+        const evaluated = kpi.patients_evaluated || 0;
+        const positive = kpi.patients_with_any_positive_match || 0;
+        const blocked = kpi.patients_blocked_by_missing_data || 0;
+        const ineligible = kpi.patients_no_match || 0;
+        const posPct = evaluated ? (100 * positive / evaluated).toFixed(1) : 0;
+        const blockedPct = evaluated ? (100 * blocked / evaluated).toFixed(1) : 0;
+        const ineligPct = evaluated ? (100 * ineligible / evaluated).toFixed(1) : 0;
+        const topBlockers = (kpi.top_missing_data_blockers || []).slice(0, 4).map(b =>
+          `<div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid rgba(148,163,184,.08); font-size:.74rem;"><span style="color:#cbd5e1;">${b.blocker_label || b.blocker_key}</span><strong style="color:#fbbf24;">${b.count}</strong></div>`
+        ).join('');
+        return `
+          <div style="background:rgba(15,23,42,.4); padding:14px; border-radius:8px; border:1px solid rgba(148,163,184,.15);">
+            <h4 style="color:#f8fafc; font-size:.95rem; margin:0 0 4px;">${kpi.kpi_label}</h4>
+            <div style="font-size:.66rem; color:#94a3b8; margin-bottom:10px;">
+              ${evaluated} pacientes evaluados (max sample)
+            </div>
+            <div style="display:flex; gap:4px; height:24px; border-radius:6px; overflow:hidden; margin-bottom:8px;">
+              <div style="flex:${positive}; background:linear-gradient(90deg,#86efac,#10b981); display:flex; align-items:center; justify-content:center; color:#064e3b; font-size:.66rem; font-weight:700;">${positive ? `✓${positive}` : ''}</div>
+              <div style="flex:${blocked}; background:linear-gradient(90deg,#fde68a,#fbbf24); display:flex; align-items:center; justify-content:center; color:#451a03; font-size:.66rem; font-weight:700;">${blocked ? `⏸${blocked}` : ''}</div>
+              <div style="flex:${ineligible}; background:linear-gradient(90deg,#cbd5e1,#94a3b8); display:flex; align-items:center; justify-content:center; color:#1e293b; font-size:.66rem; font-weight:700;">${ineligible ? `✗${ineligible}` : ''}</div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:10px; font-size:.7rem;">
+              <div style="text-align:center; color:#86efac;">Match ${posPct}%</div>
+              <div style="text-align:center; color:#fbbf24;">Bloqueado ${blockedPct}%</div>
+              <div style="text-align:center; color:#94a3b8;">Inelegible ${ineligPct}%</div>
+            </div>
+            ${topBlockers ? `<div style="margin-top:10px; padding-top:8px; border-top:1px solid rgba(148,163,184,.18);"><div style="font-size:.66rem; color:#cbd5e1; font-weight:700; text-transform:uppercase; letter-spacing:.1em; margin-bottom:4px;">Top data-missing blockers</div>${topBlockers}</div>` : ''}
+          </div>
+        `;
+      }
+
+      // EPIC 37 — Capture Completeness Snapshot (Chart.js donut grouping 4 capture KPIs)
+      let _captureCoverageChart = null;
+      function renderCaptureSnapshot(kpis) {
+        const captureIds = ['ecog_capture_coverage','hrr_capture_coverage',
+                            'castration_confirmation_coverage','psma_pet_capture_coverage'];
+        const present = captureIds.filter(id => kpis[id]);
+        if (present.length === 0) return '';
+        const labels = present.map(id => {
+          const lbl = kpis[id].kpi_label || id;
+          // Trim long labels for chart legend
+          return lbl.length > 40 ? lbl.substring(0, 37) + '…' : lbl;
+        });
+        const data = present.map(id => kpis[id].coverage_pct || 0);
+        const targets = present.map(id => kpis[id].target_pct || 0);
+        const colors = present.map(id => {
+          const s = kpis[id].status;
+          return s === 'target_achieved' ? '#10b981'
+                 : s === 'below_target' ? '#fbbf24'
+                 : s === 'critical_gap' ? '#ef4444' : '#94a3b8';
+        });
+        const html = `
+          <div style="grid-column:1 / -1; background:rgba(15,23,42,.4); padding:14px; border-radius:8px; border:1px solid rgba(148,163,184,.15);">
+            <h4 style="color:#f8fafc; font-size:1rem; margin:0 0 4px;">📊 Capture Completeness Snapshot · EPIC 34.A Phases 2-6</h4>
+            <div style="font-size:.7rem; color:#94a3b8; margin-bottom:12px;">
+              Cobertura de quick-capture surfaces vs target. Donut = coverage actual, líneas verticales = target NCCN-derived.
+            </div>
+            <div style="display:grid; grid-template-columns: 280px 1fr; gap:18px; align-items:start;">
+              <div style="position:relative; height:240px;">
+                <canvas id="captureCoverageChart"></canvas>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:8px; font-size:.78rem;">
+                ${present.map((id, i) => {
+                  const k = kpis[id];
+                  return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:rgba(15,23,42,.6); border:1px solid ${colors[i]}55; border-left:4px solid ${colors[i]}; border-radius:6px;">
+                    <span style="color:#cbd5e1;">${labels[i]}</span>
+                    <span style="font-weight:700;"><span style="color:${colors[i]}">${data[i]}%</span> <span style="color:#94a3b8; font-size:.7rem;">/ ${targets[i]}%</span></span>
+                  </div>`;
+                }).join('')}
+              </div>
+            </div>
+          </div>
+        `;
+        // Defer chart instantiation until canvas exists in DOM
+        setTimeout(() => {
+          const canvas = document.getElementById('captureCoverageChart');
+          if (!canvas || typeof Chart === 'undefined') return;
+          if (_captureCoverageChart) { _captureCoverageChart.destroy(); }
+          _captureCoverageChart = new Chart(canvas.getContext('2d'), {
+            type: 'doughnut',
+            data: {
+              labels: labels,
+              datasets: [{
+                data: data,
+                backgroundColor: colors,
+                borderColor: 'rgba(15,23,42,.8)',
+                borderWidth: 2,
+              }],
+            },
+            options: {
+              responsive: true, maintainAspectRatio: false,
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  callbacks: {
+                    label: (ctx) => `${ctx.label}: ${ctx.parsed}% (target ${targets[ctx.dataIndex]}%)`,
+                  },
+                },
+              },
+              cutout: '60%',
+            },
+          });
+        }, 50);
+        return html;
+      }
+
       function loadCohortDashboard() {
         const loadingEl = document.getElementById('cohortDashboardLoading');
         const contentEl = document.getElementById('cohortDashboardContent');
@@ -2247,11 +2390,21 @@
             }
             const kpis = bundle.kpis || {};
             const cards = [];
+            // EPIC 37 — Capture Completeness Snapshot (donut grid over 4 quick-capture KPIs)
+            const snapshot = renderCaptureSnapshot(kpis);
+            if (snapshot) cards.push(snapshot);
+            // EPIC 33.C core KPIs (5 originales)
             if (kpis.patients_by_regimen) cards.push(renderRegimenKPI(kpis.patients_by_regimen));
             if (kpis.psa_response_8wk) cards.push(renderResponseKPI(kpis.psa_response_8wk));
             if (kpis.psa_response_24wk) cards.push(renderResponseKPI(kpis.psa_response_24wk));
             if (kpis.ecog_change_24wk) cards.push(renderECOGKPI(kpis.ecog_change_24wk));
             if (kpis.clinical_state_distribution) cards.push(renderStateDistKPI(kpis.clinical_state_distribution));
+            // EPIC 37 — 5 nuevos KPIs (EPIC 34.A Phases 2-6 capture surfaces + Trial Funnel)
+            if (kpis.ecog_capture_coverage) cards.push(renderCaptureCoverageKPI(kpis.ecog_capture_coverage));
+            if (kpis.hrr_capture_coverage) cards.push(renderCaptureCoverageKPI(kpis.hrr_capture_coverage));
+            if (kpis.castration_confirmation_coverage) cards.push(renderCaptureCoverageKPI(kpis.castration_confirmation_coverage));
+            if (kpis.psma_pet_capture_coverage) cards.push(renderCaptureCoverageKPI(kpis.psma_pet_capture_coverage));
+            if (kpis.trial_eligibility_funnel) cards.push(renderTrialFunnelKPI(kpis.trial_eligibility_funnel));
             contentEl.innerHTML = `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap:14px;">${cards.join('')}</div>`;
             loadingEl.style.display = 'none';
             contentEl.style.display = 'block';
