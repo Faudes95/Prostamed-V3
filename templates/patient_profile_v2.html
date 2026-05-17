@@ -1087,6 +1087,128 @@
         </details>
         {% endif %}
 
+        {# EPIC 34.A Phase 4 — HRR/Germline Quick Capture CTA
+           Gating: paciente con ARPI activo OR estado avanzado (mCSPC/mCRPC/BCR) + HRR missing.
+           Compound value: HRR captured → desbloquea PARP trials en Phase 3 Trial Matcher. #}
+        {% if hrr_capture_cta and hrr_capture_cta.available %}
+        <details class="pm2-section-collapsible" data-section-key="hrr_quick_capture" data-importance="critical" data-section-label="HRR Quick Capture" open>
+        <summary>🧬 HRR/Germline Quick Capture · NCCN 2026 v2 universal testing <span class="pm2-section-meta-chip">EPIC 34.A Phase 4</span></summary>
+        <section id="pm2HrrQuickCapture" style="margin: var(--space-4) var(--space-6); padding: var(--space-4); background: linear-gradient(135deg, rgba(168,85,247,.08), rgba(15,23,42,.6)); border: 1px solid rgba(168,85,247,.3); border-left: 6px solid rgb(168,85,247); border-radius: 14px;" aria-label="HRR Quick Capture" data-testid="hrr-quick-capture-card">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
+                <div>
+                    <div style="font-size:.7rem; color:#c4b5fd; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">🧬 HRR / Germline capture</div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.05rem; color:#f8fafc; margin:5px 0 0;">Documenta HRR / variantes germline</h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.78rem; line-height:1.5;">
+                        Paciente {{ 'avanzado' if hrr_capture_cta.state_is_advanced else 'en ARPI activo' }} · {{ hrr_capture_cta.reason }}.
+                        NCCN 2026 v2 recomienda testing germline universal en PCa avanzado.
+                        Desbloquea PARP trials (PROfound, MAGNITUDE, TALAPRO-2) en el Trial Matcher.
+                    </p>
+                </div>
+            </div>
+
+            <div style="margin-bottom:14px;">
+                <div style="font-size:.66rem; color:#c4b5fd; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin-bottom:8px;">Status</div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button type="button" class="pm2-hrr-status-btn" data-status="positive" data-patient-nss="{{ identity.nss }}" style="padding:10px 18px; background:rgba(16,185,129,.1); border:2px solid #10b981; color:#86efac; border-radius:8px; cursor:pointer; font-size:.85rem; font-weight:600;">✓ Positive</button>
+                    <button type="button" class="pm2-hrr-status-btn" data-status="negative" data-patient-nss="{{ identity.nss }}" style="padding:10px 18px; background:rgba(148,163,184,.1); border:2px solid #94a3b8; color:#cbd5e1; border-radius:8px; cursor:pointer; font-size:.85rem; font-weight:600;">✗ Negative</button>
+                    <button type="button" class="pm2-hrr-status-btn" data-status="pending" data-patient-nss="{{ identity.nss }}" style="padding:10px 18px; background:rgba(251,191,36,.1); border:2px solid #fbbf24; color:#fde68a; border-radius:8px; cursor:pointer; font-size:.85rem; font-weight:600;">⏳ Pending</button>
+                    <button type="button" class="pm2-hrr-status-btn" data-status="not_tested" data-patient-nss="{{ identity.nss }}" style="padding:10px 18px; background:rgba(239,68,68,.08); border:2px solid #ef4444; color:#fca5a5; border-radius:8px; cursor:pointer; font-size:.85rem; font-weight:600;">⊘ Not tested</button>
+                </div>
+            </div>
+
+            <div id="pm2HrrGeneSection" style="display:none; margin-bottom:14px;">
+                <div style="font-size:.66rem; color:#c4b5fd; font-weight:800; letter-spacing:.14em; text-transform:uppercase; margin-bottom:8px;">Gen patogénico (requerido para Positive)</div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    {% for gene, label, level in [('BRCA2', 'BRCA2', 'critical'), ('BRCA1', 'BRCA1', 'critical'), ('ATM', 'ATM', 'high'), ('PALB2', 'PALB2', 'high'), ('CDK12', 'CDK12', 'medium'), ('CHEK2', 'CHEK2', 'medium'), ('FANCA', 'FANCA', 'medium'), ('RAD51B', 'RAD51B', 'medium'), ('RAD51C', 'RAD51C', 'medium'), ('OTHER', 'Otro', 'low')] %}
+                    <button type="button" class="pm2-hrr-gene-btn" data-gene="{{ gene }}" style="padding:8px 14px; background:rgba(15,23,42,.6); border:1px solid {{ '#a855f7' if level == 'critical' else '#7c3aed' if level == 'high' else '#6366f1' }}; color:#e9d5ff; border-radius:6px; cursor:pointer; font-size:.78rem; font-weight:600;">{{ label }}</button>
+                    {% endfor %}
+                </div>
+                <div style="margin-top:6px; font-size:.66rem; color:var(--pn-text-muted);">
+                    PARP-eligible: BRCA1/2, ATM, PALB2 son los más asociados con respuesta clínica significativa.
+                </div>
+            </div>
+
+            <div id="pm2HrrFeedback" style="margin-top:10px; font-size:.74rem; color:#cbd5e1; min-height:18px;"></div>
+
+            <div style="margin-top:10px; padding:8px 10px; background:rgba(168,85,247,.06); border-left:3px solid rgba(168,85,247,.4); border-radius:6px; font-size:.66rem; color:#ddd6fe;">
+                ⓘ <strong>NCCN PROS-A v5.2026</strong> · Germline testing universal en PCa avanzado/metastásico/familia high-risk.
+                <strong>Captura clinician-verified · HIPAA audit logged.</strong>
+                Solo aparece para pacientes ARPI/advanced sin HRR documentado.
+            </div>
+        </section>
+        </details>
+        <script>
+        (function() {
+            const statusBtns = document.querySelectorAll('.pm2-hrr-status-btn');
+            const geneBtns = document.querySelectorAll('.pm2-hrr-gene-btn');
+            const geneSection = document.getElementById('pm2HrrGeneSection');
+            const feedback = document.getElementById('pm2HrrFeedback');
+            let selectedStatus = null;
+            let selectedPatient = null;
+
+            async function submitHrr(status, gene) {
+                feedback.textContent = `Guardando HRR ${status}${gene ? ' (' + gene + ')' : ''}...`;
+                feedback.style.color = '#cbd5e1';
+                try {
+                    const resp = await fetch(`/api/patients/${selectedPatient}/hrr-capture`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            hrr_status: status,
+                            hrr_gene: gene,
+                            source_type: 'quick_capture_ui',
+                            actor_session_id: sessionStorage.getItem('pm2_session_id') || ''
+                        })
+                    });
+                    const data = await resp.json();
+                    if (data.success) {
+                        feedback.textContent = `✓ HRR ${status}${gene ? ' (' + gene + ')' : ''} guardado. Refrescando...`;
+                        feedback.style.color = '#10b981';
+                        setTimeout(() => location.reload(), 1500);
+                    } else {
+                        feedback.textContent = `Error: ${data.error || 'unknown'}`;
+                        feedback.style.color = '#ef4444';
+                        statusBtns.forEach(b => b.disabled = false);
+                    }
+                } catch (err) {
+                    feedback.textContent = `Falló: ${err.message}`;
+                    feedback.style.color = '#ef4444';
+                    statusBtns.forEach(b => b.disabled = false);
+                }
+            }
+
+            statusBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    selectedStatus = btn.dataset.status;
+                    selectedPatient = btn.dataset.patientNss;
+                    // Visual selected state
+                    statusBtns.forEach(b => b.style.transform = b === btn ? 'scale(1.05)' : 'scale(1)');
+                    if (selectedStatus === 'positive') {
+                        // Show gene section, wait for gene click
+                        geneSection.style.display = 'block';
+                        feedback.textContent = 'Selecciona el gen patogénico para confirmar Positive.';
+                        feedback.style.color = '#fbbf24';
+                    } else {
+                        geneSection.style.display = 'none';
+                        statusBtns.forEach(b => b.disabled = true);
+                        submitHrr(selectedStatus, null);
+                    }
+                });
+            });
+
+            geneBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    if (!selectedStatus || selectedStatus !== 'positive') return;
+                    const gene = btn.dataset.gene;
+                    geneBtns.forEach(b => b.disabled = true);
+                    statusBtns.forEach(b => b.disabled = true);
+                    submitHrr(selectedStatus, gene);
+                });
+            });
+        })();
+        </script>
+        {% endif %}
+
         {# EPIC 34.A Phase 2 — ECOG Quick Capture CTA (paciente con ARPI + ECOG missing/stale) #}
         {% if ecog_capture_cta and ecog_capture_cta.available %}
         <details class="pm2-section-collapsible" data-section-key="ecog_quick_capture" data-importance="critical" data-section-label="ECOG Quick Capture" open>

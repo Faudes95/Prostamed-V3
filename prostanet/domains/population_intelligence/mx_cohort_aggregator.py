@@ -408,7 +408,120 @@ KPI_REGISTRY: dict[str, dict[str, Any]] = {
         "builder": lambda: aggregate_trial_eligibility_funnel(max_patients=100),
         "args": {"max_patients": 100},
     },
+    # EPIC 34.A Phase 4 — HRR capture coverage
+    "hrr_capture_coverage": {
+        "label": "Cobertura HRR en cohorte elegible (NCCN 2026 v2)",
+        "category": "capture_completeness",
+        "builder": lambda: aggregate_hrr_capture_coverage(),
+        "args": {},
+    },
 }
+
+
+def aggregate_hrr_capture_coverage() -> dict[str, Any]:
+    """EPIC 34.A Phase 4 — Cobertura HRR/germline en pacientes elegibles
+    (avanzados o ARPI activo). NCCN 2026 v2: testing universal en PCa avanzado.
+
+    Target: 80% coverage en advanced cohort. Sin esto, PARP trials (PROfound,
+    MAGNITUDE, TALAPRO-2) inelegibles → Trial Matcher (Phase 3) marca blocked.
+    """
+    conn = sqlite3.connect(_db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        # Eligible cohort: ARPI activo (treatment_history) OR advanced state in clinical_facts
+        arpi_patients = conn.execute(
+            """
+            SELECT DISTINCT patient_id FROM treatment_history
+            WHERE drug_scheme IS NOT NULL
+              AND (drug_scheme LIKE '%ABIRATERONE%' OR drug_scheme LIKE '%ENZALUTAMIDE%'
+                   OR drug_scheme LIKE '%APALUTAMIDE%' OR drug_scheme LIKE '%DAROLUTAMIDE%')
+            """
+        ).fetchall()
+        advanced_patients = conn.execute(
+            """
+            SELECT DISTINCT patient_id FROM patient_clinical_facts
+            WHERE fact_key='m_substage_resolved' AND is_active=1
+              AND normalized_value_text IN ('M1', 'M1a', 'M1b', 'M1c')
+            UNION
+            SELECT DISTINCT patient_id FROM patient_clinical_facts
+            WHERE fact_key='reconciled_state' AND is_active=1
+              AND (normalized_value_text LIKE '%mcspc%' OR normalized_value_text LIKE '%crpc%'
+                   OR normalized_value_text LIKE '%recurrence%' OR normalized_value_text LIKE '%high_risk%')
+            """
+        ).fetchall()
+        eligible_pids = set(r["patient_id"] for r in arpi_patients) | set(
+            r["patient_id"] for r in advanced_patients
+        )
+        n_eligible = len(eligible_pids)
+
+        if n_eligible == 0:
+            return {
+                "kpi_id": "hrr_capture_coverage",
+                "kpi_label": "Cobertura HRR en cohorte elegible (Phase 4 target 80%)",
+                "category": "capture_completeness",
+                "n_eligible": 0,
+                "n_with_hrr": 0,
+                "n_positive": 0,
+                "coverage_pct": 0.0,
+                "positive_rate_in_tested": None,
+                "target_pct": 80.0,
+                "status": "no_eligible_cohort",
+                "gap_to_target_patients": 0,
+                "computed_at": utc_now_iso(),
+            }
+        placeholders = ",".join("?" * len(eligible_pids))
+
+        # Patients with HRR documented
+        n_hrr = conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT patient_id)
+            FROM patient_clinical_facts
+            WHERE fact_key IN ('hrr_status', 'germline_testing_status')
+              AND is_active = 1
+              AND normalized_value_text NOT IN ('', 'pending', 'not_tested')
+              AND patient_id IN ({placeholders})
+            """,
+            list(eligible_pids),
+        ).fetchone()[0]
+
+        # PARP-eligible positives
+        n_positive = conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT patient_id)
+            FROM patient_clinical_facts
+            WHERE fact_key IN ('hrr_status', 'hrr_positive')
+              AND is_active = 1
+              AND (normalized_value_text = 'positive' OR normalized_value_text = '1')
+              AND patient_id IN ({placeholders})
+            """,
+            list(eligible_pids),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    coverage_pct = round(100 * n_hrr / max(1, n_eligible), 1)
+    positive_rate = None
+    if n_hrr > 0:
+        positive_rate = proportion_with_ci(n_positive, n_hrr)
+    status = (
+        "target_achieved" if coverage_pct >= 80.0
+        else "below_target" if coverage_pct >= 30.0
+        else "critical_gap"
+    )
+    return {
+        "kpi_id": "hrr_capture_coverage",
+        "kpi_label": "Cobertura HRR en cohorte elegible (Phase 4 target 80%)",
+        "category": "capture_completeness",
+        "n_eligible": n_eligible,
+        "n_with_hrr": n_hrr,
+        "n_positive": n_positive,
+        "coverage_pct": coverage_pct,
+        "positive_rate_in_tested": positive_rate,
+        "target_pct": 80.0,
+        "status": status,
+        "gap_to_target_patients": max(0, int(round((80.0 - coverage_pct) / 100 * n_eligible))),
+        "computed_at": utc_now_iso(),
+    }
 
 
 def aggregate_trial_eligibility_funnel(*, max_patients: int = 100) -> dict[str, Any]:

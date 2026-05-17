@@ -14074,6 +14074,94 @@ ECOG capture focal: solo 2/57 ARPI patients tienen ECOG documentado. Implementar
 ### Constraint del usuario respetado
 0 líneas de lógica clínica eliminadas. Append-only. Reusa engine existente sin reescribir. Card aparece siempre (info-only es seguro) con disclaimer explícito.
 
+---
+
+## EPIC 34.A Phase 4 — HRR/Germline Quick Capture (compound value: desbloquea PARP trials)
+
+> Fecha: 2026-05-17 · FAUBOT_RELEASE bump: `2026-05-16 CVII` → `2026-05-16 CVIII`
+>
+> Phase 4 replica el patrón exitoso de Phase 2 (ECOG Quick Capture) aplicado a HRR/germline status. NCCN 2026 v2 recomienda germline testing universal en PCa avanzado. Sin HRR, Trial Matcher (Phase 3) marca PARP trials (PROfound, MAGNITUDE, TALAPRO-2) como blocked-by-missing-data.
+
+### Implementación
+
+| Cambio | Archivo |
+|--------|---------|
+| `record_hrr_capture()` con validation strict status {positive/negative/pending/not_tested} + gene {BRCA1/2, ATM, PALB2, CHEK2, CDK12, FANCA, RAD51B/C/D, BARD1, OTHER} + audit lineage event | `tracking_db.py` |
+| `get_latest_hrr_for_patient()` returns {status, gene, age_days, parp_eligible_gene, source_type, clinician_verified} | `tracking_db.py` |
+| Endpoint `POST /api/patients/<nss>/hrr-capture` + `GET /api/patients/<nss>/hrr-latest` | `app.py` |
+| Hidratación `v2_ctx.hrr_capture_cta` con gating: ARPI activo OR state avanzado (mcspc/m0_crpc/m1_crpc/recurrence_bcr/high_risk) + HRR missing | `app.py:1244-1300` |
+| Card UI quick-capture (purple theme #a855f7) con 4 status btns + gene selector lazy reveal cuando Positive | `templates/patient_profile_v2.html` |
+| Card wrapped `<details>` critical (always open via EPIC 33.A) | `templates/patient_profile_v2.html` |
+| Nuevo KPI `aggregate_hrr_capture_coverage()` con `positive_rate_in_tested` (Wilson CI) | `mx_cohort_aggregator.py` |
+
+### Validación KPI
+
+```json
+{
+  "kpi_id": "hrr_capture_coverage",
+  "n_eligible": 82,
+  "n_with_hrr": 15,
+  "n_positive": 1,
+  "coverage_pct": 18.3,
+  "positive_rate_in_tested": {"display": "1/15 (6.7% IC95% 1.2–29.8%)"},
+  "target_pct": 80.0,
+  "status": "critical_gap",
+  "gap_to_target_patients": 51
+}
+```
+
+**82 pacientes elegibles · 15 con HRR · gap a target NCCN 80% = 51 pacientes**. positive_rate Wilson CI muy ancho (6.7% IC 1.2-29.8) reflejando n pequeño correctamente.
+
+### UX flow
+
+1. Card aparece solo si advanced/ARPI + HRR missing
+2. Clinician click status: Positive | Negative | Pending | Not tested
+3. Si **Positive** → gene section reveal con 10 genes color-coded por relevancia clínica:
+   - **Critical (PARP-strong evidence)**: BRCA2, BRCA1 (border #a855f7)
+   - **High**: ATM, PALB2 (border #7c3aed)
+   - **Medium**: CDK12, CHEK2, FANCA, RAD51B/C (border #6366f1)
+   - **Low**: Other
+4. Si **Negative/Pending/Not tested** → POST inmediato sin gene
+5. Auto-reload tras success
+6. Audit log: `actor_role='clinician_quick_capture'` + session_id
+
+### Compound value (cascada desbloqueo Phase 3 → Phase 4)
+
+| HRR capture | Trial Matcher impact |
+|-------------|----------------------|
+| BRCA2+ | PROfound, MAGNITUDE, TALAPRO-2 eligible |
+| BRCA1+ / ATM+ / PALB2+ | PROfound eligible (subset) |
+| Negative | Estos trials marcados ineligible explícito (no bloqueado por missing data) |
+| Pending | Marcado "evaluación pendiente" |
+| Not tested | Card persiste para captura |
+
+### Validation completa
+
+| Test | Resultado |
+|------|-----------|
+| `record_hrr_capture('00009999888', 'positive', hrr_gene='BRCA2')` | ✓ success, facts=2, parp_eligible_gene=True |
+| `record_hrr_capture('...', 'negative')` (sin gene) | ✓ success, facts=1, gene=null |
+| `record_hrr_capture('...', 'positive')` (sin gene) | ✗ error: gene_required_for_positive_status |
+| `record_hrr_capture('...', 'invalid_status')` | ✗ error: invalid_hrr_status |
+| `record_hrr_capture('...', 'positive', hrr_gene='UNKNOWN')` | ✗ error: invalid_hrr_gene |
+| Endpoint POST /api/patients/97000000001/hrr-capture | ✓ 200 OK |
+| Endpoint GET /api/patients/00009999888/hrr-latest | ✓ 200 con gene=BRCA2, parp_eligible_gene=true |
+| KPI aggregate_hrr_capture_coverage | ✓ n_eligible=82, status=critical_gap, gap=51 |
+| Visual epic34a_visual_validation/04_hrr_quick_capture_card.png | ✓ 4 status + section nav update |
+
+### Resultado acumulado EPIC 34.A (4 phases, 1 sesión)
+
+| Phase | Métrica clave | Status |
+|-------|---------------|--------|
+| Discovery | 354/424 test fixtures · 57 con treatment real | ✓ |
+| 33.C→34.A | Dashboard 0% → 19.1% coverage (81 documented) | ✓ commit 17fa0bf |
+| Phase 2 | ECOG infrastructure · 2/57 (3.5%) target 53% | ✓ commit ef82012 |
+| Phase 3 | Trial Matcher · 18/30 blocked-by-missing-data | ✓ commit f861f77 |
+| Phase 4 | HRR capture · 15/82 (18.3%) target 80% | ✓ commit pending |
+
+### Constraint del usuario respetado
+0 líneas de lógica clínica eliminadas. Card aparece SOLO cuando hay gap real (ARPI/advanced + HRR missing). Validation strict previene captura superficial (Critic council Phase 1).
+
 ### Resumen acumulado EPIC 30 + 31 + 32
 
 | EPIC | Hallazgos cerrados | Pendientes |

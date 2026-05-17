@@ -1285,6 +1285,51 @@ def patient_profile(nss):
                 logger.debug(f"EPIC 34.A Phase 3 trial matches build failed: {e}")
                 v2_ctx["trial_matches"] = {"positive_match_count": 0, "matches": [], "ineligible": [], "error": str(e)}
 
+            # EPIC 34.A Phase 4 — HRR quick capture gating
+            try:
+                import tracking_db as _td_e34p4
+                _identity_id_e34p4 = (data.get("identity") or {}).get("id")
+                latest_hrr = _td_e34p4.get_latest_hrr_for_patient(_identity_id_e34p4) if _identity_id_e34p4 else None
+                # Show CTA si paciente advanced (mCSPC, mCRPC, BCR, post_local + adverse)
+                # SIN HRR documented. NCCN 2026 v2 = germline testing universal.
+                state_str = str(
+                    (data.get("latest_assessment") or {}).get("state") or
+                    fact_map_e34p3.get("reconciled_state") or ""
+                ).lower()
+                advanced_states = (
+                    "mcspc", "m1_crpc", "m0_crpc", "recurrence_bcr",
+                    "adt_progression", "high_risk_localized", "very_high_risk_localized",
+                    "post_rt_bcr", "oligo",
+                )
+                state_is_advanced = any(t in state_str for t in advanced_states)
+                # Also: anyone with ARPI active is candidate (PARP eligibility)
+                arpi_active_e34p4 = False
+                for tx in (data.get("treatments") or []):
+                    drug = str(tx.get("drug_scheme") or "").upper()
+                    if any(t in drug for t in ("ABIRATERONE", "ENZALUTAMIDE", "APALUTAMIDE", "DAROLUTAMIDE")):
+                        if not tx.get("end_date") or str(tx.get("outcome", "")).lower() in ("ongoing", ""):
+                            arpi_active_e34p4 = True
+                            break
+                hrr_missing = (latest_hrr is None) or (
+                    latest_hrr.get("status") in (None, "", "not_tested", "pending")
+                )
+                show_cta = (state_is_advanced or arpi_active_e34p4) and hrr_missing
+                v2_ctx["hrr_capture_cta"] = {
+                    "available": show_cta,
+                    "state_is_advanced": state_is_advanced,
+                    "arpi_active": arpi_active_e34p4,
+                    "latest_hrr": latest_hrr,
+                    "hrr_missing": hrr_missing,
+                    "reason": (
+                        "HRR missing for advanced/ARPI patient" if hrr_missing and (state_is_advanced or arpi_active_e34p4)
+                        else "HRR documented" if latest_hrr and not hrr_missing
+                        else "No advanced state nor ARPI"
+                    ),
+                }
+            except Exception as e:
+                logger.debug(f"EPIC 34.A Phase 4 HRR CTA build failed: {e}")
+                v2_ctx["hrr_capture_cta"] = {"available": False, "error": str(e)}
+
             # EPIC 34.A Phase 2 — ECOG quick capture gating
             # Show CTA card if patient on ARPI but ECOG missing or >90 days stale
             try:
@@ -2488,6 +2533,48 @@ def _build_patient_decision_today_for_api(patient_ref, *, force_recompute=False)
         "decision_today": decision_today,
         "resolved": resolved,
     }, None
+
+
+@app.route('/api/patients/<patient_ref>/hrr-capture', methods=['POST'])
+def api_patient_hrr_capture(patient_ref):
+    """EPIC 34.A Phase 4 — Quick capture HRR/germline status (compound value:
+    desbloquea PARP trials en Trial Matcher).
+
+    Body: {hrr_status: 'positive'|'negative'|'pending'|'not_tested',
+           hrr_gene?: 'BRCA1'|'BRCA2'|'ATM'|'PALB2'|'CHEK2'|'CDK12'|...,
+           sample_date?, notes?, actor_session_id?}
+    """
+    import tracking_db as _td
+    try:
+        payload = request.get_json(silent=True) or {}
+    except Exception:
+        payload = {}
+    hrr_status = payload.get('hrr_status')
+    if not hrr_status:
+        return jsonify({'success': False, 'error': 'missing_hrr_status'}), 400
+    res = _td.record_hrr_capture(
+        patient_ref,
+        hrr_status,
+        hrr_gene=payload.get('hrr_gene'),
+        sample_date=payload.get('sample_date'),
+        source_type=payload.get('source_type', 'quick_capture_ui'),
+        actor_session_id=payload.get('actor_session_id'),
+        notes=payload.get('notes', ''),
+    )
+    status = 200 if res.get('success') else (
+        404 if res.get('error') == 'patient_not_found' else 400
+    )
+    return jsonify(res), status
+
+
+@app.route('/api/patients/<patient_ref>/hrr-latest', methods=['GET'])
+def api_patient_hrr_latest(patient_ref):
+    """EPIC 34.A Phase 4 — Get latest HRR status for UI gating."""
+    import tracking_db as _td
+    res = _td.get_latest_hrr_for_patient(patient_ref)
+    if res is None:
+        return jsonify({'success': True, 'has_hrr': False}), 200
+    return jsonify({'success': True, 'has_hrr': True, **res}), 200
 
 
 @app.route('/api/patients/<patient_ref>/trial-matches', methods=['GET'])

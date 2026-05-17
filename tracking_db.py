@@ -784,6 +784,183 @@ def get_latest_ecog_for_patient(nss_or_id) -> dict | None:
         conn.close()
 
 
+def record_hrr_capture(
+    nss_or_id,
+    hrr_status: str,
+    *,
+    hrr_gene: str | None = None,
+    sample_date: str | None = None,
+    source_type: str = "quick_capture_ui",
+    actor_user_id: int | None = None,
+    actor_session_id: str | None = None,
+    clinician_verified: bool = True,
+    notes: str = "",
+) -> dict:
+    """EPIC 34.A Phase 4 — Captura rápida de HRR/germline status.
+
+    NCCN 2026 v2 recomienda germline testing universal en PCa avanzado.
+    Sin HRR documentado, PARP trials (PROfound, MAGNITUDE, TALAPRO-2) son
+    inelegibles → Trial Matcher (Phase 3) lo marca como blocked-by-missing-data.
+
+    Args:
+        hrr_status: 'positive' | 'negative' | 'pending' | 'not_tested'
+        hrr_gene: 'BRCA1' | 'BRCA2' | 'ATM' | 'PALB2' | 'CHEK2' | 'CDK12' |
+                  'FANCA' | 'RAD51B' | 'RAD51C' | 'RAD51D' | 'BARD1' | None
+        source_type: 'quick_capture_ui' | 'voice_intake' | 'wizard' | 'lab_report'
+
+    Returns: {success, fact_id, hrr_status, hrr_gene} o {success: False, error}
+    """
+    VALID_STATUS = {"positive", "negative", "pending", "not_tested"}
+    VALID_GENES = {"BRCA1", "BRCA2", "ATM", "PALB2", "CHEK2", "CDK12",
+                   "FANCA", "RAD51B", "RAD51C", "RAD51D", "BARD1", "OTHER"}
+    if not hrr_status or str(hrr_status).lower().strip() not in VALID_STATUS:
+        return {"success": False, "error": "invalid_hrr_status",
+                "valid_values": list(VALID_STATUS)}
+    status_clean = str(hrr_status).lower().strip()
+    gene_clean = None
+    if hrr_gene:
+        gene_clean = str(hrr_gene).upper().strip()
+        if gene_clean not in VALID_GENES:
+            return {"success": False, "error": "invalid_hrr_gene",
+                    "valid_values": sorted(VALID_GENES)}
+    if status_clean == "positive" and not gene_clean:
+        return {"success": False, "error": "gene_required_for_positive_status"}
+    sample_date = sample_date or utc_now_iso()[:10]
+
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return {"success": False, "error": "patient_not_found"}
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+
+        payload = {
+            "hrr_status": status_clean,
+            "hrr_testing_date": sample_date,
+            "germline_testing_status": (
+                "tested" if status_clean in ("positive", "negative") else status_clean
+            ),
+        }
+        if gene_clean:
+            payload["hrr_gene"] = gene_clean
+            payload["germline_pathogenic_variant"] = gene_clean
+            payload["hrr_positive"] = "1"
+        persisted = _persist_canonical_facts_from_payload(
+            cursor,
+            patient_id,
+            payload,
+            source_type=source_type,
+            source_record_type="quick_capture",
+            source_date=sample_date,
+            observed_at=utc_now_iso(),
+            certainty_tier="structured_result",
+            clinician_verified=clinician_verified,
+            verification_note=notes,
+        )
+        try:
+            _append_patient_fact_lineage_event(
+                cursor,
+                patient_id,
+                "hrr_status",
+                "quick_captured",
+                event_note=f"HRR {status_clean}" + (f" ({gene_clean})" if gene_clean else "") + f" via {source_type}",
+                payload={
+                    "hrr_status": status_clean,
+                    "hrr_gene": gene_clean,
+                    "sample_date": sample_date,
+                    "source": source_type,
+                    "notes": notes,
+                },
+                actor_user_id=actor_user_id,
+                actor_session_id=actor_session_id,
+                actor_role="clinician_quick_capture",
+            )
+        except Exception as exc:
+            logger.debug(f"Lineage event HRR audit failed: {exc}")
+        conn.commit()
+        return {
+            "success": True,
+            "patient_id": patient_id,
+            "hrr_status": status_clean,
+            "hrr_gene": gene_clean,
+            "sample_date": sample_date,
+            "facts_persisted": len(persisted) if persisted else 0,
+        }
+    finally:
+        conn.close()
+
+
+def get_latest_hrr_for_patient(nss_or_id) -> dict | None:
+    """Returns latest HRR status + gene + age. None si no documented."""
+    conn = _connect()
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return None
+        patient_id = identity["id"] if hasattr(identity, "__getitem__") else identity[0]
+        # Latest status
+        cursor.execute(
+            """
+            SELECT normalized_value_text, source_date, observed_at, updated_at,
+                   source_type, clinician_verified
+            FROM patient_clinical_facts
+            WHERE patient_id = ?
+              AND fact_key IN ('hrr_status', 'germline_testing_status')
+              AND is_active = 1
+            ORDER BY COALESCE(source_date, observed_at, updated_at) DESC, id DESC
+            LIMIT 1
+            """,
+            (patient_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        from datetime import date as _d
+        status_raw = (row[0] if hasattr(row, "__getitem__") else row.get("normalized_value_text")) or ""
+        sample_date_str = (row[1] if hasattr(row, "__getitem__") else row.get("source_date")) or ""
+
+        # Latest gene
+        cursor.execute(
+            """
+            SELECT normalized_value_text
+            FROM patient_clinical_facts
+            WHERE patient_id = ?
+              AND fact_key IN ('hrr_gene', 'germline_pathogenic_variant')
+              AND is_active = 1
+            ORDER BY COALESCE(source_date, observed_at, updated_at) DESC, id DESC
+            LIMIT 1
+            """,
+            (patient_id,),
+        )
+        gene_row = cursor.fetchone()
+        gene_value = None
+        if gene_row:
+            gene_value = (gene_row[0] if hasattr(gene_row, "__getitem__") else gene_row.get("normalized_value_text")) or None
+
+        age_days = None
+        try:
+            d = _d.fromisoformat(str(sample_date_str)[:10])
+            age_days = (utc_today() - d).days
+        except (ValueError, TypeError):
+            pass
+        return {
+            "status": status_raw.lower(),
+            "gene": gene_value.upper() if gene_value else None,
+            "sample_date": str(sample_date_str)[:10] if sample_date_str else None,
+            "age_days": age_days,
+            "source_type": row[4] if hasattr(row, "__getitem__") else row.get("source_type"),
+            "clinician_verified": bool(row[5] if hasattr(row, "__getitem__") else row.get("clinician_verified")),
+            "parp_eligible_gene": (gene_value or "").upper() in (
+                "BRCA1", "BRCA2", "ATM", "PALB2", "CHEK2", "CDK12",
+                "FANCA", "RAD51B", "RAD51C", "RAD51D", "BARD1",
+            ) if gene_value else False,
+        }
+    finally:
+        conn.close()
+
+
 def record_clinical_view_audit(
     nss_or_id,
     section_key: str,
