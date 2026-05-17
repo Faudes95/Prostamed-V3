@@ -2416,6 +2416,26 @@ def _build_patient_decision_today_for_api(patient_ref, *, force_recompute=False)
     }, None
 
 
+@app.route('/api/population/recompute-arpi-windows', methods=['POST'])
+def api_population_recompute_arpi_windows():
+    """EPIC 34.A — Trigger admin: pre-compute arpi_response_windows snapshots
+    para toda la cohorte ARPI documentada. Útil cuando nuevas PSAs llegan o
+    se añaden treatments. Idempotent (upsert por patient×regimen×weeks).
+
+    Returns: stats {patients_scanned, windows_computed, windows_with_data,
+                     errors, per_evidence_quality}
+    """
+    try:
+        from prostanet.domains.population_intelligence.mx_cohort_aggregator import (
+            populate_arpi_response_windows_for_cohort,
+        )
+        stats = populate_arpi_response_windows_for_cohort()
+        return jsonify({"success": True, **stats})
+    except Exception as exc:
+        logger.exception("Recompute ARPI windows failed")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
 @app.route('/api/population/cohort-dashboard', methods=['GET'])
 def api_population_cohort_dashboard():
     """EPIC 33.C — MX Cohort Exploratory Dashboard.

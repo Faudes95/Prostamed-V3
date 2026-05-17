@@ -87,41 +87,70 @@ def _total_active_patients() -> int:
 def aggregate_patients_by_regimen() -> dict[str, Any]:
     """Counts per ARPI + ADT-only + others. Suprime n<5 individual.
 
-    Reads from clinical_facts.fact_key='current_treatment_regimen' (active row).
-    Falls back to scanning treatments table.
+    EPIC 34.A (Discovery Phase 1 fix) — fuente primaria: `treatment_history`
+    table (existe con 57+ rows). Pre-EPIC34 el aggregator buscaba tabla
+    inexistente `treatments` y fact_key `current_treatment_regimen` que NO
+    se capturaba → dashboard mostraba 0%.
+
+    Estrategia: per paciente, tomar la línea terapéutica MÁS RECIENTE
+    (max start_date) de treatment_history. Si no hay treatment_history,
+    fallback a fact `current_adt_context` para detectar ADT_ONLY.
     """
     total_n = _total_active_patients()
     counter: Counter[str] = Counter()
+    patients_with_regimen: set[int] = set()
+
+    # PRIMARY SOURCE: treatment_history (EPIC 34.A fix)
+    try:
+        conn = sqlite3.connect(_db_path())
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                """
+                SELECT t1.patient_id, t1.drug_scheme
+                FROM treatment_history t1
+                INNER JOIN (
+                    SELECT patient_id, MAX(COALESCE(start_date, '0000-00-00')) AS max_start
+                    FROM treatment_history
+                    GROUP BY patient_id
+                ) t2 ON t1.patient_id = t2.patient_id
+                   AND COALESCE(t1.start_date, '0000-00-00') = t2.max_start
+                """
+            ).fetchall()
+            for r in rows:
+                d = dict(r)
+                drug = d.get("drug_scheme") or ""
+                if not drug or drug == "[object Object]":
+                    continue
+                label = _classify_drug_scheme(drug)
+                counter[label] += 1
+                patients_with_regimen.add(d["patient_id"])
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.debug(f"treatment_history scan failed: {exc}")
+
+    # SECONDARY: fact_key='current_treatment_regimen' (if eventually adopted)
     facts = _query_active_facts_by_key("current_treatment_regimen")
     for f in facts:
+        pid = f.get("patient_id")
+        if pid in patients_with_regimen:
+            continue
         label = _classify_drug_scheme(f.get("normalized_value_text") or "")
         counter[label] += 1
+        if pid:
+            patients_with_regimen.add(pid)
 
-    # Fallback: scan treatments table for patients without fact_key
-    if not facts:
-        try:
-            conn = sqlite3.connect(_db_path())
-            conn.row_factory = sqlite3.Row
-            try:
-                # Get most recent treatment per patient
-                rows = conn.execute(
-                    """
-                    SELECT t1.patient_id, t1.drug_scheme
-                    FROM treatments t1
-                    INNER JOIN (
-                        SELECT patient_id, MAX(start_date) AS max_start
-                        FROM treatments
-                        GROUP BY patient_id
-                    ) t2 ON t1.patient_id = t2.patient_id AND t1.start_date = t2.max_start
-                    """
-                ).fetchall()
-                for r in rows:
-                    label = _classify_drug_scheme(dict(r).get("drug_scheme") or "")
-                    counter[label] += 1
-            finally:
-                conn.close()
-        except Exception as exc:
-            logger.debug(f"Fallback treatments scan failed: {exc}")
+    # TERTIARY: current_adt_context fact for patients without explicit drug_scheme
+    adt_facts = _query_active_facts_by_key("current_adt_context")
+    for f in adt_facts:
+        pid = f.get("patient_id")
+        if pid in patients_with_regimen:
+            continue
+        ctx = (f.get("normalized_value_text") or "").lower()
+        if "medical_adt" in ctx or "surgical" in ctx or "adt" in ctx:
+            counter["ADT_ONLY"] += 1
+            patients_with_regimen.add(pid)
 
     breakdown = {}
     for label in (*ARPI_LABELS, "ADT_ONLY", "OTHER"):
@@ -365,6 +394,129 @@ KPI_REGISTRY: dict[str, dict[str, Any]] = {
         "args": {},
     },
 }
+
+
+def populate_arpi_response_windows_for_cohort(
+    *,
+    weeks_list: tuple[int, ...] = (8, 24),
+    force_recompute: bool = False,
+) -> dict[str, Any]:
+    """EPIC 34.A — Pre-compute arpi_response_windows snapshots para toda la
+    cohorte con tratamiento ARPI documentado. Sin esto, las KPIs psa_response_*
+    leen tabla vacía → suprimidas todas como n<5.
+
+    Por cada (patient, weeks) computa response usando compute_arpi_response_at_window
+    + upserta en tabla arpi_response_windows. Returns: stats summary.
+    """
+    from prostanet.domains.patient_tracking.arpi_response_window import (
+        compute_arpi_response_at_window,
+    )
+    import tracking_db
+
+    conn = sqlite3.connect(_db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        # Get all patients with ARPI in treatment_history
+        arpi_patients = conn.execute(
+            """
+            SELECT DISTINCT patient_id
+            FROM treatment_history
+            WHERE drug_scheme IS NOT NULL
+              AND drug_scheme != ''
+              AND drug_scheme != '[object Object]'
+              AND (drug_scheme LIKE '%ABIRATERONE%' OR drug_scheme LIKE '%ENZALUTAMIDE%'
+                   OR drug_scheme LIKE '%APALUTAMIDE%' OR drug_scheme LIKE '%DAROLUTAMIDE%')
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    stats = {
+        "patients_scanned": len(arpi_patients),
+        "windows_computed": 0,
+        "windows_with_data": 0,
+        "errors": 0,
+        "per_evidence_quality": {},
+    }
+    for row in arpi_patients:
+        pid = row["patient_id"]
+        try:
+            patient_data = tracking_db.get_patient_full_record(pid)
+            if not patient_data:
+                continue
+            # Hydrate clinical_facts (need full history for ECOG)
+            identity_id = (patient_data.get("identity") or {}).get("id") or pid
+            patient_data["clinical_facts"] = tracking_db.get_patient_clinical_facts(
+                identity_id, active_only=False,
+            )
+            for weeks in weeks_list:
+                result = compute_arpi_response_at_window(patient_data, weeks=weeks)
+                stats["windows_computed"] += 1
+                quality = result.get("evidence_quality", "unknown")
+                stats["per_evidence_quality"][quality] = (
+                    stats["per_evidence_quality"].get(quality, 0) + 1
+                )
+                if result.get("available"):
+                    stats["windows_with_data"] += 1
+                    _upsert_arpi_response_window(identity_id, weeks, result)
+        except Exception as exc:
+            stats["errors"] += 1
+            logger.debug(f"populate_arpi_response_windows error pid={pid}: {exc}")
+    stats["completed_at"] = utc_now_iso()
+    return stats
+
+
+def _upsert_arpi_response_window(patient_id: int, weeks: int, result: dict) -> None:
+    """Upsert one snapshot into arpi_response_windows."""
+    conn = sqlite3.connect(_db_path())
+    try:
+        conn.execute(
+            """
+            INSERT INTO arpi_response_windows (
+                patient_id, regimen_code, target_weeks, target_date,
+                line_start_date, baseline_psa, actual_psa, actual_psa_date,
+                psa_decline_pct, psa50_response, psa90_response,
+                actual_ecog, baseline_ecog, ecog_change_from_baseline,
+                window_offset_days, evidence_quality, computed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(patient_id, regimen_code, target_weeks) DO UPDATE SET
+                target_date = excluded.target_date,
+                baseline_psa = excluded.baseline_psa,
+                actual_psa = excluded.actual_psa,
+                actual_psa_date = excluded.actual_psa_date,
+                psa_decline_pct = excluded.psa_decline_pct,
+                psa50_response = excluded.psa50_response,
+                psa90_response = excluded.psa90_response,
+                actual_ecog = excluded.actual_ecog,
+                baseline_ecog = excluded.baseline_ecog,
+                ecog_change_from_baseline = excluded.ecog_change_from_baseline,
+                window_offset_days = excluded.window_offset_days,
+                evidence_quality = excluded.evidence_quality,
+                computed_at = excluded.computed_at
+            """,
+            (
+                patient_id,
+                str(result.get("regimen_code") or ""),
+                weeks,
+                str(result.get("target_date") or ""),
+                str(result.get("line_start_date") or ""),
+                result.get("baseline_psa"),
+                result.get("actual_psa"),
+                str(result.get("actual_psa_date") or "") if result.get("actual_psa_date") else None,
+                result.get("psa_decline_pct"),
+                1 if result.get("psa50_response") else 0,
+                1 if result.get("psa90_response") else 0,
+                result.get("actual_ecog"),
+                result.get("baseline_ecog"),
+                result.get("ecog_change_from_baseline"),
+                result.get("window_offset_days"),
+                str(result.get("evidence_quality") or ""),
+                str(result.get("computed_at") or utc_now_iso()),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def compute_kpi(kpi_id: str) -> dict[str, Any]:

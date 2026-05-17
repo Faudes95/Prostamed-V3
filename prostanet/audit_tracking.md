@@ -13845,6 +13845,70 @@ Pre-EPIC32: 42+ instances de `datetime.utcnow()` (deprecated 3.12+) y `datetime.
 | **Pragmatist** | Orden invertido E→B→C (decongestion first 30min impact); reusar loop_monitor_dashboard.html + disease_course_outcomes |
 | **Critic** | clinical_view_audit table + HIPAA actor_id; banner exploratory permanente; NO interpolación PSA; ventana ±14d explicit |
 
+---
+
+## EPIC 34.A — Discovery Phase 1 + Fix Aggregator Schema Mismatch
+
+> Fecha: 2026-05-17 · FAUBOT_RELEASE bump: `2026-05-16 CIV` → `2026-05-16 CV`
+>
+> Trigger: Council post-EPIC 33 cuestionó "¿cuál es el siguiente salto clínico de mayor valor?" Discovery reveló que dashboard EPIC 33.C mostraba 0% NO por captura ausente sino por **schema mismatch en el aggregator** (leía tabla inexistente `treatments` en lugar de `treatment_history`).
+
+### Discovery Phase 1 — diagnóstico de la cohorte de 424 pacientes
+
+| Hallazgo | Detalle |
+|----------|---------|
+| **Test fixtures vs reales** | 354/424 = 83.5% son VAL-/BUG_FIX_/CURL_/TEST (test data). ~70 potencialmente reales |
+| **Activity reciente** | 240 pacientes registrados abr 2026 · 28k facts últimos 90d · 257 pacientes tocados |
+| **Cobertura clinical_facts** | 60% m_substage · 55% metastatic_stage · 42% PSA · 27% ECOG |
+| **Treatment data REAL** | `treatment_history` table: **57 pacientes** con drug_scheme documentado (no 0%) |
+| **ROOT CAUSE dashboard 0%** | Aggregator EPIC 33.C consultaba tabla inexistente `treatments` + fact_key `current_treatment_regimen` nunca capturado |
+
+### EPIC 34.A — Fixes implementados
+
+| Cambio | Archivo |
+|--------|---------|
+| `aggregate_patients_by_regimen()` primary source: `treatment_history` (no tabla `treatments`) + fallback `current_treatment_regimen` fact + tertiary `current_adt_context` para ADT_ONLY | `mx_cohort_aggregator.py` |
+| `populate_arpi_response_windows_for_cohort()` — barre 23 ARPI patients, calcula 46 response windows (8+24wk), upsert a `arpi_response_windows` table | `mx_cohort_aggregator.py` |
+| `_upsert_arpi_response_window()` helper con `ON CONFLICT(patient_id, regimen_code, target_weeks) DO UPDATE` | `mx_cohort_aggregator.py` |
+| Endpoint admin `POST /api/population/recompute-arpi-windows` (idempotent recompute) | `app.py` |
+
+### Resultados de transformación dashboard EPIC 33.C
+
+**ANTES (mi commit EPIC 33 `6332c07`)**:
+- Total DB: 424 · Con régimen documentado: **0 (0%)**
+- Todas las ARPI: 0 pacientes
+
+**DESPUÉS (EPIC 34.A)**:
+- Total DB: 424 · Con régimen documentado: **81 (19.1%)** ← gap captura era ilusorio
+- ABIRATERONE: **13** pacientes (Wilson CI 1.8-5.2%)
+- ENZALUTAMIDE: **8** pacientes (CI 1.0-3.7%)
+- DAROLUTAMIDE: **2** pacientes (suprimido n<5)
+- ADT_ONLY: **48** pacientes (CI 8.6-14.7%) ← NUEVO via current_adt_context fallback
+- OTHER: 10 pacientes (1 ADT_DAROLUTAMIDE_DOCETAXEL triplet + 5 DOC + 5 CABAZ)
+
+`arpi_response_windows` table: **5 snapshots con data real** (closest_outside_window quality) + 41 marked `target_in_future` (tratamientos iniciados abr 2026, 24wk aún no alcanzado).
+
+### Council verdict refutado/confirmado
+
+- **Skeptic** parcialmente refutado: NO eran 0 pacientes reales, eran 57 con treatment data. Pero acertó en pedir Discovery antes de feature.
+- **Pragmatist** confirmado: MVP minimal (fix schema) > captura turbocharger completo. Tiempo total EPIC 34.A: ~45 minutos vs 3 sprints estimados originalmente para captura turbocharger.
+- **Critic** confirmado parcialmente: ECOG gap real (solo 2/57 ARPI patients tienen ECOG) → próximo focal capture target Phase 2.
+- **Mi Architect inicial** refutado: el problema NO era captura del médico, era schema mismatch en el código que YO escribí en EPIC 33.C.
+
+### Visual validation
+- `epic34a_visual_validation/01_dashboard_with_real_data.png` — Dashboard MX cohort renderiza data REAL: ABI=13 (3.1% IC95% 1.8-5.2%) · ADT_ONLY=48 (11.3% IC95% 8.6-14.7%) · ENZA=8 · DARO=2 · OTHER=10. PSA response @ 8wk suprime n<5 correctamente (5 windows distribuidas entre 3 ARPIs no alcanza threshold individual).
+
+### Próximos pasos (Phase 2 — concesión Critic council)
+
+ECOG capture focal: solo 2/57 ARPI patients tienen ECOG documentado. Implementar:
+1. Voice prompt en patient_profile "¿ECOG actual del paciente?" para los 57 con ARPI
+2. Dropdown ECOG 0-4 en patient_profile_v2 con auto-fill desde último ECOG si existe
+3. Target: 30/57 = 53% capture rate en 2 semanas
+4. Cuando 30+ ARPI patients tengan ECOG @ 24wk → dashboard mostrará `ecog_change_24wk` con datos reales
+
+### Constraint del usuario respetado
+0 líneas de lógica clínica eliminadas. Append/repair only. Solo modificación del aggregator que YO escribí en EPIC 33.C (mi código previo, no clínica del usuario).
+
 ### Resumen acumulado EPIC 30 + 31 + 32
 
 | EPIC | Hallazgos cerrados | Pendientes |
