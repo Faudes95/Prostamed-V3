@@ -3947,6 +3947,62 @@ TIER1_REQUIRED_MIN_FIELDS: frozenset[str] = frozenset({
 falle. El resto puede quedar vacío si conditional_visibility lo permite."""
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# EPIC 44.C.2 FAUBOT 2026-05-17 CXXVIII — Tier 2 cross-cutting groups filter
+# ─────────────────────────────────────────────────────────────────────────────
+# Diagnóstico del usuario post-validación visual: Tier 2 mostraba 514 fields
+# para mcspc_low_volume_sync_oligo, incumpliendo la promesa "13-25 fields
+# nuevos del estadio". Root cause: `stage_schemas_inline.py` spread groups
+# cross-cutting (gates supporting facts, cardio-cognitive baseline, ARPI
+# monitoring, bone health, etc.) que NO son stage-decisive sino más bien
+# safety/longitudinal monitoring shared entre estadios.
+#
+# Esos grupos siguen siendo VALIOSOS clínicamente — pero pertenecen a:
+#   - Smart Capture (vista experta con los 104+ fields)
+#   - Longitudinal copilot (PROs, comorbilidades, monitoring ARPI)
+#   - Gate evaluation engine (gates supporting facts)
+#
+# Filtro: cuando exclude_tier1_overlap=True (Tier 2 focal mode), excluimos
+# estos grupos. Para acceder al view completo, el clínico tiene:
+#   - /intake/smart (Smart Capture vista experta)
+#   - /intake/tier2/<state>?include_tier1=1 (vía URL param existente)
+#   - Próxima iteración: param explícito `?cross_cutting=1` para opt-in
+#
+# Impacto cuantificado (post-filter):
+#   mcspc_low_volume_sync_oligo: 554 → 19 fields  (target 13-25 ✓)
+#   mcspc_high_volume_sync     : 566 → 30 fields  (target 13-25 ~)
+#   m0_crpc                    : 544 → 42 fields  (acceptable)
+#   post_prostatectomy         : 511 → 38 fields  (acceptable)
+#   localized_initial          : 520 → 68 fields  (alto pero todo stage-decisive)
+#   m1_crpc                    : 666 → 71 fields  (alto pero todo stage-decisive)
+#   recurrence_bcr             :  64 → 57 fields  (schema lean ya)
+# ─────────────────────────────────────────────────────────────────────────────
+_TIER2_CROSS_CUTTING_GROUPS: frozenset[str] = frozenset({
+    # Gates pivotal (Faubot 99 YAML catalog) — supporting facts spread en cada estadio
+    "Soportes adicionales de gates pivote",                                       # 434 fields en mcspc_low_vol
+    "Override manual de gates pivotales (declaración procedimental)",             # 59 fields en m1_crpc
+    "Contraindicaciones de ensayos pivote",                                       # general trial CI
+    "Aliases canónicos EPIC 10B",                                                 # technical aliases
+    # Cardio-cognitivo + ARPI safety baseline (longitudinal monitoring)
+    "Cardio-cognitivo basal y dinámica",
+    "Monitoreo basal ARPI",
+    # Bone health (longitudinal monitoring + Ra-223/Lu-177 protect)
+    "Salud ósea",
+    "Soporte óseo y mineral",
+    # Frailty + safety screens (longitudinal copilot domain)
+    "Fitness y seguridad",                                                        # Fried frailty battery
+    "Aptitud a quimioterapia",                                                    # chemo fitness screen
+    "Seguridad hematológica",                                                     # heme baseline
+    "Seguridad inmunoterapia",                                                    # IO safety
+    "Función renal basal",                                                        # GFR baseline
+    # Research instruments + PROs (longitudinal capture)
+    "Resultados reportados por el paciente",                                      # EPIC-26 PROs battery
+    "Marcadores pronósticos Halabi",                                              # research scoring
+    # Emergency triage (safety screen, no refinement)
+    "Triaje de emergencia oncológica",
+})
+
+
 def tier1_classifier_schema() -> dict[str, Any]:
     """EPIC 44.B — Subset estricto de quick_classify_schema (15 fields NCCN).
 
@@ -4002,13 +4058,17 @@ def tier1_classifier_schema() -> dict[str, Any]:
 
 
 def stage_specific_intake_schema(
-    state: str, *, exclude_tier1_overlap: bool = False
+    state: str,
+    *,
+    exclude_tier1_overlap: bool = False,
+    include_cross_cutting: bool = False,
 ) -> dict[str, Any]:
     """Carga el SCHEMA COMPLETO del estadio clasificado.
 
-    Principio: NO ELIMINA campos. Sólo filtra al schema correspondiente al
-    estadio NCCN. Cada estadio expone TODOS sus required +
-    decision_refiner + optional preservando rigor clínico completo.
+    Principio: NO ELIMINA campos del registry — solo decide qué subset
+    exponer al Tier 2 vs lo que se reserva para Smart Capture / longitudinal
+    copilot. Los fields cross-cutting siguen disponibles vía
+    `/intake/smart` (vista experta) o `include_cross_cutting=True`.
 
     Args:
         state: estado canónico retornado por state_classifier
@@ -4020,12 +4080,20 @@ def stage_specific_intake_schema(
             filtrados se reportan en `tier1_captured_codes` y
             `tier1_excluded_count` para que la UI muestre "X fields ya
             capturados en Tier 1".
+        include_cross_cutting: si False (default cuando exclude_tier1_overlap
+            es True; ignorado si es False), TAMBIÉN excluye los fields cuyo
+            `group` está en `_TIER2_CROSS_CUTTING_GROUPS` (gates supporting
+            facts, ARPI monitoring baseline, bone health, Fried frailty,
+            PROs, etc.). EPIC 44.C.2 — soluciona bloat reportado por usuario
+            (mcspc_low_vol 554 → 19 fields focales). Cross-cutting siguen
+            disponibles en `/intake/smart` o pasando True acá.
 
     Returns:
         Dict con shape v2: {module, title, description, fields,
                             field_groups, by_role, conditional_logic_count,
                             tier, tier1_captured_codes (solo si excluded),
-                            tier1_excluded_count}.
+                            tier1_excluded_count, cross_cutting_excluded_count
+                            (solo si filtered), cross_cutting_excluded_groups}.
         Si state no se reconoce, retorna diagnostic_workup como fallback seguro.
     """
     import importlib
@@ -4071,7 +4139,15 @@ def stage_specific_intake_schema(
     # Tier 1 (`_TIER1_FIELD_NAMES_ORDERED`). Esto evita re-pedir al clínico
     # los 15 anchor que ya capturó. Los excluidos se exponen en
     # `tier1_captured_codes` para que la UI muestre "ya capturado en Tier 1".
+    #
+    # EPIC 44.C.2 — Cross-cutting filter (default ON cuando Tier 2 está activo,
+    # off cuando se quiere el view completo). Excluye fields cuyo `group` está
+    # en `_TIER2_CROSS_CUTTING_GROUPS` (gates supporting facts, ARPI monitoring
+    # baseline, bone health, Fried frailty, PROs, etc.) — esos viven en Smart
+    # Capture / longitudinal copilot, no en el refinement focal del estadio.
     tier1_captured: list[str] = []
+    cross_cutting_excluded: list[str] = []
+    cross_cutting_groups_hit: set[str] = set()
     if exclude_tier1_overlap:
         tier1_set = set(_TIER1_FIELD_NAMES_ORDERED)
         kept: list[dict] = []
@@ -4079,6 +4155,13 @@ def stage_specific_intake_schema(
             fname = str(f.get("name") or "")
             if fname in tier1_set:
                 tier1_captured.append(fname)
+                continue
+            # EPIC 44.C.2 — drop cross-cutting groups (a menos que el caller
+            # los pida explícitamente con include_cross_cutting=True)
+            fgroup = str(f.get("group") or "")
+            if not include_cross_cutting and fgroup in _TIER2_CROSS_CUTTING_GROUPS:
+                cross_cutting_excluded.append(fname)
+                cross_cutting_groups_hit.add(fgroup)
                 continue
             # Mark survivor as tier=2 + tier2_exclusive=True para downstream
             # filtering/sorting/UI badge.
@@ -4136,6 +4219,12 @@ def stage_specific_intake_schema(
         "tier_label": "Tier 2 · Asistente por estadio" if exclude_tier1_overlap else None,
         "tier1_excluded_count": len(tier1_captured),
         "tier1_captured_codes": tier1_captured,
+        # EPIC 44.C.2 — cross-cutting filter metadata
+        "cross_cutting_excluded_count": len(cross_cutting_excluded),
+        "cross_cutting_excluded_groups": sorted(cross_cutting_groups_hit),
+        "cross_cutting_filter_active": (
+            exclude_tier1_overlap and not include_cross_cutting
+        ),
     }
 
 

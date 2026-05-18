@@ -185,12 +185,18 @@
       <p class="t2-banner-tagline">
         {% if schema.tier1_excluded_count and schema.tier1_excluded_count > 0 %}
           <strong style="color:var(--t2-text-main);">
-            {{ schema.required_count + schema.decision_refiner_count }} fields nuevos
+            {{ schema.required_count + schema.decision_refiner_count + schema.monitoring_count }} fields focales
           </strong>
-          que afinan la recomendación clínica para
-          <strong style="color:var(--t2-accent);">{{ schema.state }}</strong> ·
-          Los {{ schema.tier1_excluded_count }} anchor NCCN ya capturados en Tier 1
-          no se repiten aquí.
+          para refinar la recomendación clínica de
+          <strong style="color:var(--t2-accent);">{{ schema.state }}</strong>.
+          {% if schema.tier1_excluded_count > 0 %}
+          {{ schema.tier1_excluded_count }} anchor NCCN ya capturados en Tier 1.
+          {% endif %}
+          {% if schema.cross_cutting_filter_active and schema.cross_cutting_excluded_count > 0 %}
+          {{ schema.cross_cutting_excluded_count }} fields cross-cutting
+          (gates · ARPI monitoring · bone health · PROs · frailty) movidos a
+          <a href="/intake/smart" style="color:var(--t2-accent);font-weight:600;">Vista experta</a>.
+          {% endif %}
         {% else %}
           Schema completo del estadio <strong>{{ schema.state }}</strong>
           (incluye los anchor Tier 1 — no se aplicó el filtro de overlap).
@@ -205,7 +211,13 @@
           <strong>{{ schema.tier1_excluded_count }}</strong> ya capturados en Tier 1
         </span>
         {% endif %}
-        <span class="t2-metric">FAUBOT <strong>CXXVI</strong></span>
+        {% if schema.cross_cutting_filter_active and schema.cross_cutting_excluded_count > 0 %}
+        <span class="t2-metric" style="background:rgba(244,114,182,0.12);border-color:rgba(244,114,182,0.35);"
+              title="Cross-cutting fields: {{ schema.cross_cutting_excluded_groups|join(' · ') }}">
+          <strong style="color:rgb(244,114,182);">{{ schema.cross_cutting_excluded_count }}</strong> cross-cutting (en vista experta)
+        </span>
+        {% endif %}
+        <span class="t2-metric">FAUBOT <strong>CXXVIII</strong></span>
       </div>
     </header>
 

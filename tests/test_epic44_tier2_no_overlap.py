@@ -29,7 +29,11 @@ import pytest
     "recurrence_bcr",
 ])
 def test_exclude_tier1_overlap_filters_anchor_fields(state):
-    """En todos los estadios canónicos, filtrar Tier 1 reduce el count."""
+    """En todos los estadios canónicos, filtrar Tier 1 reduce el count.
+
+    EPIC 44.C.2 — el filtro Tier 2 ahora combina tier1_overlap + cross_cutting.
+    El delta del total debe igualar la suma de ambos excluded counts.
+    """
     from prostanet.presentation.v2_adapters import stage_specific_intake_schema
 
     full = stage_specific_intake_schema(state, exclude_tier1_overlap=False)
@@ -39,9 +43,15 @@ def test_exclude_tier1_overlap_filters_anchor_fields(state):
         f"State {state}: filtered count {filtered['total_fields']} > full "
         f"{full['total_fields']} — filtro debe reducir o mantener."
     )
-    assert filtered["tier1_excluded_count"] == (
-        full["total_fields"] - filtered["total_fields"]
-    ), "tier1_excluded_count debe igualar el delta"
+    # EPIC 44.C.2 — delta = tier1_overlap + cross_cutting
+    expected_delta = (
+        filtered["tier1_excluded_count"] + filtered["cross_cutting_excluded_count"]
+    )
+    assert expected_delta == (full["total_fields"] - filtered["total_fields"]), (
+        f"State {state}: tier1_excluded ({filtered['tier1_excluded_count']}) "
+        f"+ cross_cutting_excluded ({filtered['cross_cutting_excluded_count']}) "
+        f"debe igualar el delta total ({full['total_fields']} - {filtered['total_fields']})"
+    )
     assert filtered["tier1_excluded_count"] >= 1, (
         f"State {state}: esperaba al menos 1 overlap con Tier 1 "
         f"(ej. ecog_score o histology_subtype), got 0"
@@ -195,3 +205,92 @@ def test_template_intake_tier2_exists_and_uses_display_options():
     assert "{% block content %}" in content
     assert 't2-banner' in content
     assert 't2-role-section' in content
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EPIC 44.C.2 — Cross-cutting filter tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("state,max_focal_fields", [
+    ("mcspc_low_volume_sync_oligo", 25),   # promesa "13-25 fields nuevos"
+    ("mcspc_high_volume_sync", 40),
+    ("m0_crpc", 60),
+    ("post_prostatectomy", 60),
+])
+def test_tier2_focal_count_within_promise(state, max_focal_fields):
+    """Tier 2 focal (default) cumple promesa "fields nuevos manejables"."""
+    from prostanet.presentation.v2_adapters import stage_specific_intake_schema
+    s = stage_specific_intake_schema(state, exclude_tier1_overlap=True)
+    assert s["total_fields"] <= max_focal_fields, (
+        f"State {state}: Tier 2 focal tiene {s['total_fields']} fields, "
+        f"supera el límite blando de {max_focal_fields}. Cross-cutting filter "
+        "debe agregar más groups al blocklist o el schema debe revisarse."
+    )
+
+
+def test_tier2_cross_cutting_filter_reports_excluded_groups():
+    """schema['cross_cutting_excluded_groups'] reporta qué grupos se filtraron."""
+    from prostanet.presentation.v2_adapters import stage_specific_intake_schema
+    s = stage_specific_intake_schema(
+        "mcspc_low_volume_sync_oligo", exclude_tier1_overlap=True,
+    )
+    assert s["cross_cutting_filter_active"] is True
+    assert s["cross_cutting_excluded_count"] > 100, (
+        f"mcspc_low_vol debería excluir >100 cross-cutting fields, "
+        f"got {s['cross_cutting_excluded_count']}"
+    )
+    assert "Soportes adicionales de gates pivote" in s["cross_cutting_excluded_groups"]
+
+
+def test_tier2_include_cross_cutting_opt_in_returns_full_schema():
+    """include_cross_cutting=True desactiva el filtro (opt-in vista experta)."""
+    from prostanet.presentation.v2_adapters import stage_specific_intake_schema
+    focal = stage_specific_intake_schema(
+        "mcspc_low_volume_sync_oligo", exclude_tier1_overlap=True,
+    )
+    with_cross = stage_specific_intake_schema(
+        "mcspc_low_volume_sync_oligo",
+        exclude_tier1_overlap=True,
+        include_cross_cutting=True,
+    )
+    assert with_cross["total_fields"] > focal["total_fields"], (
+        "include_cross_cutting=True debe retornar más fields que focal"
+    )
+    assert with_cross["cross_cutting_filter_active"] is False
+    assert with_cross["cross_cutting_excluded_count"] == 0
+
+
+def test_tier2_cross_cutting_filter_off_when_exclude_tier1_off():
+    """Si exclude_tier1_overlap=False, el cross-cutting filter NO se activa."""
+    from prostanet.presentation.v2_adapters import stage_specific_intake_schema
+    full = stage_specific_intake_schema(
+        "mcspc_low_volume_sync_oligo", exclude_tier1_overlap=False,
+    )
+    assert full["cross_cutting_filter_active"] is False
+    assert full["cross_cutting_excluded_count"] == 0
+
+
+def test_api_tier2_cross_cutting_query_param_works(app_client):
+    """GET /api/intake/tier2/<state>?cross_cutting=1 incluye cross-cutting."""
+    r_focal = app_client.get("/api/intake/tier2/mcspc_low_volume_sync_oligo")
+    r_full = app_client.get("/api/intake/tier2/mcspc_low_volume_sync_oligo?cross_cutting=1")
+    s_focal = r_focal.get_json()["schema"]
+    s_full = r_full.get_json()["schema"]
+    assert s_full["total_fields"] > s_focal["total_fields"], (
+        "?cross_cutting=1 debe incluir más fields que default"
+    )
+    assert s_focal["cross_cutting_filter_active"] is True
+    assert s_full["cross_cutting_filter_active"] is False
+
+
+def test_route_intake_tier2_banner_shows_cross_cutting_chip(app_client):
+    """Banner Tier 2 muestra contador cross-cutting + link a vista experta."""
+    r = app_client.get("/intake/tier2/mcspc_low_volume_sync_oligo?nss=TEST")
+    html = r.data.decode("utf-8", errors="ignore")
+    assert "cross-cutting" in html.lower(), (
+        "Banner debe mencionar cross-cutting al usuario"
+    )
+    # Link al Smart Capture (vista experta) en el tagline
+    assert 'href="/intake/smart"' in html, (
+        "Banner debe link al Smart Capture para acceso a cross-cutting"
+    )

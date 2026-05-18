@@ -7592,23 +7592,32 @@ def intake_tier2(state: str):
     """EPIC 44.C — Tier 2 Asistente por estadio.
 
     Renderiza `templates/intake_tier2.html` con el schema del estadio
-    EXCLUYENDO overlap Tier 1. Banner contextual indica cuántos fields
-    nuevos hay vs cuántos ya se capturaron en Tier 1.
+    EXCLUYENDO overlap Tier 1 + EXCLUYENDO cross-cutting groups (gates
+    supporting facts, ARPI monitoring baseline, bone health, Fried frailty,
+    PROs, etc.) por default. Banner contextual indica cuántos fields nuevos
+    hay vs cuántos ya se capturaron en Tier 1 vs cuántos están en cross-
+    cutting (disponibles en Smart Capture vista experta).
 
     Query params:
-      ?nss=<NSS>  → opcional, identifica al paciente para persist + redirect
-                    al perfil; si omitido el Tier 2 funciona en modo
-                    "captura standalone" (draft localStorage únicamente).
+      ?nss=<NSS>          → opcional, identifica al paciente para persist
+      ?cross_cutting=1    → opt-in al view amplio que incluye los grupos
+                            cross-cutting (gates supporting facts + PROs +
+                            monitoring + frailty); útil para revisión
+                            longitudinal exhaustiva.
 
-    Beneficio clínico tangible: el clínico que viene de Tier 1 ve solo
-    los fields refinement que faltan para su paciente <state>, en lugar
-    de los 528-671 totales del estadio (que incluyen los 15 anchor ya
-    capturados + cross-cutting PROs/comorbidities/family).
+    Beneficio clínico tangible (post-EPIC 44.C.2): el clínico ve los
+    fields focales del estadio (19-71 según estadio), no los 514-666
+    totales que incluían 434+ supporting facts cross-cutting.
     """
     from prostanet.presentation.v2_adapters import stage_specific_intake_schema
 
     nss = (request.args.get("nss") or "").strip()
-    schema = stage_specific_intake_schema(state, exclude_tier1_overlap=True)
+    include_cross_cutting = (request.args.get("cross_cutting") or "").strip() in ("1", "true", "yes")
+    schema = stage_specific_intake_schema(
+        state,
+        exclude_tier1_overlap=True,
+        include_cross_cutting=include_cross_cutting,
+    )
 
     try:
         page_chrome = build_page_chrome(
@@ -7652,10 +7661,13 @@ def api_intake_tier2(state: str):
 
     nss = (request.args.get("nss") or "").strip()
     include_tier1 = request.args.get("include_tier1", "").strip() in ("1", "true", "yes")
+    include_cross_cutting = request.args.get("cross_cutting", "").strip() in ("1", "true", "yes")
 
     if request.method == "GET":
         schema = stage_specific_intake_schema(
-            state, exclude_tier1_overlap=not include_tier1,
+            state,
+            exclude_tier1_overlap=not include_tier1,
+            include_cross_cutting=include_cross_cutting,
         )
         return jsonify({
             "success": True,

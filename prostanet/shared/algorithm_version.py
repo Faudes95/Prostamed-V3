@@ -84,7 +84,23 @@ from typing import Any
 # en una sola pantalla para usuarios que prefieren single-page sin overhead
 # de navegación tier-to-tier. ADITIVO: el clínico elige el flujo según su
 # caso. 6/6 tests EPIC 44.D + 106 regression EPIC 44 + 22d concordance PASS).
-FAUBOT_RELEASE = "2026-05-17 CXXVII"
+# → CXXVIII (EPIC 44.C.2: Tier 2 cross-cutting groups filter — diagnóstico
+# del usuario post-validación visual: Tier 2 mostraba 514 fields para
+# mcspc_low_volume_sync_oligo (promesa "13-25 nuevos"). Root cause: schema
+# spread group "Soportes adicionales de gates pivote" con 434 fields y otros
+# 15 grupos cross-cutting (ARPI monitoring, bone health, Fried frailty, PROs,
+# Halabi prognostic, emergency triage, etc.). NUEVO constant
+# `_TIER2_CROSS_CUTTING_GROUPS` (16 grupos blocklist) + stage_specific_intake_
+# schema acepta `include_cross_cutting: bool = False` kwarg que filtra estos
+# groups del view default Tier 2. Query param `?cross_cutting=1` permite
+# opt-in al view amplio. Cross-cutting siguen accesibles en Smart Capture
+# vista experta (sin pérdida clínica). Impacto: mcspc_low_vol 554→19,
+# mcspc_high_vol 566→30, m0_crpc 544→42, post_RP 511→38, m1_crpc 666→71,
+# localized 520→68 — todos dentro de "fields focales manejables" promise.
+# Banner Tier 2 ahora muestra chip rosa "X cross-cutting (en vista experta)"
+# + link inline a /intake/smart. 25/25 tests EPIC 44.C/C.2 PASS + regression
+# completa).
+FAUBOT_RELEASE = "2026-05-17 CXXVIII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (
