@@ -59,48 +59,35 @@ from typing import Any
 # Backend compat preservado: value="0"/"1"/"unknown" sigue intacto en submit
 # → voice extractors EPIC 36 + JS auto-save no rompen. 60/60 tests + 541
 # regression PASS + Playwright sweep pending).
-# → CXXV (EPIC 44.B: Tier 1 Clasificador rápido — single-page focused con
-# 15 fields anchor NCCN/EAU strict minimum. NUEVO route GET /intake/tier1
-# + endpoint POST /api/intake/tier1/classify que wraps StateClassifierService
-# y retorna {state, confidence, next_tier_url} para navegación Tier 1→Tier 2.
-# NUEVO template intake_tier1.html (450 LOC) con 2-col layout, live preview
-# rail, progress bar, localStorage draft, conditional_visibility honored,
-# display_options EPIC 44.A propagados. Beneficio clínico tangible:
-# captura de paciente nuevo 15-20min → <60s a estadio canónico. 17/17 tests
-# EPIC 44.B + 558 regression PASS).
-# → CXXVI (EPIC 44.C: Tier 2 Asistente por estadio sin overlap — extiende
-# stage_specific_intake_schema con `exclude_tier1_overlap=True` que filtra
-# fields cuyo nombre coincide con whitelist Tier 1 (3-8 fields por estadio
-# según overlap real). NUEVO route GET /intake/tier2/<state>?nss=<NSS>
-# + endpoint dual GET/POST /api/intake/tier2/<state> (GET retorna schema
-# JSON, POST echo con ack + next_action). NUEVO template intake_tier2.html
-# (350 LOC) con banner contextual "X fields nuevos para tu paciente <state>"
-# + chip Tier 1 capturado + role accordions (required/decision_refiner/
-# monitoring/optional). 16/16 tests EPIC 44.C + 574 regression PASS).
-# → CXXVII (EPIC 44.D: Smart Capture deprecation-aware banner — hero
-# subtitle ahora identifica el flujo como "Vista experta" + banner top
-# 2-tier con CTAs a /intake/tier1 (primaria) y /intake-wizard (alternativa).
-# NO se elimina funcionalidad: Smart Capture sigue exponiendo los 104 fields
-# en una sola pantalla para usuarios que prefieren single-page sin overhead
-# de navegación tier-to-tier. ADITIVO: el clínico elige el flujo según su
-# caso. 6/6 tests EPIC 44.D + 106 regression EPIC 44 + 22d concordance PASS).
-# → CXXVIII (EPIC 44.C.2: Tier 2 cross-cutting groups filter — diagnóstico
-# del usuario post-validación visual: Tier 2 mostraba 514 fields para
-# mcspc_low_volume_sync_oligo (promesa "13-25 nuevos"). Root cause: schema
-# spread group "Soportes adicionales de gates pivote" con 434 fields y otros
-# 15 grupos cross-cutting (ARPI monitoring, bone health, Fried frailty, PROs,
-# Halabi prognostic, emergency triage, etc.). NUEVO constant
-# `_TIER2_CROSS_CUTTING_GROUPS` (16 grupos blocklist) + stage_specific_intake_
-# schema acepta `include_cross_cutting: bool = False` kwarg que filtra estos
-# groups del view default Tier 2. Query param `?cross_cutting=1` permite
-# opt-in al view amplio. Cross-cutting siguen accesibles en Smart Capture
-# vista experta (sin pérdida clínica). Impacto: mcspc_low_vol 554→19,
-# mcspc_high_vol 566→30, m0_crpc 544→42, post_RP 511→38, m1_crpc 666→71,
-# localized 520→68 — todos dentro de "fields focales manejables" promise.
-# Banner Tier 2 ahora muestra chip rosa "X cross-cutting (en vista experta)"
-# + link inline a /intake/smart. 25/25 tests EPIC 44.C/C.2 PASS + regression
-# completa).
-FAUBOT_RELEASE = "2026-05-17 CXXVIII"
+# → CXXV-CXXVIII (EPIC 44.B/C/C.2/D: Tier 1 Clasificador + Tier 2 Asistente
+# + cross-cutting filter + Smart Capture banner) — DEPRECATED y revertidos
+# en CXXIX. Reportado por urólogo: "TIER 2 sigue siendo demasiado extenso"
+# y "los 2 TIER no son funcionales, eliminar". El 2-tier UX no resolvía la
+# pérdida de lógica clínica (Tier 2 mostraba 514 fields; tras filtro
+# cross-cutting bajaba a 19 pero seguía siendo insuficiente para reflejar
+# la riqueza clínica del estadio). Decisión: el clínico prefiere el flujo
+# completo (Smart Capture vista experta con 104 fields + display_options
+# EPIC 44.A) sin segmentación artificial.
+# → CXXIX (Rollback EPIC 44.B/C/C.2/D vía git revert):
+#   - DELETE templates/intake_tier1.html, templates/intake_tier2.html
+#   - DELETE tests/test_epic44_tier1_classifier.py,
+#            tests/test_epic44_tier2_no_overlap.py,
+#            tests/test_epic44d_smart_capture_banner.py
+#   - REMOVE routes /intake/tier1, /api/intake/tier1/classify,
+#            /intake/tier2/<state>, /api/intake/tier2/<state>
+#   - REMOVE tier1_classifier_schema(), TIER1_REQUIRED_MIN_FIELDS,
+#            _TIER1_FIELD_NAMES_ORDERED, _TIER2_CROSS_CUTTING_GROUPS
+#   - REMOVE stage_specific_intake_schema kwargs exclude_tier1_overlap +
+#            include_cross_cutting (revertido a signature original)
+#   - REMOVE Smart Capture banner "Vista experta / Tier 1 Clasificador"
+# PRESERVADOS (sin pérdida clínica):
+#   - EPIC 44.A: friendly display labels (BCR confirmada, PSMA-positiva,
+#     visceral mets contextuales, ~30 fields enriched, 60/60 tests)
+#   - 9973c05 compass-aware ranking Patient Twin OS (Enzalutamida #1 mCSPC)
+# 517 passed + 1 xfailed post-rollback. Próximo: revisitar value clínico
+# real sin segmentación artificial — EPIC 45 ML augmentation o feedback
+# directo del urólogo sobre qué pieza clínica falta.
+FAUBOT_RELEASE = "2026-05-17 CXXIX"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

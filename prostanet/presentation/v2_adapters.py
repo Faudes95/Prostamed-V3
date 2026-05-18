@@ -3888,212 +3888,20 @@ def quick_classify_schema() -> dict[str, Any]:
     return _with_display_options(schema)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# EPIC 44.B FAUBOT 2026-05-17 CXXV — Tier 1 Clasificador rápido (strict minimum)
-# ─────────────────────────────────────────────────────────────────────────────
-# Whitelist NCCN strict minimum para clasificar paciente en <60 segundos.
-# Subset de `quick_classify_schema` (104 fields → 15 fields). Cada field aquí
-# debe ser indispensable para que `StateClassifierService.classify()` rute al
-# estadio correcto en TODOS los 18 estadios canónicos. Si quitamos un field,
-# algún estadio queda inaccesible o ambiguo.
-#
-# Diseño:
-#   - 11 "anchor" always_visible (identidad + ECOG + Dx + TNM + Gleason + PSA)
-#   - 4 conditionally_visible (terapia local + ADT + metástasis viscera)
-#   - Conditional visibility se preserva del quick_classify_schema original
-#   - Cada field mantiene su `display_options` enriquecido (EPIC 44.A)
-#
-# Lo NO incluido (queda para Tier 2 post-clasificación):
-#   - Histología detallada (variantes raras, neuroendocrine, ductal)
-#   - Comorbilidades (CV, hepático, cognitivo, frailty Fried)
-#   - Familia + germline (delegado a 2nd visit usualmente)
-#   - PROs baseline (EPIC-26)
-#   - DDI review status (manejo farmacéutico post-Tx)
-#   - Imaging modality / extension (mpMRI / bone scan / CT done)
-#   - Preferencias paciente (SDM en visita estructurada)
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Names ordenados para preservar UX (identidad primero, decisión clínica al final)
-_TIER1_FIELD_NAMES_ORDERED: tuple[str, ...] = (
-    # Identidad (3) — UI section 1
-    "nss",
-    "full_name",
-    "dob",
-    # Performance (1) — UI section 2
-    "ecog_score",
-    # Confirmación oncológica (2) — UI section 3 (gate hacia Dx confirmado)
-    "known_cancer_diagnosis",
-    "histology_subtype",
-    # TNM + Gleason + PSA (6) — UI section 4 (clinical anchor)
-    "psa_baseline_ng_ml",
-    "gleason_primary",
-    "gleason_secondary",
-    "clinical_tstage",
-    "nodal_status",
-    "metastasis_site",
-    # Historia terapéutica (1) — UI section 5 (rutea post-RP/RT/none)
-    "prior_local_therapy",
-    # Tratamiento sistémico actual (1) — UI section 6 (rutea CRPC vs naive)
-    "current_adt_context",
-    # Metástasis visceral si M+ (1) — UI section 7 (rutea bajo/alto vol CHAARTED)
-    "visceral_metastasis_present",
-)
-
-TIER1_REQUIRED_MIN_FIELDS: frozenset[str] = frozenset({
-    "nss", "full_name", "dob", "ecog_score", "known_cancer_diagnosis",
-    "clinical_tstage", "metastasis_site",
-})
-"""Mínimo absoluto que debe llenarse para que `/api/intake/tier1/classify` no
-falle. El resto puede quedar vacío si conditional_visibility lo permite."""
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# EPIC 44.C.2 FAUBOT 2026-05-17 CXXVIII — Tier 2 cross-cutting groups filter
-# ─────────────────────────────────────────────────────────────────────────────
-# Diagnóstico del usuario post-validación visual: Tier 2 mostraba 514 fields
-# para mcspc_low_volume_sync_oligo, incumpliendo la promesa "13-25 fields
-# nuevos del estadio". Root cause: `stage_schemas_inline.py` spread groups
-# cross-cutting (gates supporting facts, cardio-cognitive baseline, ARPI
-# monitoring, bone health, etc.) que NO son stage-decisive sino más bien
-# safety/longitudinal monitoring shared entre estadios.
-#
-# Esos grupos siguen siendo VALIOSOS clínicamente — pero pertenecen a:
-#   - Smart Capture (vista experta con los 104+ fields)
-#   - Longitudinal copilot (PROs, comorbilidades, monitoring ARPI)
-#   - Gate evaluation engine (gates supporting facts)
-#
-# Filtro: cuando exclude_tier1_overlap=True (Tier 2 focal mode), excluimos
-# estos grupos. Para acceder al view completo, el clínico tiene:
-#   - /intake/smart (Smart Capture vista experta)
-#   - /intake/tier2/<state>?include_tier1=1 (vía URL param existente)
-#   - Próxima iteración: param explícito `?cross_cutting=1` para opt-in
-#
-# Impacto cuantificado (post-filter):
-#   mcspc_low_volume_sync_oligo: 554 → 19 fields  (target 13-25 ✓)
-#   mcspc_high_volume_sync     : 566 → 30 fields  (target 13-25 ~)
-#   m0_crpc                    : 544 → 42 fields  (acceptable)
-#   post_prostatectomy         : 511 → 38 fields  (acceptable)
-#   localized_initial          : 520 → 68 fields  (alto pero todo stage-decisive)
-#   m1_crpc                    : 666 → 71 fields  (alto pero todo stage-decisive)
-#   recurrence_bcr             :  64 → 57 fields  (schema lean ya)
-# ─────────────────────────────────────────────────────────────────────────────
-_TIER2_CROSS_CUTTING_GROUPS: frozenset[str] = frozenset({
-    # Gates pivotal (Faubot 99 YAML catalog) — supporting facts spread en cada estadio
-    "Soportes adicionales de gates pivote",                                       # 434 fields en mcspc_low_vol
-    "Override manual de gates pivotales (declaración procedimental)",             # 59 fields en m1_crpc
-    "Contraindicaciones de ensayos pivote",                                       # general trial CI
-    "Aliases canónicos EPIC 10B",                                                 # technical aliases
-    # Cardio-cognitivo + ARPI safety baseline (longitudinal monitoring)
-    "Cardio-cognitivo basal y dinámica",
-    "Monitoreo basal ARPI",
-    # Bone health (longitudinal monitoring + Ra-223/Lu-177 protect)
-    "Salud ósea",
-    "Soporte óseo y mineral",
-    # Frailty + safety screens (longitudinal copilot domain)
-    "Fitness y seguridad",                                                        # Fried frailty battery
-    "Aptitud a quimioterapia",                                                    # chemo fitness screen
-    "Seguridad hematológica",                                                     # heme baseline
-    "Seguridad inmunoterapia",                                                    # IO safety
-    "Función renal basal",                                                        # GFR baseline
-    # Research instruments + PROs (longitudinal capture)
-    "Resultados reportados por el paciente",                                      # EPIC-26 PROs battery
-    "Marcadores pronósticos Halabi",                                              # research scoring
-    # Emergency triage (safety screen, no refinement)
-    "Triaje de emergencia oncológica",
-})
-
-
-def tier1_classifier_schema() -> dict[str, Any]:
-    """EPIC 44.B — Subset estricto de quick_classify_schema (15 fields NCCN).
-
-    Filtra `quick_classify_schema()` a la whitelist de los 15 fields anchor
-    que `StateClassifierService.classify()` necesita para routear a los 18
-    estadios canónicos. Preserva conditional_visibility + display_options
-    + group + group_order del schema padre — el clínico ve la misma UI
-    pero con 7x menos campos.
-
-    Returns dict shape:
-      {
-        "title": "Tier 1 · Clasificador NCCN/EAU rápido (<60s)",
-        "description": "...",
-        "fields": [...15 field dicts...],
-        "total_fields": 15,
-        "required_min_fields": [...7 strings...],
-        "next_step": "/api/intake/tier1/classify (POST) → /intake/tier2/<state>",
-        "tier": 1,
-      }
-    """
-    base = quick_classify_schema()
-    base_by_name = {f["name"]: f for f in base["fields"]}
-
-    tier1_fields: list[dict[str, Any]] = []
-    missing: list[str] = []
-    for fn in _TIER1_FIELD_NAMES_ORDERED:
-        if fn not in base_by_name:
-            missing.append(fn)
-            continue
-        f = dict(base_by_name[fn])
-        # Marca explícita para downstream filtering en Tier 2 overlap detection.
-        f["tier"] = 1
-        f["tier1_anchor"] = True
-        tier1_fields.append(f)
-
-    return {
-        "title": "Tier 1 · Clasificador NCCN/EAU rápido",
-        "description": (
-            "15 campos anchor para clasificar el estadio canónico del paciente "
-            "en <60 segundos. Tras clasificar, el Tier 2 expone los fields "
-            "específicos del estadio resultante (sin repetir estos)."
-        ),
-        "fields": tier1_fields,
-        "total_fields": len(tier1_fields),
-        "required_min_fields": sorted(TIER1_REQUIRED_MIN_FIELDS),
-        "expected_field_names": list(_TIER1_FIELD_NAMES_ORDERED),
-        "missing_from_base_schema": missing,
-        "next_step": "/api/intake/tier1/classify (POST) → /intake/tier2/<state>",
-        "tier": 1,
-        "tier_label": "Tier 1 · Clasificador",
-        "faubot_release_added": "2026-05-17 CXXV",
-    }
-
-
-def stage_specific_intake_schema(
-    state: str,
-    *,
-    exclude_tier1_overlap: bool = False,
-    include_cross_cutting: bool = False,
-) -> dict[str, Any]:
+def stage_specific_intake_schema(state: str) -> dict[str, Any]:
     """Carga el SCHEMA COMPLETO del estadio clasificado.
 
-    Principio: NO ELIMINA campos del registry — solo decide qué subset
-    exponer al Tier 2 vs lo que se reserva para Smart Capture / longitudinal
-    copilot. Los fields cross-cutting siguen disponibles vía
-    `/intake/smart` (vista experta) o `include_cross_cutting=True`.
+    Principio: NO ELIMINA campos. Sólo filtra al schema correspondiente al
+    estadio NCCN. Cada estadio expone TODOS sus required +
+    decision_refiner + optional preservando rigor clínico completo.
 
     Args:
         state: estado canónico retornado por state_classifier
             (e.g., "m1_crpc", "mcspc_high_volume_sync", "localized_initial").
-        exclude_tier1_overlap: si True (default False), filtra los fields
-            que coinciden EXACTAMENTE por nombre con el whitelist Tier 1
-            (EPIC 44.C). Útil para `/intake/tier2/<state>` que ya recibió
-            esos fields en Tier 1 y no debe re-pedirlos. Los fields
-            filtrados se reportan en `tier1_captured_codes` y
-            `tier1_excluded_count` para que la UI muestre "X fields ya
-            capturados en Tier 1".
-        include_cross_cutting: si False (default cuando exclude_tier1_overlap
-            es True; ignorado si es False), TAMBIÉN excluye los fields cuyo
-            `group` está en `_TIER2_CROSS_CUTTING_GROUPS` (gates supporting
-            facts, ARPI monitoring baseline, bone health, Fried frailty,
-            PROs, etc.). EPIC 44.C.2 — soluciona bloat reportado por usuario
-            (mcspc_low_vol 554 → 19 fields focales). Cross-cutting siguen
-            disponibles en `/intake/smart` o pasando True acá.
 
     Returns:
         Dict con shape v2: {module, title, description, fields,
-                            field_groups, by_role, conditional_logic_count,
-                            tier, tier1_captured_codes (solo si excluded),
-                            tier1_excluded_count, cross_cutting_excluded_count
-                            (solo si filtered), cross_cutting_excluded_groups}.
+                            field_groups, by_role, conditional_logic_count}.
         Si state no se reconoce, retorna diagnostic_workup como fallback seguro.
     """
     import importlib
@@ -4133,43 +3941,6 @@ def stage_specific_intake_schema(
             }
 
     fields = _with_display_options({"fields": list(schema.get("fields") or [])})["fields"]
-
-    # EPIC 44.C — Tier 2 overlap filtering. Si exclude_tier1_overlap=True,
-    # filtra los fields cuyo nombre coincide EXACTAMENTE con el whitelist
-    # Tier 1 (`_TIER1_FIELD_NAMES_ORDERED`). Esto evita re-pedir al clínico
-    # los 15 anchor que ya capturó. Los excluidos se exponen en
-    # `tier1_captured_codes` para que la UI muestre "ya capturado en Tier 1".
-    #
-    # EPIC 44.C.2 — Cross-cutting filter (default ON cuando Tier 2 está activo,
-    # off cuando se quiere el view completo). Excluye fields cuyo `group` está
-    # en `_TIER2_CROSS_CUTTING_GROUPS` (gates supporting facts, ARPI monitoring
-    # baseline, bone health, Fried frailty, PROs, etc.) — esos viven en Smart
-    # Capture / longitudinal copilot, no en el refinement focal del estadio.
-    tier1_captured: list[str] = []
-    cross_cutting_excluded: list[str] = []
-    cross_cutting_groups_hit: set[str] = set()
-    if exclude_tier1_overlap:
-        tier1_set = set(_TIER1_FIELD_NAMES_ORDERED)
-        kept: list[dict] = []
-        for f in fields:
-            fname = str(f.get("name") or "")
-            if fname in tier1_set:
-                tier1_captured.append(fname)
-                continue
-            # EPIC 44.C.2 — drop cross-cutting groups (a menos que el caller
-            # los pida explícitamente con include_cross_cutting=True)
-            fgroup = str(f.get("group") or "")
-            if not include_cross_cutting and fgroup in _TIER2_CROSS_CUTTING_GROUPS:
-                cross_cutting_excluded.append(fname)
-                cross_cutting_groups_hit.add(fgroup)
-                continue
-            # Mark survivor as tier=2 + tier2_exclusive=True para downstream
-            # filtering/sorting/UI badge.
-            f = dict(f)
-            f["tier"] = 2
-            f["tier2_exclusive"] = True
-            kept.append(f)
-        fields = kept
 
     # Group by clinical_role (required/decision_refiner/monitoring/optional)
     by_role: dict[str, list[dict]] = {
@@ -4214,17 +3985,6 @@ def stage_specific_intake_schema(
         "optional_count": len(by_role["optional"]),
         "conditional_logic_count": conditional_count,
         "evidence_basis": "NCCN 5.2026 + EAU 2026 (schema nativo per stage)",
-        # EPIC 44.C — Tier 2 metadata (presente solo cuando exclude_tier1_overlap=True)
-        "tier": 2 if exclude_tier1_overlap else None,
-        "tier_label": "Tier 2 · Asistente por estadio" if exclude_tier1_overlap else None,
-        "tier1_excluded_count": len(tier1_captured),
-        "tier1_captured_codes": tier1_captured,
-        # EPIC 44.C.2 — cross-cutting filter metadata
-        "cross_cutting_excluded_count": len(cross_cutting_excluded),
-        "cross_cutting_excluded_groups": sorted(cross_cutting_groups_hit),
-        "cross_cutting_filter_active": (
-            exclude_tier1_overlap and not include_cross_cutting
-        ),
     }
 
 
