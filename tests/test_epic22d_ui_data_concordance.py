@@ -101,6 +101,14 @@ STATIC_NO_DATA_BINDING: set[str] = {
     "risk-strat-preferred-therapy",  # nested label under risk-stratified card
     "twin-goal-of-care",         # nested chip under patient-twin-os-card
     "twin-redecision-alerts",    # nested chip under patient-twin-os-card
+    # EPIC 45 FAUBOT CXXX — Data Integrity panel + nested resolve button
+    # El panel se renderiza condicionalmente (solo si hay contradicciones o
+    # resoluciones históricas), y el botón aplica auto-resolución vía
+    # endpoint /api/data-integrity/<nss>/resolve. Ambos son parte de la
+    # misma sección — no requieren bundle key independiente porque su
+    # data-binding fluye desde profile_view_raw.data_integrity.
+    "data-integrity-panel",
+    "data-integrity-resolve-btn",
 }
 
 

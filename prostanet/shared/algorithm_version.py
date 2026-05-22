@@ -87,7 +87,39 @@ from typing import Any
 # 517 passed + 1 xfailed post-rollback. Próximo: revisitar value clínico
 # real sin segmentación artificial — EPIC 45 ML augmentation o feedback
 # directo del urólogo sobre qué pieza clínica falta.
-FAUBOT_RELEASE = "2026-05-17 CXXIX"
+# → CXXX (EPIC 45: FactSpec alias contradiction audit — generaliza el fix
+# manual del paciente Frin a TODA la población. NUEVO módulo
+# prostanet/regulatory/clinical/factspec_alias_audit.py (~570 LOC) con:
+#   - get_alias_groups(): inventa 42 alias groups desde FACT_SPECS.legacy_aliases
+#     (15 blocking, e.g. metastatic_stage_resolved↔m_substage_resolved que
+#     fue el bug-root del Frin)
+#   - detect_contradictions_for_patient(): identifica facts del mismo alias
+#     group activos simultáneamente con valores no concordantes
+#   - propose_resolution(): reglas precedencia auditable (más reciente +
+#     tie-break por source_type: clinician_verified > classifier_derived
+#     > legacy_import) + verification_note explicativo
+#   - apply_resolution(): marca losers is_active=0, supersede + audit
+#     entry en clinical_view_audit
+#   - audit_all_patients / resolve_all_patients: poblacionales
+#   - CLI: python -m prostanet.regulatory.clinical.factspec_alias_audit
+#     --dry-run / --apply / --patient-id / --json
+# REST endpoints (NUEVO prostanet/presentation/data_integrity_routes.py):
+#   - GET  /api/data-integrity/audit           (poblacional dry-run)
+#   - GET  /api/data-integrity/<nss>           (snapshot paciente)
+#   - POST /api/data-integrity/<nss>/resolve   (auto-fix, requiere confirm=auto)
+#   - POST /api/data-integrity/audit/apply     (poblacional, requiere
+#                                                confirm=ALL_PATIENTS)
+# View model integration: _build_data_integrity_snapshot() inyecta
+#   `data_integrity` al bundle de build_patient_profile_view_model.
+# UI panel: section data-testid="data-integrity-panel" en patient_profile_v2
+#   se renderiza solo cuando contradictions_count>0 o resolutions_count>0
+#   (sin agregar ruido si todo está limpio). Botón "Aplicar auto-resolución"
+#   visible solo si severity=high. Detalles por contradicción con código
+#   fact_key + valor + source_type + timestamp + historial colapsable.
+# Hallazgo real producción: 33/425 pacientes (7.8%) tienen el mismo bug
+# que Frin con severity=high (todas en alias_group metastatic_stage_resolved).
+# 22/22 tests EPIC 45 PASS + 539 regression PASS).
+FAUBOT_RELEASE = "2026-05-17 CXXX"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

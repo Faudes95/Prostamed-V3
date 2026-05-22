@@ -35,3 +35,27 @@ def register_modular_blueprints(app: Flask) -> None:
             f"loop_monitor_bp registration failed (continuing): "
             f"{type(exc).__name__}: {exc}"
         )
+
+    # Faubot LXC (Iteración C) — GodiBot validator REST endpoints
+    try:
+        from prostanet.presentation.godibot_routes import godibot_bp
+        if "godibot" not in app.blueprints:
+            app.register_blueprint(godibot_bp)
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            f"godibot_bp registration failed (continuing): "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+    # EPIC 45 FAUBOT CXXX — Data Integrity REST endpoints (FactSpec alias audit)
+    try:
+        from prostanet.presentation.data_integrity_routes import data_integrity_bp
+        if "data_integrity" not in app.blueprints:
+            app.register_blueprint(data_integrity_bp)
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            f"data_integrity_bp registration failed (continuing): "
+            f"{type(exc).__name__}: {exc}"
+        )

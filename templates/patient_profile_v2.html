@@ -207,6 +207,109 @@
         {% set _tumor_board = tumor_board_os or profile_view_raw.get('tumor_board_os', {}) %}
         {% set _tb_summary = _tumor_board.get('summary', {}) if _tumor_board else {} %}
         {% set _tb_options = _tumor_board.get('options', []) if _tumor_board else [] %}
+
+        {# ─────────────────────────────────────────────────────────────────
+           EPIC 45 FAUBOT CXXX — Panel Integridad de Datos
+           Renderiza solo si hay contradicciones detectadas O resoluciones
+           históricas. Si todo está limpio, no muestra nada (no agrega ruido).
+           ───────────────────────────────────────────────────────────────── #}
+        {% set _data_integrity = profile_view_raw.get('data_integrity', {}) if profile_view_raw else {} %}
+        {% if _data_integrity and _data_integrity.available and (_data_integrity.contradictions_count > 0 or _data_integrity.resolutions_count > 0) %}
+        <section id="pm2DataIntegrityPanel"
+                 class="pm2-data-integrity-panel"
+                 data-testid="data-integrity-panel"
+                 data-contradictions-count="{{ _data_integrity.contradictions_count }}"
+                 data-needs-review="{{ '1' if _data_integrity.needs_clinician_review else '0' }}"
+                 style="margin: var(--space-4) var(--space-6); padding: var(--space-4);
+                        background: linear-gradient(135deg, rgba(251,113,133,0.10), rgba(15,23,42,0.7));
+                        border: 1px solid rgba(251,113,133,0.32);
+                        border-left: 6px solid rgb(251,113,133);
+                        border-radius: 14px;"
+                 aria-label="Integridad de datos clínicos">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(254,205,211); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">
+                        Integridad de datos · EPIC 45 · FAUBOT CXXX
+                    </div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        {% if _data_integrity.contradictions_count > 0 %}
+                            {{ _data_integrity.contradictions_count }} contradicción{{ 'es' if _data_integrity.contradictions_count > 1 else '' }} FactSpec alias detectada{{ 's' if _data_integrity.contradictions_count > 1 else '' }}
+                        {% else %}
+                            ✓ Sin contradicciones activas · {{ _data_integrity.resolutions_count }} resolución{{ 'es' if _data_integrity.resolutions_count > 1 else '' }} histórica{{ 's' if _data_integrity.resolutions_count > 1 else '' }}
+                        {% endif %}
+                    </h3>
+                    <p style="margin:6px 0 0; color:rgb(203,213,225); font-size:0.875rem; line-height:1.5;">
+                        El sistema detectó facts clínicos del mismo concepto (FactSpec aliases) con valores divergentes activos simultáneamente.
+                        Este es el mismo patrón del bug paciente Frin (M0 vs M1b activos en paralelo). Las contradicciones se resuelven con regla de precedencia auditable (más reciente + source_type).
+                    </p>
+                </div>
+                {% if _data_integrity.needs_clinician_review %}
+                <div style="display:flex; flex-direction:column; gap:0.5rem; align-items:flex-end;">
+                    <span style="background:rgb(220,38,38); color:white; padding:0.25rem 0.75rem; border-radius:999px; font-size:0.75rem; font-weight:700; letter-spacing:0.05em;">
+                        Severidad ALTA · Revisión clínica
+                    </span>
+                    <button type="button"
+                            data-testid="data-integrity-resolve-btn"
+                            onclick="window.location.href='/api/data-integrity/' + (window.PATIENT_NSS || '{{ patient.nss or '' }}') + '/resolve?confirm=auto'"
+                            style="background:rgb(99,102,241); color:white; padding:0.5rem 1rem;
+                                   border:none; border-radius:8px; cursor:pointer;
+                                   font-size:0.875rem; font-weight:600;">
+                        Aplicar auto-resolución →
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if _data_integrity.contradictions_detected %}
+            <div style="margin-top:1rem; display:grid; gap:0.75rem;">
+                {% for contra in _data_integrity.contradictions_detected %}
+                <div class="pm2-data-integrity-row"
+                     data-testid="data-integrity-contradiction-{{ loop.index }}"
+                     style="background:rgba(15,23,42,0.6); border:1px solid rgba(251,113,133,0.25);
+                            border-radius:10px; padding:0.875rem 1rem;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem;">
+                        <div>
+                            <code style="color:rgb(254,205,211); font-size:0.875rem; font-weight:600;">
+                                {{ contra.alias_group_canonical }}
+                            </code>
+                            <span style="color:rgb(148,163,184); font-size:0.75rem; margin-left:0.5rem;">
+                                ({{ contra.alias_group_members|join(' ↔ ') }})
+                            </span>
+                        </div>
+                        <span style="background:{% if contra.severity == 'high' %}rgba(220,38,38,0.2); color:rgb(254,202,202){% else %}rgba(245,158,11,0.2); color:rgb(254,215,170){% endif %};
+                                     padding:0.125rem 0.5rem; border-radius:6px; font-size:0.75rem; font-weight:600;">
+                            {{ contra.severity }}
+                        </span>
+                    </div>
+                    <div style="margin-top:0.5rem; display:grid; grid-template-columns: 1fr; gap:0.25rem;">
+                        {% for row in contra.active_rows %}
+                        <div style="display:flex; gap:0.75rem; font-size:0.8125rem; color:rgb(226,232,240); font-family:ui-monospace, monospace;">
+                            <code style="background:rgba(99,102,241,0.15); padding:0 0.375rem; border-radius:4px;">{{ row.fact_key }}</code>
+                            <span style="color:rgb(254,205,211); font-weight:700;">= {{ row.normalized_value_text or 'null' }}</span>
+                            <span style="color:rgb(148,163,184); font-size:0.75rem;">({{ row.source_type }}, {{ row.updated_at[:10] }})</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if _data_integrity.resolutions_history %}
+            <details style="margin-top:1rem; color:rgb(203,213,225);">
+                <summary style="cursor:pointer; font-size:0.8125rem; font-weight:600;">
+                    Historial de resoluciones ({{ _data_integrity.resolutions_count }})
+                </summary>
+                <ul style="margin:0.5rem 0 0; padding-left:1.25rem; font-size:0.8125rem; color:rgb(148,163,184);">
+                    {% for res in _data_integrity.resolutions_history[:10] %}
+                    <li>{{ res.resolved_at[:19] }} · <code>{{ res.alias_group_canonical }}</code> · {{ res.severity }}</li>
+                    {% endfor %}
+                </ul>
+            </details>
+            {% endif %}
+        </section>
+        {% endif %}
+
         {# EPIC 20 — Clinical Trajectory Recognition Cards (5 new copilots) #}
         {# Renders only when copilot bundle .available=True for that patient #}
 
@@ -2818,6 +2921,8 @@
         {% set _ad_summary = _autodrive.get('summary', {}) if _autodrive else {} %}
         {% set _ad_queue = _autodrive.get('today_queue', []) if _autodrive else [] %}
         {% set _ad_top = _ad_queue[0] if _ad_queue else {} %}
+        {% set _ad_operability = _autodrive.get('decision_operability', {}) if _autodrive else {} %}
+        {% set _ad_clinical_title = _ad_operability.get('clinical_recommendation_title') or _fusion_decision.get('title') or _ad_summary.get('top_action_title') %}
         {# EPIC 33.A — Wrap Autodrive Command Center (standard, default open) #}
         <details class="pm2-section-collapsible" data-section-key="autodrive_command_center" data-importance="standard" data-section-label="Autodrive Command Center" open>
         <summary>Autodrive Command Center · Decision Today Fusion Kernel <span class="pm2-section-meta-chip">{{ _ad_queue|length }} en cola</span></summary>
@@ -2831,6 +2936,11 @@
                     <p style="color:var(--pn-text-muted);font-size:.84rem;line-height:1.5;margin:0">
                         {{ _fusion.get('clinical_rationale') or _ad_summary.get('dominant_blocker') or 'No hay bloqueo dominante documentado.' }}
                     </p>
+                    {% if (_ad_operability.get('operational_queue_state') == 'clinical_recommendation_only') or (_ad_queue|length == 0 and _ad_clinical_title) %}
+                    <p style="color:#bae6fd;font-size:.8rem;line-height:1.45;margin:8px 0 0">
+                        Recomendación clínica activa; sin tarea operativa hoy porque {{ _ad_operability.get('why_no_queue') or 'Autodrive no detectó una acción ejecutable en cola para hoy.' }}
+                    </p>
+                    {% endif %}
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
                     <span class="pm2-state-chip {% if _fusion.get('decision_state') in ['urgent_safety','redecision_required'] or _ad_summary.get('priority_status') == 'critical_today' %}pm2-state-chip--warn{% else %}pm2-state-chip--primary{% endif %}">
@@ -4263,10 +4373,10 @@
 </div>
 
 {# ── Drill-down lateral panel (compartido) ── #}
-<aside id="pm2-drilldown" class="pm2-drilldown" role="dialog" aria-modal="true" aria-hidden="true">
+<aside id="pm2-drilldown" class="pm2-drilldown" role="dialog" aria-hidden="true" hidden inert>
     <div class="pm2-drilldown-head">
         <div style="min-width:0;flex:1">
-            <div class="pm2-drilldown-context">PSA COMPASS · DRILL</div>
+            <div class="pm2-drilldown-context" data-drilldown-context>PSA COMPASS · DRILL</div>
             <div class="pm2-drilldown-title" data-drilldown-title>Drill-down · Línea</div>
         </div>
         <button class="pm2-btn pm2-btn--ghost pm2-btn--icon" type="button" data-drilldown-close aria-label="Cerrar">
@@ -4353,11 +4463,12 @@ document.addEventListener('keydown', e => {
 
 /* ===== Drill-down (open with content) ===== */
 function pm2OpenDrill(line) {
-    const panel = document.getElementById('pm2-drilldown');
-    if (!panel) return;
-    panel.querySelector('[data-drilldown-title]').textContent = 'Drill-down · Línea ' + line;
-    panel.classList.add('is-open');
-    panel.setAttribute('aria-hidden', 'false');
+    if (window.PM2 && typeof window.PM2.showDrillDown === 'function') {
+        window.PM2.showDrillDown({
+            context: 'PSA COMPASS · DRILL',
+            title: 'Drill-down · Línea ' + line
+        });
+    }
 }
 
 /* ===== Horizontal timeline events ===== */

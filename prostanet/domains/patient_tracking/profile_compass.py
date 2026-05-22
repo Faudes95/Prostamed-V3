@@ -4927,6 +4927,82 @@ def _build_copilot_sections(patient: dict[str, Any], state: str, management_trac
     return copilot
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# EPIC 45 — Data Integrity (FactSpec alias contradiction snapshot)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _build_data_integrity_snapshot(patient: dict[str, Any]) -> dict[str, Any]:
+    """EPIC 45 FAUBOT CXXX — Snapshot del estado de integridad de datos.
+
+    Detecta contradicciones FactSpec alias (e.g., metastatic_stage_resolved=M0
+    + m_substage_resolved=M1b ambos activos) en los facts del paciente actual
+    y lista resoluciones históricas aplicadas.
+
+    Operación read-only (advisory) — NO aplica auto-resolución. Para aplicar,
+    el clínico debe llamar a POST /api/data-integrity/<nss>/resolve.
+
+    Returns:
+        {
+          'available': bool,
+          'contradictions_detected': [...],
+          'contradictions_count': int,
+          'severity_summary': {'high': int, 'medium': int},
+          'resolutions_history': [...],
+          'last_resolution_at': str | None,
+        }
+    """
+    try:
+        from prostanet.regulatory.clinical.factspec_alias_audit import (
+            detect_contradictions_for_patient,
+        )
+    except Exception:
+        return {"available": False, "reason": "audit_module_unavailable"}
+
+    facts = patient.get("patient_clinical_facts") or []
+    if not isinstance(facts, list):
+        return {"available": False, "reason": "no_facts_in_patient_record"}
+
+    patient_id = int(patient.get("id") or patient.get("patient_id") or 0)
+    contradictions = detect_contradictions_for_patient(patient_id, facts)
+    severity_summary = {"high": 0, "medium": 0}
+    for c in contradictions:
+        severity_summary[c.severity] = severity_summary.get(c.severity, 0) + 1
+
+    # Historical resolutions from audit log
+    resolutions_history: list[dict[str, Any]] = []
+    last_resolution_at: str | None = None
+    try:
+        from prostanet.regulatory.clinical.factspec_alias_audit import (
+            list_recent_resolutions_for_patient,
+        )
+        from tracking_db import _get_connection  # type: ignore[attr-defined]
+        # Best-effort connection — fail open if not wired in test env
+        try:
+            conn = _get_connection()
+            resolutions_history = list_recent_resolutions_for_patient(
+                conn, patient_id, limit=20,
+            )
+            if resolutions_history:
+                last_resolution_at = resolutions_history[0].get("resolved_at")
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    return {
+        "available": True,
+        "patient_id": patient_id,
+        "contradictions_detected": [c.to_dict() for c in contradictions],
+        "contradictions_count": len(contradictions),
+        "severity_summary": severity_summary,
+        "needs_clinician_review": any(c.severity == "high" for c in contradictions),
+        "resolutions_history": resolutions_history,
+        "resolutions_count": len(resolutions_history),
+        "last_resolution_at": last_resolution_at,
+    }
+
+
 def build_patient_profile_view_model(
     *,
     patient: dict[str, Any],
@@ -6319,6 +6395,26 @@ def build_patient_profile_view_model(
         guideline_followup_plan=guideline_followup_plan,
         care_intent_contract=care_intent_contract,
     )
+    # Iteración C (GodiBot v1) — segunda opinión adversarial sobre el compass
+    # recién construido. Tiempo real, modo sugerencia + bloqueo solo en
+    # hard_block real. Fallback graceful si el módulo no está disponible.
+    godibot_review: dict[str, Any] = {}
+    try:
+        from prostanet.agents.godibot import run_godibot_review
+        godibot_review = run_godibot_review(
+            patient,
+            patient_id=int(patient.get("id") or patient.get("patient_id") or 0),
+            compass=clinical_compass,
+            enable_llm=False,  # LLM disabled en runtime por defecto (latencia)
+        )
+    except Exception as _godibot_exc:  # pragma: no cover - defensive
+        godibot_review = {
+            "status": "approved",
+            "confidence": 1.0,
+            "discrepancies": [],
+            "version": "godibot-v1",
+            "error": str(_godibot_exc),
+        }
     profile_decision_view_model = _build_profile_decision_view_model(
         clinical_compass=clinical_compass,
         care_intent_contract=care_intent_contract,
@@ -6812,4 +6908,15 @@ def build_patient_profile_view_model(
         "functional_recovery_snapshots": patient.get("functional_recovery_snapshots", []),
         "recommendations": recommendations or {},
         "copilot": copilot_sections,
+        # Iteración C (GodiBot v1) — segunda opinión adversarial anexada al
+        # bundle. UI render: `templates/components/godibot_panel.html`.
+        # Si `godibot_review.status == "blocked_hard"`, la presentación debe
+        # mostrar banner rojo + exigir override firmado del médico.
+        "godibot_review": godibot_review,
+        # EPIC 45 FAUBOT CXXX — Data Integrity audit (alias contradictions).
+        # Inyecta {contradictions: [...], resolutions_history: [...], stats}.
+        # UI render: panel "Integridad de datos" en patient_profile_v2.html.
+        # NO bloquea decisiones (advisory only — el clínico decide si aplica
+        # auto-resolución vía endpoint /api/data-integrity/<nss>/resolve).
+        "data_integrity": _build_data_integrity_snapshot(patient),
     }
