@@ -4959,11 +4959,39 @@ def _build_data_integrity_snapshot(patient: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         return {"available": False, "reason": "audit_module_unavailable"}
 
+    # patient_id puede vivir en data.id, data.patient_id, o data.identity.id
+    # (este último es el path canónico desde build_patient_record_derivatives)
+    _identity = patient.get("identity") if isinstance(patient.get("identity"), dict) else {}
+    patient_id = int(
+        patient.get("id")
+        or patient.get("patient_id")
+        or (_identity.get("id") if _identity else 0)
+        or 0
+    )
     facts = patient.get("patient_clinical_facts") or []
     if not isinstance(facts, list):
-        return {"available": False, "reason": "no_facts_in_patient_record"}
+        facts = []
 
-    patient_id = int(patient.get("id") or patient.get("patient_id") or 0)
+    # Fall back to DB query when the upstream loader didn't include facts
+    # (common in patient_profile_v2 flow where facts are loaded separately).
+    if not facts and patient_id > 0:
+        try:
+            from tracking_db import get_db_connection
+            _conn = get_db_connection()
+            _cur = _conn.cursor()
+            _cur.execute(
+                """
+                SELECT id, fact_key, normalized_value_text, source_type,
+                       observed_at, updated_at, is_active
+                  FROM patient_clinical_facts
+                 WHERE patient_id = ? AND is_active = 1
+                """,
+                (patient_id,),
+            )
+            facts = [dict(r) for r in _cur.fetchall()]
+        except Exception:
+            facts = []
+
     contradictions = detect_contradictions_for_patient(patient_id, facts)
     severity_summary = {"high": 0, "medium": 0}
     for c in contradictions:
@@ -4976,10 +5004,10 @@ def _build_data_integrity_snapshot(patient: dict[str, Any]) -> dict[str, Any]:
         from prostanet.regulatory.clinical.factspec_alias_audit import (
             list_recent_resolutions_for_patient,
         )
-        from tracking_db import _get_connection  # type: ignore[attr-defined]
-        # Best-effort connection — fail open if not wired in test env
+        # Correct connection helper name (tracking_db exposes get_db_connection)
+        from tracking_db import get_db_connection
         try:
-            conn = _get_connection()
+            conn = get_db_connection()
             resolutions_history = list_recent_resolutions_for_patient(
                 conn, patient_id, limit=20,
             )

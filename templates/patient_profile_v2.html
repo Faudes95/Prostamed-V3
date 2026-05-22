@@ -250,7 +250,7 @@
                     </span>
                     <button type="button"
                             data-testid="data-integrity-resolve-btn"
-                            onclick="window.location.href='/api/data-integrity/' + (window.PATIENT_NSS || '{{ patient.nss or '' }}') + '/resolve?confirm=auto'"
+                            onclick="window.location.href='/api/data-integrity/' + (window.PATIENT_NSS || '{{ identity.nss or '' }}') + '/resolve?confirm=auto'"
                             style="background:rgb(99,102,241); color:white; padding:0.5rem 1rem;
                                    border:none; border-radius:8px; cursor:pointer;
                                    font-size:0.875rem; font-weight:600;">
