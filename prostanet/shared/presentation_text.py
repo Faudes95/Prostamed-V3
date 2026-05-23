@@ -192,6 +192,31 @@ OPTION_LABELS = {
         "psma_pet": "PET/CT con PSMA",
         "mpmri": "Resonancia multiparamétrica",
     },
+    # EPIC 46.A — Ancestría con impacto clínico
+    "primary_ancestry": {
+        "no_declarado": "Prefiero no responder",
+        "mestizo": "Mestizo (origen mixto indígena + europeo)",
+        "afro_descendiente": "Afro-descendiente",
+        "indigena": "Indígena (auto-adscrito)",
+        "europeo": "Europeo / Caucásico",
+        "asiatico": "Asiático",
+        "otro": "Otro / Combinación específica",
+    },
+    "psma_pet_local_access": {
+        "desconocido": "Desconocido",
+        "1": "Sí, accesible localmente",
+        "0": "No, requiere viaje o no disponible",
+    },
+    "lu_psma_local_access": {
+        "desconocido": "Desconocido",
+        "1": "Sí, Lu-PSMA disponible localmente",
+        "0": "No, sin acceso a Lu-PSMA",
+    },
+    "arsi_local_access": {
+        "desconocido": "Desconocido",
+        "1": "Sí, ARSIs accesibles (cobertura o autofinanciamiento)",
+        "0": "No, ARSIs no accesibles",
+    },
 }
 
 

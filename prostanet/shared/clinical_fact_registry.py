@@ -246,6 +246,46 @@ FACT_SPECS: dict[str, FactSpec] = {
         ("neuron_specific_enolase",),
         False, ("nepc_differentiation_copilot", "profile"),
     ),
+    # ═════════════════════════════════════════════════════════════════
+    # EPIC 46.A (FAUBOT CXXXII) — Latin Decision-Impacting Fields
+    # ═════════════════════════════════════════════════════════════════
+    # Estos 4 facts tienen IMPACTO DIRECTO en recomendación clínica
+    # (no son captura "para research"). El backend tiene infra wired:
+    #   - ETHNICITY_RISK_MODIFIERS (natural_history_tracker.py:40)
+    #     modifica incidence_rr / mortality_rr / gleason_high_risk_rr
+    #     según ancestría. Hoy defaultea a europeo_caucasico → invalida
+    #     la diferenciación. Este fact activa el cálculo correcto.
+    #   - recommendation_arbiter usa los 3 access flags para filter
+    #     terapias localmente inviables (Lu-PSMA, ARSIs) y sugerir
+    #     alternativas accesibles dentro de la realidad del paciente.
+    "primary_ancestry": FactSpec(
+        "primary_ancestry", "systemic_context", "text",
+        ("ethnicity", "self_reported_ancestry", "ancestria_principal"),
+        False,
+        ("decision_input_requirements", "profile", "natural_history",
+         "ethnicity_risk_modifier"),
+    ),
+    "psma_pet_local_access": FactSpec(
+        "psma_pet_local_access", "systemic_context", "boolean",
+        ("psma_pet_available_locally",),
+        False,
+        ("decision_input_requirements", "profile", "decision_arbiter",
+         "treatment_access_filter"),
+    ),
+    "lu_psma_local_access": FactSpec(
+        "lu_psma_local_access", "systemic_context", "boolean",
+        ("lu_psma_617_available_locally", "vision_therapy_available"),
+        False,
+        ("decision_input_requirements", "profile", "decision_arbiter",
+         "treatment_access_filter"),
+    ),
+    "arsi_local_access": FactSpec(
+        "arsi_local_access", "systemic_context", "boolean",
+        ("arsi_drugs_available_locally", "abi_enza_accessible"),
+        False,
+        ("decision_input_requirements", "profile", "decision_arbiter",
+         "treatment_access_filter"),
+    ),
 }
 
 

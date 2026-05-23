@@ -150,7 +150,44 @@ from typing import Any
 # El bug del paciente Frin queda matemáticamente imposible de reaparecer
 # en intake. Frente restante (auto-derive en re-render de pacientes
 # EXISTENTES) será EPIC 45.C si se requiere — está fuera de scope ahora).
-FAUBOT_RELEASE = "2026-05-22 CXXXI"
+# → CXXXII (EPIC 46.A — Latin Decision-Impacting Fields):
+# Materialización del puente roto entre intake y ETHNICITY_RISK_MODIFIERS.
+# Backend tenía hace meses RR modifiers por ancestría (afroamericano 1.73x
+# incidence, hispano_latino 0.85x, etc.) pero el intake NO preguntaba etnia
+# → todo paciente defaulteaba a europeo_caucasico RR 1.0 invalidando la
+# diferenciación. Hoy 425/425 pacientes están en el mismo grupo de riesgo
+# artificial.
+#
+# Cambios:
+#   - 4 nuevos FactSpec en clinical_fact_registry: primary_ancestry +
+#     3 booleanos de acceso regional (psma_pet, lu_psma, arsi).
+#   - intake/_mexico_fragment con widgets friendly-labeled + help_text
+#     explicativo anti-discriminatorio (clarifica "NO afecta acceso a tx").
+#   - natural_history_tracker: PRIMARY_ANCESTRY_TO_ETHNICITY_KEY mapping
+#     + nueva entry indigena_americano (modelado conservadoramente como
+#     hispano_latino variant, flagged data_quality_flag para futuro
+#     re-calibration con cohorte propia EPIC H2-H3).
+#   - resolve_ethnicity_key() helper con precedencia: primary_ancestry
+#     (EPIC 46.A) > legacy ethnicity > europeo_caucasico (fallback).
+#   - recommendation_arbiter._apply_access_restrictions_to_ranking():
+#     NUEVO filter post-contraindications que MARCA (no esconde) terapias
+#     localmente inviables: Lu-PSMA si lu_psma_local_access=0, ARSIs si
+#     arsi_local_access=0. Re-rankea bajando al final + access_restricted=True
+#     + access_note con ruta de derivación sugerida. PSMA-PET sin acceso
+#     no muta ranking pero produce imaging_restrictions en access_warnings.
+#     Filosofía: nunca esconder opción al clínico (mantiene override).
+#   - ArbitratedDecision.access_warnings field nuevo + arbiter_version bump.
+#
+# Tests: 5/5 PASS (tests/test_epic46a_latin_capture.py). Regression: 492
+# PASS + 1 xfailed + 62 arbiter-related PASS.
+#
+# Impacto clínico tangible: el primer paciente nuevo con primary_ancestry=
+# afro_descendiente verá su perfil con incidence_rr=1.73 en lugar del 1.00
+# artificial. Compass + Twin OS + gates derivados leerán el modifier correcto.
+# Si reporta acceso a Lu-PSMA = No, las recomendaciones priorizarán
+# alternativas accesibles dentro de su realidad. Cierra brecha estratégica
+# crítica para Latin foundation de la plataforma).
+FAUBOT_RELEASE = "2026-05-22 CXXXII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

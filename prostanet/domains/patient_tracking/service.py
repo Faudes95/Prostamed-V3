@@ -862,6 +862,90 @@ def _mexico_fragment() -> RegistrationFragment:
             _field("diabetes_mellitus", "Diabetes mellitus", "select", options=["0", "1"], default="0", group="Comorbilidad metabólica", group_order=4, clinical_role="optional"),
             _field("hipertension", "Hipertensión", "select", options=["0", "1"], default="0", group="Comorbilidad metabólica", group_order=4, clinical_role="optional"),
             _field("sindrome_metabolico", "Síndrome metabólico", "select", options=["0", "1"], default="0", group="Comorbilidad metabólica", group_order=4, clinical_role="optional"),
+            # ═══════════════════════════════════════════════════════════
+            # EPIC 46.A (FAUBOT CXXXII) — Ancestría con impacto clínico
+            # ═══════════════════════════════════════════════════════════
+            # Activa ETHNICITY_RISK_MODIFIERS (natural_history_tracker:40).
+            # Auto-reportada, opcional, usada para calibrar evidencia de
+            # trials que NO incluyeron pacientes latinos/afro-descendientes
+            # de forma representativa. NO afecta acceso a tratamiento.
+            # Referencias: SEER 2024, PCBaSe, CAPSURE, Vince RA et al.
+            # JAMA Oncol 2023 (PSA threshold por ancestría).
+            _field(
+                "primary_ancestry", "Ancestría auto-reportada", "select",
+                options=[
+                    "no_declarado",
+                    "mestizo",
+                    "afro_descendiente",
+                    "indigena",
+                    "europeo",
+                    "asiatico",
+                    "otro",
+                ],
+                default="no_declarado",
+                group="Cohorte México",
+                group_order=5,
+                clinical_role="optional",
+                help_text=(
+                    "Opcional. Se usa para calibrar evidencia clínica de trials "
+                    "que no incluyeron representativamente pacientes "
+                    "latinoamericanos/afro-descendientes (e.g., CHAARTED, LATITUDE). "
+                    "Modifica el cálculo de riesgo (Gleason high-grade, mortalidad "
+                    "específica) según evidencia SEER/PCBaSe. NO restringe acceso "
+                    "a tratamiento. Pregunta al paciente: '¿cómo describiría usted "
+                    "su origen o ancestría?'."
+                ),
+            ),
+            # ═══════════════════════════════════════════════════════════
+            # EPIC 46.A — Acceso regional a terapias avanzadas
+            # ═══════════════════════════════════════════════════════════
+            # Estos 3 booleanos activan el filter en
+            # recommendation_arbiter._detect_treatment_access_restriction.
+            # NO esconden la opción cuando está marcada inaccesible: la
+            # MARCAN con badge "Sin acceso local" + sugieren ruta de
+            # derivación. El clínico decide.
+            _field(
+                "psma_pet_local_access", "PSMA-PET disponible localmente", "select",
+                options=["desconocido", "1", "0"],
+                default="desconocido",
+                group="Acceso regional a tratamientos",
+                group_order=6,
+                clinical_role="optional",
+                help_text=(
+                    "¿El paciente tiene acceso a PSMA-PET en su ciudad/región "
+                    "sin viaje mayor a 4 horas? Si NO, las recomendaciones de "
+                    "imaging para staging M cambiarán a alternativas convencionales "
+                    "(TAC/gammagrama ósea)."
+                ),
+            ),
+            _field(
+                "lu_psma_local_access", "Lu-PSMA-617 disponible localmente", "select",
+                options=["desconocido", "1", "0"],
+                default="desconocido",
+                group="Acceso regional a tratamientos",
+                group_order=6,
+                clinical_role="optional",
+                help_text=(
+                    "¿El paciente tiene acceso a terapia con Lu-PSMA-617 "
+                    "(Pluvicto) sin barreras logísticas mayores? Si NO, las "
+                    "recomendaciones para mCRPC PSMA-positivo priorizarán "
+                    "alternativas (taxanos, ARSIs, Ra-223 si bone-predominant)."
+                ),
+            ),
+            _field(
+                "arsi_local_access", "ARSIs (Abi/Enza/Apa/Daro) accesibles", "select",
+                options=["desconocido", "1", "0"],
+                default="desconocido",
+                group="Acceso regional a tratamientos",
+                group_order=6,
+                clinical_role="optional",
+                help_text=(
+                    "¿El paciente puede obtener ARSIs orales (abiraterona, "
+                    "enzalutamida, apalutamida, darolutamida) por su sistema "
+                    "de salud o de bolsillo? Si NO, las recomendaciones "
+                    "considerarán bicalutamida-bridge + escalation path."
+                ),
+            ),
         ],
     )
 

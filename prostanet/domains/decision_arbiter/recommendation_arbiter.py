@@ -111,7 +111,12 @@ class ArbitratedDecision:
     excluded_regimens: list[dict[str, str]] = field(default_factory=list)  # {drug, reason}
     timing_warnings: list[str] = field(default_factory=list)
     data_integrity_flags: list[str] = field(default_factory=list)
-    arbiter_version: str = "epic23_v1.0"
+    # EPIC 46.A (FAUBOT CXXXII) — Acceso regional a tratamientos
+    # Lista de {drug, reason, suggested_path} para terapias marcadas como
+    # inaccesibles localmente (Lu-PSMA, ARSIs, PSMA-PET imaging).
+    # NO esconde opciones: las re-rankea y muestra ruta de derivación.
+    access_warnings: list[dict[str, str]] = field(default_factory=list)
+    arbiter_version: str = "epic23_v1.1_epic46a"
 
 
 # ─────────────────── Conflict detectors (single responsibility each) ───────────────────
@@ -842,6 +847,139 @@ def _apply_contraindications_to_ranking(
     return re_ranked, excluded
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# EPIC 46.A (FAUBOT CXXXII) — Filter de acceso regional a tratamientos
+# ─────────────────────────────────────────────────────────────────────────
+# El intake captura 3 booleanos opcionales:
+#   - psma_pet_local_access (1 / 0 / "desconocido")
+#   - lu_psma_local_access  (1 / 0 / "desconocido")
+#   - arsi_local_access     (1 / 0 / "desconocido")
+#
+# Filosofía clínica (validada con urólogo): NO ESCONDER opciones. Marcar
+# con badge "Sin acceso local" + sugerir ruta de derivación + bajar prioridad
+# en re-ranking. El clínico tiene contexto adicional (derivación factible,
+# trial enroll path, etc.) y conserva el control.
+#
+# Diferencia vs `_apply_contraindications_to_ranking`: aquellos contraindican
+# por seguridad clínica (excluyen estrictamente). Este sólo re-rankea por
+# realidad de acceso (marca pero permite override clínico).
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _apply_access_restrictions_to_ranking(
+    twin_ranking: list[Mapping[str, Any]],
+    facts: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Marca (no esconde) terapias localmente inviables + re-rankea bajando.
+
+    Behavior por flag:
+      - lu_psma_local_access == "0" → Lu-PSMA-617 (Pluvicto) marcado +
+        bajado al final del ranking con badge "sin_acceso_local" + sugerencia
+        de derivación a centro con acceso (Hospital Ángeles CDMX, etc.).
+      - arsi_local_access == "0" → ARSIs (Abi/Enza/Apa/Daro) marcados +
+        bajados con badge + sugerencia bicalutamide-bridge + escalation path.
+      - psma_pet_local_access == "0" → no afecta ranking de terapias (afecta
+        recomendación de imaging), retornado en `imaging_restrictions`.
+
+    Returns:
+        (re_ranked, access_warnings) donde:
+          - re_ranked: lista re-ordenada con `access_restricted` y
+            `access_note` añadidos a items afectados
+          - access_warnings: [{drug, reason, suggested_path}] para UI
+    """
+    facts = dict(facts or {})
+
+    def _is_no(value: Any) -> bool:
+        """True solo si explícitamente '0' / 'no' / False. 'desconocido' → False."""
+        if value is None:
+            return False
+        v = str(value).strip().lower()
+        return v in {"0", "no", "false", "n"}
+
+    lu_psma_blocked = _is_no(facts.get("lu_psma_local_access"))
+    arsi_blocked = _is_no(facts.get("arsi_local_access"))
+    # psma_pet_blocked se expone vía access_warnings pero no muta ranking
+    psma_pet_blocked = _is_no(facts.get("psma_pet_local_access"))
+
+    access_warnings: list[dict[str, str]] = []
+    if lu_psma_blocked:
+        access_warnings.append({
+            "drug": "lu_psma_617",
+            "reason": "Sin acceso local a Lu-PSMA-617 reportado por paciente",
+            "suggested_path": (
+                "Derivar a centro con programa de radiofármacos (CDMX: "
+                "INCan, Hospital Ángeles, Médica Sur; Monterrey: Hospital "
+                "San José, ITESM). Evaluar VISION pivotal pathway."
+            ),
+        })
+    if arsi_blocked:
+        access_warnings.append({
+            "drug": "arsi_drugs",
+            "reason": "Sin acceso a ARSIs orales (Abi/Enza/Apa/Daro) reportado",
+            "suggested_path": (
+                "Bicalutamide-bridge + escalation path. Considerar enrollment "
+                "en trial activo de ARSI vs gestión social/seguros para Abi "
+                "genérica (Mylan/Novartis disponible IMSS-Bienestar en algunos "
+                "estados). Re-evaluar acceso en 3 meses."
+            ),
+        })
+    if psma_pet_blocked:
+        access_warnings.append({
+            "drug": "psma_pet_imaging",
+            "reason": "Sin acceso local a PSMA-PET",
+            "suggested_path": (
+                "Staging M con TAC tórax/abdomen/pelvis + gammagrama óseo "
+                "Tc-99m convencional. Si BCR + PSA bajo, considerar fluciclovine "
+                "(Axumin) si disponible. Evaluar derivación a PSMA-PET solo si "
+                "cambiaría management (e.g., oligometastatic candidates)."
+            ),
+        })
+
+    # Re-rank: ítems afectados van al final pero NO se eliminan
+    if not (lu_psma_blocked or arsi_blocked):
+        # No-op: ranking igual + warnings vacíos para imaging
+        return [dict(r) if isinstance(r, Mapping) else {} for r in (twin_ranking or [])], access_warnings
+
+    def _is_lu_psma_item(item_drug: str, item_name: str) -> bool:
+        s = f"{item_drug} {item_name}".lower()
+        return "lu-psma" in s or "lu_psma" in s or "pluvicto" in s or "lutetium" in s
+
+    def _is_arsi_item(item_drug: str, item_name: str) -> bool:
+        s = f"{item_drug} {item_name}".lower()
+        return any(arsi in s for arsi in (
+            "abiraterone", "abiraterona", "enzalutamide", "enzalutamida",
+            "apalutamide", "apalutamida", "darolutamide", "darolutamida",
+        ))
+
+    primary: list[dict[str, Any]] = []
+    deferred: list[dict[str, Any]] = []
+    for r in (twin_ranking or []):
+        item = dict(r) if isinstance(r, Mapping) else {}
+        drug = str(item.get("primary_drug") or "")
+        name = str(item.get("regimen_name") or "")
+        is_restricted = False
+        if lu_psma_blocked and _is_lu_psma_item(drug, name):
+            is_restricted = True
+            item["access_restricted"] = True
+            item["access_note"] = "Sin acceso local a Lu-PSMA — derivación requerida"
+            item["access_flag"] = "lu_psma_no_local_access"
+        elif arsi_blocked and _is_arsi_item(drug, name):
+            is_restricted = True
+            item["access_restricted"] = True
+            item["access_note"] = "Sin acceso local a ARSIs — bicalutamide-bridge sugerido"
+            item["access_flag"] = "arsi_no_local_access"
+        (deferred if is_restricted else primary).append(item)
+
+    # Concatena: primary preserva su orden original, deferred va al final
+    re_ranked = primary + deferred
+    # Re-numbera arbitrated_rank
+    for idx, item in enumerate(re_ranked, start=1):
+        item["arbitrated_rank"] = idx
+        item["original_rank"] = item.get("rank") if "original_rank" not in item else item["original_rank"]
+
+    return re_ranked, access_warnings
+
+
 # ─────────────────── Helpers ───────────────────
 
 
@@ -913,6 +1051,14 @@ def arbitrate_recommendations(
     # Apply contraindications to re-ranking
     re_ranked, excluded = _apply_contraindications_to_ranking(twin_ranking, conflicts)
 
+    # EPIC 46.A — Apply regional access restrictions sobre el ranking ya
+    # filtrado por contraindicaciones. Esto marca (no esconde) terapias
+    # inaccesibles localmente y las re-ordena al final, preservando el
+    # control clínico para override.
+    re_ranked, access_warnings = _apply_access_restrictions_to_ranking(
+        re_ranked, facts,
+    )
+
     # Compute severity_max
     severity_max = "none"
     if conflicts:
@@ -935,6 +1081,7 @@ def arbitrate_recommendations(
         excluded_regimens=excluded,
         timing_warnings=timing_warnings,
         data_integrity_flags=integrity_flags,
+        access_warnings=access_warnings,
     )
 
 

@@ -66,7 +66,73 @@ ETHNICITY_RISK_MODIFIERS: dict[str, dict[str, float]] = {
         "psa_screening_sensitivity_adj": 1.00,
         "note": "Referencia base para comparación",
     },
+    # EPIC 46.A (FAUBOT CXXXII) — Indígena americano (auto-adscrito)
+    # Sin datos SEER/PCBaSe robustos; modelado conservadoramente como
+    # admixture hispano_latino-base. Flag para validación con cohorte
+    # propia (Latin recalibration EPIC H2-H3).
+    "indigena_americano": {
+        "incidence_rr": 0.82,
+        "mortality_rr": 0.98,
+        "gleason_high_risk_rr": 0.95,
+        "psa_screening_sensitivity_adj": 1.00,
+        "note": (
+            "Indígena americano auto-adscrito — datos limitados en literatura. "
+            "Modelado conservadoramente como variante hispano_latino. "
+            "Pendiente recalibración con cohorte propia (EPIC H2-H3)."
+        ),
+        "data_quality_flag": "model_extrapolated_pending_local_recalibration",
+    },
 }
+
+
+# ══════════════════════════════════════════════════════════════
+# EPIC 46.A (FAUBOT CXXXII) — Mapping UI → backend ethnicity keys
+# ══════════════════════════════════════════════════════════════
+# El intake captura `primary_ancestry` con valores UI-friendly
+# (mestizo, afro_descendiente, indigena, europeo, asiatico, otro,
+# no_declarado). El backend ETHNICITY_RISK_MODIFIERS usa keys
+# clínicos derivados de literatura (SEER/PCBaSe). Este mapa hace
+# el puente sin romper backwards-compat con el campo `ethnicity`
+# legacy que algunos flujos ya escriben.
+
+PRIMARY_ANCESTRY_TO_ETHNICITY_KEY: dict[str, str] = {
+    "mestizo": "hispano_latino",
+    "afro_descendiente": "afroamericano",
+    "indigena": "indigena_americano",
+    "europeo": "europeo_caucasico",
+    "asiatico": "asiatico",
+    "otro": "hispano_latino",       # default conservador para cohorte latina
+    "no_declarado": "europeo_caucasico",  # fallback histórico, NO discrimina
+}
+
+
+def resolve_ethnicity_key(
+    primary_ancestry: str | None = None,
+    legacy_ethnicity: str | None = None,
+) -> str:
+    """Resuelve el ethnicity key canónico de backend desde inputs UI/legacy.
+
+    Precedencia: primary_ancestry (EPIC 46.A) > legacy ethnicity > europeo_caucasico.
+
+    Args:
+        primary_ancestry: valor UI del campo `primary_ancestry`
+            (mestizo / afro_descendiente / indigena / europeo / asiatico / otro / no_declarado)
+        legacy_ethnicity: valor legacy de `demographics.ethnicity` o
+            `baseline.ethnicity` (afroamericano / hispano_latino / asiatico /
+            europeo_caucasico) — para compat con flows pre-EPIC 46.A
+
+    Returns:
+        Backend key válido para ETHNICITY_RISK_MODIFIERS lookup.
+    """
+    if primary_ancestry:
+        key = str(primary_ancestry).strip().lower()
+        if key in PRIMARY_ANCESTRY_TO_ETHNICITY_KEY:
+            return PRIMARY_ANCESTRY_TO_ETHNICITY_KEY[key]
+    if legacy_ethnicity:
+        legacy = str(legacy_ethnicity).strip().lower()
+        if legacy in ETHNICITY_RISK_MODIFIERS:
+            return legacy
+    return "europeo_caucasico"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -272,12 +338,19 @@ class NaturalHistoryTracker:
         # ── Comorbidity ──
         cci = self._compute_cci(patient)
 
-        # ── Ethnicity ──
-        ethnicity = (
+        # ── Ethnicity (EPIC 46.A: prefiere primary_ancestry sobre legacy) ──
+        primary_ancestry = (
+            (patient.get("demographics") or {}).get("primary_ancestry")
+            or (patient.get("baseline") or {}).get("primary_ancestry")
+        )
+        legacy_ethnicity = (
             (patient.get("demographics") or {}).get("ethnicity")
             or (patient.get("baseline") or {}).get("ethnicity")
-            or "europeo_caucasico"
-        ).lower()
+        )
+        ethnicity = resolve_ethnicity_key(
+            primary_ancestry=primary_ancestry,
+            legacy_ethnicity=legacy_ethnicity,
+        )
         ethnicity_modifier = ETHNICITY_RISK_MODIFIERS.get(
             ethnicity, ETHNICITY_RISK_MODIFIERS["europeo_caucasico"]
         )
