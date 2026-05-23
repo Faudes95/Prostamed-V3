@@ -310,6 +310,207 @@
         </section>
         {% endif %}
 
+        {# ═══════════════════════════════════════════════════════════════ #}
+        {# EPIC 46.B (FAUBOT CXXXIII) — ML Predictions panel               #}
+        {# ═══════════════════════════════════════════════════════════════ #}
+        {# Materialización de 4 modelos PyTorch entrenados:                #}
+        {#   - treatment_response: Top regímenes ranked by response prob   #}
+        {#   - survival (deep_surv): OS estimate personalizado             #}
+        {#   - anomaly: score de presentación atípica                      #}
+        {#   - state_transition: predicción próximo state + ETA            #}
+        {# Renderiza solo si AL MENOS 1 modelo respondió (available=True). #}
+        {# Cada card: maturity badge + key metric + colapsable detail.     #}
+        {# Filosofía SaMD: ADVISORY ONLY. Nunca source-of-truth.           #}
+        {% set _ml = profile_view_raw.get('ml_predictions', {}) if profile_view_raw else {} %}
+        {% if _ml and _ml.available %}
+        <section style="margin: var(--space-4) var(--space-6); padding: var(--space-4);
+                        background: linear-gradient(135deg, rgba(99,102,241,0.10), rgba(15,23,42,0.66));
+                        border: 1px solid rgba(99,102,241,0.32);
+                        border-left: 6px solid rgb(99,102,241);
+                        border-radius: 14px;"
+                 class="pm2-ml-predictions-panel"
+                 data-testid="ml-predictions-panel"
+                 aria-label="Predicciones ML">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom: 1rem;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(199,210,254); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">
+                        Inteligencia ML · EPIC 46.B · FAUBOT CXXXIII
+                    </div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        Predicciones individualizadas (advisory)
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        Segunda opinión ML complementaria al árbol de decisiones rule-based.
+                        <strong>Nunca</strong> source-of-truth — la lógica NCCN/EAU + Compass + Twin OS
+                        sigue siendo la base. Use estas predicciones para SDM con paciente y para
+                        flag de casos atípicos al tumor board.
+                    </p>
+                </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px;">
+
+                {# Card 1: Treatment Response prediction #}
+                {% set _tr = _ml.models.get('treatment_response', {}) %}
+                {% if _tr.available %}
+                <div data-testid="ml-card-treatment-response"
+                     data-maturity="{{ _tr.maturity }}"
+                     style="background: rgba(15,23,42,0.5); padding: 0.875rem 1rem; border-radius: 10px; border: 1px solid rgba(99,102,241,0.25);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <span style="font-size:0.72rem; color:rgb(199,210,254); font-weight:700; text-transform:uppercase; letter-spacing:.08em;">
+                            Respuesta a tratamiento
+                        </span>
+                        <span class="pm2-ml-maturity-badge" style="font-size:0.65rem; padding:2px 8px; border-radius:4px;
+                            background: {% if _tr.maturity == 'advisory' %}rgba(34,197,94,0.2); color:rgb(74,222,128){% elif _tr.maturity == 'shadow' %}rgba(251,191,36,0.2); color:rgb(252,211,77){% else %}rgba(148,163,184,0.2); color:rgb(203,213,225){% endif %};">
+                            {{ _tr.maturity }}
+                        </span>
+                    </div>
+                    <div style="font-size:0.875rem; color:#f8fafc; font-weight:600;">
+                        {% if _tr.prediction.expected_response %}
+                            {{ _tr.prediction.expected_response }}
+                        {% elif _tr.prediction.predicted_response_score is defined %}
+                            Score predicho: {{ '%.2f'|format(_tr.prediction.predicted_response_score) }}
+                        {% else %}
+                            Predicción disponible
+                        {% endif %}
+                    </div>
+                    {% if _tr.prediction.confidence %}
+                    <div style="font-size:0.7rem; color:rgb(148,163,184); margin-top:4px;">
+                        Confianza: {{ '%.0f'|format(_tr.prediction.confidence * 100) }}%
+                    </div>
+                    {% endif %}
+                    <div style="font-size:0.65rem; color:rgb(148,163,184); margin-top:6px;">
+                        Modelo: <code>{{ _tr.model_version }}</code>
+                    </div>
+                </div>
+                {% endif %}
+
+                {# Card 2: Survival (deep_surv) prediction #}
+                {% set _sv = _ml.models.get('survival', {}) %}
+                {% if _sv.available %}
+                <div data-testid="ml-card-survival"
+                     data-maturity="{{ _sv.maturity }}"
+                     style="background: rgba(15,23,42,0.5); padding: 0.875rem 1rem; border-radius: 10px; border: 1px solid rgba(99,102,241,0.25);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <span style="font-size:0.72rem; color:rgb(199,210,254); font-weight:700; text-transform:uppercase; letter-spacing:.08em;">
+                            Pronóstico OS
+                        </span>
+                        <span class="pm2-ml-maturity-badge" style="font-size:0.65rem; padding:2px 8px; border-radius:4px;
+                            background: {% if _sv.maturity == 'advisory' %}rgba(34,197,94,0.2); color:rgb(74,222,128){% elif _sv.maturity == 'shadow' %}rgba(251,191,36,0.2); color:rgb(252,211,77){% else %}rgba(148,163,184,0.2); color:rgb(203,213,225){% endif %};">
+                            {{ _sv.maturity }}
+                        </span>
+                    </div>
+                    <div style="font-size:0.875rem; color:#f8fafc; font-weight:600;">
+                        {% if _sv.prediction.median_survival_months is defined %}
+                            {{ '%.1f'|format(_sv.prediction.median_survival_months) }} meses (mediana OS)
+                        {% elif _sv.prediction.risk_score is defined %}
+                            Risk score: {{ '%.2f'|format(_sv.prediction.risk_score) }}
+                        {% else %}
+                            Estimación disponible
+                        {% endif %}
+                    </div>
+                    {% if _sv.prediction.ci_lower is defined and _sv.prediction.ci_upper is defined %}
+                    <div style="font-size:0.7rem; color:rgb(148,163,184); margin-top:4px;">
+                        IC 95%: {{ '%.1f'|format(_sv.prediction.ci_lower) }} – {{ '%.1f'|format(_sv.prediction.ci_upper) }} m
+                    </div>
+                    {% endif %}
+                    <div style="font-size:0.65rem; color:rgb(148,163,184); margin-top:6px;">
+                        Modelo: <code>{{ _sv.model_version }}</code>
+                    </div>
+                </div>
+                {% endif %}
+
+                {# Card 3: Anomaly detector #}
+                {% set _an = _ml.models.get('anomaly', {}) %}
+                {% if _an.available %}
+                <div data-testid="ml-card-anomaly"
+                     data-maturity="{{ _an.maturity }}"
+                     data-anomaly-flagged="{{ '1' if (_an.prediction.is_anomaly or (_an.prediction.anomaly_score is defined and _an.prediction.anomaly_score > 0.7)) else '0' }}"
+                     style="background: rgba(15,23,42,0.5); padding: 0.875rem 1rem; border-radius: 10px;
+                            border: 1px solid {% if _an.prediction.is_anomaly or (_an.prediction.anomaly_score is defined and _an.prediction.anomaly_score > 0.7) %}rgba(239,68,68,0.5){% else %}rgba(99,102,241,0.25){% endif %};">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <span style="font-size:0.72rem; color:rgb(199,210,254); font-weight:700; text-transform:uppercase; letter-spacing:.08em;">
+                            Presentación atípica
+                            {% if _an.prediction.is_anomaly or (_an.prediction.anomaly_score is defined and _an.prediction.anomaly_score > 0.7) %}
+                                <span style="color:rgb(252,165,165); font-weight:800;">⚠</span>
+                            {% endif %}
+                        </span>
+                        <span class="pm2-ml-maturity-badge" style="font-size:0.65rem; padding:2px 8px; border-radius:4px;
+                            background: {% if _an.maturity == 'advisory' %}rgba(34,197,94,0.2); color:rgb(74,222,128){% elif _an.maturity == 'shadow' %}rgba(251,191,36,0.2); color:rgb(252,211,77){% else %}rgba(148,163,184,0.2); color:rgb(203,213,225){% endif %};">
+                            {{ _an.maturity }}
+                        </span>
+                    </div>
+                    <div style="font-size:0.875rem; color:#f8fafc; font-weight:600;">
+                        {% if _an.prediction.anomaly_score is defined %}
+                            Score: {{ '%.2f'|format(_an.prediction.anomaly_score) }}
+                            {% if _an.prediction.anomaly_score > 0.7 %}
+                                · Considerar tumor board
+                            {% endif %}
+                        {% else %}
+                            Análisis disponible
+                        {% endif %}
+                    </div>
+                    <div style="font-size:0.65rem; color:rgb(148,163,184); margin-top:6px;">
+                        Modelo: <code>{{ _an.model_version }}</code>
+                    </div>
+                </div>
+                {% endif %}
+
+                {# Card 4: State transition #}
+                {% set _st = _ml.models.get('state_transition', {}) %}
+                {% if _st.available %}
+                <div data-testid="ml-card-state-transition"
+                     data-maturity="{{ _st.maturity }}"
+                     style="background: rgba(15,23,42,0.5); padding: 0.875rem 1rem; border-radius: 10px; border: 1px solid rgba(99,102,241,0.25);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <span style="font-size:0.72rem; color:rgb(199,210,254); font-weight:700; text-transform:uppercase; letter-spacing:.08em;">
+                            Próximo estado clínico
+                        </span>
+                        <span class="pm2-ml-maturity-badge" style="font-size:0.65rem; padding:2px 8px; border-radius:4px;
+                            background: {% if _st.maturity == 'advisory' %}rgba(34,197,94,0.2); color:rgb(74,222,128){% elif _st.maturity == 'shadow' %}rgba(251,191,36,0.2); color:rgb(252,211,77){% else %}rgba(148,163,184,0.2); color:rgb(203,213,225){% endif %};">
+                            {{ _st.maturity }}
+                        </span>
+                    </div>
+                    <div style="font-size:0.875rem; color:#f8fafc; font-weight:600;">
+                        {% if _st.prediction.next_state %}
+                            → {{ _st.prediction.next_state|replace('_', ' ')|title }}
+                        {% else %}
+                            Predicción disponible
+                        {% endif %}
+                    </div>
+                    {% if _st.prediction.expected_months_to_transition is defined %}
+                    <div style="font-size:0.7rem; color:rgb(148,163,184); margin-top:4px;">
+                        ETA: ~{{ '%.0f'|format(_st.prediction.expected_months_to_transition) }} meses
+                    </div>
+                    {% endif %}
+                    <div style="font-size:0.65rem; color:rgb(148,163,184); margin-top:6px;">
+                        Modelo: <code>{{ _st.model_version }}</code>
+                    </div>
+                </div>
+                {% endif %}
+
+            </div>
+
+            {# Status footer: muestra modelos no disponibles para transparencia #}
+            {% set _unavailable = [] %}
+            {% for _mk, _mv in _ml.models.items() %}
+                {% if not _mv.available %}{% set _ = _unavailable.append((_mk, _mv)) %}{% endif %}
+            {% endfor %}
+            {% if _unavailable %}
+            <details style="margin-top:0.875rem; color:rgb(148,163,184);">
+                <summary style="cursor:pointer; font-size:0.75rem; font-weight:600;">
+                    {{ _unavailable|length }} modelo{{ 's' if _unavailable|length != 1 else '' }} no disponible{{ 's' if _unavailable|length != 1 else '' }} (transparencia)
+                </summary>
+                <ul style="margin:0.4rem 0 0; padding-left:1.25rem; font-size:0.72rem;">
+                    {% for _mk, _mv in _unavailable %}
+                    <li><code>{{ _mk }}</code>: {{ _mv.reason or 'unavailable' }}</li>
+                    {% endfor %}
+                </ul>
+            </details>
+            {% endif %}
+        </section>
+        {% endif %}
+
         {# EPIC 20 — Clinical Trajectory Recognition Cards (5 new copilots) #}
         {# Renders only when copilot bundle .available=True for that patient #}
 

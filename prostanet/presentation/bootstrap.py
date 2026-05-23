@@ -59,3 +59,16 @@ def register_modular_blueprints(app: Flask) -> None:
             f"data_integrity_bp registration failed (continuing): "
             f"{type(exc).__name__}: {exc}"
         )
+
+    # EPIC 46.B FAUBOT CXXXIII — ML Inference GET endpoints + view-model
+    # helper (materialización de los 4 modelos PyTorch entrenados huérfanos).
+    try:
+        from prostanet.presentation.ml_inference_routes import ml_inference_bp
+        if "ml_inference" not in app.blueprints:
+            app.register_blueprint(ml_inference_bp)
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            f"ml_inference_bp registration failed (continuing): "
+            f"{type(exc).__name__}: {exc}"
+        )

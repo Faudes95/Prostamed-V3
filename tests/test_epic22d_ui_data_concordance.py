@@ -109,6 +109,16 @@ STATIC_NO_DATA_BINDING: set[str] = {
     # data-binding fluye desde profile_view_raw.data_integrity.
     "data-integrity-panel",
     "data-integrity-resolve-btn",
+    # EPIC 46.B FAUBOT CXXXIII — ML Predictions panel + 4 sub-cards.
+    # El panel se renderiza condicional (solo si ml_predictions.available),
+    # y las 4 cards individuales son sub-elementos del mismo bundle key
+    # `ml_predictions` (no requieren bundle key independiente cada una).
+    # Data-binding fluye desde profile_view_raw.ml_predictions → models{4}.
+    "ml-predictions-panel",
+    "ml-card-treatment-response",
+    "ml-card-survival",
+    "ml-card-anomaly",
+    "ml-card-state-transition",
 }
 
 

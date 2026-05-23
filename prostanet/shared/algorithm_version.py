@@ -187,7 +187,51 @@ from typing import Any
 # Si reporta acceso a Lu-PSMA = No, las recomendaciones priorizarán
 # alternativas accesibles dentro de su realidad. Cierra brecha estratégica
 # crítica para Latin foundation de la plataforma).
-FAUBOT_RELEASE = "2026-05-22 CXXXII"
+# → CXXXIII (EPIC 46.B — ML Materialization: activa 4 modelos PyTorch
+# entrenados pero huérfanos):
+# Hallazgo de auditoría: 4 modelos en output/models/{treatment_response,
+# deep_surv, anomaly_detector, state_transition}/best.pt cargaban al boot
+# del servidor (logs lo confirman) PERO ningún template los consumía. Los
+# endpoints POST en api.py:1883+ existían pero la UI nunca los llamaba.
+# Trabajo entrenado hace meses, materialization=0%.
+#
+# Cambios (5 archivos, +~600 LOC):
+#   - NUEVO prostanet/presentation/ml_inference_routes.py: blueprint con
+#     5 GET endpoints idempotent por NSS + helper compartido
+#     `build_ml_predictions_snapshot(patient_id)` reutilizado por view model
+#     y endpoints. Cada call queda audited en clinical_view_audit con
+#     section_key='ml_inference', action='ml_predict:<model>:<version>'.
+#   - bootstrap.py: registra ml_inference_bp (graceful degradation).
+#   - profile_compass.build_patient_profile_view_model: inyecta
+#     `ml_predictions` al bundle. Helper fail-safe: si modelo no carga,
+#     reason explicativa pero render del perfil completo NO bloquea.
+#   - templates/patient_profile_v2.html: NUEVA sección "Inteligencia ML"
+#     entre data_integrity panel y EPIC 20 cards. Grid 2x2 con 4 cards:
+#     treatment-response, survival, anomaly (badge ⚠ si score>0.7),
+#     state-transition. Cada card muestra: key metric + maturity badge
+#     (advisory/shadow/experimental) + model_version. Footer transparente
+#     lista modelos no disponibles con razón.
+#   - tests/test_epic46b_ml_materialization.py: 8 tests cubriendo importable,
+#     snapshot shape, fail-safe, view model wire, template testids, 404, 503,
+#     _explain_unavailable priorities.
+#   - tests/test_epic22d_ui_data_concordance.py: registra 5 testids nuevos
+#     en STATIC_NO_DATA_BINDING (data-binding via ml_predictions key).
+#
+# Filosofía SaMD: predictions tagged advisory_only=True + rule_based_source_
+# of_truth=True. Nunca son source-of-truth. Reasoning trail muestra maturity
+# tag → clínico distingue inmediatamente "experimental" vs "advisory".
+#
+# Validación: 8/8 tests EPIC 46.B PASS. Regression: 65 PASS + 1 xfailed
+# (incluye 46.A + EPIC 45 + EPIC 23 arbiter + UI concordance).
+#
+# Impacto clínico tangible: el primer paciente que se abra post-CXXXIII
+# verá 4 cards de inteligencia ML en su perfil (o las disponibles según
+# qué modelos cargaron). Anomaly detector flagea presentaciones atípicas
+# para escalation a tumor board. Treatment response complementa Twin OS
+# ranking. State transition + survival mejoran SDM con paciente.
+# Cierra el segundo orphan más grande de la plataforma — solo queda EPIC
+# 46.C (auto-derive guard) para completar la primera ola de materialización).
+FAUBOT_RELEASE = "2026-05-22 CXXXIII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

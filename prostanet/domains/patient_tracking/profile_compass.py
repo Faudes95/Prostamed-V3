@@ -6947,4 +6947,47 @@ def build_patient_profile_view_model(
         # NO bloquea decisiones (advisory only — el clínico decide si aplica
         # auto-resolución vía endpoint /api/data-integrity/<nss>/resolve).
         "data_integrity": _build_data_integrity_snapshot(patient),
+        # EPIC 46.B FAUBOT CXXXIII — ML Predictions (4 modelos PyTorch).
+        # Materialización de treatment_response + deep_surv + anomaly_detector
+        # + state_transition (entrenados hace meses, CERO consumo en UI hasta hoy).
+        # Inyecta {available, models{4}, advisory_only=True}. UI render: 4 cards
+        # condicionales en patient_profile_v2.html (solo si available). Cada
+        # prediction queda con maturity tag (experimental / shadow / advisory) +
+        # nunca como source-of-truth — siempre complementa rule-based engine.
+        "ml_predictions": _build_ml_predictions_snapshot_view_model(patient),
     }
+
+
+def _build_ml_predictions_snapshot_view_model(patient: dict[str, Any]) -> dict[str, Any]:
+    """Fail-safe wrapper que invoca build_ml_predictions_snapshot desde la
+    capa de presentación. Resuelve patient_id desde el dict del view model
+    (path canónico: patient.identity.id). Si cualquier cosa falla, retorna
+    `available=False` con reason explicativa — NO levanta excepción que
+    bloquee el render del perfil completo."""
+    try:
+        identity = patient.get("identity") if isinstance(patient.get("identity"), dict) else {}
+        patient_id = int(
+            patient.get("id")
+            or patient.get("patient_id")
+            or (identity.get("id") if identity else 0)
+            or 0
+        )
+        if patient_id <= 0:
+            return {
+                "available": False,
+                "models": {},
+                "reason": "invalid_patient_id",
+                "advisory_only": True,
+            }
+
+        from prostanet.presentation.ml_inference_routes import (
+            build_ml_predictions_snapshot,
+        )
+        return build_ml_predictions_snapshot(patient_id)
+    except Exception as exc:
+        return {
+            "available": False,
+            "models": {},
+            "reason": f"snapshot_builder_error: {type(exc).__name__}",
+            "advisory_only": True,
+        }
