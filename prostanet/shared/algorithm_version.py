@@ -231,7 +231,62 @@ from typing import Any
 # ranking. State transition + survival mejoran SDM con paciente.
 # Cierra el segundo orphan más grande de la plataforma — solo queda EPIC
 # 46.C (auto-derive guard) para completar la primera ola de materialización).
-FAUBOT_RELEASE = "2026-05-22 CXXXIII"
+# → CXXXIV (EPIC 46.C — Auto-derive guard: CIERRE SAGA EPIC 45):
+#
+# Último frente abierto de EPIC 45 cerrado. El auto-derive en
+# tracking_db.refresh_longitudinal_intelligence (función central llamada
+# por TODO render de perfil de paciente existente) podía re-crear
+# contradicciones alias transitoriamente — exactamente el bug descubierto
+# en EPIC 45 APPLY Fase 5 con paciente 39 (m_substage_resolved=M1b
+# regenerado por auto-derive sobre metastatic_stage_resolved=M0 limpio).
+#
+# Cambios (3 archivos, ~150 LOC):
+#
+# 1. tracking_db.py:11538+ (post-conn.commit() pre-conn.close()):
+#    Hook EPIC 46.C inyectado idéntico al patrón EPIC 45.B (intake) pero
+#    en el path central de auto-derive. Cada vez que refresh persiste
+#    facts, el guard limpia contradicciones residuales con action_suffix=
+#    'on_autoderive'. Non-blocking — si auditoría falla, refresh completa
+#    con WARNING log (clínico ve panel UI EPIC 45 y puede resolver manual).
+#
+# 2. prostanet/regulatory/clinical/factspec_alias_audit.py:audit_patient():
+#    BUG FIX descubierto durante smoke E2E: la función esperaba conn con
+#    row_factory=Row, pero refresh usa conn default (tuples). Patched para
+#    normalizar a list[dict] usando cur.description independiente del
+#    row_factory configurado. Robustez para callers heterogéneos.
+#
+# 3. tests/test_epic45_factspec_alias_audit.py: +2 tests dedicados:
+#    - test_epic46c_autoderive_guard_resolves_contradictions_with_on_autoderive_suffix:
+#      valida cadena audit→propose→apply produce action terminando en
+#      ':on_autoderive' (no ':on_intake' ni sin suffix)
+#    - test_epic46c_re_render_does_not_reactivate_contradiction:
+#      simula 2 rondas auto-derive con re-creación cross-alias (escenario
+#      exacto del bug paciente 39) y valida que guard mantiene 0
+#      contradicciones residuales activas sostenido + audit entries
+#      acumuladas
+#
+# Validación end-to-end:
+#   - 27/27 tests EPIC 45 + 46.C PASS
+#   - 67 PASS + 1 xfailed regression sweep
+#   - Smoke real con paciente 39:
+#     * PRE: inyecté contradicción artificial M0_FORCED_TEST vs M1b
+#     * Trigger /patient_profile/97000000001?v=2 → HTTP 200 (6.9s)
+#     * POST: 0 contradicciones + 1 audit entry ':on_autoderive'
+#     * Log: "EPIC 46.C auto-derive guard: patient_id=39 cleaned 1
+#       alias contradiction(s) post-refresh"
+#
+# Cierre saga EPIC 45 — 3 frentes ahora cubiertos:
+#   - INTAKE (EPIC 45.B :on_intake): nuevos pacientes nunca llegan a
+#     render con contradicciones alias
+#   - AUTO-DERIVE (EPIC 46.C :on_autoderive): pacientes existentes
+#     mantienen estado limpio aún cuando refresh recrea facts
+#   - RESOLUCIONES CLI/MANUAL (action sin suffix): trazables separadamente
+#
+# Net effect arquitectónico: el bug del paciente Frin queda matemáticamente
+# imposible de manifestarse en cualquier path. Dashboard regulatorio H2
+# puede reportar ratio :on_intake / :on_autoderive / :cli_apply / :manual
+# para distinguir fuentes de data integrity issues.
+FAUBOT_RELEASE = "2026-05-23 CXXXIV"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

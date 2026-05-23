@@ -415,7 +415,12 @@ def apply_resolution(conn, resolution: Resolution) -> Resolution:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def audit_patient(conn, patient_id: int) -> list[Contradiction]:
-    """Carga active facts del paciente y detecta contradicciones."""
+    """Carga active facts del paciente y detecta contradicciones.
+
+    EPIC 46.C robustness: callers pueden pasar conn con cualquier row_factory
+    (None, sqlite3.Row, dict_factory). Convertimos tuples → dicts vía
+    cur.description para garantizar shape esperado por detect_*.
+    """
     cur = conn.cursor()
     cur.execute(
         """
@@ -426,7 +431,17 @@ def audit_patient(conn, patient_id: int) -> list[Contradiction]:
         """,
         (patient_id,),
     )
-    rows = [dict(r) if hasattr(r, "keys") else r for r in cur.fetchall()]
+    raw_rows = cur.fetchall()
+    # Normaliza a list[dict] independiente del row_factory configurado en conn
+    rows: list[dict[str, Any]] = []
+    if raw_rows:
+        if hasattr(raw_rows[0], "keys"):
+            # sqlite3.Row o dict-like
+            rows = [dict(r) for r in raw_rows]
+        else:
+            # tuple — usar cur.description para extraer column names
+            col_names = [d[0] for d in (cur.description or [])]
+            rows = [dict(zip(col_names, r)) for r in raw_rows]
     return detect_contradictions_for_patient(patient_id, rows)
 
 

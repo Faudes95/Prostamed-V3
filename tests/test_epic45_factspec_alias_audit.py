@@ -630,3 +630,164 @@ def test_epic45b_post_intake_guard_failsafe_on_audit_exception(monkeypatch):
         "El intake debe completar exitosamente aún si la auditoría falla "
         "(graceful degradation EPIC 45.B)"
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EPIC 46.C (FAUBOT CXXXIV) — Auto-derive guard
+# ─────────────────────────────────────────────────────────────────────────────
+# Cierra el último frente abierto de la saga EPIC 45: el auto-derive en
+# tracking_db.refresh_longitudinal_intelligence re-crea contradicciones alias
+# al re-renderizar perfiles. El hook EPIC 46.C aplica el mismo patrón que
+# EPIC 45.B pero en el path post-write de refresh, dejando audit con suffix
+# ':on_autoderive' para distinguir resoluciones por re-render vs intake.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_epic46c_autoderive_guard_resolves_contradictions_with_on_autoderive_suffix(in_memory_db):
+    """Hook EPIC 46.C: al ejecutar el patrón post-refresh sobre un paciente
+    con contradicción alias, debe resolver + dejar audit entry con sufijo
+    ':on_autoderive' (no ':on_intake' que es de EPIC 45.B)."""
+    from prostanet.regulatory.clinical.factspec_alias_audit import (
+        audit_patient,
+        propose_resolution,
+        apply_resolution,
+    )
+    conn = in_memory_db
+    # Simula estado post-auto-derive: facts escritos por refresh con
+    # contradicción transitoria recién creada por el re-render
+    patient_id = 996
+    conn.execute(
+        "INSERT INTO patient_clinical_facts (id, patient_id, fact_key, "
+        "normalized_value_text, source_type, updated_at, is_active) "
+        "VALUES (300, ?, 'metastatic_stage_resolved', 'M0', 'auto_derive_clinical_baseline', "
+        "'2026-05-23T10:00:00', 1)",
+        (patient_id,),
+    )
+    conn.execute(
+        "INSERT INTO patient_clinical_facts (id, patient_id, fact_key, "
+        "normalized_value_text, source_type, updated_at, is_active) "
+        "VALUES (301, ?, 'm_substage_resolved', 'M1b', 'auto_derive_clinical_classifier', "
+        "'2026-05-23T10:00:01', 1)",
+        (patient_id,),
+    )
+    conn.commit()
+
+    # Simula bloque hook EPIC 46.C (idéntico a tracking_db.py:11538+)
+    contradictions = audit_patient(conn, patient_id)
+    assert len(contradictions) >= 1, "Auto-derive debió crear ≥1 contradicción"
+
+    for c in contradictions:
+        resolution = propose_resolution(c)
+        resolution.action_suffix = "on_autoderive"  # ← marker EPIC 46.C
+        apply_resolution(conn, resolution)
+    conn.commit()
+
+    # Assert 1: contradicciones residuales = 0
+    residual = audit_patient(conn, patient_id)
+    assert len(residual) == 0, "Post-hook no debe quedar ninguna contradicción"
+
+    # Assert 2: audit entry con sufijo ':on_autoderive'
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT action, importance FROM clinical_view_audit "
+        "WHERE patient_id = ? AND section_key = 'data_integrity' "
+        "ORDER BY id DESC LIMIT 1",
+        (patient_id,),
+    )
+    row = cur.fetchone()
+    assert row is not None
+    assert row["action"].endswith(":on_autoderive"), (
+        f"Action debe terminar en ':on_autoderive' (no ':on_intake' ni sin sufijo), "
+        f"got: {row['action']}"
+    )
+    # Distinguir explícitamente de los markers existentes
+    assert not row["action"].endswith(":on_intake"), (
+        f"Action no debe ser ':on_intake' (eso es EPIC 45.B, no 46.C), "
+        f"got: {row['action']}"
+    )
+
+
+def test_epic46c_re_render_does_not_reactivate_contradiction(in_memory_db):
+    """Smoke clínico de cierre saga EPIC 45: si auto-derive vuelve a correr
+    sobre un paciente recién limpiado, el guard atrapa cualquier nueva
+    contradicción transitoria inmediatamente. Net effect: post-render ALWAYS
+    queda con 0 contradicciones activas."""
+    from prostanet.regulatory.clinical.factspec_alias_audit import (
+        audit_patient,
+        propose_resolution,
+        apply_resolution,
+    )
+    conn = in_memory_db
+    patient_id = 995
+
+    # Ronda 1: auto-derive crea contradicción inicial
+    conn.execute(
+        "INSERT INTO patient_clinical_facts (id, patient_id, fact_key, "
+        "normalized_value_text, source_type, updated_at, is_active) "
+        "VALUES (400, ?, 'metastatic_stage_resolved', 'M0', 'auto_derive_v1', "
+        "'2026-05-23T10:00:00', 1)",
+        (patient_id,),
+    )
+    conn.execute(
+        "INSERT INTO patient_clinical_facts (id, patient_id, fact_key, "
+        "normalized_value_text, source_type, updated_at, is_active) "
+        "VALUES (401, ?, 'm_substage_resolved', 'M1a', 'auto_derive_v1', "
+        "'2026-05-23T10:00:01', 1)",
+        (patient_id,),
+    )
+    conn.commit()
+
+    # Guard ronda 1
+    for c in audit_patient(conn, patient_id):
+        r = propose_resolution(c)
+        r.action_suffix = "on_autoderive"
+        apply_resolution(conn, r)
+    conn.commit()
+
+    assert len(audit_patient(conn, patient_id)) == 0, "Ronda 1: clean"
+
+    # Ronda 2: auto-derive corre de nuevo y RE-CREA la contradicción cross-alias
+    # (escenario exacto del bug paciente 39 EPIC 45 APPLY Fase 5: auto-derive
+    # escribió m_substage_resolved=M1b de nuevo, generando conflict con el
+    # metastatic_stage_resolved del intake original).
+    # Tras ronda 1: m_substage_resolved=M1a (401) está activo.
+    # Ronda 2 inserta metastatic_stage_resolved=M0 (alias opuesto del grupo)
+    # → re-crea la contradicción cross-alias que el guard debe atrapar.
+    conn.execute(
+        "INSERT INTO patient_clinical_facts (id, patient_id, fact_key, "
+        "normalized_value_text, source_type, updated_at, is_active) "
+        "VALUES (402, ?, 'metastatic_stage_resolved', 'M0', 'auto_derive_v2_rerender', "
+        "'2026-05-23T10:05:00', 1)",
+        (patient_id,),
+    )
+    conn.commit()
+
+    contradictions_pre_guard = audit_patient(conn, patient_id)
+    assert len(contradictions_pre_guard) >= 1, (
+        "Auto-derive ronda 2 debe haber re-creado contradicción (eso es el bug)"
+    )
+
+    # Guard ronda 2 (EPIC 46.C atrapa inmediatamente)
+    for c in contradictions_pre_guard:
+        r = propose_resolution(c)
+        r.action_suffix = "on_autoderive"
+        apply_resolution(conn, r)
+    conn.commit()
+
+    assert len(audit_patient(conn, patient_id)) == 0, (
+        "Post-EPIC-46.C: ronda 2 también queda limpia. Net effect: re-renders "
+        "consecutivos NUNCA dejan contradicciones residuales activas."
+    )
+
+    # Audit trail debe tener AL MENOS 2 entries :on_autoderive (una por ronda)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) AS n FROM clinical_view_audit "
+        "WHERE patient_id = ? AND section_key = 'data_integrity' "
+        "AND action LIKE '%:on_autoderive'",
+        (patient_id,),
+    )
+    audit_count = cur.fetchone()["n"]
+    assert audit_count >= 2, (
+        f"Audit trail debe tener ≥2 entries on_autoderive (una por ronda), got {audit_count}"
+    )

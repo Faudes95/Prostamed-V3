@@ -11536,6 +11536,56 @@ def refresh_longitudinal_intelligence(
         _persist_localized_surveillance_snapshot(c, refreshed["identity"]["id"], localized_surveillance_bundle, trigger_event)
         _persist_post_rt_salvage_snapshot(c, refreshed["identity"]["id"], post_rt_salvage_bundle, trigger_event)
     conn.commit()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # EPIC 46.C (FAUBOT CXXXIV) — Auto-derive guard contra FactSpec alias
+    # contradictions. Cierra el último frente abierto de la saga EPIC 45:
+    # el auto-derive re-crea contradicciones alias al re-renderizar perfiles
+    # de pacientes existentes (descubierto en EPIC 45 APPLY Fase 5, paciente
+    # 39 — metastatic_stage_resolved vs m_substage_resolved con valores
+    # divergentes generadas transitoriamente).
+    #
+    # Solución idéntica al patrón EPIC 45.B (register_new_patient) pero
+    # ahora en el path central de auto-derive. Cada vez que refresh
+    # longitudinal escribe facts, el guard limpia las contradicciones que
+    # pudieron haberse generado, dejando audit trail con suffix
+    # ':on_autoderive' para distinguirlo de ':on_intake' y resoluciones
+    # CLI/manuales.
+    #
+    # Non-blocking: si la auditoría falla, el flujo de refresh completa
+    # exitosamente (graceful degradation). El clínico verá el panel UI
+    # EPIC 45 con la contradicción y podrá resolver manualmente.
+    # ─────────────────────────────────────────────────────────────────────
+    try:
+        from prostanet.regulatory.clinical.factspec_alias_audit import (
+            audit_patient as _epic46c_audit_patient,
+            propose_resolution as _epic46c_propose,
+            apply_resolution as _epic46c_apply,
+        )
+        _epic46c_patient_id = int(refreshed["identity"]["id"])
+        _epic46c_contradictions = _epic46c_audit_patient(conn, _epic46c_patient_id)
+        if _epic46c_contradictions:
+            for _epic46c_c in _epic46c_contradictions:
+                _epic46c_resolution = _epic46c_propose(_epic46c_c)
+                # Marker distinto a 'on_intake' (EPIC 45.B): identifica
+                # resoluciones recurrentes generadas por auto-derive cycles
+                # vs intake one-shot. Útil para dashboard regulatorio.
+                _epic46c_resolution.action_suffix = "on_autoderive"
+                _epic46c_apply(conn, _epic46c_resolution)
+            conn.commit()
+            logger.info(
+                "EPIC 46.C auto-derive guard: patient_id=%d cleaned %d alias contradiction(s) post-refresh",
+                _epic46c_patient_id,
+                len(_epic46c_contradictions),
+            )
+    except Exception as _epic46c_exc:
+        # Non-blocking: refresh debe completar aún si auditoría falla
+        logger.warning(
+            "EPIC 46.C auto-derive guard skipped for patient_id=%s: %s",
+            refreshed.get("identity", {}).get("id", "unknown"),
+            _epic46c_exc,
+        )
+
     conn.close()
     published_alerts = get_patient_alerts(refreshed["identity"]["id"])
     persist_patient_clinical_ledger(
