@@ -384,7 +384,13 @@ def apply_resolution(conn, resolution: Resolution) -> Resolution:
         (resolution.verification_note, resolution.winner_fact_id,
          *resolution.loser_fact_ids),
     )
-    # Audit log entry
+    # Audit log entry — EPIC 45.B (FAUBOT CXXXI): si Resolution.action_suffix
+    # está seteado (ej. "on_intake"), se concatena al action para distinguir
+    # el origen de la resolución (on_intake / cli_apply / manual / etc.)
+    _action = f"factspec_alias_resolved:{resolution.contradiction.alias_group_canonical}"
+    _suffix = getattr(resolution, "action_suffix", None)
+    if _suffix:
+        _action = f"{_action}:{_suffix}"
     cur.execute(
         """
         INSERT INTO clinical_view_audit
@@ -394,7 +400,7 @@ def apply_resolution(conn, resolution: Resolution) -> Resolution:
         (
             resolution.contradiction.patient_id,
             "data_integrity",
-            f"factspec_alias_resolved:{resolution.contradiction.alias_group_canonical}",
+            _action,
             resolution.contradiction.severity,
             datetime.now(timezone.utc).isoformat(),
         ),

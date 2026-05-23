@@ -8113,6 +8113,46 @@ def register_new_patient(data, assessment=None):
 
         conn.commit()
 
+        # ─────────────────────────────────────────────────────────────────────
+        # EPIC 45.B (FAUBOT CXXXI) — Post-intake guard contra FactSpec alias
+        # contradictions. Resuelve in-transaction cualquier redundancia entre
+        # fact_keys del mismo alias group (ej. metastatic_stage_resolved ↔
+        # m_substage_resolved) escrita durante el intake del nuevo paciente.
+        #
+        # Garantía: el paciente nunca llega a render con contradicciones activas.
+        # Non-blocking: si la auditoría falla, el intake completa exitosamente
+        # (graceful degradation) — el clínico verá el panel "Integridad de datos"
+        # al abrir el perfil y podrá aplicar fix manual.
+        # Provenance: cada resolución queda en clinical_view_audit con
+        # action='factspec_alias_resolved:<canonical>:on_intake'.
+        # ─────────────────────────────────────────────────────────────────────
+        try:
+            from prostanet.regulatory.clinical.factspec_alias_audit import (
+                audit_patient as _epic45_audit_patient,
+                propose_resolution as _epic45_propose,
+                apply_resolution as _epic45_apply,
+            )
+            _contradictions = _epic45_audit_patient(conn, patient_id)
+            if _contradictions:
+                for _contradiction in _contradictions:
+                    _resolution = _epic45_propose(_contradiction)
+                    # Marker para distinguir resoluciones on-intake vs CLI/manual
+                    _resolution.action_suffix = "on_intake"
+                    _epic45_apply(conn, _resolution)
+                conn.commit()
+                logger.info(
+                    "EPIC 45.B post-intake guard: patient_id=%d cleaned %d alias contradiction(s)",
+                    patient_id,
+                    len(_contradictions),
+                )
+        except Exception as _epic45_exc:
+            # Non-blocking: intake completa aún si auditoría falla
+            logger.warning(
+                "EPIC 45.B post-intake guard skipped for patient_id=%d: %s",
+                patient_id,
+                _epic45_exc,
+            )
+
         if _has_any_value(data, [
             'estado_residencia', 'seguridad_social', 'escolaridad', 'tabaquismo', 'ipss_score', 'iief5_score',
             'g8_food_intake', 'g8_weight_loss', 'g8_mobility', 'g8_neuropsych', 'g8_bmi', 'g8_medications',

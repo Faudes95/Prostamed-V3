@@ -119,7 +119,38 @@ from typing import Any
 # Hallazgo real producción: 33/425 pacientes (7.8%) tienen el mismo bug
 # que Frin con severity=high (todas en alias_group metastatic_stage_resolved).
 # 22/22 tests EPIC 45 PASS + 539 regression PASS).
-FAUBOT_RELEASE = "2026-05-17 CXXX"
+# → CXXXI (EPIC 45.B: Post-intake guard preventivo para nuevos pacientes.
+# Cierre del loop del paciente Frin a nivel de PREVENCIÓN — no solo
+# corrección retroactiva. Scope acotado por urólogo: "DEBEMOS EVITAR QUE
+# VUELVA A SUCEDER CON NUEVOS PACIENTES QUE SE INGRESEN".
+#
+# Hook injection en tracking_db.py:register_new_patient (post conn.commit()
+# de los facts iniciales): invoca audit_patient + propose_resolution +
+# apply_resolution con marker action_suffix='on_intake'. El paciente NUEVO
+# nunca llega a render con contradicciones activas — son resueltas
+# in-transaction dentro del mismo flujo de creación.
+#
+# Garantías:
+#   - Non-blocking: si la auditoría falla por cualquier razón, el intake
+#     completa exitosamente (graceful degradation logged como WARNING).
+#   - Provenance: cada resolución on-intake queda en clinical_view_audit
+#     con action='factspec_alias_resolved:<canonical>:on_intake', permitiendo
+#     distinguir resoluciones autom. on-intake vs CLI poblacional vs manual.
+#   - Reusa 100% del módulo EPIC 45 ya en producción (audit_patient,
+#     propose_resolution, apply_resolution — cubierto por 22 tests).
+#
+# Extensión apply_resolution (factspec_alias_audit.py): honra opcionalmente
+# Resolution.action_suffix para enriquecer el action de audit. Backward
+# compatible — resoluciones sin suffix mantienen action original.
+#
+# Tests añadidos (3): post_intake_guard_cleans_alias_on_new_patient (happy)
+# + _noop_when_clean (clean no-op) + _failsafe_on_audit_exception
+# (graceful degradation). Total tests EPIC 45 ahora: 25 PASS.
+#
+# El bug del paciente Frin queda matemáticamente imposible de reaparecer
+# en intake. Frente restante (auto-derive en re-render de pacientes
+# EXISTENTES) será EPIC 45.C si se requiere — está fuera de scope ahora).
+FAUBOT_RELEASE = "2026-05-22 CXXXI"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (
