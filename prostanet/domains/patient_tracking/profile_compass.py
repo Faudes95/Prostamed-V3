@@ -3459,8 +3459,81 @@ def _build_triplet_decision_for_profile(
 # ── Faubot 2026-04-25 (VIII) — UI card pivotal_contraindication_gates ─
 
 
+def _lazy_evaluate_pivotal_gates_for_patient(
+    patient: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """EPIC GVP.E (FAUBOT CXLII) — Lazy-evaluate gates si raw_assessment
+    no los proveyó. Cierra el bug de propagación que provocaba
+    gate_omitted:* en GodiBot review.
+
+    Reutiliza el mismo path que GodiBot usa internamente:
+        evaluate_all_yaml_gates(payload) + evaluate_pivotal_contraindication_gates
+
+    Args:
+        patient: full patient record (con baseline + biomarker + treatments)
+
+    Returns:
+        list de gate dicts con shape compatible con result_snapshot
+        .pivotal_contraindication_gates (code + severity + message +
+        evidence_tag + trial_refs)
+    """
+    triggered: list[dict[str, Any]] = []
+
+    # Build payload aplanado para gates eval (mismo patrón que GodiBot
+    # _build_gates_payload — replicamos aquí para evitar circular import)
+    baseline = dict(patient.get("baseline") or {})
+    latest_followup = (
+        (patient.get("follow_ups") or [{}])[-1] if patient.get("follow_ups") else {}
+    )
+    payload = {
+        **baseline,
+        **(latest_followup or {}),
+        "ecog_score": (latest_followup or {}).get("ecog_current")
+                       or baseline.get("ecog_score"),
+        "hrr_status": baseline.get("hrr_status"),
+        "hrr_gene": baseline.get("hrr_gene"),
+        "current_medications": (
+            patient.get("current_medications")
+            or baseline.get("current_medications")
+        ),
+        "histology_subtype": baseline.get("histology_subtype"),
+    }
+    # Eliminar None values para evitar interferencia en evaluación
+    payload = {k: v for k, v in payload.items() if v is not None}
+
+    # Eval YAML gates (103+ centralizados)
+    try:
+        from prostanet.shared.pivotal_gates_yaml_loader import evaluate_all_yaml_gates
+        triggered.extend(evaluate_all_yaml_gates(payload) or [])
+    except Exception as exc:
+        logger.debug("evaluate_all_yaml_gates lazy eval failed: %s", exc)
+
+    # Eval Python detectors (los 18 históricos + extensions)
+    try:
+        from prostanet.shared.pivotal_contraindication_gates import (
+            evaluate_pivotal_contraindication_gates,
+        )
+        triggered.extend(evaluate_pivotal_contraindication_gates(payload) or [])
+    except Exception as exc:
+        logger.debug("evaluate_pivotal_contraindication_gates lazy eval failed: %s", exc)
+
+    # Dedup por code (lo mismo gate puede venir desde ambos paths)
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for g in triggered:
+        if not isinstance(g, dict):
+            continue
+        code = str(g.get("code") or "")
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        unique.append(g)
+    return unique
+
+
 def _build_pivotal_contraindication_gates_panel(
     raw_assessment: dict[str, Any] | None,
+    patient: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Construye el panel UI de los gates pivotal disparados por el paciente.
 
@@ -3512,6 +3585,19 @@ def _build_pivotal_contraindication_gates_panel(
     """
     raw_result = (raw_assessment or {}).get("result_snapshot", {}) if raw_assessment else {}
     raw_gates = list(raw_result.get("pivotal_contraindication_gates") or [])
+
+    # EPIC GVP.E FIX (FAUBOT CXLII): si raw_assessment no tiene gates
+    # (paciente nuevo, snapshot incompleto, o clinical_decision_agent no
+    # corrió aún), hacer lazy-eval para que Compass UI muestre el mismo
+    # rastro que GodiBot detectaría en re-evaluación. Cierra el bug
+    # "gate_omitted:*" de los blocked_hard del baseline 92% Internal Validation.
+    if not raw_gates and patient:
+        try:
+            raw_gates = _lazy_evaluate_pivotal_gates_for_patient(patient)
+        except Exception as exc:
+            logger.debug("GVP.E lazy-evaluate gates failed: %s", exc)
+            raw_gates = []
+
     if not raw_gates:
         return {
             "has_gates": False,
@@ -6673,6 +6759,28 @@ def build_patient_profile_view_model(
             }
         copilot_sections["therapeutic_fitness"] = therapeutic_fitness
     psa_forecast["status_label"] = normalize_ui_label(psa_forecast.get("status"), default="No disponible")
+
+    # ── EPIC GVP.E PROPAGATION FIX (FAUBOT CXLII) ────────────────────────
+    # GodiBot adversarial validator reads gates from `compass.pivotal_contraindication_gates`
+    # (see `prostanet/agents/godibot.py:392`). When raw_assessment.result_snapshot does NOT
+    # carry the gates (paciente nuevo, snapshot incompleto, decision_agent skip), the panel
+    # builder lazy-evaluates them but stores the result under a *different* key
+    # (`pivotal_contraindication_gates_panel`). That asymmetry was the root cause of the
+    # 4 blocked_hard at the baseline cohort audit (92% Internal Validation):
+    # GodiBot saw "compass omits gate X" while UI panel actually rendered it.
+    #
+    # Fix: compute the raw gate list ONCE here, then expose it under the EXACT key GodiBot
+    # reads. This closes the bug both retroactively (re-render of existing patients) AND
+    # prospectively (every new patient registered after CXLII).
+    _raw_result_for_gates = (raw_assessment or {}).get("result_snapshot", {}) if raw_assessment else {}
+    _compass_pivotal_gates_raw = list(_raw_result_for_gates.get("pivotal_contraindication_gates") or [])
+    if not _compass_pivotal_gates_raw:
+        try:
+            _compass_pivotal_gates_raw = _lazy_evaluate_pivotal_gates_for_patient(patient)
+        except Exception as _gvpe_exc:
+            logger.debug("GVP.E gates propagation lazy-eval failed: %s", _gvpe_exc)
+            _compass_pivotal_gates_raw = []
+
     # EPIC 48.A — Cambiamos de `return {...}` a `bundle = {...}` para poder
     # inyectar decision_narrative al final (necesita acceso a todo el bundle
     # ya construido: compass + twin + fusion + gates + trajectory + ml).
@@ -6753,9 +6861,19 @@ def build_patient_profile_view_model(
         # Faubot 2026-04-25 (VIII) — UI card de gates pivotal disparados.
         # Hace visible al clínico la cadena de razonamiento (CÓMO + POR QUÉ)
         # de los 18 gates centralizados en `pivotal_contraindication_gates.py`.
+        # EPIC GVP.E (FAUBOT CXLII): pasamos `patient` para que el builder
+        # pueda lazy-evaluate gates si raw_assessment.pivotal_contraindication_
+        # gates viene vacío. Esto cierra los 4 blocked_hard del baseline donde
+        # GodiBot detectaba gates pero compass no los exponía → bug de
+        # propagación arquitectónico.
         "pivotal_contraindication_gates_panel": _build_pivotal_contraindication_gates_panel(
-            raw_assessment
+            raw_assessment, patient=patient,
         ),
+        # EPIC GVP.E PROPAGATION FIX (FAUBOT CXLII): Sibling raw list bajo el key EXACTO
+        # que GodiBot inspecciona (`compass.pivotal_contraindication_gates`, godibot.py:392).
+        # Cierra el bug `gate_omitted:*` que disparaba false-positive blocked_hard cuando
+        # raw_assessment.result_snapshot venía vacío pero los gates SÍ aplicaban al paciente.
+        "pivotal_contraindication_gates": _compass_pivotal_gates_raw,
         "evidence_applicability": evidence_applicability,
         "advanced_panel_context": advanced_panel_context,
         "therapy_catalog_options": therapy_select_options(state=state, management_track=management_track, include_empty=True),
@@ -7020,10 +7138,15 @@ def _build_clinical_validation_snapshot(
         }
     """
     try:
-        # Re-use existing godibot_review si fue ejecutado upstream
+        # Re-use existing godibot_review si fue ejecutado upstream.
+        # GVP.E FIX (FAUBOT CXLII): findings reales viven en 'discrepancies'
+        # (no 'findings'). Combinamos ambos por backwards-compat.
         if existing_godibot_review:
             status = str(existing_godibot_review.get("status") or "")
-            findings = existing_godibot_review.get("findings") or []
+            findings = (
+                list(existing_godibot_review.get("discrepancies") or [])
+                + list(existing_godibot_review.get("findings") or [])
+            )
             if status:
                 return {
                     "available": True,

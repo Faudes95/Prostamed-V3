@@ -745,7 +745,23 @@ from typing import Any
 #     report) Pilar 4 visión estratégica
 #   - Baseline pre-piloto contra el cual medir mejoras
 #   - Pattern EPIC 45 completo: retroactivo + prospectivo + observabilidad
-FAUBOT_RELEASE = "2026-05-24 CXLI"
+#
+# ── FAUBOT CXLII — EPIC GVP.E — Propagation fix gates compass→GodiBot ─
+# Bug META descubierto en re-audit del baseline:
+#   - GodiBot inspeccionaba `compass.pivotal_contraindication_gates`
+#     (godibot.py:392) pero el view-model bundle exponía la información
+#     SOLO bajo `pivotal_contraindication_gates_panel` (otra clave). Para
+#     GodiBot los gates "no estaban mencionados" → false-positive
+#     `gate_omitted:*` con severidad hard_block → 4 blocked_hard inflados.
+# Fix en profile_compass.py (build_patient_profile_view_model):
+#   1. Lazy-evaluate gates ONCE antes del bundle (reusa el mismo path
+#      que GodiBot: evaluate_all_yaml_gates + evaluate_pivotal_*).
+#   2. Inyecta el resultado bajo el key EXACTO que GodiBot lee
+#      (`pivotal_contraindication_gates` sibling al panel UI existente).
+# Resultado esperado: los 4 blocked_hard del baseline (5 finding types)
+# se convierten en `approved`, % Internal Validation 92% → ~100%.
+# Patrón EPIC 45 cumplido (corrige retroactivo + prospectivo on render).
+FAUBOT_RELEASE = "2026-05-24 CXLII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

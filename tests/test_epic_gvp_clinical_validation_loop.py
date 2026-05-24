@@ -163,3 +163,51 @@ def test_gvp_c_badge_uses_data_attrs():
     badge_block = content[badge_idx:badge_idx + 1000]
     assert "data-status=" in badge_block
     assert "data-findings-count=" in badge_block
+
+
+# ─────────────────────────────────────────────────────────────────────
+# GVP.E — Propagation fix (compass → GodiBot pivotal gates + evidence)
+# ─────────────────────────────────────────────────────────────────────
+
+
+def test_gvp_e_cli_builds_compass_with_pivotal_gates_key():
+    """CLI debe construir compass sintético con key EXACTO que GodiBot lee
+    (`pivotal_contraindication_gates`, godibot.py:392). Sin esto, los gates
+    triggered se reportan como gate_omitted:* falso-positivo."""
+    from prostanet.regulatory.clinical.godibot_cohort_audit import (
+        _build_compass_for_godibot,
+    )
+    # Paciente sintético con condición que dispara gate (HRR desconocido
+    # + potencial candidato PARP) — gate lazy-eval debe disparar al menos uno
+    patient = {
+        "identity": {"id": 999, "nss": "TEST-GVP-E"},
+        "baseline": {
+            "hrr_status": "Desconocido",
+            "ecog_score": 1,
+            "histology_subtype": "adenocarcinoma",
+        },
+    }
+    compass = _build_compass_for_godibot(patient)
+    # Key EXACTO que GodiBot inspecciona (godibot.py:392)
+    assert "pivotal_contraindication_gates" in compass
+    # Sibling defensivo también
+    assert "gates_contraindications" in compass
+    # Lista (puede estar vacía si no aplica gate al paciente sintético, pero
+    # la KEY debe estar presente para que GodiBot la encuentre)
+    assert isinstance(compass["pivotal_contraindication_gates"], list)
+
+
+def test_gvp_e_profile_compass_bundle_exposes_pivotal_gates_raw_key():
+    """profile_compass bundle debe incluir el key `pivotal_contraindication_gates`
+    (no solo `pivotal_contraindication_gates_panel`) para que GodiBot lo lea en
+    runtime — prospectivo. Pattern EPIC 45 (retroactivo CLI + prospectivo render)."""
+    from pathlib import Path
+    src = Path(__file__).parent.parent / "prostanet" / "domains" / "patient_tracking" / "profile_compass.py"
+    content = src.read_text(encoding="utf-8")
+    # Bundle assignment del key RAW que GodiBot lee
+    assert '"pivotal_contraindication_gates": _compass_pivotal_gates_raw' in content, (
+        "GVP.E: pivotal_contraindication_gates (raw key) no inyectado al bundle "
+        "— GodiBot leerá un compass vacío y reportará gate_omitted:* false-positive."
+    )
+    # Comentario de trazabilidad
+    assert "EPIC GVP.E PROPAGATION FIX" in content

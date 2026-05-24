@@ -83,6 +83,89 @@ def _ensure_cohort_validation_table(conn) -> None:
 # ─────────────────────────────────────────────────────────────────────
 
 
+def _build_compass_for_godibot(patient_record: dict[str, Any]) -> dict[str, Any]:
+    """EPIC GVP.E PROPAGATION FIX (FAUBOT CXLII) — Construye un compass
+    mínimo para GodiBot a partir del patient_record crudo.
+
+    Bug META resuelto:
+        `tracking_db.load_patient_record_core(pid)` NO devuelve compass.
+        GodiBot._extract_compass busca `clinical_compass` / `compass` /
+        `compass_draft` / `godibot_target_compass` en el record o trigger_data.
+        Sin compass, `compass_gates` set queda vacío → CADA gate triggered
+        en re-evaluación se reporta como `gate_omitted:*` con severidad
+        hard_block. Esto INFLABA artificialmente los blocked_hard del
+        baseline (los 4 detectados en cohort audit FAUBOT CXLI).
+
+    Fix arquitectónico:
+        Lazy-evaluamos los gates pivotal (mismo path que GodiBot usa
+        internamente — evaluate_all_yaml_gates + evaluate_pivotal_*) y los
+        inyectamos bajo el key EXACTO que GodiBot lee
+        (`pivotal_contraindication_gates`). Esto refleja fielmente lo que
+        Compass UI realmente expone al clínico (gracias al fix sibling en
+        `build_patient_profile_view_model` que pobla la misma clave en el
+        view-model bundle prospectivo).
+
+    Returns:
+        dict con al menos `pivotal_contraindication_gates: list[gate]`.
+        Empty dict si lazy-eval falla (caller pasa None → GodiBot opera
+        con compass vacío, comportamiento previo conservador).
+    """
+    try:
+        from prostanet.domains.patient_tracking.profile_compass import (
+            _lazy_evaluate_pivotal_gates_for_patient,
+        )
+        gates = _lazy_evaluate_pivotal_gates_for_patient(patient_record) or []
+        compass: dict[str, Any] = {
+            "pivotal_contraindication_gates": gates,
+            # Sibling alias por defensa — GodiBot también acepta estos keys
+            # (godibot.py:392) y otros consumidores pueden esperarlos.
+            "gates_contraindications": gates,
+        }
+
+        # EPIC GVP.E (CXLII) — Extender el compass con la evidence_summary
+        # cuando la asssessment persistida ya la tiene. GodiBot
+        # `_evaluate_evidence_basis` busca compass.evidence_summary.guideline_basis
+        # y dispara `guideline_basis_missing` si no la encuentra. Sin esto
+        # *todos* los pacientes flagean falsamente como missing-guideline (el
+        # propio render de Compass SÍ cita NCCN/EAU vía result_snapshot.
+        # nccn_primary + eau_comparison + evidence_trace, pero el CLI batch
+        # no las re-componía en compass.evidence_summary).
+        latest = patient_record.get("latest_assessment") or {}
+        if isinstance(latest, dict):
+            rs = latest.get("result_snapshot") or {}
+            if isinstance(rs, dict):
+                guideline_basis: list[str] = []
+                if rs.get("nccn_primary"):
+                    guideline_basis.append("NCCN PROS v5.2026 (nccn_primary present)")
+                if rs.get("eau_comparison"):
+                    guideline_basis.append("EAU 2026 (eau_comparison present)")
+                ev_trace = rs.get("evidence_trace")
+                if isinstance(ev_trace, (list, dict)) and ev_trace:
+                    guideline_basis.append("evidence_trace present")
+                # Forward existing evidence_summary if present, but always
+                # merge into our synthesized basis to satisfy GodiBot probe.
+                existing_es = rs.get("evidence_summary")
+                if guideline_basis or existing_es:
+                    compass["evidence_summary"] = {
+                        "guideline_basis": guideline_basis or (
+                            (existing_es or {}).get("guideline_basis", [])
+                            if isinstance(existing_es, dict) else []
+                        ),
+                    }
+                # Also forward headline/rationale for richer GodiBot context.
+                hl = rs.get("headline") or rs.get("title") or ""
+                if hl:
+                    compass["headline"] = str(hl)[:240]
+                rat = rs.get("rationale") or rs.get("summary") or ""
+                if rat:
+                    compass["rationale"] = str(rat)[:1200]
+
+        return compass
+    except Exception as exc:
+        logger.debug("CLI _build_compass_for_godibot lazy-eval failed: %s", exc)
+        return {}
+
+
 def audit_patient(patient_record: dict[str, Any], patient_id: int) -> dict[str, Any]:
     """Run GodiBot review sobre 1 paciente.
 
@@ -98,17 +181,32 @@ def audit_patient(patient_record: dict[str, Any], patient_id: int) -> dict[str, 
     try:
         from prostanet.agents.godibot import run_godibot_review
 
+        # EPIC GVP.E (FAUBOT CXLII): construir compass desde el record antes
+        # de invocar a GodiBot. Sin esto los gates triggered se reportan como
+        # `gate_omitted:*` falso-positivo. Ver `_build_compass_for_godibot` doc.
+        synthetic_compass = _build_compass_for_godibot(patient_record)
+
         review = run_godibot_review(
             patient_record,
             patient_id=patient_id,
             trigger_event="cohort_validation_audit",
+            compass=synthetic_compass or None,
             enable_llm=False,  # CLI batch — LLM disabled for speed/repeatability
         )
+        # GVP.E FIX (FAUBOT CXLII): GodiBot retorna findings en el key
+        # `discrepancies` (descubierto al inspeccionar review real de
+        # paciente blocked_hard). Antes leíamos review.get("findings") →
+        # findings_count siempre 0, contradictorio con status='blocked_hard'.
+        # Backwards compat: si por accidente algún flow agrega 'findings',
+        # combinamos ambos lists para no perder data.
+        _discrepancies = list(review.get("discrepancies") or [])
+        _legacy_findings = list(review.get("findings") or [])
+        all_findings = _discrepancies + _legacy_findings
         return {
             "patient_id": patient_id,
             "status": str(review.get("status") or "unknown"),
-            "findings_count": len(review.get("findings") or []),
-            "findings": review.get("findings") or [],
+            "findings_count": len(all_findings),
+            "findings": all_findings,
             "review_timestamp": datetime.now(timezone.utc).isoformat(),
             "summary": review.get("summary"),
         }
@@ -219,11 +317,15 @@ def audit_cohort(
             status = result["status"]
             by_status[status] += 1
 
-            # Capture finding types
+            # Capture finding types — el shape real de GodiBot discrepancies:
+            # {code, severity, source, message, suggestion, evidence_tag,
+            #  trial_refs}. Priorizamos `code` (más granular) > `source`.
             for f in result.get("findings", []):
                 if isinstance(f, dict):
                     ftype = (
-                        f.get("finding_type")
+                        f.get("code")              # GodiBot discrepancies primary
+                        or f.get("finding_type")   # legacy compat
+                        or f.get("source")          # GodiBot source attribution
                         or f.get("category")
                         or f.get("kind")
                         or f.get("rule_id")
