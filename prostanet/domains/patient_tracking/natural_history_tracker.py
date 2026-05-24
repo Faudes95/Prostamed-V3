@@ -106,20 +106,62 @@ PRIMARY_ANCESTRY_TO_ETHNICITY_KEY: dict[str, str] = {
 }
 
 
+# Sprint 3 FIX #9 (FAUBOT CXXXIX) — Legacy ethnicity alias normalization.
+# patient_demographics.etnia tiene DEFAULT 'hispano' (sin sufijo _latino)
+# desde la migración inicial del schema, y la UI legacy también guarda
+# 'hispano' / 'caucasico' / 'afro' (cortos). El resolver original solo
+# aceptaba keys exactos del ETHNICITY_RISK_MODIFIERS dict, dejando
+# 'hispano' sin matching → fallback europeo_caucasico (incorrecto).
+# Este mapa normaliza aliases comunes legacy al backend key canónico.
+LEGACY_ETHNICITY_ALIAS_NORMALIZER: dict[str, str] = {
+    # Hispano/Latino variants
+    "hispano": "hispano_latino",
+    "latino": "hispano_latino",
+    "hispanic": "hispano_latino",
+    "hispanic_latino": "hispano_latino",
+    "latinoamericano": "hispano_latino",
+    "mexicano": "hispano_latino",
+    # Afro variants
+    "afro": "afroamericano",
+    "afroamericano": "afroamericano",
+    "africano": "afroamericano",
+    "negro": "afroamericano",
+    "afrodescendiente": "afroamericano",
+    "black": "afroamericano",
+    # Europeo/Caucasico variants
+    "caucasico": "europeo_caucasico",
+    "blanco": "europeo_caucasico",
+    "europeo": "europeo_caucasico",
+    "white": "europeo_caucasico",
+    # Asiatico variants
+    "asian": "asiatico",
+    "asiatico": "asiatico",
+    # Indigena variants
+    "indigena": "indigena_americano",
+    "indígena": "indigena_americano",
+    "indigenous": "indigena_americano",
+    "nativo": "indigena_americano",
+    "nativo_americano": "indigena_americano",
+}
+
+
 def resolve_ethnicity_key(
     primary_ancestry: str | None = None,
     legacy_ethnicity: str | None = None,
 ) -> str:
     """Resuelve el ethnicity key canónico de backend desde inputs UI/legacy.
 
-    Precedencia: primary_ancestry (EPIC 46.A) > legacy ethnicity > europeo_caucasico.
+    Precedencia: primary_ancestry (EPIC 46.A) > legacy ethnicity normalizado
+    > europeo_caucasico.
 
     Args:
         primary_ancestry: valor UI del campo `primary_ancestry`
-            (mestizo / afro_descendiente / indigena / europeo / asiatico / otro / no_declarado)
-        legacy_ethnicity: valor legacy de `demographics.ethnicity` o
-            `baseline.ethnicity` (afroamericano / hispano_latino / asiatico /
-            europeo_caucasico) — para compat con flows pre-EPIC 46.A
+            (mestizo / afro_descendiente / indigena / europeo / asiatico /
+             otro / no_declarado)
+        legacy_ethnicity: valor legacy de `demographics.ethnicity` /
+            `patient_demographics.etnia` / `baseline.ethnicity`. Soporta
+            aliases comunes (hispano, latino, afro, caucasico, etc.) vía
+            LEGACY_ETHNICITY_ALIAS_NORMALIZER. FIX #9 Sprint 3.
 
     Returns:
         Backend key válido para ETHNICITY_RISK_MODIFIERS lookup.
@@ -130,8 +172,12 @@ def resolve_ethnicity_key(
             return PRIMARY_ANCESTRY_TO_ETHNICITY_KEY[key]
     if legacy_ethnicity:
         legacy = str(legacy_ethnicity).strip().lower()
+        # Match directo en ETHNICITY_RISK_MODIFIERS (exact backend key)
         if legacy in ETHNICITY_RISK_MODIFIERS:
             return legacy
+        # FIX #9: Sprint 3 — Normalizar aliases comunes legacy
+        if legacy in LEGACY_ETHNICITY_ALIAS_NORMALIZER:
+            return LEGACY_ETHNICITY_ALIAS_NORMALIZER[legacy]
     return "europeo_caucasico"
 
 

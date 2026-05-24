@@ -72,9 +72,13 @@
     <main id="main-content" class="pm2-app-main" tabindex="-1">
 
         {# ── Patient identity strip (real bundle data) ── #}
+        {# Sprint 3 FIX #11 (FAUBOT CXXXIX): elevamos pm2-patient-name de    #}
+        {# div → h1 para identidad visual fuerte + a11y (screen reader       #}
+        {# anuncia "Patient: Carlos Méndez Ruiz" como heading principal      #}
+        {# del documento). El CSS class pm2-patient-name conserva styling.   #}
         <section class="pm2-patient-header" aria-label="Resumen del paciente">
             <div class="pm2-patient-id-block">
-                <div class="pm2-patient-name">
+                <h1 class="pm2-patient-name" data-testid="patient-name-heading">
                     {{ identity.name }}
                     {% if gate_counts.hard_block > 0 %}
                     <span class="pm2-state-chip pm2-state-chip--danger">⚠ {{ gate_counts.hard_block }} hard_block</span>
@@ -84,7 +88,7 @@
                     {% else %}
                     <span class="pm2-state-chip pm2-state-chip--warn" title="Firma pendiente">⚠ Consent pendiente</span>
                     {% endif %}
-                </div>
+                </h1>
                 <div class="pm2-patient-meta">
                     <span class="pm2-mono">NSS {{ identity.nss }}</span>
                     <span class="pm2-dot">·</span>
