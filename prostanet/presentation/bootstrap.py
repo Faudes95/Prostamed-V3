@@ -72,3 +72,17 @@ def register_modular_blueprints(app: Flask) -> None:
             f"ml_inference_bp registration failed (continuing): "
             f"{type(exc).__name__}: {exc}"
         )
+
+    # EPIC 47 FAUBOT CXXXV — Longitudinal Trajectory Dashboard REST endpoint
+    # (GET /api/trajectory/<nss> — bundle completo con PSA + ECOG + ALP +
+    # LDH + kinetics + alerts para AJAX refresh sin re-render del perfil).
+    try:
+        from prostanet.presentation.trajectory_routes import trajectory_bp
+        if "trajectory" not in app.blueprints:
+            app.register_blueprint(trajectory_bp)
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            f"trajectory_bp registration failed (continuing): "
+            f"{type(exc).__name__}: {exc}"
+        )

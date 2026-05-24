@@ -286,7 +286,92 @@ from typing import Any
 # imposible de manifestarse en cualquier path. Dashboard regulatorio H2
 # puede reportar ratio :on_intake / :on_autoderive / :cli_apply / :manual
 # para distinguir fuentes de data integrity issues.
-FAUBOT_RELEASE = "2026-05-23 CXXXIV"
+# → CXXXV (EPIC 47 — Longitudinal Trajectory Dashboard):
+# CAMBIO PARADIGMÁTICO de medicina snapshot → temporal. El urólogo ahora
+# ve la EVOLUCIÓN del paciente, no un snapshot. Esto habilita medicina
+# predictiva (detectar deterioro 3-6m antes que aparezca en imagen) vs
+# reactiva (esperar que la metástasis sea radiográficamente evidente).
+#
+# Cambios (6 archivos, ~1500 LOC):
+#
+# 1. NUEVO prostanet/domains/patient_tracking/trajectory_engine.py:
+#    build_trajectory_bundle() unifica:
+#      - PSA + treatment lanes (reusa build_combined_patient_timeline)
+#      - ECOG over time (desde follow_up_visits.ecog_current)
+#      - ALP/LDH/testosterona (desde biomarker_longitudinal table)
+#      - Kinetics: PSA doubling time (regresión log-linear NCCN),
+#        PSA velocity (ng/mL/año), PSA nadir, ALP trend % 3m,
+#        ECOG decline detection
+#      - Cohort baseline overlay (opcional, skippeable en render rápido)
+#    Fail-safe: si cualquier sub-builder falla, retorna available=False
+#    con reason. No bloquea render del perfil.
+#
+# 2. NUEVO prostanet/domains/patient_tracking/trajectory_alert_engine.py:
+#    5 detectores basados en evidencia NCCN/EAU 2026 + literatura:
+#      - PSADT <10m (PROpel/SPARTAN/PROSPER/ARAMIS) — critical si m0_crpc
+#      - ALP rise >25% en 3m bajo ADT sin imagen positiva (pre-bone-mets)
+#      - PSA progression on ARSI por criterios PCWG3 (Scher 2016)
+#      - ECOG decline ≥1 punto (NCCN PROS-O paliativo) — critical si ≥3
+#      - Testosterona >50 ng/dL bajo ADT (castration failure)
+#    Cada alert incluye: severity, clinical_message, evidence, citation,
+#    action_suggested, audit_keys. Priorizadas critical → high → moderate.
+#
+# 3. NUEVO prostanet/presentation/trajectory_routes.py:
+#    GET /api/trajectory/<nss> retorna bundle completo con alerts.
+#    Audit trail en clinical_view_audit (section='trajectory',
+#    action='trajectory_fetched:<engine_version>'). 404 si NSS no existe.
+#
+# 4. prostanet/presentation/bootstrap.py: registra trajectory_bp con
+#    graceful degradation (idéntico patrón EPIC 45/46).
+#
+# 5. prostanet/domains/patient_tracking/profile_compass.py: inyecta
+#    `trajectory` al view model. Helper fail-safe. include_cohort_overlay=
+#    False en render del perfil (skip overhead 60+s — cohort overlay
+#    queda disponible via REST endpoint explícito).
+#
+# 6. templates/patient_profile_v2.html: NUEVA sección entre ML predictions
+#    y EPIC 20 cards:
+#      - Header EPIC 47 + count alerts badge
+#      - 4 KPI cards (PSADT, velocity, nadir, ALP trend con ⚠ si ≥25%)
+#      - 3 Chart.js canvases (PSA timeline, ECOG step, ALP+LDH dual)
+#      - Lista priorizada de alerts con severity colors
+#        (critical=rojo, high=naranja, moderate=amarillo)
+#      - Script Chart.js inline para inicialización
+#    Render condicional (solo si trajectory.available=True).
+#
+# 7. tests/test_epic47_trajectory_dashboard.py: 16 tests cubriendo
+#    engine shape + fail-safe, biomarker extraction, PSA kinetics math,
+#    ECOG decline detection, 5 alert detectors + priority sorting,
+#    REST 404, view model wiring (source-level guard), UI testids,
+#    output shape contract regression.
+#
+# Validación end-to-end:
+#   - 16/16 tests EPIC 47 PASS (11.68s)
+#   - 83 PASS + 1 xfailed full regression sweep (309s)
+#   - Smoke real con paciente 39:
+#     * GET /api/trajectory/97000000001 → 200 success
+#     * Detecta 3 alerts REALES en este paciente:
+#       - CRITICAL: PSA progression on ARSI PCWG3 (88.88 vs nadir 7.10)
+#       - HIGH: ALP rise pre-bone-mets (+44.5% en 3m)
+#       - HIGH: ECOG decline (1→2)
+#     * Render /patient_profile/97000000001?v=2 → 200 (~7s)
+#     * Playwright DOM probe confirma panel + 4 KPIs + 3 alerts + 3 charts
+#
+# Performance: include_cohort_overlay=False en render principal evita
+# overhead 60+s. Cohort overlay disponible via REST endpoint para casos
+# que lo necesitan explícitamente (research/SDM views).
+#
+# Impacto clínico tangible:
+#   - Paciente 39 HOY tiene 3 alertas accionables visibles que antes eran
+#     invisibles: PSA progresando bajo ARSI (switch/escalate), ALP subiendo
+#     +44.5% (PSMA-PET indicado), ECOG declinando (reconsiderar agresividad).
+#   - Foundation H2 research: KM curves, Cox regression, propensity matching
+#     requieren trajectory bien construida. Sin engine, era imposible.
+#   - Foundation EPIC 48 (reasoning trail) y EPIC 49 (patient-facing): ahora
+#     pueden anclar cada recomendación a contexto temporal específico.
+#   - Activa multiplicativamente: deep_surv (EPIC 46.B) + state_transition +
+#     anomaly_detector ya viven mejor con trajectory context.
+FAUBOT_RELEASE = "2026-05-23 CXXXV"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

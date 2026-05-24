@@ -6955,7 +6955,86 @@ def build_patient_profile_view_model(
         # prediction queda con maturity tag (experimental / shadow / advisory) +
         # nunca como source-of-truth — siempre complementa rule-based engine.
         "ml_predictions": _build_ml_predictions_snapshot_view_model(patient),
+        # EPIC 47 FAUBOT CXXXV — Longitudinal Trajectory Dashboard.
+        # Cambia el paradigma de medicina: snapshot → temporal. Unifica PSA +
+        # ECOG + ALP + LDH + treatment lanes + cohort baseline en una sola
+        # estructura consumible por Chart.js. Computa kinetics clínicos
+        # (PSADT, velocity, ALP trend, ECOG decline) + alerts pre-clínicas
+        # (PSA doubling time <10m, ALP rise pre-imaging, testosterone failure
+        # to suppress, PSA progression on ARSI PCWG3, ECOG severe decline).
+        # UI render: dashboard data-testid="trajectory-dashboard" entre ML
+        # cards y EPIC 20 cards. Alertas con severity badges.
+        "trajectory": _build_trajectory_snapshot_view_model(patient, state),
     }
+
+
+def _build_trajectory_snapshot_view_model(
+    patient: dict[str, Any],
+    state: str | None = None,
+) -> dict[str, Any]:
+    """Fail-safe wrapper que invoca build_trajectory_bundle + evaluate_trajectory_alerts.
+
+    Returns bundle con shape:
+      {available, summary, series, treatment_lanes, event_markers,
+       cohort_overlay, kinetics, alerts}
+
+    Si cualquier cosa falla, retorna {"available": False, "reason": ...}
+    sin levantar excepción (no bloquea render del perfil).
+    """
+    try:
+        from prostanet.domains.patient_tracking.trajectory_engine import (
+            build_trajectory_bundle,
+        )
+        from prostanet.domains.patient_tracking.trajectory_alert_engine import (
+            evaluate_trajectory_alerts,
+        )
+
+        # include_cohort_overlay=False en render del perfil porque
+        # build_psa_cohort_reference_overlay() puede iterar toda la cohorte
+        # y agregar 60+s de overhead. Cohort overlay queda disponible vía
+        # GET /api/trajectory/<nss> (REST endpoint lo activa explícitamente).
+        bundle = build_trajectory_bundle(patient, include_cohort_overlay=False)
+
+        # Patient context para alert engine
+        baseline = patient.get("baseline") or {}
+        latest_treatment = (patient.get("treatments") or [{}])[-1] if patient.get("treatments") else {}
+        treatment_class = str(latest_treatment.get("class") or latest_treatment.get("regimen_class") or "").lower()
+        treatment_scheme = str(latest_treatment.get("scheme") or latest_treatment.get("drug_scheme") or "").lower()
+        on_arsi = any(
+            arsi in treatment_class or arsi in treatment_scheme
+            for arsi in ("abi", "enza", "apa", "daro", "arsi", "arpi")
+        )
+        on_adt = any(
+            adt in treatment_class or adt in treatment_scheme
+            for adt in ("adt", "lhrh", "agonist", "antagonist", "leupr", "goser", "trip", "degar", "relug")
+        )
+
+        last_imaging = ""
+        imaging_records = patient.get("imaging_studies") or []
+        if isinstance(imaging_records, list) and imaging_records:
+            last_imaging_record = imaging_records[-1] if isinstance(imaging_records[-1], dict) else {}
+            last_imaging = str(
+                last_imaging_record.get("conventional_imaging_status")
+                or last_imaging_record.get("status")
+                or ""
+            ).upper()
+
+        ctx = {
+            "state_resolved": str(state or "").lower(),
+            "on_arsi": on_arsi,
+            "on_adt": on_adt,
+            "last_imaging_status": last_imaging,
+        }
+
+        bundle["alerts"] = evaluate_trajectory_alerts(bundle, ctx) if bundle.get("available") else []
+        return bundle
+    except Exception as exc:
+        return {
+            "available": False,
+            "reason": f"trajectory_engine_error: {type(exc).__name__}",
+            "alerts": [],
+            "engine_version": "epic47_v1.0",
+        }
 
 
 def _build_ml_predictions_snapshot_view_model(patient: dict[str, Any]) -> dict[str, Any]:

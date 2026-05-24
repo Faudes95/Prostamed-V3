@@ -511,6 +511,245 @@
         </section>
         {% endif %}
 
+        {# ═══════════════════════════════════════════════════════════════ #}
+        {# EPIC 47 (FAUBOT CXXXV) — Longitudinal Trajectory Dashboard      #}
+        {# ═══════════════════════════════════════════════════════════════ #}
+        {# Cambio paradigmático snapshot → temporal. Unifica PSA + ECOG +  #}
+        {# ALP + LDH + treatment lanes + cohort baseline + alerts en una   #}
+        {# vista temporal coherente. Chart.js multi-series + alerts list.  #}
+        {% set _traj = profile_view_raw.get('trajectory', {}) if profile_view_raw else {} %}
+        {% if _traj and _traj.available %}
+        <section style="margin: var(--space-4) var(--space-6); padding: var(--space-4);
+                        background: linear-gradient(135deg, rgba(56,189,248,0.10), rgba(15,23,42,0.66));
+                        border: 1px solid rgba(56,189,248,0.32);
+                        border-left: 6px solid rgb(56,189,248);
+                        border-radius: 14px;"
+                 class="pm2-trajectory-dashboard-panel"
+                 data-testid="trajectory-dashboard"
+                 data-alerts-count="{{ _traj.alerts|length if _traj.alerts else 0 }}"
+                 aria-label="Trayectoria longitudinal">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom: 1rem;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(186,230,253); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">
+                        Trayectoria longitudinal · EPIC 47 · FAUBOT CXXXV
+                    </div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        Evolución temporal del paciente
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
+                        {{ _traj.summary.n_visits }} observaciones PSA ·
+                        {{ _traj.summary.n_treatment_lines }} línea{{ 's' if _traj.summary.n_treatment_lines != 1 else '' }} de tratamiento ·
+                        {{ _traj.summary.earliest_date[:10] }} → {{ _traj.summary.latest_date[:10] }}
+                    </p>
+                </div>
+                {% if _traj.alerts %}
+                <div style="text-align:right;">
+                    <span data-testid="trajectory-alerts-badge"
+                          style="font-size:0.7rem; padding:4px 10px; border-radius:6px;
+                                 background:rgba(239,68,68,0.2); color:rgb(252,165,165); font-weight:700;">
+                        ⚠ {{ _traj.alerts|length }} alerta{{ 's' if _traj.alerts|length != 1 else '' }}
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+
+            {# ─── Kinetics summary (4 KPIs principales) ─── #}
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-bottom: 1rem;">
+                {% if _traj.kinetics.psa_doubling_time_months %}
+                <div data-testid="trajectory-kpi-psadt" style="background:rgba(15,23,42,0.5); padding:.625rem .75rem; border-radius:8px; border:1px solid rgba(56,189,248,0.2);">
+                    <div style="font-size:.65rem; color:rgb(186,230,253); font-weight:700; text-transform:uppercase;">PSA Doubling Time</div>
+                    <div style="font-size:1rem; color:#f8fafc; font-weight:700; margin-top:2px;">
+                        {{ '%.1f'|format(_traj.kinetics.psa_doubling_time_months) }} <span style="font-size:.7rem; font-weight:500; color:rgb(148,163,184);">meses</span>
+                    </div>
+                </div>
+                {% endif %}
+                {% if _traj.kinetics.psa_velocity_ng_per_year is not none %}
+                <div data-testid="trajectory-kpi-velocity" style="background:rgba(15,23,42,0.5); padding:.625rem .75rem; border-radius:8px; border:1px solid rgba(56,189,248,0.2);">
+                    <div style="font-size:.65rem; color:rgb(186,230,253); font-weight:700; text-transform:uppercase;">PSA Velocity</div>
+                    <div style="font-size:1rem; color:#f8fafc; font-weight:700; margin-top:2px;">
+                        {{ '%.2f'|format(_traj.kinetics.psa_velocity_ng_per_year) }} <span style="font-size:.7rem; font-weight:500; color:rgb(148,163,184);">ng/mL/año</span>
+                    </div>
+                </div>
+                {% endif %}
+                {% if _traj.kinetics.psa_nadir %}
+                <div data-testid="trajectory-kpi-nadir" style="background:rgba(15,23,42,0.5); padding:.625rem .75rem; border-radius:8px; border:1px solid rgba(56,189,248,0.2);">
+                    <div style="font-size:.65rem; color:rgb(186,230,253); font-weight:700; text-transform:uppercase;">PSA Nadir</div>
+                    <div style="font-size:1rem; color:#f8fafc; font-weight:700; margin-top:2px;">
+                        {{ '%.2f'|format(_traj.kinetics.psa_nadir.value) }} <span style="font-size:.7rem; font-weight:500; color:rgb(148,163,184);">ng/mL · {{ _traj.kinetics.psa_nadir.date[:10] }}</span>
+                    </div>
+                </div>
+                {% endif %}
+                {% if _traj.kinetics.alp_trend_pct_3m is not none %}
+                <div data-testid="trajectory-kpi-alp-trend" style="background:rgba(15,23,42,0.5); padding:.625rem .75rem; border-radius:8px;
+                     border:1px solid {% if _traj.kinetics.alp_trend_pct_3m >= 25 %}rgba(239,68,68,0.4){% else %}rgba(56,189,248,0.2){% endif %};">
+                    <div style="font-size:.65rem; color:rgb(186,230,253); font-weight:700; text-transform:uppercase;">ALP Trend (3m)</div>
+                    <div style="font-size:1rem; color:#f8fafc; font-weight:700; margin-top:2px;">
+                        {% if _traj.kinetics.alp_trend_pct_3m > 0 %}+{% endif %}{{ '%.1f'|format(_traj.kinetics.alp_trend_pct_3m) }}%
+                        {% if _traj.kinetics.alp_trend_pct_3m >= 25 %}<span style="color:rgb(252,165,165); font-size:.7rem;"> ⚠</span>{% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            {# ─── Charts (PSA + ECOG + ALP/LDH) ─── #}
+            <div style="display:grid; grid-template-columns: 1fr; gap:14px;">
+                <div data-testid="trajectory-chart-psa" style="background:rgba(15,23,42,0.4); padding:.625rem; border-radius:8px;">
+                    <div style="font-size:.72rem; color:rgb(186,230,253); font-weight:700; margin-bottom:6px;">PSA over time (ng/mL)</div>
+                    <canvas id="trajChartPSA" height="160" aria-label="PSA trajectory chart"></canvas>
+                </div>
+                {% if _traj.series.ecog %}
+                <div data-testid="trajectory-chart-ecog" style="background:rgba(15,23,42,0.4); padding:.625rem; border-radius:8px;">
+                    <div style="font-size:.72rem; color:rgb(186,230,253); font-weight:700; margin-bottom:6px;">ECOG performance over time</div>
+                    <canvas id="trajChartECOG" height="100" aria-label="ECOG trajectory chart"></canvas>
+                </div>
+                {% endif %}
+                {% if _traj.series.alp or _traj.series.ldh %}
+                <div data-testid="trajectory-chart-labs" style="background:rgba(15,23,42,0.4); padding:.625rem; border-radius:8px;">
+                    <div style="font-size:.72rem; color:rgb(186,230,253); font-weight:700; margin-bottom:6px;">Lab biomarkers (ALP / LDH)</div>
+                    <canvas id="trajChartLabs" height="140" aria-label="Lab biomarkers chart"></canvas>
+                </div>
+                {% endif %}
+            </div>
+
+            {# ─── Alerts list (priorizado severity desc) ─── #}
+            {% if _traj.alerts %}
+            <div style="margin-top:1rem;" data-testid="trajectory-alerts-list">
+                <div style="font-size:.7rem; color:rgb(252,165,165); font-weight:800; letter-spacing:.12em; text-transform:uppercase; margin-bottom:.5rem;">
+                    Alertas trayectoria (priorizadas)
+                </div>
+                {% for alert in _traj.alerts %}
+                <div data-testid="trajectory-alert-{{ alert.alert_id }}"
+                     data-severity="{{ alert.severity }}"
+                     style="background:rgba(15,23,42,0.5); padding:.75rem 1rem; border-radius:8px;
+                            border-left: 4px solid {% if alert.severity == 'critical' %}rgb(239,68,68){% elif alert.severity == 'high' %}rgb(251,146,60){% elif alert.severity == 'moderate' %}rgb(251,191,36){% else %}rgb(148,163,184){% endif %};
+                            margin-bottom:.5rem;">
+                    <div style="display:flex; gap:8px; align-items:center; margin-bottom:4px;">
+                        <span style="font-size:.62rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; padding:2px 8px; border-radius:4px;
+                              background:{% if alert.severity == 'critical' %}rgba(239,68,68,0.25); color:rgb(252,165,165){% elif alert.severity == 'high' %}rgba(251,146,60,0.25); color:rgb(253,186,116){% elif alert.severity == 'moderate' %}rgba(251,191,36,0.25); color:rgb(252,211,77){% else %}rgba(148,163,184,0.25); color:rgb(203,213,225){% endif %};">
+                            {{ alert.severity }}
+                        </span>
+                        <span style="font-size:.68rem; color:rgb(148,163,184); font-family:monospace;">{{ alert.alert_id }}</span>
+                    </div>
+                    <div style="font-size:.84rem; color:#f8fafc; line-height:1.45;">{{ alert.clinical_message }}</div>
+                    {% if alert.action_suggested %}
+                    <div style="font-size:.74rem; color:rgb(186,230,253); margin-top:6px;">
+                        <strong>Acción sugerida:</strong> {{ alert.action_suggested }}
+                    </div>
+                    {% endif %}
+                    {% if alert.citation %}
+                    <div style="font-size:.66rem; color:rgb(148,163,184); margin-top:4px; font-style:italic;">{{ alert.citation }}</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {# ─── Chart.js init script ─── #}
+            <script>
+                (function() {
+                    const trajData = {{ {
+                        'psa': _traj.series.psa,
+                        'ecog': _traj.series.ecog,
+                        'alp': _traj.series.alp,
+                        'ldh': _traj.series.ldh,
+                        'cohort_overlay': _traj.cohort_overlay,
+                        'kinetics': _traj.kinetics
+                    } | tojson }};
+
+                    const baseOpts = {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { labels: { color: '#cbd5e1', font: { size: 11 } } },
+                            tooltip: { mode: 'index', intersect: false }
+                        },
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: { unit: 'month', tooltipFormat: 'yyyy-MM-dd' },
+                                ticks: { color: '#94a3b8', font: { size: 10 } },
+                                grid: { color: 'rgba(148,163,184,0.1)' }
+                            },
+                            y: {
+                                ticks: { color: '#94a3b8', font: { size: 10 } },
+                                grid: { color: 'rgba(148,163,184,0.1)' }
+                            }
+                        }
+                    };
+
+                    // PSA chart
+                    const psaCanvas = document.getElementById('trajChartPSA');
+                    if (psaCanvas && trajData.psa && trajData.psa.length) {
+                        new Chart(psaCanvas, {
+                            type: 'line',
+                            data: {
+                                datasets: [{
+                                    label: 'PSA paciente (ng/mL)',
+                                    data: trajData.psa.map(p => ({ x: p.date, y: p.psa })),
+                                    borderColor: 'rgb(56,189,248)',
+                                    backgroundColor: 'rgba(56,189,248,0.2)',
+                                    tension: 0.2,
+                                    pointRadius: 4
+                                }]
+                            },
+                            options: baseOpts
+                        });
+                    }
+
+                    // ECOG chart (step-like)
+                    const ecogCanvas = document.getElementById('trajChartECOG');
+                    if (ecogCanvas && trajData.ecog && trajData.ecog.length) {
+                        new Chart(ecogCanvas, {
+                            type: 'line',
+                            data: {
+                                datasets: [{
+                                    label: 'ECOG',
+                                    data: trajData.ecog.map(p => ({ x: p.date, y: p.value })),
+                                    borderColor: 'rgb(251,191,36)',
+                                    backgroundColor: 'rgba(251,191,36,0.2)',
+                                    stepped: true,
+                                    pointRadius: 4
+                                }]
+                            },
+                            options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, min: 0, max: 4, ticks: { stepSize: 1, color: '#94a3b8' } } } }
+                        });
+                    }
+
+                    // Labs (ALP + LDH dual)
+                    const labsCanvas = document.getElementById('trajChartLabs');
+                    if (labsCanvas && ((trajData.alp && trajData.alp.length) || (trajData.ldh && trajData.ldh.length))) {
+                        const datasets = [];
+                        if (trajData.alp && trajData.alp.length) {
+                            datasets.push({
+                                label: 'ALP',
+                                data: trajData.alp.map(p => ({ x: p.date, y: p.value })),
+                                borderColor: 'rgb(251,146,60)',
+                                backgroundColor: 'rgba(251,146,60,0.2)',
+                                tension: 0.2,
+                                pointRadius: 4
+                            });
+                        }
+                        if (trajData.ldh && trajData.ldh.length) {
+                            datasets.push({
+                                label: 'LDH',
+                                data: trajData.ldh.map(p => ({ x: p.date, y: p.value })),
+                                borderColor: 'rgb(168,85,247)',
+                                backgroundColor: 'rgba(168,85,247,0.2)',
+                                tension: 0.2,
+                                pointRadius: 4
+                            });
+                        }
+                        new Chart(labsCanvas, {
+                            type: 'line',
+                            data: { datasets: datasets },
+                            options: baseOpts
+                        });
+                    }
+                })();
+            </script>
+        </section>
+        {% endif %}
+
         {# EPIC 20 — Clinical Trajectory Recognition Cards (5 new copilots) #}
         {# Renders only when copilot bundle .available=True for that patient #}
 

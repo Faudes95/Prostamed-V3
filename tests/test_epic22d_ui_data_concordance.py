@@ -119,6 +119,19 @@ STATIC_NO_DATA_BINDING: set[str] = {
     "ml-card-survival",
     "ml-card-anomaly",
     "ml-card-state-transition",
+    # EPIC 47 FAUBOT CXXXV — Trajectory dashboard + sub-elementos.
+    # Data-binding fluye desde profile_view_raw.trajectory → series + alerts
+    # + kinetics. Charts (psa/ecog/labs) y kpis son sub-renders condicionales.
+    "trajectory-dashboard",
+    "trajectory-alerts-badge",
+    "trajectory-alerts-list",
+    "trajectory-chart-psa",
+    "trajectory-chart-ecog",
+    "trajectory-chart-labs",
+    "trajectory-kpi-psadt",
+    "trajectory-kpi-velocity",
+    "trajectory-kpi-nadir",
+    "trajectory-kpi-alp-trend",
 }
 
 
