@@ -114,9 +114,16 @@ def build_decision_narrative(view_model: dict[str, Any]) -> dict[str, Any]:
         # 3. Detectar discordances (engines que NO están de acuerdo)
         discordances = _detect_discordances(compass, twin, fusion, ml, godibot)
 
-        # 4. Compute concordance summary + global confidence
+        # 4. Compute concordance summary + global confidence (FIX #5: honesto)
         concordance = _compute_concordance(compass, twin, fusion, ml, trajectory, godibot)
-        confidence_score = _compute_confidence(concordance, len(evidence), len(discordances))
+        n_substantive = _count_substantive_engines(compass, twin, fusion, ml, trajectory, godibot)
+        confidence_score = _compute_confidence(
+            concordance,
+            len(evidence),
+            len(discordances),
+            primary_source_engine=primary.get("source_engine"),
+            n_substantive_engines=n_substantive,
+        )
 
         # 5. Extract alternatives (top-2 después de la primary)
         alternatives = _extract_alternatives(twin, fusion, max_n=2)
@@ -541,13 +548,104 @@ def _compute_confidence(
     concordance: dict[str, bool],
     n_anchors: int,
     n_discordances: int,
+    *,
+    primary_source_engine: str | None = None,
+    n_substantive_engines: int = 0,
 ) -> float:
-    """Confianza global como weighted average de concordancias + anchor count."""
+    """Confianza global como weighted average de concordancias + anchor count.
+
+    FIX #5 (Sprint 1 validación E2E): penalizar vacuous truth.
+
+    Hallazgo: cuando engines clínicos (Compass, Twin OS, Fusion) NO producen
+    output, las concordancias retornan True por default permisivo. Eso
+    generaba confianza 100% sobre nada (vacuous truth). Engaña al clínico.
+
+    Nueva lógica:
+      1. Si primary_source_engine == "compass_context_fallback" (no hay
+         recomendación terapéutica real), confianza HARD-CAP a 35%.
+      2. Si <50% de engines clínicos produjeron output substantivo,
+         confianza HARD-CAP a 50%.
+      3. Si SÍ hay outputs reales, confianza honesta basada en concordance +
+         anchors + discord penalty (rango 0-100%).
+
+    Args:
+        concordance: dict bool por engine
+        n_anchors: cantidad de evidence anchors
+        n_discordances: cantidad de discordances detectadas
+        primary_source_engine: source del primary recommendation (para
+            detectar fallback path)
+        n_substantive_engines: count de engines que produjeron output real
+            (no defaults vacíos). Usado para penalizar confianza si <50%
+            de engines opinaron.
+    """
     concordance_score = sum(1 for v in concordance.values() if v) / max(len(concordance), 1)
     anchor_bonus = min(n_anchors * 0.04, 0.2)  # max 0.2 bonus
     discord_penalty = min(n_discordances * 0.15, 0.4)  # max 0.4 penalty
     raw = concordance_score + anchor_bonus - discord_penalty
-    return max(0.0, min(1.0, raw))
+    confidence = max(0.0, min(1.0, raw))
+
+    # HARD CAP 1: contextual fallback → confianza inherentemente baja
+    # (es información de contexto, no recomendación terapéutica)
+    if primary_source_engine == "compass_context_fallback":
+        return min(confidence, 0.35)
+
+    # HARD CAP 2: si <50% engines opinaron substantivamente, vacuous truth
+    # (las concordancias son defaults permisivos, no agreement real)
+    total_engines = max(len(concordance), 1)
+    substantive_ratio = n_substantive_engines / total_engines
+    if substantive_ratio < 0.5:
+        return min(confidence, 0.5)
+
+    return confidence
+
+
+def _count_substantive_engines(
+    compass: dict[str, Any],
+    twin: dict[str, Any],
+    fusion: dict[str, Any],
+    ml: dict[str, Any],
+    trajectory: dict[str, Any],
+    godibot: dict[str, Any],
+) -> int:
+    """Cuenta cuántos engines clínicos produjeron output real (no defaults).
+
+    Un engine es "substantivo" si tiene contenido concreto:
+      - compass: next_best_action con label NON-empty
+      - twin: regimen_rankings_personalized non-empty
+      - fusion: arbitrated_ranking non-empty O has_conflicts=True
+      - ml: ml_predictions.available=True con al menos 1 modelo prediction
+      - trajectory: available=True (tiene datos temporales)
+      - godibot: review_completed=True O status declarado
+    """
+    count = 0
+    # Compass substantive: tiene next_best_action con label
+    compass_action = (compass.get("next_best_action") or {}) if isinstance(compass, dict) else {}
+    if compass_action and (compass_action.get("label") or compass_action.get("action")):
+        count += 1
+    # Twin substantive: tiene ranking populated
+    twin_ranking = (
+        (twin.get("regimen_rankings_personalized") or twin.get("regimen_rankings"))
+        if isinstance(twin, dict) else None
+    )
+    if twin_ranking and isinstance(twin_ranking, list) and len(twin_ranking) > 0:
+        count += 1
+    # Fusion substantive: tiene arbitrated_ranking O detectó conflicts
+    if isinstance(fusion, dict):
+        if (fusion.get("arbitrated_ranking") and len(fusion.get("arbitrated_ranking", [])) > 0) \
+                or fusion.get("has_conflicts"):
+            count += 1
+    # ML substantive: al menos 1 modelo respondió
+    if isinstance(ml, dict) and ml.get("available"):
+        models = ml.get("models") or {}
+        if any(m.get("available") for m in models.values() if isinstance(m, dict)):
+            count += 1
+    # Trajectory substantive: tiene data temporal
+    if isinstance(trajectory, dict) and trajectory.get("available"):
+        count += 1
+    # GodiBot substantive: status declarado (review ejecutado)
+    if isinstance(godibot, dict) and (godibot.get("status") or godibot.get("review_completed")):
+        count += 1
+    return count
 
 
 # ─────────────────────────────────────────────────────────────────────

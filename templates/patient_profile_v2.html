@@ -256,6 +256,44 @@
                 </div>
             </div>
 
+            {# ── FIX #8 — Banner warning si narrative cae a fallback contextual ── #}
+            {% if _narrative.primary_recommendation and _narrative.primary_recommendation.get('is_contextual_fallback') %}
+            <div data-testid="decision-narrative-fallback-banner"
+                 role="alert"
+                 style="background:linear-gradient(135deg, rgba(239,68,68,0.18), rgba(15,23,42,0.55));
+                        border:1px solid rgba(239,68,68,0.45);
+                        border-left:5px solid rgb(239,68,68);
+                        border-radius:10px; padding:.875rem 1rem; margin-bottom:1rem;">
+                <div style="display:flex; align-items:start; gap:10px;">
+                    <span style="font-size:1.25rem; line-height:1;" aria-hidden="true">⚠</span>
+                    <div style="flex:1;">
+                        <div style="font-size:.78rem; color:rgb(252,165,165); font-weight:800; text-transform:uppercase; letter-spacing:.08em;">
+                            Clasificación incompleta · modo contextual
+                        </div>
+                        <p style="margin:6px 0 0; color:rgb(254,202,202); font-size:.85rem; line-height:1.5;">
+                            La recomendación actual es <strong>guía contextual genérica</strong>, no terapéutica concreta,
+                            porque el clasificador no produjo estado clínico final. Para obtener recomendación
+                            terapéutica con evidencia, capture:
+                        </p>
+                        <ul style="margin:6px 0 0 1.25rem; padding:0; color:rgb(254,202,202); font-size:.78rem; line-height:1.55;">
+                            <li>TNM completo (cT / cN / cM o stage_group)</li>
+                            <li>Castration status + ADT context (si aplica)</li>
+                            <li>Re-aplique el clasificador oficial</li>
+                        </ul>
+                        <a href="/clinical-hub#pm2OfficialClassifier"
+                           data-testid="decision-narrative-classifier-cta"
+                           style="display:inline-block; margin-top:.625rem; padding:.4rem .875rem;
+                                  background:rgba(239,68,68,0.25); color:rgb(254,202,202);
+                                  border:1px solid rgba(239,68,68,0.5);
+                                  border-radius:6px; font-size:.78rem; font-weight:700;
+                                  text-decoration:none;">
+                            → Ir al clasificador oficial
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             {# ── Narrative HTML (con drill-down anchors) ── #}
             <div data-testid="decision-narrative-body"
                  style="background:rgba(15,23,42,0.5); padding:1rem 1.25rem; border-radius:10px; color:rgb(226,232,240); line-height:1.6; font-size:.88rem;">

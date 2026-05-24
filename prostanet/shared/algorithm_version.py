@@ -470,7 +470,65 @@ from typing import Any
 #   - Latin recalibration H3 — override por ancestría → publication-ready
 #   - COFEPRIS regulatory H3 — user feedback mechanism cumplido
 #   - Real-world evidence — primer dataset publicable LATAM CDSS prostate
-FAUBOT_RELEASE = "2026-05-24 CXXXVI"
+# → CXXXVII (Sprint 1 fixes — auditoría E2E validación visual):
+# 5 fixes críticos cerrados tras simular uro-oncólogo registrando paciente:
+#
+# FIX A — Smart Capture DEPRECADO formalmente:
+#   /intake/smart ahora retorna 302 → /clinical-hub#pm2OfficialClassifier.
+#   Comparativa Smart Capture vs Clasificador oficial: clasificador GANA en
+#   4/4 dimensiones (clínica, arquitectónica, lógica, flujo). Smart Capture
+#   = 105 fields anti-workflow; clasificador = voice-first 4-6 min con
+#   Cortana + transcript revisable + apply.
+#
+# FIX #2 — EPIC 46.A persistencia activada:
+#   Los 4 fact_keys (primary_ancestry, psma_pet_local_access, lu_psma_
+#   local_access, arsi_local_access) ahora se extraen en
+#   extract_canonical_fact_candidates → persisten en patient_clinical_facts.
+#   Hallazgo: 0/425 pacientes tenían primary_ancestry capturado a pesar de
+#   que el backend tenía ETHNICITY_RISK_MODIFIERS listo. EPIC 46.A estaba
+#   "shipped" pero clinicalmente inactivo. Verificado en paciente 484
+#   (Carlos Méndez Ruiz, afro_descendiente): 4/4 facts persistidos.
+#
+# FIX #3 + #4 — Pipeline metastatic_visceral robusto:
+#   Hallazgo: parser leía SOLO `visceral_metastasis_present`; alias común
+#   `metastasis_visceral_present` (orden invertido) era ignorado
+#   silenciosamente → paciente con visceral mets clasificaba como "bajo
+#   volumen oligometastatic". Errónea grave. Fix acepta 3 aliases
+#   (canonical + alias + alias corto) para nodal/bone/visceral. Verificado
+#   en paciente 484: M1c + visceral_metastasis_present=True + volume_context=
+#   high + oligometastatic_operational=False.
+#
+# FIX #5 — Confidence honesty (vacuous truth penalty):
+#   Hallazgo: cuando engines NO producían output, las concordancias retornan
+#   True por defaults permisivos → confianza 100% sobre nada. Engañaba al
+#   clínico.
+#   Nueva lógica con 2 hard caps:
+#     - HARD CAP 1: si primary_source_engine == "compass_context_fallback"
+#       → confianza ≤35% (es guía contextual, no terapéutica concreta)
+#     - HARD CAP 2: si <50% engines opinaron substantivamente → ≤50%
+#   Helper _count_substantive_engines distingue output real vs default.
+#   Verificado live: confianza pasó de 100% → 35% para paciente 484
+#   (que está en fallback path por TNM incompleto).
+#
+# FIX #8 — Banner warning visible cuando fallback path:
+#   Template: nueva sección data-testid="decision-narrative-fallback-banner"
+#   roja con explicación + lista de campos a capturar + CTA "→ Ir al
+#   clasificador oficial". Renderiza condicional solo si primary
+#   .is_contextual_fallback=True. Verificado live en paciente 484.
+#
+# Validación:
+#   - 10/10 tests Sprint 1 PASS (test_sprint1_validation_fixes.py)
+#   - 111 PASS + 1 xfailed regression sweep (EPIC 45+46+47+48 + arbiter +
+#     UI concordance + Sprint 1)
+#   - Smoke real con paciente 484:
+#     * /intake/smart → 302 redirect (FIX A) ✓
+#     * primary_ancestry='afro_descendiente' persistido (FIX #2) ✓
+#     * m_substage_resolved='M1c' + visceral_metastasis_present=True
+#       + volume_context='high' (FIX #3+#4) ✓
+#     * Confianza badge 35% (FIX #5) ✓
+#     * Banner rojo "Clasificación incompleta · modo contextual" con CTA
+#       (FIX #8) ✓
+FAUBOT_RELEASE = "2026-05-24 CXXXVII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

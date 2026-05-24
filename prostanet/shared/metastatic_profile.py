@@ -356,9 +356,28 @@ def build_metastatic_profile(data: dict[str, Any] | None) -> dict[str, Any]:
         _safe_int(item.get("lesion_count"), 0) for item in visceral_sites
     )
 
-    nonregional_nodal_present = _is_truthy(data.get("nonregional_nodal_metastasis_present")) or nonregional_nodal_count > 0
-    bone_present = _is_truthy(data.get("bone_metastasis_present")) or bone_axial_count + bone_appendicular_count > 0
-    visceral_present = _is_truthy(data.get("visceral_metastasis_present")) or visceral_lesion_count > 0
+    # FIX #4 (Sprint 1 validación E2E): aceptar aliases comunes del payload.
+    # Hallazgo: cliente externo (REST POST) puede usar `metastasis_visceral_
+    # present` (orden invertido) y el parser lo ignoraba silenciosamente →
+    # clasificación errónea como "bajo volumen oligometastatic" cuando había
+    # mets viscerales declaradas. Aceptamos ambos órdenes para robustez.
+    nonregional_nodal_present = (
+        _is_truthy(data.get("nonregional_nodal_metastasis_present"))
+        or _is_truthy(data.get("metastasis_nonregional_nodal_present"))
+        or _is_truthy(data.get("nodal_metastasis_present"))
+        or nonregional_nodal_count > 0
+    )
+    bone_present = (
+        _is_truthy(data.get("bone_metastasis_present"))
+        or _is_truthy(data.get("metastasis_bone_present"))
+        or bone_axial_count + bone_appendicular_count > 0
+    )
+    visceral_present = (
+        _is_truthy(data.get("visceral_metastasis_present"))
+        or _is_truthy(data.get("metastasis_visceral_present"))   # FIX #4 alias
+        or _is_truthy(data.get("visceral_mets_present"))          # alias corto
+        or visceral_lesion_count > 0
+    )
 
     truth_status = "missing"
     if any(_is_present(data.get(name)) for name in METASTATIC_PROFILE_FIELD_NAMES):

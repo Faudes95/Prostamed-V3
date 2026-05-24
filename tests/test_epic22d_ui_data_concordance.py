@@ -144,6 +144,9 @@ STATIC_NO_DATA_BINDING: set[str] = {
     "decision-override-form",
     "decision-override-submit-btn",
     "outcome-linkage-panel",
+    # Sprint 1 fix #8 — Fallback banner cuando narrative cae a context_fallback
+    "decision-narrative-fallback-banner",
+    "decision-narrative-classifier-cta",
 }
 
 

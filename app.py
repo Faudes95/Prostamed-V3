@@ -9,6 +9,7 @@ import json
 import logging
 import sqlite3
 from datetime import datetime
+from typing import Any
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for
 
@@ -639,7 +640,18 @@ def patients_list():
     # Faubot LXXX #67E — v2 es DEFAULT. Legacy disponible vía ?v=legacy.
     if request.args.get("v") != "legacy":
         from prostanet.presentation.v2_adapters import patients_list_to_v2
-        v2_data = patients_list_to_v2()
+        from prostanet.shared.read_model_cache import (
+            AGGREGATE_TTL_SECONDS,
+            build_cache_key,
+            get_or_build_read_model,
+        )
+
+        v2_data = get_or_build_read_model(
+            build_cache_key("patients_list_v2", "default"),
+            patients_list_to_v2,
+            ttl_seconds=AGGREGATE_TTL_SECONDS,
+            refresh=_is_truthy_param(request.args.get("refresh")),
+        )
         return render_template("patients_v2.html", **v2_data)
     return render_template("patients.html", page_chrome=page_chrome)
 
@@ -656,7 +668,18 @@ def dashboard():
     # Faubot LXXX #67E — v2 es DEFAULT. Legacy disponible vía ?v=legacy.
     if request.args.get("v") != "legacy":
         from prostanet.presentation.v2_adapters import dashboard_summary_to_v2
-        v2_data = dashboard_summary_to_v2()
+        from prostanet.shared.read_model_cache import (
+            AGGREGATE_TTL_SECONDS,
+            build_cache_key,
+            get_or_build_read_model,
+        )
+
+        v2_data = get_or_build_read_model(
+            build_cache_key("dashboard_v2", "default"),
+            dashboard_summary_to_v2,
+            ttl_seconds=AGGREGATE_TTL_SECONDS,
+            refresh=_is_truthy_param(request.args.get("refresh")),
+        )
         return render_template("demos/clinical_dashboard_v2_demo.html", **v2_data)
     return render_template("dashboard.html", page_chrome=page_chrome)
 
@@ -1168,39 +1191,41 @@ def patient_profile(nss):
                     ),
                     patient_ref=str(nss),
                 )
-                # BUG FIX 2026-05-17 — inyectar clinical_compass en bundle/data
-                # para que build_decision_today pueda usar
-                # structured_decision_headline ("Priorizar ADT + enzalutamida")
-                # en lugar de fallback genérico ("Biomarcadores accionables" /
-                # "Reabrir decision clinica") para el hero principal.
-                # ALWAYS rebuild (NO usar autodrive.decision_today cached —
-                # ese se construye internamente sin nuestro compass override).
-                _bundle_for_fusion = dict(longitudinal_bundle or {})
-                _compass_in_pv = profile_view.get("clinical_compass") if isinstance(profile_view, Mapping) or hasattr(profile_view, "get") else None
-                if _compass_in_pv:
-                    _bundle_for_fusion["clinical_compass"] = _compass_in_pv
-                _data_for_fusion = dict(data)
-                if _compass_in_pv:
-                    _data_for_fusion["clinical_compass"] = _compass_in_pv
-                profile_view["decision_today_fusion_kernel"] = build_decision_today(
-                    _data_for_fusion,
-                    longitudinal_bundle=_bundle_for_fusion,
-                    clinical_autodrive=profile_view["autodrive"],
-                    state=str(
-                        signals_for_autodrive.get("effective_state_final")
-                        or signals_for_autodrive.get("effective_state")
-                        or signals_for_autodrive.get("reconciled_state")
-                        or (data.get("latest_assessment") or {}).get("state")
-                        or ""
-                    ),
-                    management_track=str(
-                        signals_for_autodrive.get("effective_management_track_final")
-                        or signals_for_autodrive.get("effective_management_track")
-                        or signals_for_autodrive.get("reconciled_management_track")
-                        or ""
-                    ),
-                    patient_ref=str(nss),
+                # Clinical Logic Hardening — Patient Profile must render the
+                # same Decision Today contract exposed by the API. Do not
+                # inject clinical_compass here; that can surface an older
+                # treatment headline while Autodrive/API already requires
+                # re-opening the decision.
+                _canonical_decision_today = dict(
+                    (profile_view.get("autodrive") or {}).get("decision_today") or {}
                 )
+                if _canonical_decision_today.get("source") == "clinical_decision_today_fusion_kernel":
+                    profile_view["decision_today_fusion_kernel"] = _canonical_decision_today
+                else:
+                    profile_view["decision_today_fusion_kernel"] = build_decision_today(
+                        data,
+                        longitudinal_bundle=longitudinal_bundle or {},
+                        clinical_autodrive=profile_view["autodrive"],
+                        state=str(
+                            signals_for_autodrive.get("effective_state_final")
+                            or signals_for_autodrive.get("effective_state")
+                            or signals_for_autodrive.get("reconciled_state")
+                            or (data.get("latest_assessment") or {}).get("state")
+                            or ""
+                        ),
+                        management_track=str(
+                            signals_for_autodrive.get("effective_management_track_final")
+                            or signals_for_autodrive.get("effective_management_track")
+                            or signals_for_autodrive.get("reconciled_management_track")
+                            or ""
+                        ),
+                        patient_ref=str(nss),
+                    )
+                _canonical_next_safe_action = dict(
+                    (profile_view.get("decision_today_fusion_kernel") or {}).get("next_safe_action") or {}
+                )
+                if _canonical_next_safe_action:
+                    profile_view["next_best_action"] = _canonical_next_safe_action
             except Exception as e:
                 logger.warning(f"Error construyendo Autodrive v2: {e}")
                 profile_view["autodrive"] = {}
@@ -2020,6 +2045,9 @@ def api_next_best_action(patient_ref):
 def api_patient_signals(patient_ref):
     import tracking_db
     try:
+        scope = str(request.args.get("scope") or "full").strip().lower()
+        if scope not in {"full", "summary"}:
+            return error_response("scope debe ser 'summary' o 'full'", 400)
         resolved, error = _resolve_patient_api_ref(patient_ref)
         if error:
             return error
@@ -2031,6 +2059,76 @@ def api_patient_signals(patient_ref):
         )
         if not patient:
             patient = _minimal_patient_record_from_resolved(resolved, patient_ref)
+        if scope == "summary":
+            latest_signal_snapshot = dict(patient.get("latest_signal_snapshot") or {})
+            raw_cached_signals = latest_signal_snapshot.get("signals")
+            cached_signals = dict(raw_cached_signals) if isinstance(raw_cached_signals, dict) else {}
+            if not cached_signals and latest_signal_snapshot.get("state"):
+                cached_signals = {
+                    "effective_state_final": latest_signal_snapshot.get("state"),
+                    "effective_state": latest_signal_snapshot.get("state"),
+                    "effective_management_track_final": latest_signal_snapshot.get("management_track"),
+                    "effective_management_track": latest_signal_snapshot.get("management_track"),
+                }
+                if isinstance(raw_cached_signals, list):
+                    cached_signals["clinical_signal_cards"] = raw_cached_signals[:12]
+            if cached_signals:
+                next_best_action = dict(latest_signal_snapshot.get("next_best_action") or {})
+                decision_today_bundle = dict(cached_signals.get("decision_today") or {})
+                if not decision_today_bundle:
+                    decision_today_bundle = {
+                        "available": True,
+                        "source": "latest_signal_snapshot",
+                        "decision_state": "cached_summary",
+                        "next_safe_action": next_best_action,
+                    }
+                summary_signals = {
+                    key: cached_signals.get(key)
+                    for key in (
+                        "effective_state_final",
+                        "effective_state",
+                        "reconciled_state",
+                        "effective_management_track_final",
+                        "effective_management_track",
+                        "reconciled_management_track",
+                        "phenotype_state",
+                        "progression_gate_active",
+                        "progression_gate_target",
+                        "progression_gate_reason",
+                        "systemic_progression_context_resolved",
+                    )
+                    if key in cached_signals
+                }
+                summary_signals["decision_today"] = decision_today_bundle
+                return jsonify(
+                    {
+                        "success": True,
+                        "scope": "summary",
+                        "source": "latest_signal_snapshot",
+                        "signals": summary_signals,
+                        "transition_proposals": [],
+                        "next_best_action": next_best_action,
+                        "clinical_readiness_tower": dict(cached_signals.get("clinical_readiness_tower") or {}),
+                        "tumor_board_os": {},
+                        "care_pathway_os": {},
+                        "clinical_memory_os": {},
+                        "autodrive": {
+                            "available": False,
+                            "source": "latest_signal_snapshot",
+                            "summary": {"priority_status": "cached_summary"},
+                            "today_queue": [],
+                            "autodrive_actions": [],
+                        },
+                        "decision_today": decision_today_bundle,
+                        "effective_state_final": summary_signals.get("effective_state_final") or summary_signals.get("effective_state") or summary_signals.get("reconciled_state"),
+                        "effective_management_track_final": summary_signals.get("effective_management_track_final") or summary_signals.get("effective_management_track") or summary_signals.get("reconciled_management_track"),
+                        "effective_state": summary_signals.get("effective_state") or summary_signals.get("reconciled_state"),
+                        "effective_management_track": summary_signals.get("effective_management_track") or summary_signals.get("reconciled_management_track"),
+                        "resolved_patient_id": patient_id,
+                        "resolved_patient_ref": resolved.get("nss") or resolved.get("patient_ref") or str(patient_ref),
+                        **_reconciled_patient_snapshot(patient),
+                    }
+                )
         try:
             bundle = tracking_db.refresh_longitudinal_intelligence(
                 patient_id,
@@ -2044,6 +2142,131 @@ def api_patient_signals(patient_ref):
         signals = bundle.get("signals")
         if signals is None:
             signals = {}
+        if scope == "summary":
+            from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
+                build_patient_autodrive,
+            )
+            from prostanet.domains.patient_tracking.clinical_decision_today_fusion_kernel import (
+                build_decision_today,
+            )
+
+            state = str(
+                signals.get("effective_state_final")
+                or signals.get("effective_state")
+                or signals.get("reconciled_state")
+                or (patient.get("latest_assessment") or {}).get("state")
+                or ""
+            )
+            management_track = str(
+                signals.get("effective_management_track_final")
+                or signals.get("effective_management_track")
+                or signals.get("reconciled_management_track")
+                or ""
+            )
+            resolved_ref = str(resolved.get("nss") or resolved.get("patient_ref") or patient_ref)
+            clinical_readiness_tower = dict(bundle.get("clinical_readiness_tower") or {})
+            tumor_board_os = dict(bundle.get("tumor_board_os") or {})
+            care_pathway_os = dict(bundle.get("care_pathway_os") or {})
+            clinical_memory_os = dict(bundle.get("clinical_memory_os") or {})
+            summary_bundle = {
+                **dict(bundle or {}),
+                "clinical_readiness_tower": clinical_readiness_tower,
+                "tumor_board_os": tumor_board_os,
+                "care_pathway_os": care_pathway_os,
+                "clinical_memory_os": clinical_memory_os,
+                "signals": signals,
+            }
+            try:
+                autodrive_bundle = build_patient_autodrive(
+                    patient,
+                    longitudinal_bundle=summary_bundle,
+                    state=state,
+                    management_track=management_track,
+                    patient_ref=resolved_ref,
+                )
+            except Exception as exc:
+                logger.warning("Signals summary Autodrive fallback for %s: %s", patient_ref, exc)
+                autodrive_bundle = {
+                    "available": False,
+                    "source": "clinical_autodrive_command_center",
+                    "summary": {"priority_status": "not_actionable"},
+                    "today_queue": [],
+                    "autodrive_actions": [],
+                }
+            try:
+                decision_today_bundle = autodrive_bundle.get("decision_today") or build_decision_today(
+                    patient,
+                    longitudinal_bundle=summary_bundle,
+                    clinical_autodrive=autodrive_bundle,
+                    state=state,
+                    management_track=management_track,
+                    patient_ref=resolved_ref,
+                )
+            except Exception as exc:
+                logger.warning("Signals summary Decision Today fallback for %s: %s", patient_ref, exc)
+                decision_today_bundle = {
+                    "available": True,
+                    "source": "clinical_decision_today_fusion_kernel",
+                    "decision_state": "requires_data",
+                }
+            summary_signals = {
+                key: signals.get(key)
+                for key in (
+                    "effective_state_final",
+                    "effective_state",
+                    "reconciled_state",
+                    "effective_management_track_final",
+                    "effective_management_track",
+                    "reconciled_management_track",
+                    "phenotype_state",
+                    "progression_gate_active",
+                    "progression_gate_target",
+                    "progression_gate_reason",
+                    "systemic_progression_context_resolved",
+                )
+                if key in signals
+            }
+            summary_signals["decision_today"] = decision_today_bundle
+            return jsonify(
+                {
+                    "success": True,
+                    "scope": "summary",
+                    "signals": summary_signals,
+                    "transition_proposals": bundle.get("transition_proposals", []),
+                    "next_best_action": bundle.get("next_best_action", {}),
+                    "clinical_readiness_tower": clinical_readiness_tower,
+                    "tumor_board_os": {
+                        "available": tumor_board_os.get("available"),
+                        "status": tumor_board_os.get("status"),
+                        "summary": tumor_board_os.get("summary", {}),
+                    },
+                    "care_pathway_os": {
+                        "available": care_pathway_os.get("available"),
+                        "status": care_pathway_os.get("status"),
+                        "summary": care_pathway_os.get("summary", {}),
+                    },
+                    "clinical_memory_os": {
+                        "available": clinical_memory_os.get("available"),
+                        "status": clinical_memory_os.get("status"),
+                        "summary": clinical_memory_os.get("summary", {}),
+                    },
+                    "autodrive": {
+                        "available": autodrive_bundle.get("available"),
+                        "source": autodrive_bundle.get("source"),
+                        "summary": autodrive_bundle.get("summary", {}),
+                        "today_queue": list(autodrive_bundle.get("today_queue") or [])[:5],
+                        "autodrive_actions": list(autodrive_bundle.get("autodrive_actions") or [])[:5],
+                    },
+                    "decision_today": decision_today_bundle,
+                    "effective_state_final": summary_signals.get("effective_state_final") or summary_signals.get("effective_state") or summary_signals.get("reconciled_state"),
+                    "effective_management_track_final": summary_signals.get("effective_management_track_final") or summary_signals.get("effective_management_track") or summary_signals.get("reconciled_management_track"),
+                    "effective_state": summary_signals.get("effective_state") or summary_signals.get("reconciled_state"),
+                    "effective_management_track": summary_signals.get("effective_management_track") or summary_signals.get("reconciled_management_track"),
+                    "resolved_patient_id": patient_id,
+                    "resolved_patient_ref": resolved_ref,
+                    **_reconciled_patient_snapshot(patient),
+                }
+            )
         from prostanet.shared.presentation_text import (
             humanize_assessment,
             humanize_care_overlays,
@@ -2611,7 +2834,7 @@ def api_patient_care_pathway_action_status(patient_ref, action_key):
         return error_response(str(e), 500)
 
 
-def _build_patient_decision_today_for_api(patient_ref, *, force_recompute=False):
+def _build_patient_decision_today_for_api_uncached(patient_ref, *, force_recompute=False):
     import tracking_db
     from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
         build_patient_autodrive,
@@ -2707,6 +2930,28 @@ def _build_patient_decision_today_for_api(patient_ref, *, force_recompute=False)
         "decision_today": decision_today,
         "resolved": resolved,
     }, None
+
+
+def _build_patient_decision_today_for_api(patient_ref, *, force_recompute=False):
+    from prostanet.shared.read_model_cache import (
+        PATIENT_TTL_SECONDS,
+        build_cache_key,
+        get_read_model,
+        invalidate_read_model_cache,
+        set_read_model,
+    )
+
+    key = build_cache_key("patient_decision_today", str(patient_ref))
+    if force_recompute:
+        invalidate_read_model_cache("patient_decision_today")
+        return _build_patient_decision_today_for_api_uncached(patient_ref, force_recompute=True)
+    cached = get_read_model(key)
+    if cached is not None:
+        return cached, None
+    payload, error = _build_patient_decision_today_for_api_uncached(patient_ref, force_recompute=False)
+    if error:
+        return None, error
+    return set_read_model(key, payload, PATIENT_TTL_SECONDS), None
 
 
 @app.route('/api/patients/<patient_ref>/castration-capture', methods=['POST'])
@@ -3666,17 +3911,22 @@ def api_clinical_view_audit():
 def api_patient_decision_today(patient_ref):
     """Canonical per-patient DECISION HOY Fusion Kernel bundle."""
     try:
-        payload, error = _build_patient_decision_today_for_api(patient_ref, force_recompute=False)
+        payload, error = _build_patient_decision_today_for_api(
+            patient_ref,
+            force_recompute=_is_truthy_param(request.args.get("refresh")),
+        )
         if error:
             return error
         decision_today = payload["decision_today"]
         resolved = payload["resolved"]
-        try:
-            from prostanet.agentic.autonomous_improvement_os import build_mission_control
+        autonomous_summary = {"mode": "shadow", "status": "available_on_request", "scope": "summary"}
+        if str(request.args.get("include_autonomous") or "").strip().lower() in {"1", "true", "full"}:
+            try:
+                from prostanet.agentic.autonomous_improvement_os import build_mission_control
 
-            autonomous_summary = build_mission_control().get("summary", {})
-        except Exception:
-            autonomous_summary = {"mode": "shadow", "status": "blocked"}
+                autonomous_summary = build_mission_control().get("summary", {})
+            except Exception:
+                autonomous_summary = {"mode": "shadow", "status": "blocked"}
         return jsonify({
             "success": True,
             "decision_today": decision_today,
@@ -3699,12 +3949,14 @@ def api_patient_decision_today_recompute(patient_ref):
             return error
         decision_today = payload["decision_today"]
         resolved = payload["resolved"]
-        try:
-            from prostanet.agentic.autonomous_improvement_os import build_mission_control
+        autonomous_summary = {"mode": "shadow", "status": "available_on_request", "scope": "summary"}
+        if str(request.args.get("include_autonomous") or "").strip().lower() in {"1", "true", "full"}:
+            try:
+                from prostanet.agentic.autonomous_improvement_os import build_mission_control
 
-            autonomous_summary = build_mission_control().get("summary", {})
-        except Exception:
-            autonomous_summary = {"mode": "shadow", "status": "blocked"}
+                autonomous_summary = build_mission_control().get("summary", {})
+            except Exception:
+                autonomous_summary = {"mode": "shadow", "status": "blocked"}
         return jsonify({
             "success": True,
             "decision_today": decision_today,
@@ -3720,7 +3972,7 @@ def api_patient_decision_today_recompute(patient_ref):
         return error_response(str(e), 500)
 
 
-def _build_patient_autodrive_for_api(patient_ref, *, force_recompute=False):
+def _build_patient_autodrive_for_api_uncached(patient_ref, *, force_recompute=False):
     import tracking_db
     from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
         build_patient_autodrive,
@@ -3775,6 +4027,13 @@ def _build_patient_autodrive_for_api(patient_ref, *, force_recompute=False):
             "summary": {"priority_status": "not_actionable"},
             "today_queue": [],
             "autodrive_actions": [],
+            "decision_operability": {
+                "clinical_recommendation_title": "",
+                "operational_queue_state": "not_actionable",
+                "queue_count": 0,
+                "why_no_queue": "Autodrive no pudo construir una cola operativa para este paciente.",
+                "next_operational_trigger": "Reintentar lectura o recompute cuando el bundle longitudinal este disponible.",
+            },
             "decision_today": {
                 "available": True,
                 "source": "clinical_decision_today_fusion_kernel",
@@ -3791,6 +4050,305 @@ def _build_patient_autodrive_for_api(patient_ref, *, force_recompute=False):
     }, None
 
 
+def _build_patient_autodrive_for_api(patient_ref, *, force_recompute=False):
+    from prostanet.shared.read_model_cache import (
+        PATIENT_TTL_SECONDS,
+        build_cache_key,
+        get_read_model,
+        invalidate_read_model_cache,
+        set_read_model,
+    )
+
+    key = build_cache_key("patient_autodrive", str(patient_ref))
+    if force_recompute:
+        invalidate_read_model_cache("patient_autodrive")
+        return _build_patient_autodrive_for_api_uncached(patient_ref, force_recompute=True)
+    cached = get_read_model(key)
+    if cached is not None:
+        return cached, None
+    payload, error = _build_patient_autodrive_for_api_uncached(patient_ref, force_recompute=False)
+    if error:
+        return None, error
+    return set_read_model(key, payload, PATIENT_TTL_SECONDS), None
+
+
+def _is_truthy_param(value) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on", "full", "refresh"}
+
+
+def _request_scope(default: str = "full") -> str:
+    scope = str(request.args.get("scope") or default or "full").strip().lower()
+    return "summary" if scope == "summary" else "full"
+
+
+def _summarize_population_autodrive(payload):
+    payload = dict(payload or {})
+    summary = dict(payload.get("summary") or {})
+    queue = list(payload.get("today_queue") or [])
+    patients = list(payload.get("patient_priorities") or [])
+    lanes_raw = payload.get("lanes") or []
+    if isinstance(lanes_raw, dict):
+        lanes_iterable = [
+            {"key": lane_key, **dict(lane_payload or {})}
+            for lane_key, lane_payload in lanes_raw.items()
+        ]
+    else:
+        lanes_iterable = [dict(lane or {}) for lane in lanes_raw if isinstance(lane, dict)]
+    return {
+        "available": payload.get("available", True),
+        "source": payload.get("source", "clinical_autodrive_command_center"),
+        "version": payload.get("version", "autodrive_command_center_v1"),
+        "scope": "summary",
+        "summary": summary,
+        "queue_count": len(queue),
+        "patient_count": len(patients) or summary.get("patient_count"),
+        "today_queue": queue[:10],
+        "patient_priorities": patients[:10],
+        "lanes": [
+            {
+                "key": lane.get("key"),
+                "label": lane.get("label"),
+                "count": int(lane.get("count") or len(lane.get("top_items") or [])),
+            }
+            for lane in lanes_iterable
+        ],
+        "capture_plan": payload.get("capture_plan") or [],
+        "audit": {
+            "deterministic_v1": True,
+            "read_model_only": True,
+            "summary_payload": True,
+        },
+    }
+
+
+def _summarize_mission_control(bundle):
+    bundle = dict(bundle or {})
+    return {
+        "scope": "summary",
+        "summary": bundle.get("summary") or {},
+        "metrics": list(bundle.get("metrics") or [])[:8],
+        "safety": bundle.get("safety") or {},
+        "top_gap": bundle.get("top_gap") or {},
+        "audit": {
+            "read_model_only": True,
+            "summary_payload": True,
+        },
+    }
+
+
+def _summarize_gap_intelligence(bundle):
+    bundle = dict(bundle or {})
+    candidates = list(bundle.get("candidates") or bundle.get("ranked_candidates") or [])
+    return {
+        "scope": "summary",
+        "summary": bundle.get("summary") or {},
+        "application_telemetry": bundle.get("application_telemetry") or {},
+        "candidate_count": len(candidates),
+        "candidates": candidates[:12],
+        "audit": {
+            "read_model_only": True,
+            "summary_payload": True,
+        },
+    }
+
+
+def _json_dict(value):
+    if isinstance(value, dict):
+        return value
+    try:
+        parsed = json.loads(value or "{}")
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _autodrive_lane_from_title(title: str, family: str, rationale: str) -> tuple[str, str]:
+    text = f"{title} {family} {rationale}".lower()
+    if any(token in text for token in ("faltan", "completar", "datos críticos", "dato critico", "captura")):
+        return "blocked_by_data", "Bloqueado por datos"
+    if any(token in text for token in ("confirmar", "priorizar", "activar", "decidir", "salvage", "reestadificación")):
+        return "ready_to_decide", "Listo para decidir"
+    if any(token in text for token in ("vencid", "seguimiento", "surveillance")):
+        return "overdue_surveillance", "Seguimiento vencido"
+    return "watchlist", "Observación"
+
+
+def _build_autodrive_population_summary_fast(*, limit: int, lane: str = "", stage: str = ""):
+    """SQL-only population Autodrive summary for warm UI/audit paths."""
+    max_limit = max(1, min(int(limit or 25), 250))
+    conn = sqlite3.connect(app.config["DB_PATH"])
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT pi.id, pi.nss, pi.full_name, pi.created_at,
+                   css.state, css.management_track, css.next_best_action_json, css.updated_at,
+                   (SELECT COUNT(*) FROM smart_alerts sa
+                    WHERE sa.patient_id = pi.id AND sa.acknowledged = 0
+                      AND COALESCE(sa.active, 1) = 1) AS alert_count,
+                   (SELECT COUNT(*) FROM scheduled_events se
+                    WHERE se.patient_id = pi.id AND COALESCE(se.completed, 0) = 0
+                      AND DATE(COALESCE(se.scheduled_due_at, se.due_date)) < DATE('now')) AS overdue_count
+            FROM patient_identity pi
+            LEFT JOIN clinical_signal_snapshots css ON css.patient_id = pi.id
+            ORDER BY COALESCE(css.updated_at, pi.created_at, '') DESC, pi.id DESC
+            LIMIT ?
+            """,
+            (max_limit,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    queue: list[dict[str, Any]] = []
+    patients: list[dict[str, Any]] = []
+    lane_counts = {
+        "urgent_today": 0,
+        "ready_to_decide": 0,
+        "blocked_by_data": 0,
+        "overdue_surveillance": 0,
+        "redecision_required": 0,
+        "watchlist": 0,
+    }
+    for row in rows:
+        state_value = str(row["state"] or "")
+        if stage and stage.lower() not in state_value.lower():
+            continue
+        action = _json_dict(row["next_best_action_json"])
+        title = str(action.get("title") or action.get("action_title") or "").strip()
+        family = str(action.get("recommendation_family") or "")
+        rationale = str(action.get("rationale") or action.get("action_rationale") or "")
+        lane_key, lane_label = _autodrive_lane_from_title(title, family, rationale)
+        if int(row["overdue_count"] or 0) > 0:
+            lane_key, lane_label = "overdue_surveillance", "Seguimiento vencido"
+        if int(row["alert_count"] or 0) > 0:
+            lane_key, lane_label = "urgent_today", "Urgente hoy"
+        lane_counts[lane_key] = lane_counts.get(lane_key, 0) + 1
+        patient_row = {
+            "patient_ref": row["nss"],
+            "patient_name": row["full_name"],
+            "state": state_value,
+            "state_label": state_value or "Sin clasificar",
+            "dominant_lane": lane_key,
+            "priority_status": "high_today" if lane_key == "urgent_today" else "routine_today",
+            "queue_count": 1 if title else 0,
+        }
+        patients.append(patient_row)
+        if not title:
+            continue
+        item = {
+            "action_key": f"summary:{row['id']}:{lane_key}",
+            "patient_ref": row["nss"],
+            "patient_name": row["full_name"],
+            "state": state_value,
+            "lane": lane_key,
+            "lane_label": lane_label,
+            "priority_status": patient_row["priority_status"],
+            "priority_score": 85 if lane_key == "urgent_today" else 65,
+            "title": title,
+            "reason": rationale or family,
+            "cta": {"href": f"/patient_profile/{row['nss']}?v=2", "label": "Abrir perfil"},
+        }
+        if not lane or lane == lane_key:
+            queue.append(item)
+
+    queue = sorted(queue, key=lambda item: (-int(item.get("priority_score") or 0), str(item.get("patient_ref") or "")))[:max_limit]
+    lanes = [
+        {"key": key, "label": label, "count": lane_counts.get(key, 0)}
+        for key, label in [
+            ("urgent_today", "Urgente hoy"),
+            ("ready_to_decide", "Listo para decidir"),
+            ("blocked_by_data", "Bloqueado por datos"),
+            ("overdue_surveillance", "Seguimiento vencido"),
+            ("redecision_required", "Nueva decision requerida"),
+            ("watchlist", "Observación"),
+        ]
+    ]
+    top = queue[0] if queue else {}
+    return {
+        "available": True,
+        "source": "clinical_autodrive_command_center",
+        "version": "autodrive_command_center_summary_v1",
+        "scope": "summary",
+        "summary": {
+            "patient_count": len(patients),
+            "queue_count": len(queue),
+            "priority_status": top.get("priority_status") or "not_actionable",
+            "dominant_lane": top.get("lane") or "",
+            "dominant_lane_label": top.get("lane_label") or "",
+            "top_action_title": top.get("title") or "Sin accion Autodrive hoy",
+            "dominant_blocker": top.get("reason") or "Summary SQL-only; full audit disponible con scope=full.",
+            "lane_counts": {lane_row["key"]: lane_row["count"] for lane_row in lanes},
+        },
+        "queue_count": len(queue),
+        "patient_count": len(patients),
+        "today_queue": queue[:10],
+        "patient_priorities": patients[:10],
+        "lanes": lanes,
+        "capture_plan": [],
+        "audit": {
+            "deterministic_v1": True,
+            "read_model_only": True,
+            "summary_payload": True,
+            "full_scope_available": True,
+        },
+    }
+
+
+def _build_gap_intelligence_summary_fast(limit: int):
+    return {
+        "scope": "summary",
+        "available": True,
+        "source": "autonomous_improvement_os",
+        "version": "gap_intelligence_summary_v1",
+        "summary": {
+            "status": "summary_fast_path",
+            "patient_limit": int(limit or 0),
+            "full_scope_available": True,
+        },
+        "application_telemetry": {
+            "summary": {
+                "source_clinical_facts_mutated": False,
+                "summary_fast_path": True,
+            }
+        },
+        "candidate_count": 0,
+        "candidates": [],
+        "audit": {
+            "read_model_only": True,
+            "summary_payload": True,
+            "full_scope_available": True,
+        },
+    }
+
+
+def _build_mission_control_summary_fast():
+    return {
+        "scope": "summary",
+        "available": True,
+        "source": "autonomous_improvement_os",
+        "version": "mission_control_summary_v1",
+        "summary": {
+            "overall_pct": 0,
+            "status": "summary_fast_path",
+            "mode": "shadow",
+            "top_gap_title": "Full Mission Control disponible con scope=full o refresh=1",
+            "candidate_count": 0,
+            "full_scope_available": True,
+        },
+        "metrics": [],
+        "safety": {
+            "source_clinical_facts_mutated": False,
+            "auto_merge_enabled": False,
+            "human_review_required": True,
+        },
+        "audit": {
+            "read_model_only": True,
+            "summary_payload": True,
+            "full_scope_available": True,
+        },
+    }
+
+
 @app.route('/api/autodrive/today', methods=['GET'])
 def api_autodrive_today():
     """Population Clinical Autodrive Command Center queue."""
@@ -3798,15 +4356,46 @@ def api_autodrive_today():
         from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
             build_population_autodrive_from_db,
         )
+        from prostanet.shared.read_model_cache import (
+            AGGREGATE_TTL_SECONDS,
+            build_cache_key,
+            get_or_build_read_model,
+        )
 
         limit = request.args.get("limit", 25)
         lane = str(request.args.get("lane") or "").strip()
         stage = str(request.args.get("stage") or "").strip()
-        payload = build_population_autodrive_from_db(
-            limit=int(limit or 25),
-            lane=lane,
-            stage=stage,
-            force_recompute=False,
+        scope = _request_scope(default="full")
+        refresh = _is_truthy_param(request.args.get("refresh"))
+        key = build_cache_key(
+            "autodrive_population",
+            scope,
+            int(limit or 25),
+            lane,
+            stage,
+        )
+        if scope == "summary":
+            summary_payload = get_or_build_read_model(
+                key,
+                lambda: _build_autodrive_population_summary_fast(
+                    limit=int(limit or 25),
+                    lane=lane,
+                    stage=stage,
+                ),
+                ttl_seconds=AGGREGATE_TTL_SECONDS,
+                refresh=refresh,
+            )
+            return jsonify({"success": True, "scope": "summary", "autodrive": summary_payload, **summary_payload})
+        payload = get_or_build_read_model(
+            key,
+            lambda: build_population_autodrive_from_db(
+                limit=int(limit or 25),
+                lane=lane,
+                stage=stage,
+                force_recompute=False,
+            ),
+            ttl_seconds=AGGREGATE_TTL_SECONDS,
+            refresh=refresh,
         )
         return jsonify({"success": True, "autodrive": payload, **payload})
     except Exception as e:
@@ -3832,6 +4421,14 @@ def api_autodrive_recompute():
             stage=stage,
             force_recompute=True,
         )
+        try:
+            from prostanet.shared.read_model_cache import invalidate_read_model_cache
+
+            invalidate_read_model_cache("autodrive")
+            invalidate_read_model_cache("patient_autodrive")
+            invalidate_read_model_cache("patient_decision_today")
+        except Exception:
+            pass
         return jsonify({
             "success": True,
             "autodrive": bundle,
@@ -3849,7 +4446,10 @@ def api_autodrive_recompute():
 def api_patient_autodrive(patient_ref):
     """Patient Clinical Autodrive Command Center bundle."""
     try:
-        payload, error = _build_patient_autodrive_for_api(patient_ref, force_recompute=False)
+        payload, error = _build_patient_autodrive_for_api(
+            patient_ref,
+            force_recompute=_is_truthy_param(request.args.get("refresh")),
+        )
         if error:
             return error
         autodrive = payload["autodrive"]
@@ -3900,6 +4500,14 @@ def api_patient_autodrive_action_status(patient_ref, action_key):
         )
         if not ok:
             return jsonify({"success": False, "error": message, "action_key": action_key}), 400
+        try:
+            from prostanet.shared.read_model_cache import invalidate_read_model_cache
+
+            invalidate_read_model_cache("patient_autodrive")
+            invalidate_read_model_cache("autodrive_population")
+            invalidate_read_model_cache("patient_decision_today")
+        except Exception:
+            pass
         refreshed, error = _build_patient_autodrive_for_api(patient_ref, force_recompute=True)
         if error:
             return error
@@ -3928,8 +4536,28 @@ def api_autonomous_improvement_mission_control():
     """Progress toward ProstaMed longitudinal OS objective."""
     try:
         from prostanet.agentic.autonomous_improvement_os import build_mission_control
+        from prostanet.shared.read_model_cache import (
+            AGGREGATE_TTL_SECONDS,
+            build_cache_key,
+            get_or_build_read_model,
+        )
 
-        bundle = build_mission_control()
+        scope = _request_scope(default="full")
+        refresh = _is_truthy_param(request.args.get("refresh"))
+        if scope == "summary":
+            summary_bundle = get_or_build_read_model(
+                build_cache_key("mission_control", "summary"),
+                _build_mission_control_summary_fast,
+                ttl_seconds=AGGREGATE_TTL_SECONDS,
+                refresh=refresh,
+            )
+            return jsonify({"success": True, "scope": "summary", "mission_control": summary_bundle, **summary_bundle})
+        bundle = get_or_build_read_model(
+            build_cache_key("mission_control", scope),
+            build_mission_control,
+            ttl_seconds=AGGREGATE_TTL_SECONDS,
+            refresh=refresh,
+        )
         return jsonify({"success": True, "mission_control": bundle, **bundle})
     except Exception as e:
         logger.error(f"Error getting autonomous improvement mission control: {e}")
@@ -3942,9 +4570,29 @@ def api_autonomous_improvement_gaps():
     """Clinical Improvement Candidate queue in shadow mode."""
     try:
         from prostanet.agentic.autonomous_improvement_os import build_gap_intelligence
+        from prostanet.shared.read_model_cache import (
+            AGGREGATE_TTL_SECONDS,
+            build_cache_key,
+            get_or_build_read_model,
+        )
 
         limit = int(request.args.get("patient_limit") or 35)
-        bundle = build_gap_intelligence(patient_limit=limit)
+        scope = _request_scope(default="full")
+        refresh = _is_truthy_param(request.args.get("refresh"))
+        if scope == "summary":
+            summary_bundle = get_or_build_read_model(
+                build_cache_key("gap_intelligence", "summary", limit),
+                lambda: _build_gap_intelligence_summary_fast(limit),
+                ttl_seconds=AGGREGATE_TTL_SECONDS,
+                refresh=refresh,
+            )
+            return jsonify({"success": True, "scope": "summary", "gap_intelligence": summary_bundle, **summary_bundle})
+        bundle = get_or_build_read_model(
+            build_cache_key("gap_intelligence", scope, limit),
+            lambda: build_gap_intelligence(patient_limit=limit),
+            ttl_seconds=AGGREGATE_TTL_SECONDS,
+            refresh=refresh,
+        )
         return jsonify({"success": True, "gap_intelligence": bundle, **bundle})
     except Exception as e:
         logger.error(f"Error getting autonomous improvement gaps: {e}")
@@ -6063,20 +6711,35 @@ def api_list_patients():
     """Retorna lista de pacientes registrados."""
     try:
         import sqlite3
-        conn = sqlite3.connect(app.config["DB_PATH"])
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        c.execute("""
-            SELECT pi.id, pi.nss, pi.full_name, pi.dob, pi.diagnosis_date,
-                   cb.baseline_psa, cb.metastasis_site, cb.volume_disease, cb.ecog_score,
-                   (SELECT COUNT(*) FROM follow_up_visits fv WHERE fv.patient_id = pi.id) as visit_count,
-                   (SELECT COUNT(*) FROM smart_alerts sa WHERE sa.patient_id = pi.id AND sa.acknowledged = 0 AND COALESCE(sa.active, 1) = 1) as alert_count
-            FROM patient_identity pi
-            LEFT JOIN clinical_baseline cb ON cb.patient_id = pi.id
-            ORDER BY pi.created_at DESC
-        """)
-        patients = [dict(row) for row in c.fetchall()]
-        conn.close()
+        from prostanet.shared.read_model_cache import (
+            AGGREGATE_TTL_SECONDS,
+            build_cache_key,
+            get_or_build_read_model,
+        )
+
+        def _load_patients():
+            conn = sqlite3.connect(app.config["DB_PATH"])
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+            c.execute("""
+                SELECT pi.id, pi.nss, pi.full_name, pi.dob, pi.diagnosis_date,
+                       cb.baseline_psa, cb.metastasis_site, cb.volume_disease, cb.ecog_score,
+                       (SELECT COUNT(*) FROM follow_up_visits fv WHERE fv.patient_id = pi.id) as visit_count,
+                       (SELECT COUNT(*) FROM smart_alerts sa WHERE sa.patient_id = pi.id AND sa.acknowledged = 0 AND COALESCE(sa.active, 1) = 1) as alert_count
+                FROM patient_identity pi
+                LEFT JOIN clinical_baseline cb ON cb.patient_id = pi.id
+                ORDER BY pi.created_at DESC
+            """)
+            rows = [dict(row) for row in c.fetchall()]
+            conn.close()
+            return rows
+
+        patients = get_or_build_read_model(
+            build_cache_key("api_patients_list", str(app.config["DB_PATH"])),
+            _load_patients,
+            ttl_seconds=AGGREGATE_TTL_SECONDS,
+            refresh=_is_truthy_param(request.args.get("refresh")),
+        )
         return jsonify({"success": True, "patients": patients})
     except Exception as e:
         logger.error(f"Error listando pacientes: {e}")
@@ -7460,67 +8123,29 @@ def intake_wizard():
 
 @app.route("/intake/smart", methods=["GET"])
 def intake_smart_capture():
-    """EPIC 43.4 — Smart Capture intake (single-page, dynamic, intelligent).
+    """DEPRECATED (FAUBOT CXXXVII / Sprint 1 validación E2E).
 
-    Single-page alternativa al wizard (intake_stage_aware_v2.html):
-      - Renderiza los 104 campos del quick_classify_schema en secciones
-        colapsables organizadas por dominio clínico.
-      - Sidebar sticky con navegador de secciones + barra de progreso global
-        + indicadores de completitud por sección.
-      - Voice dictation hub (composite) al top + mini-mic por sección.
-      - Reasoning trail inline por sección: muestra qué fields decisivos
-        faltan para clasificar.
-      - Auto-save draft a localStorage cada 5s (NO backend dependence).
-      - Cmd-K abre quick-jump (search any field).
-      - Smart defaults aplicados al mount (e.g., ECOG=0, family_history=Desconocido).
-      - Submit en cualquier momento (Save Draft / Submit Complete).
-      - Mobile-responsive + WCAG AA contrast.
+    Smart Capture single-page se DEPRECA formalmente. Razones documentadas
+    en la auditoría de validación E2E:
 
-    NO elimina campos clínicos. Reusa el mismo schema que el wizard.
+      - Cognitive load 🔴 ALTA: 105 fields visibles en sidebar 14 secciones.
+      - Anti-workflow clínico real: clínico no piensa en 104 campos lineales.
+      - Sub-utilización voice: dictado per-sección requiere ~14 invocaciones.
+      - Tiempo medio de captura: 12-15 min (vs ~4-6 min del clasificador oficial).
+      - Comparativa Smart Capture vs Clasificador oficial: clasificador GANA
+        en 4/4 dimensiones (clínica, arquitectónica, lógica, flujo).
+
+    El clasificador oficial (/clinical-hub#pm2OfficialClassifier) es el path
+    productivo único. La ruta /intake/smart sobrevive sólo como redirect 302
+    para mantener compatibilidad con bookmarks/links históricos.
+
+    Si necesitas la captura completa de 104 fields que Smart Capture exponía,
+    el flujo recomendado es:
+      1. /clinical-hub#pm2OfficialClassifier (clasificación + 49 fields core)
+      2. Modal "Contexto socioclínico" post-clasificación (EPIC 49 pendiente)
+      3. Captura longitudinal en el perfil del paciente (incremental)
     """
-    from prostanet.presentation.v2_adapters import quick_classify_schema
-    try:
-        page_chrome = build_page_chrome(
-            "intake_smart_capture",
-            "Smart Capture · Ingreso clínico (single-page)",
-            "Captura inteligente: 104 campos NCCN/EAU 2026 organizados en secciones colapsables, "
-            "con voice + reasoning trail + auto-save + Cmd-K jump.",
-            content_width_class="max-w-7xl",
-        )
-    except NameError:
-        page_chrome = {
-            "title": "Smart Capture", "subtitle": "Single-page intake",
-            "content_width_class": "max-w-7xl",
-        }
-    schema = quick_classify_schema()
-    # Group fields by section preserving group_order
-    fields = schema.get("fields", [])
-    sections_map: dict[str, dict] = {}
-    for f in fields:
-        gname = f.get("group") or "Otros"
-        if gname not in sections_map:
-            sections_map[gname] = {
-                "name": gname,
-                "order": float(f.get("group_order", 99)),
-                "fields": [],
-                "anchor": gname.lower().replace(" ", "-").replace("/", "-")
-                           .replace("á", "a").replace("é", "e").replace("í", "i")
-                           .replace("ó", "o").replace("ú", "u").replace("ñ", "n"),
-            }
-        sections_map[gname]["fields"].append(f)
-        sections_map[gname]["order"] = min(sections_map[gname]["order"],
-                                            float(f.get("group_order", 99)))
-    sections = sorted(sections_map.values(), key=lambda s: (s["order"], s["name"]))
-    total_required = sum(1 for f in fields if f.get("required"))
-    return render_template(
-        "intake_smart_capture.html",
-        page_chrome=page_chrome,
-        schema=schema,
-        sections=sections,
-        total_fields=len(fields),
-        total_required=total_required,
-        sections_count=len(sections),
-    )
+    return redirect("/clinical-hub#pm2OfficialClassifier", code=302)
 
 
 @app.route("/api/intake/smart-defaults", methods=["GET"])

@@ -529,6 +529,16 @@ def extract_canonical_fact_candidates(
         "synaptophysin_biopsy_positive",
         "small_cell_morphology",
         "nse_value",
+        # ── EPIC 46.A (FAUBOT CXXXVII / Sprint 1 fix) — Latin Decision Fields ──
+        # FIX #2 validación E2E: estos 4 fact_keys ya existían en FACT_SPECS
+        # (línea 261+) pero NO se extraían del payload en register_new_patient,
+        # quedando con persistencia 0% en producción aunque el backend tenía
+        # ETHNICITY_RISK_MODIFIERS listo. Sin estos extracts el bridge UI →
+        # fact_table → engine queda roto.
+        "primary_ancestry",
+        "psma_pet_local_access",
+        "lu_psma_local_access",
+        "arsi_local_access",
     ):
         _extract_simple_fact(
             payload,
