@@ -20,8 +20,17 @@
 
     function getPatientNss() {
         // Extract NSS from URL path /patient_profile/<nss>
+        // EPIC 0.H fix C1 (FAUBOT CXLVI): decodeURIComponent porque el
+        // capture group viene URL-encoded (NSS reales contienen espacios →
+        // %20 en URL). Sin decode el server busca NSS literal '%2033...' y
+        // retorna 404 en cada toggle → audit log HIPAA §164.312(b) silently empty.
         const match = window.location.pathname.match(/\/patient_profile\/([^\/?#]+)/);
-        return match ? match[1] : null;
+        if (!match) return null;
+        try {
+            return decodeURIComponent(match[1]);
+        } catch (_) {
+            return match[1];
+        }
     }
 
     function getSessionId() {

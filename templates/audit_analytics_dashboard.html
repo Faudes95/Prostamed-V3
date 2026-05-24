@@ -193,7 +193,7 @@
                 document.getElementById('cohort-total').textContent = data.total_patients;
                 const meta = document.getElementById('cohort-meta');
                 meta.innerHTML = `
-                    <span class="metric"><strong>${data.by_ethnicity.length}</strong> etnias</span>
+                    <span class="metric"><strong>${data.by_ethnicity.length}</strong> ${data.by_ethnicity.length === 1 ? 'etnia' : 'etnias'}</span>
                     <span class="metric"><strong>${data.by_state.length}</strong> estadios</span>
                     <span class="metric"><strong>${(data.by_hrr_documentation.find(h => h.hrr_status === 'documented') || {count: 0}).count}</strong> HRR doc</span>
                 `;

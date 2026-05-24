@@ -1018,8 +1018,13 @@
             {% set _retrain_required = [] %}
             {% for _mk, _mv in _ml.models.items() %}
                 {% if not _mv.available %}{% set _ = _unavailable.append((_mk, _mv)) %}{% endif %}
-                {# Sprint 6 C8 mitigation: surface explícito si el modelo está en re-entrenamiento #}
-                {% if _mv.reason and 'retrain_required' in (_mv.reason|string) %}
+                {# Sprint 6 C8 mitigation + EPIC 0.H fix H2 (FAUBOT CXLVI): #}
+                {# Detect retrain_required Y también load_error con size mismatch — #}
+                {# _explain_unavailable() prioriza load_error sobre incompatible_vocab_version #}
+                {# para state_transition real, por lo que reason='load_error: size mismatch...' #}
+                {# sin la palabra 'retrain_required' literal. Banner debe surface ambos. #}
+                {% set _reason_str = (_mv.reason or '')|string %}
+                {% if 'retrain_required' in _reason_str or 'size mismatch' in _reason_str or 'load_error' in _reason_str or 'incompatible_checkpoint' in _reason_str %}
                     {% set _ = _retrain_required.append((_mk, _mv)) %}
                 {% endif %}
             {% endfor %}
