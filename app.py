@@ -8556,4 +8556,9 @@ if __name__ == "__main__":
     # set PROSTANET_ALLOW_PUBLIC_BIND=true explícitamente. Esto previene
     # exposiciones accidentales del server en redes compartidas.
     from prostanet.shared.security_helpers import get_bind_host
-    app.run(host=get_bind_host(), port=8080, debug=False)
+    # EPIC 0.A (CXLV verification): allow override via PROSTANET_PORT env var
+    # para soportar deploys multi-instance + validación side-by-side de versiones
+    # (no fricciona producción — default sigue siendo 8080 cuando env unset).
+    import os as _os
+    _port = int(_os.environ.get("PROSTANET_PORT", "8080"))
+    app.run(host=get_bind_host(), port=_port, debug=False)
