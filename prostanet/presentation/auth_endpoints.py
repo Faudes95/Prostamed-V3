@@ -988,3 +988,118 @@ def audit_log_dashboard():
         },
         "entries": entries,
     }), 200
+
+
+# ════════════════════════════════════════════════════════════════════
+# Sprint 7.B — GET /api/auth/oidc/status (diagnostic + observability)
+# ════════════════════════════════════════════════════════════════════
+
+
+@auth_bp.route("/oidc/status", methods=["GET"])
+def oidc_status():
+    """Sprint 7.B — Diagnóstico del backend OIDC.
+
+    Útil para:
+      - Health check post-deploy ("¿está OIDC configurado correctamente?")
+      - Smoke pre-piloto ("¿el discovery endpoint del IDP responde?")
+      - Debug de roles ("¿qué claims devuelve mi IDP?")
+
+    NO requiere auth — es observabilidad operativa. NO expone secrets
+    (client_secret, tokens) — solo configuración pública + estado.
+
+    Returns:
+        200 + {success, backend_active, configured, issuer, discovery_reachable,
+               oidc_users_count, recent_provisions[]}
+    """
+    import os
+    from datetime import datetime, timezone
+
+    backend_env = os.environ.get("PROSTANET_AUTH_BACKEND", "local").lower()
+    is_oidc = backend_env in ("oidc", "auth0", "keycloak", "oauth_google")
+
+    response: dict = {
+        "success": True,
+        "backend_active": backend_env,
+        "is_oidc_backend": is_oidc,
+        "configured": False,
+        "issuer": None,
+        "client_id_set": False,
+        "redirect_uri": None,
+        "discovery_reachable": None,
+        "discovery_error": None,
+        "scope": None,
+        "default_role": None,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    if not is_oidc:
+        response["note"] = (
+            f"Active backend is '{backend_env}' (local PBKDF2). "
+            f"To enable OIDC: PROSTANET_AUTH_BACKEND=oidc + PROSTANET_OIDC_ISSUER + "
+            f"PROSTANET_OIDC_CLIENT_ID."
+        )
+        return jsonify(response), 200
+
+    # Try to load OIDC config (env vars)
+    try:
+        from prostanet.shared.oidc_client import OidcConfig, fetch_discovery_doc
+        config = OidcConfig.from_env()
+        response["configured"] = True
+        response["issuer"] = getattr(config, "issuer", None) or getattr(config, "discovery_url", None)
+        response["client_id_set"] = bool(os.environ.get("PROSTANET_OIDC_CLIENT_ID"))
+        response["redirect_uri"] = config.redirect_uri
+        response["scope"] = config.scope
+        response["default_role"] = config.default_role
+    except ValueError as exc:
+        response["configured"] = False
+        response["note"] = f"OIDC env vars missing: {exc}"
+        return jsonify(response), 200
+    except Exception as exc:
+        logger.warning("OIDC status config load failed: %s", exc)
+        response["configured"] = False
+        response["discovery_error"] = "config_load_failed"
+        return jsonify(response), 200
+
+    # Try to reach discovery doc
+    try:
+        discovery = fetch_discovery_doc(config)
+        response["discovery_reachable"] = True
+        response["discovery_endpoints"] = {
+            "authorization": discovery.get("authorization_endpoint"),
+            "token": discovery.get("token_endpoint"),
+            "userinfo": discovery.get("userinfo_endpoint"),
+            "jwks": discovery.get("jwks_uri"),
+        }
+    except Exception as exc:
+        response["discovery_reachable"] = False
+        response["discovery_error"] = f"{type(exc).__name__}: {str(exc)[:160]}"
+
+    # Stats: cuántos OIDC users hay en clinical_users + recientes
+    try:
+        import sqlite3
+        from tracking_db import DB_PATH
+        conn = sqlite3.connect(DB_PATH, timeout=5.0)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM clinical_users WHERE backend = 'oidc'"
+        )
+        response["oidc_users_count"] = cur.fetchone()[0]
+        cur.execute(
+            """
+            SELECT username, role, created_at
+              FROM clinical_users
+             WHERE backend = 'oidc' AND is_active = 1
+             ORDER BY id DESC LIMIT 5
+            """
+        )
+        response["recent_oidc_provisions"] = [
+            {"username": r[0], "role": r[1], "created_at": r[2]}
+            for r in cur.fetchall()
+        ]
+        conn.close()
+    except Exception as exc:
+        logger.warning("OIDC status DB query failed: %s", exc)
+        response["oidc_users_count"] = None
+        response["recent_oidc_provisions"] = []
+
+    return jsonify(response), 200

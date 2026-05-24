@@ -7,6 +7,19 @@ from prostanet.presentation.views import modular_views
 
 
 def register_modular_blueprints(app: Flask) -> None:
+    # Sprint 7.C (FAUBOT CXLV) — Observability infra ANTES de blueprints
+    # para que /metrics + /health estén disponibles + rate limiter pueda
+    # decorar blueprints subsiguientes. No-op si feature flags disabled.
+    try:
+        from prostanet.shared.observability import register_observability
+        register_observability(app)
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            f"observability registration failed (continuing): "
+            f"{type(exc).__name__}: {exc}"
+        )
+
     if "modular_api" not in app.blueprints:
         app.register_blueprint(modular_api)
     if "modular_views" not in app.blueprints:
@@ -105,5 +118,21 @@ def register_modular_blueprints(app: Flask) -> None:
         import logging as _logging
         _logging.getLogger(__name__).warning(
             f"decision_override_bp registration failed (continuing): "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+    # Sprint 7.A (FAUBOT CXLV) — Audit Analytics Dashboard
+    # Cohort-level analytics: breakdown × estadio × etnia × ECOG × HRR doc,
+    # blocked_hard SLA buckets, override rate por clínico, endpoint usage,
+    # GodiBot % Internal Validation week-over-week. Foundation para SaMD
+    # post-market surveillance + research publicable.
+    try:
+        from prostanet.presentation.audit_analytics_routes import audit_analytics_bp
+        if "audit_analytics" not in app.blueprints:
+            app.register_blueprint(audit_analytics_bp)
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            f"audit_analytics_bp registration failed (continuing): "
             f"{type(exc).__name__}: {exc}"
         )

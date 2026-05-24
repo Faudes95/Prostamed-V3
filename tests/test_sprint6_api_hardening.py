@@ -370,10 +370,12 @@ def test_s6_g_db_path_consistency():
 
 
 def test_s6_faubot_release_bumped_to_cxliv():
-    """algorithm_version debe declarar CXLIV."""
+    """algorithm_version debe ser al menos CXLIV (release Sprint 6).
+    Sprint 7+ bumps a CXLV+ son válidos también."""
     from prostanet.shared.algorithm_version import FAUBOT_RELEASE
-    assert "CXLIV" in FAUBOT_RELEASE, (
-        f"FAUBOT_RELEASE should be CXLIV, got: {FAUBOT_RELEASE}"
+    valid_releases = ("CXLIV", "CXLV", "CXLVI", "CXLVII", "CXLVIII", "CXLIX", "CL")
+    assert any(rel in FAUBOT_RELEASE for rel in valid_releases), (
+        f"FAUBOT_RELEASE should be ≥CXLIV, got: {FAUBOT_RELEASE}"
     )
 
 

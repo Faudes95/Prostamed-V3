@@ -410,24 +410,61 @@ class OidcBackend(AuthBackend):
         """Extrae role desde claims OIDC (override en subclass para
         provider-specific claim mappings).
 
-        Default: busca claims comunes 'roles', 'groups', 'role' (case-
-        insensitive). Si encuentra un valor que coincide con un role
-        ABAC válido, lo usa; si no, default.
+        Sprint 7.B: lookup en claims COMUNES + claims provider-specific
+        (Keycloak realm_access.roles, Auth0 https://prostanet/roles).
 
-        Para Keycloak realm roles: override y lee `realm_access.roles`.
-        Para Auth0: override y lee `https://yournamespace/roles`.
+        Roles válidos alineados con api_auth.CLINICIAN_ROLES + ADMIN_ROLES
+        (Sprint 6 middleware) — garantiza que role asignado vía OIDC sea
+        reconocido por los decorators @require_clinician/@require_admin.
         """
-        valid_roles = {"admin", "clinician", "auditor", "viewer"}
+        # Sprint 7.B: mantener sincronía con prostanet/shared/api_auth.py
+        # CLINICIAN_ROLES = {clinician, admin, researcher, physician}
+        # ADMIN_ROLES = {admin}
+        valid_roles = {
+            "admin", "clinician", "researcher", "physician",
+            "auditor", "viewer",
+        }
         candidates: list[str] = []
+
+        # Standard OIDC claims
         for key in ("roles", "role", "groups"):
             v = userinfo.get(key)
             if isinstance(v, list):
                 candidates.extend(str(x).lower() for x in v)
             elif isinstance(v, str):
                 candidates.append(v.lower())
-        for c in candidates:
-            if c in valid_roles:
-                return c
+
+        # Sprint 7.B: Keycloak realm_access.roles
+        realm_access = userinfo.get("realm_access") or {}
+        if isinstance(realm_access, dict):
+            rroles = realm_access.get("roles") or []
+            if isinstance(rroles, list):
+                candidates.extend(str(x).lower() for x in rroles)
+
+        # Sprint 7.B: Keycloak resource_access.<client_id>.roles
+        resource_access = userinfo.get("resource_access") or {}
+        if isinstance(resource_access, dict):
+            for client_roles in resource_access.values():
+                if isinstance(client_roles, dict):
+                    cr = client_roles.get("roles") or []
+                    if isinstance(cr, list):
+                        candidates.extend(str(x).lower() for x in cr)
+
+        # Sprint 7.B: Auth0 custom namespaced claims
+        # (configurar en Auth0 Action: api.idToken.setCustomClaim("https://prostanet/roles", roles))
+        for claim_key in userinfo.keys():
+            if "/roles" in str(claim_key) or "/role" in str(claim_key):
+                v = userinfo[claim_key]
+                if isinstance(v, list):
+                    candidates.extend(str(x).lower() for x in v)
+                elif isinstance(v, str):
+                    candidates.append(v.lower())
+
+        # Match priority: admin > physician > clinician > researcher > auditor > viewer
+        priority = ["admin", "physician", "clinician", "researcher", "auditor", "viewer"]
+        for p in priority:
+            if p in candidates and p in valid_roles:
+                return p
         return default
 
 

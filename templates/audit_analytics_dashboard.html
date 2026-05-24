@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audit Analytics Dashboard · ProstaNet · {{ faubot_release }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: rgba(30, 41, 59, 0.7);
+            --border: rgba(99, 102, 241, 0.32);
+            --text: #f8fafc;
+            --text-muted: rgb(148, 163, 184);
+            --accent: rgb(99, 102, 241);
+            --success: rgb(74, 222, 128);
+            --warning: rgb(252, 211, 77);
+            --danger: rgb(252, 165, 165);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            min-height: 100vh;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding-bottom: 16px; border-bottom: 1px solid var(--border);
+            margin-bottom: 24px;
+        }
+        h1 { font-size: 1.4rem; margin: 0; }
+        .meta {
+            font-size: 0.78rem; color: var(--text-muted);
+            display: flex; gap: 12px;
+        }
+        .meta span { padding: 4px 10px; background: var(--surface);
+                     border-radius: 6px; border: 1px solid var(--border); }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px;
+            display: flex; flex-direction: column; gap: 14px;
+        }
+        .card h2 {
+            font-size: 0.86rem; margin: 0;
+            color: rgb(199, 210, 254);
+            text-transform: uppercase; letter-spacing: .1em; font-weight: 800;
+        }
+        .card .subtitle {
+            font-size: 0.74rem; color: var(--text-muted); margin: 0;
+        }
+        .card .metric-big {
+            font-size: 2.2rem; font-weight: 800; line-height: 1;
+            color: var(--text);
+        }
+        .metric-row {
+            display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px;
+        }
+        .metric {
+            padding: 8px 12px; background: rgba(15, 23, 42, 0.6);
+            border-radius: 8px;
+            font-size: 0.78rem; color: var(--text-muted);
+        }
+        .metric strong { color: var(--text); font-size: 0.95rem; }
+        .sla-bucket {
+            display: inline-block; padding: 3px 10px; border-radius: 12px;
+            font-size: 0.7rem; font-weight: 700;
+        }
+        .sla-green { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+        .sla-yellow { background: rgba(251, 191, 36, 0.2); color: var(--warning); }
+        .sla-red { background: rgba(239, 68, 68, 0.25); color: var(--danger); }
+        table {
+            width: 100%; border-collapse: collapse; font-size: 0.8rem;
+        }
+        th, td {
+            padding: 6px 10px; text-align: left;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        }
+        th { color: var(--text-muted); font-weight: 600; font-size: 0.72rem;
+             text-transform: uppercase; letter-spacing: .06em; }
+        td { color: var(--text); }
+        .loading { color: var(--text-muted); font-style: italic; }
+        .error { color: var(--danger); font-size: 0.78rem; }
+        canvas { max-height: 240px; }
+        .scrollable { max-height: 280px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>📊 Audit Analytics Dashboard</h1>
+                <p class="subtitle" style="margin: 4px 0 0;">Sprint 7.A — Cohort-level operational + research view</p>
+            </div>
+            <div class="meta">
+                <span>FAUBOT: {{ faubot_release }}</span>
+                <span>Actor: user_{{ actor_user_id }}</span>
+                <span>Role: {{ actor_role }}</span>
+            </div>
+        </header>
+
+        <div class="grid">
+            <!-- COHORT BREAKDOWN -->
+            <div class="card" data-testid="card-cohort-breakdown">
+                <h2>Cohorte breakdown</h2>
+                <div class="metric-big" id="cohort-total">—</div>
+                <p class="subtitle">Pacientes totales · distribución estadio + etnia + ECOG + HRR doc</p>
+                <canvas id="chart-state"></canvas>
+                <div class="metric-row" id="cohort-meta"></div>
+            </div>
+
+            <!-- BLOCKED HARD PENDING -->
+            <div class="card" data-testid="card-blocked-pending">
+                <h2>Blocked_hard pendientes (SLA)</h2>
+                <div class="metric-big" id="blocked-count">—</div>
+                <p class="subtitle">Pacientes esperando workup · días desde último audit</p>
+                <div class="metric-row" id="sla-buckets"></div>
+                <div class="scrollable">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Paciente</th><th>Findings</th><th>Días</th><th>SLA</th>
+                            </tr>
+                        </thead>
+                        <tbody id="blocked-list"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- OVERRIDE STATS -->
+            <div class="card" data-testid="card-override-stats">
+                <h2>Override rate por clínico</h2>
+                <div class="metric-big" id="override-total">—</div>
+                <p class="subtitle">Top razones + clínicos · señal de divergencia con guideline</p>
+                <canvas id="chart-override-reasons"></canvas>
+                <div class="scrollable">
+                    <table>
+                        <thead>
+                            <tr><th>User ID</th><th>Role</th><th>Overrides</th><th>Pacientes</th></tr>
+                        </thead>
+                        <tbody id="override-list"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ENDPOINT USAGE -->
+            <div class="card" data-testid="card-endpoint-usage">
+                <h2>Endpoint usage heatmap</h2>
+                <div class="metric-big" id="usage-total">—</div>
+                <p class="subtitle">Eventos audit · qué section_key se usa más → priorizar perf</p>
+                <canvas id="chart-endpoint"></canvas>
+            </div>
+
+            <!-- GODIBOT TRENDS -->
+            <div class="card" data-testid="card-godibot-trends" style="grid-column: 1 / -1;">
+                <h2>GodiBot % Internal Validation week-over-week</h2>
+                <p class="subtitle">Rolling 12 semanas · trend que demuestra post-market surveillance + continuous learning</p>
+                <canvas id="chart-iv-trend" style="max-height: 320px;"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CHART_COLORS = {
+            primary: 'rgba(99, 102, 241, 0.7)',
+            primaryBorder: 'rgb(99, 102, 241)',
+            success: 'rgba(34, 197, 94, 0.7)',
+            warning: 'rgba(251, 191, 36, 0.7)',
+            danger: 'rgba(239, 68, 68, 0.7)',
+        };
+
+        Chart.defaults.color = '#cbd5e1';
+        Chart.defaults.borderColor = 'rgba(148, 163, 184, 0.18)';
+
+        async function fetchJson(url) {
+            const r = await fetch(url, { credentials: 'same-origin' });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+        }
+
+        async function loadCohortBreakdown() {
+            try {
+                const { data } = await fetchJson('/api/audit-analytics/cohort-breakdown');
+                document.getElementById('cohort-total').textContent = data.total_patients;
+                const meta = document.getElementById('cohort-meta');
+                meta.innerHTML = `
+                    <span class="metric"><strong>${data.by_ethnicity.length}</strong> etnias</span>
+                    <span class="metric"><strong>${data.by_state.length}</strong> estadios</span>
+                    <span class="metric"><strong>${(data.by_hrr_documentation.find(h => h.hrr_status === 'documented') || {count: 0}).count}</strong> HRR doc</span>
+                `;
+                new Chart(document.getElementById('chart-state'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.by_state.map(s => s.state),
+                        datasets: [{
+                            data: data.by_state.map(s => s.count),
+                            backgroundColor: data.by_state.map((_, i) => `hsla(${i * 47}, 60%, 55%, 0.7)`),
+                        }],
+                    },
+                    options: { plugins: { legend: { position: 'right' } } },
+                });
+            } catch (exc) {
+                document.getElementById('cohort-total').innerHTML = '<span class="error">Error: ' + exc.message + '</span>';
+            }
+        }
+
+        async function loadBlockedPending() {
+            try {
+                const { data } = await fetchJson('/api/audit-analytics/blocked-hard-pending');
+                document.getElementById('blocked-count').textContent = data.blocked_hard_count;
+                const sla = data.sla_buckets;
+                document.getElementById('sla-buckets').innerHTML = `
+                    <span class="metric">SLA <span class="sla-bucket sla-green">${sla.green} green</span></span>
+                    <span class="metric"><span class="sla-bucket sla-yellow">${sla.yellow} yellow</span></span>
+                    <span class="metric"><span class="sla-bucket sla-red">${sla.red} RED ⚠</span></span>
+                `;
+                const tbody = document.getElementById('blocked-list');
+                tbody.innerHTML = data.pending_patients.map(p => `
+                    <tr>
+                        <td>${p.patient_nss_short}</td>
+                        <td>${p.findings_count}</td>
+                        <td>${p.days_since_audit}</td>
+                        <td><span class="sla-bucket sla-${p.sla_bucket}">${p.sla_bucket}</span></td>
+                    </tr>
+                `).join('') || '<tr><td colspan="4" class="loading">Sin blocked pendientes</td></tr>';
+            } catch (exc) {
+                document.getElementById('blocked-count').innerHTML = '<span class="error">Error: ' + exc.message + '</span>';
+            }
+        }
+
+        async function loadOverrideStats() {
+            try {
+                const { data } = await fetchJson('/api/audit-analytics/override-stats');
+                document.getElementById('override-total').textContent = data.total_overrides;
+                new Chart(document.getElementById('chart-override-reasons'), {
+                    type: 'bar',
+                    data: {
+                        labels: data.top_reasons.map(r => r.reason),
+                        datasets: [{
+                            label: 'Overrides',
+                            data: data.top_reasons.map(r => r.count),
+                            backgroundColor: CHART_COLORS.primary,
+                            borderColor: CHART_COLORS.primaryBorder,
+                            borderWidth: 1,
+                        }],
+                    },
+                    options: { plugins: { legend: { display: false } }, indexAxis: 'y' },
+                });
+                const tbody = document.getElementById('override-list');
+                tbody.innerHTML = data.by_clinician_top_20.map(c => `
+                    <tr>
+                        <td>user_${c.user_id}</td>
+                        <td>${c.role}</td>
+                        <td>${c.override_count}</td>
+                        <td>${c.patients_affected}</td>
+                    </tr>
+                `).join('') || '<tr><td colspan="4" class="loading">Sin overrides registrados</td></tr>';
+            } catch (exc) {
+                document.getElementById('override-total').innerHTML = '<span class="error">Error: ' + exc.message + '</span>';
+            }
+        }
+
+        async function loadEndpointUsage() {
+            try {
+                const { data } = await fetchJson('/api/audit-analytics/endpoint-usage');
+                document.getElementById('usage-total').textContent = data.total_events;
+                const top10 = data.by_section_top_30.slice(0, 10);
+                new Chart(document.getElementById('chart-endpoint'), {
+                    type: 'bar',
+                    data: {
+                        labels: top10.map(s => s.section_key),
+                        datasets: [{
+                            label: 'Events',
+                            data: top10.map(s => s.event_count),
+                            backgroundColor: CHART_COLORS.primary,
+                        }],
+                    },
+                    options: { plugins: { legend: { display: false } }, indexAxis: 'y' },
+                });
+            } catch (exc) {
+                document.getElementById('usage-total').innerHTML = '<span class="error">Error: ' + exc.message + '</span>';
+            }
+        }
+
+        async function loadGodibotTrends() {
+            try {
+                const { data } = await fetchJson('/api/audit-analytics/godibot-trends');
+                const weeks = data.weekly_trend;
+                new Chart(document.getElementById('chart-iv-trend'), {
+                    type: 'line',
+                    data: {
+                        labels: weeks.map(w => w.week_start),
+                        datasets: [
+                            {
+                                label: '% Internal Validation',
+                                data: weeks.map(w => w.internal_validation_pct),
+                                borderColor: CHART_COLORS.primaryBorder,
+                                backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                                fill: true,
+                                tension: 0.3,
+                                yAxisID: 'y',
+                            },
+                            {
+                                label: 'Total audited',
+                                data: weeks.map(w => w.total),
+                                borderColor: CHART_COLORS.success,
+                                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                                tension: 0.3,
+                                yAxisID: 'y1',
+                            },
+                        ],
+                    },
+                    options: {
+                        scales: {
+                            y: {
+                                type: 'linear', position: 'left',
+                                title: { display: true, text: '% IV' },
+                                min: 0, max: 100,
+                            },
+                            y1: {
+                                type: 'linear', position: 'right',
+                                title: { display: true, text: 'Patients audited' },
+                                grid: { drawOnChartArea: false },
+                            },
+                        },
+                    },
+                });
+            } catch (exc) {
+                console.error('Trends load failed', exc);
+            }
+        }
+
+        // Initial load
+        loadCohortBreakdown();
+        loadBlockedPending();
+        loadOverrideStats();
+        loadEndpointUsage();
+        loadGodibotTrends();
+    </script>
+</body>
+</html>

@@ -837,7 +837,58 @@ from typing import Any
 #   - Magic strings → constantes (UNREGISTERED_VERSION, MAX_FREE_TEXT_LENGTH, etc.)
 #   - importance ML audit parametrizable (survival merece 'medium' vs 'low')
 #   - Boolean query params case-insensitive con .lower()
-FAUBOT_RELEASE = "2026-05-24 CXLIV"
+#
+# ── FAUBOT CXLV — Sprint 7 — Operacional + research + MLOps foundation ──
+# 4 fases que cierran el roadmap operativo:
+#
+# Sprint 7.A — Audit Analytics Dashboard:
+#   - 5 REST endpoints @require_admin (/api/audit-analytics/*) +
+#     /audit-analytics-dashboard HTML view server-side con Chart.js
+#   - Cohort breakdown × estadio × etnia × ECOG × HRR doc status
+#   - Blocked_hard pendientes con SLA buckets (green<7d, yellow<30d, red≥30d)
+#   - Override stats por clínico (actor_user_id desde Sprint 6 session capture)
+#   - Endpoint heatmap (qué section_key se usa más → priorizar perf/cache)
+#   - GodiBot % Internal Validation week-over-week (rolling 12 sem)
+#   - Sprint 7.A migration: ALTER TABLE clinical_override_event ADD COLUMN
+#     (actor_user_id, actor_role, audit_signature_algo) para resolver
+#     schema drift Sprint 5 → Sprint 6
+#   - Foundation SaMD post-market surveillance + research publication
+#
+# Sprint 7.B — OIDC production wiring:
+#   - GET /api/auth/oidc/status (diagnostic + observability — health check)
+#   - OidcBackend._role_from_userinfo extendido: Keycloak realm_access.roles,
+#     resource_access.<client>.roles, Auth0 custom namespaced claims
+#   - Priority mapping admin > physician > clinician > researcher (no hace
+#     downgrade accidental cuando user tiene múltiples roles)
+#   - Roles alineados con Sprint 6 api_auth.CLINICIAN_ROLES/ADMIN_ROLES
+#   - docs/OIDC_PRODUCTION_SETUP.md con steps explícitos Auth0 + Keycloak
+#   - Foundation multi-sitio (visión H3): cada hospital usa SSO institucional
+#
+# Sprint 7.C — Observability (rate limit + Prometheus):
+#   - prostanet/shared/observability.py — module con conditional imports
+#     (degrada gracefully si prometheus_client / flask_limiter no installed)
+#   - 10 métricas (counters + histograms + gauge): api_requests, ml_inference,
+#     godibot_findings, audit_failures (REGULATORY), auth_attempts, oidc_provisions,
+#     active_sessions, db_duration
+#   - /metrics endpoint Prometheus format + /health liveness probe
+#   - @instrument_handler decorator reutilizable
+#   - Rate limiter per-user_id (1000/min default, 10k/hour)
+#   - docs/OBSERVABILITY_SETUP.md con SLO rules Grafana
+#   - Activación via env: PROSTANET_METRICS_ENABLED=1 + PROSTANET_RATE_LIMIT_ENABLED=1
+#
+# Sprint 7.D — MLOps retrain CLI (C8 mitigation real, infra reutilizable):
+#   - prostanet/ai/training/retrain_cli.py — CLI wrapper sobre
+#     RetrainingPipeline existente
+#   - Quality gates configurables: MIN_PATIENTS_FOR_RETRAIN=100,
+#     freshness <365d, AUC_DEPLOY_THRESHOLD=0.70, CALIBRATION_BRIER_MAX=0.25
+#   - Data extraction desde tracking_db cohort + cohort_hash para reproducibilidad
+#   - Dry-run default (no escribe artifact); --apply explícito para deploy
+#   - Auto-cache reset (reset_prediction_service_cache) tras deploy exitoso
+#   - Audit trail completo: section_key=ml_retrain en clinical_view_audit
+#   - CLI: python3 -m prostanet.ai.training.retrain_cli --model state_transition [--apply]
+#   - Cierra C8 cuando data madura: el CLI YA funciona; produce broken model
+#     hoy porque cohort labeling pipeline necesita catch-up (separable concern)
+FAUBOT_RELEASE = "2026-05-24 CXLV"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

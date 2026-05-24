@@ -153,12 +153,41 @@ def _ensure_override_table(conn) -> None:
     conn.commit()
 
 
+def _migrate_override_table_add_actor_columns(conn) -> None:
+    """Sprint 7.A migration: añade actor_user_id + actor_role + audit_signature_algo
+    si la tabla existe pero fue creada con schema viejo (CREATE TABLE IF NOT
+    EXISTS no añade columnas en tablas existentes)."""
+    cur = conn.cursor()
+    # Inspect current columns
+    try:
+        cur.execute("PRAGMA table_info(clinical_override_event)")
+        existing_cols = {row[1] for row in cur.fetchall()}
+    except Exception:
+        return  # tabla aún no existe — _ensure_override_table la creará
+
+    migrations = [
+        ("actor_user_id", "INTEGER"),
+        ("actor_role", "TEXT"),
+        ("audit_signature_algo", "TEXT DEFAULT 'hmac_sha256'"),
+    ]
+    for col_name, col_def in migrations:
+        if col_name not in existing_cols:
+            try:
+                cur.execute(
+                    f"ALTER TABLE clinical_override_event "
+                    f"ADD COLUMN {col_name} {col_def}"
+                )
+                logger.info("Migrated clinical_override_event: added %s", col_name)
+            except Exception as exc:
+                logger.warning("Migration ADD COLUMN %s failed: %s", col_name, exc)
+    conn.commit()
+
+
 def initialize_override_schema(db_path: str | None = None) -> None:
     """Sprint 6 HIGH: schema bootstrap one-shot al arrancar la app.
 
-    Llamar desde bootstrap.py register_blueprint:
-        from prostanet.presentation.decision_override_routes import initialize_override_schema
-        initialize_override_schema()
+    Sprint 7.A: también ejecuta migration ALTER TABLE para añadir columnas
+    Sprint 6 si la tabla fue creada con schema viejo.
     """
     if db_path is None:
         from tracking_db import DB_PATH
@@ -167,6 +196,7 @@ def initialize_override_schema(db_path: str | None = None) -> None:
     try:
         conn = sqlite3.connect(db_path, timeout=5.0)
         _ensure_override_table(conn)
+        _migrate_override_table_add_actor_columns(conn)
     except Exception as exc:
         logger.warning("Override schema init failed: %s: %s",
                        type(exc).__name__, exc)
