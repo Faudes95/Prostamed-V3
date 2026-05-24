@@ -592,10 +592,21 @@
                             </div>
                         </div>
                         <div class="pm2-voice-box">
-                            <div style="font-size:.68rem;color:var(--pn-accent);font-weight:800;letter-spacing:.16em;text-transform:uppercase;">Transcript revisable</div>
-                            <textarea class="pm2-voice-textarea"
+                            {# Sprint 4 FIX §1.6 (FAUBOT CXL): label visible    #}
+                            {# para el transcript textarea (era placeholder-only,#}
+                            {# anti-pattern Form Labels). Mantiene placeholder   #}
+                            {# como ejemplo guía sin sustituir al label.         #}
+                            <label for="pm2-voice-transcript-input"
+                                   class="pm2-voice-textarea-label"
+                                   style="display:block; font-size:.68rem; color:var(--pn-accent); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">
+                                Transcript revisable
+                            </label>
+                            <textarea id="pm2-voice-transcript-input"
+                                      class="pm2-voice-textarea"
                                       data-voice-transcript
+                                      data-testid="cortana-transcript-textarea"
                                       rows="4"
+                                      aria-label="Transcript revisable de la dictación clínica con Cortana"
                                       placeholder="Ejemplo: Adenocarcinoma confirmado, PSA basal 12.4, Gleason 4+3, cT2c cN0 M0, sin ADT..."></textarea>
                             <div class="pm2-voice-actions">
                                 <button class="pm2-btn pm2-btn--ghost" type="button" data-voice-action="record">
@@ -848,7 +859,7 @@
 </template>
 
 {# ── Drill-down lateral panel ── #}
-<aside id="pm2-drilldown" class="pm2-drilldown" role="dialog" aria-modal="true" aria-hidden="true">
+<aside id="pm2-drilldown" class="pm2-drilldown" role="dialog" aria-hidden="true" hidden inert>
     <div class="pm2-drilldown-head">
         <div style="min-width:0;flex:1">
             <div class="pm2-drilldown-context" data-drilldown-context>DETALLE</div>
@@ -880,16 +891,30 @@ document.addEventListener('DOMContentLoaded', function() {
     const metricsToggle = document.querySelector('[data-system-metrics-toggle]');
     const metricsTemplate = document.getElementById('pm2SystemMetricsTemplate');
 
-    const openDrilldown = function() {
+    let drilldownFocusReturn = null;
+
+    const openDrilldown = function(triggerEl) {
+        drilldownFocusReturn = triggerEl || document.activeElement;
+        drilldown.hidden = false;
+        drilldown.removeAttribute('hidden');
+        drilldown.removeAttribute('inert');
         drilldown.setAttribute('aria-hidden', 'false');
+        drilldown.setAttribute('aria-modal', 'true');
         drilldown.classList.add('is-open');
         if (closeBtn) closeBtn.focus();
     };
 
     const closeDrilldown = function() {
         drilldown.setAttribute('aria-hidden', 'true');
+        drilldown.removeAttribute('aria-modal');
+        drilldown.setAttribute('inert', '');
+        drilldown.hidden = true;
         drilldown.classList.remove('is-open');
         if (metricsToggle) metricsToggle.setAttribute('aria-expanded', 'false');
+        if (drilldownFocusReturn && typeof drilldownFocusReturn.focus === 'function') {
+            drilldownFocusReturn.focus();
+        }
+        drilldownFocusReturn = null;
     };
 
     if (metricsToggle && metricsTemplate) {
@@ -898,7 +923,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (ctxEl) ctxEl.textContent = 'RESUMEN OPERATIVO';
             if (bodyEl) bodyEl.innerHTML = metricsTemplate.innerHTML;
             metricsToggle.setAttribute('aria-expanded', 'true');
-            openDrilldown();
+            openDrilldown(metricsToggle);
         });
     }
 
@@ -935,7 +960,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         if (bodyEl) bodyEl.innerHTML = '<p class="pm2-card-subtitle" style="color:#fbbf24">No se pudo cargar los criterios para este trial. Endpoint: <code>/api/trials/' + trialName + '/criteria</code></p>';
                     });
             }
-            openDrilldown();
+            openDrilldown(btn);
         });
     });
 

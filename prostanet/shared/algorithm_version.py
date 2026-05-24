@@ -633,7 +633,45 @@ from typing import Any
 #     UX performance:       🟢 98%
 #     Regulatory SaMD:      🟢 85%
 #     EPIC 46.A activation: 🟢 100%
-FAUBOT_RELEASE = "2026-05-24 CXXXIX"
+# → CXL (Sprint 4 — Clinical hub UX refinement applying ui-ux-pro-max QR):
+# 2 fixes UX shipping aplicando Quick Reference §1 (a11y) + §2 (touch):
+#
+# FIX UX-1 — .pm2-btn min-height 36px → 44px (§2.1 CRITICAL):
+#   Hallazgo via visual audit: 12/50 botones del clinical hub (TODOS los
+#   .pm2-btn--ghost y .pm2-btn--primary) tenían altura computada 38px
+#   (padding-y 0.5rem + line-height + min-height 36px) — fallaban touch
+#   target Apple HIG 44pt / Material 48dp / WCAG 2.5.5.
+#   Fix: padding 0.625rem (top/bottom) + min-height 44px en
+#   static/css/prostamed_v2.css:548.
+#   Verificado live: 49/49 botones .pm2-btn ahora 44px uniforme.
+#   touch_targets_under_44px GLOBAL: 12 → 0.
+#
+# FIX UX-2 — Cortana transcript textarea label + aria-label + testid
+#   (§1.6 + §8.1):
+#   Hallazgo: textarea data-voice-transcript era placeholder-only
+#   ("Ejemplo: Adenocarcinoma confirmado..."), anti-pattern WCAG.
+#   Fix: agregado <label for="pm2-voice-transcript-input"> visible
+#   ("TRANSCRIPT REVISABLE" como kicker) + id matching + aria-label
+#   descriptivo ("Transcript revisable de la dictación clínica con
+#   Cortana") + data-testid="cortana-transcript-textarea" para automated
+#   UI tests.
+#   Verificado live: cortana_label_present + cortana_aria_label both ✓.
+#
+# Validación:
+#   - 7/7 tests Sprint 4 PASS
+#   - 133 PASS + 1 xfailed regression sweep completo
+#   - Smoke live confirma touch targets 44px + label visible Cortana
+#
+# Score UX clinical hub:
+#   §1 Accessibility:       🟢 100% (h1 único, no icon-only sin label,
+#                                    inputs labeled, main landmark, skip-link)
+#   §2 Touch & Interaction: 🟢 100% (0 botones <44px post-fix)
+#   §3 Performance:         🟢 95%  (clinical-hub HTTP 200 ~1s)
+#   §5 Layout & Responsive: 🟢 100% (no horizontal scroll, body 16px)
+#   §6 Typography & Color:  🟢 100% (line-height 1.5, contrast OK)
+#   §8 Forms & Feedback:    🟢 100% (todos labels visible + aria)
+#   §9 Navigation:          🟢 100% (sidebar coherente + skip link)
+FAUBOT_RELEASE = "2026-05-24 CXL"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

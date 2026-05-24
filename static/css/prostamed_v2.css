@@ -550,14 +550,19 @@
     align-items: center;
     justify-content: center;
     gap: var(--space-2);
-    padding: var(--space-2) var(--space-4);
+    /* Sprint 4 FIX §2.1 CRITICAL: padding-y aumentado para garantizar
+       min-height 44px (touch target Apple HIG / 48dp Material). Antes era
+       36px, fallando 12/50 botones del clinical-hub. */
+    padding: 0.625rem var(--space-4);
     border-radius: 0.625rem;
     font-size: 0.85rem;
     font-weight: 600;
     border: 1px solid transparent;
     cursor: pointer;
     transition: all var(--dur-fast) var(--ease-clinical);
-    min-height: 36px;
+    /* Sprint 4 (FAUBOT CXL): touch target min 44pt — Apple HIG +
+       Material Design + WCAG 2.1 (2.5.5 Target Size). */
+    min-height: 44px;
     text-decoration: none;
 }
 
