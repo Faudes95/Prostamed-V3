@@ -149,6 +149,8 @@ STATIC_NO_DATA_BINDING: set[str] = {
     "decision-narrative-classifier-cta",
     # Sprint 3 fix #11 — Patient name elevated to h1 with testid
     "patient-name-heading",
+    # EPIC GVP.C — Clinical validation badge (GodiBot status visible)
+    "clinical-validation-badge",
 }
 
 

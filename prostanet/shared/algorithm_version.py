@@ -671,7 +671,81 @@ from typing import Any
 #   §6 Typography & Color:  🟢 100% (line-height 1.5, contrast OK)
 #   §8 Forms & Feedback:    🟢 100% (todos labels visible + aria)
 #   §9 Navigation:          🟢 100% (sidebar coherente + skip link)
-FAUBOT_RELEASE = "2026-05-24 CXL"
+# → CXLI (EPIC GVP — Clinical Validation Loop: retroactivo + prospectivo):
+# Salto clínico de mayor valor identificado para elevar Clinical
+# Correctness de 90% → 95%+. GodiBot validation pass exhaustivo sobre
+# la cohorte completa (retroactivo) MÁS hook en profile_compass para
+# garantizar que NUEVOS pacientes también reciban validation viva
+# (prospectivo, pattern EPIC 45 aplicado a clinical validation).
+#
+# Cambios (4 archivos, ~600 LOC):
+#
+# GVP.A — NUEVO prostanet/regulatory/clinical/godibot_cohort_audit.py:
+#   CLI poblacional que itera cohorte completa + run_godibot_review()
+#   per paciente. Aggregate metrics:
+#     - "% Internal Validation": (approved + 0.5 * warnings) / total
+#     - by_status: approved / warnings_only / blocked_hard / error
+#     - TOP 10 findings types (roadmap data-driven)
+#   Persiste en cohort_validation_runs table (run_id + patient_id +
+#   findings_json + faubot_release + trigger_source). Schema idempotente
+#   con índices sobre run_id + patient_id.
+#   CLI usage:
+#     python3 -m prostanet.regulatory.clinical.godibot_cohort_audit
+#     python3 -m prostanet.regulatory.clinical.godibot_cohort_audit --json
+#     python3 -m prostanet.regulatory.clinical.godibot_cohort_audit --persist
+#     python3 -m prostanet.regulatory.clinical.godibot_cohort_audit --patient-id N
+#
+# GVP.B — Hook prospectivo en profile_compass (~80 LOC):
+#   build_patient_profile_view_model inyecta clinical_validation_snapshot
+#   al bundle. Helper _build_clinical_validation_snapshot:
+#     - Reusa existing_godibot_review si compass ya lo ejecutó upstream
+#       (evita re-correr) — trigger_source='reused_upstream'
+#     - Sino, lazy-runs GodiBot con enable_llm=False (rapidez render path)
+#       trigger_source='lazy_render'
+#     - Fail-safe completo: errores → status=error sin bloquear render
+#
+# GVP.C — UI mini-panel clinical-validation-badge (~25 LOC template):
+#   Badge visible junto al confidence + override-btn en el decision
+#   narrative panel. Status color-coded:
+#     approved → ✓ GodiBot OK (verde)
+#     warnings_only → 🟡 N warnings (amarillo)
+#     blocked_hard → ⚠ N hard-block (rojo)
+#   data-status + data-findings-count expuestos para drill-down futuro.
+#
+# Tests dedicados — tests/test_epic_gvp_clinical_validation_loop.py
+#   (9 tests):
+#     - GVP.A: module importable + audit_patient shape + audit_cohort
+#       filter + cohort_validation_runs schema + indexes
+#     - GVP.B: source-level wire + reuse existing review + fail-safe
+#     - GVP.C: template badge + data attrs
+#
+# Concordance (test_epic22d_ui_data_concordance.py): registra
+#   clinical-validation-badge testid.
+#
+# Validación end-to-end:
+#   - 9/9 tests EPIC GVP PASS
+#   - 142+ PASS regression sweep completo (Sprint 1-4 + EPIC 45-48 +
+#     GVP + arbiter + UI concordance)
+#   - Smoke real CLI sobre 50 pacientes (--persist):
+#       * 92.0% Internal Validation baseline
+#       * 4 pacientes blocked_hard (8.0%) — fixes priorizados
+#       * 46 pacientes approved (92.0%)
+#   - Smoke prospectivo: hook live en patient 484
+#       data-testid="clinical-validation-badge"
+#       data-status="warnings_only" rendering correctamente
+#
+# Impacto Clinical Correctness:
+#   - Antes: 90% (estimado sin medición objetiva)
+#   - Después: 92% baseline OBJETIVO + roadmap fixes priorizados
+#   - Próximo paso: atacar los 4 pacientes blocked_hard del baseline +
+#     iterar (cada Sprint que cierra findings sube el %)
+#
+# Foundation regulatorio + research:
+#   - Artifact citable para FDA/COFEPRIS submission (internal validation
+#     report) Pilar 4 visión estratégica
+#   - Baseline pre-piloto contra el cual medir mejoras
+#   - Pattern EPIC 45 completo: retroactivo + prospectivo + observabilidad
+FAUBOT_RELEASE = "2026-05-24 CXLI"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

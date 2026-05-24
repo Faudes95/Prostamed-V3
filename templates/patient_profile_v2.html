@@ -243,7 +243,23 @@
                         confianza {{ '%.0f'|format(_narrative.confidence_score * 100) }}%
                     </p>
                 </div>
-                <div style="display:flex; gap:8px;">
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    {# EPIC GVP.C — Clinical Validation status badge (GodiBot) #}
+                    {% set _cv = profile_view_raw.get('clinical_validation_snapshot', {}) if profile_view_raw else {} %}
+                    {% if _cv and _cv.available %}
+                    <span data-testid="clinical-validation-badge"
+                          data-status="{{ _cv.status }}"
+                          data-findings-count="{{ _cv.findings_count }}"
+                          title="Validación GodiBot · {{ _cv.trigger_source }} · {{ _cv.review_timestamp[:19] if _cv.review_timestamp else '' }}"
+                          style="font-size:0.68rem; padding:4px 9px; border-radius:6px; font-weight:700;
+                                 background:{% if _cv.status == 'approved' %}rgba(34,197,94,0.22); color:rgb(74,222,128){% elif _cv.status == 'warnings_only' %}rgba(251,191,36,0.22); color:rgb(252,211,77){% elif _cv.status == 'blocked_hard' %}rgba(239,68,68,0.28); color:rgb(252,165,165){% else %}rgba(148,163,184,0.22); color:rgb(203,213,225){% endif %};">
+                        {% if _cv.status == 'approved' %}✓ GodiBot OK
+                        {% elif _cv.status == 'warnings_only' %}🟡 {{ _cv.findings_count }} warning{{ 's' if _cv.findings_count != 1 else '' }}
+                        {% elif _cv.status == 'blocked_hard' %}⚠ {{ _cv.findings_count }} hard-block
+                        {% else %}— Validación {{ _cv.status }}
+                        {% endif %}
+                    </span>
+                    {% endif %}
                     <span data-testid="decision-narrative-confidence-badge"
                           style="font-size:0.7rem; padding:4px 10px; border-radius:6px; font-weight:700;
                                  background:{% if _narrative.confidence_score >= 0.75 %}rgba(34,197,94,0.25); color:rgb(74,222,128){% elif _narrative.confidence_score >= 0.5 %}rgba(251,191,36,0.25); color:rgb(252,211,77){% else %}rgba(239,68,68,0.25); color:rgb(252,165,165){% endif %};">

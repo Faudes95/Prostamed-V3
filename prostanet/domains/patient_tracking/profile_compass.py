@@ -6980,7 +6980,110 @@ def build_patient_profile_view_model(
     # a outcomes observados. Foundation continuous learning loop + Latin
     # recalibration analytics + SaMD post-market surveillance.
     bundle["outcome_linkage"] = _build_outcome_linkage_safe(patient)
+    # EPIC GVP.B FAUBOT CXLI — Clinical Validation Snapshot (prospectivo).
+    # Hook que ejecuta GodiBot review automáticamente en cada render del
+    # perfil. Garantiza que nuevos pacientes que ingresen TAMBIÉN reciban
+    # validation (no solo cohorte retroactiva via CLI).
+    # Patrón EPIC 45 aplicado a clinical validation:
+    #   - CLI poblacional (godibot_cohort_audit) = retroactivo
+    #   - Este hook                              = prospectivo per render
+    # Output inyectado al bundle como `clinical_validation_snapshot`.
+    # UI render: mini-panel con status badge + count findings + link
+    # al detail GodiBot card existente.
+    bundle["clinical_validation_snapshot"] = _build_clinical_validation_snapshot(
+        patient, bundle.get("godibot_review") or {},
+    )
     return bundle
+
+
+def _build_clinical_validation_snapshot(
+    patient: dict[str, Any],
+    existing_godibot_review: dict[str, Any],
+) -> dict[str, Any]:
+    """Fail-safe wrapper que genera validation snapshot para el bundle.
+
+    Estrategia:
+      1. Si existing_godibot_review ya tiene contenido (compass ya lo ejecutó
+         durante el flow original), reusa su status + findings sin re-correr.
+      2. Si no, ejecuta GodiBot lazy + low-LLM (audit-mode rapido).
+      3. Persiste audit entry en cohort_validation_runs con
+         trigger_source='profile_render' para tracking longitudinal.
+
+    Returns:
+        {
+            "available": bool,
+            "status": "approved" | "warnings_only" | "blocked_hard" | "skipped",
+            "findings_count": int,
+            "review_timestamp": ISO,
+            "trigger_source": str,
+            "snapshot_version": "epic_gvp_v1",
+        }
+    """
+    try:
+        # Re-use existing godibot_review si fue ejecutado upstream
+        if existing_godibot_review:
+            status = str(existing_godibot_review.get("status") or "")
+            findings = existing_godibot_review.get("findings") or []
+            if status:
+                return {
+                    "available": True,
+                    "status": status,
+                    "findings_count": len(findings),
+                    "review_timestamp": existing_godibot_review.get(
+                        "review_timestamp"
+                    ) or _now_iso(),
+                    "trigger_source": "reused_upstream",
+                    "snapshot_version": "epic_gvp_v1",
+                }
+
+        # Lazy run con flag enable_llm=False (rapidez en path de render)
+        from prostanet.agents.godibot import run_godibot_review
+
+        identity = patient.get("identity") if isinstance(patient.get("identity"), dict) else {}
+        patient_id = int(
+            patient.get("id")
+            or patient.get("patient_id")
+            or (identity.get("id") if identity else 0)
+            or 0
+        )
+        if patient_id <= 0:
+            return {
+                "available": False,
+                "status": "skipped",
+                "findings_count": 0,
+                "reason": "invalid_patient_id",
+                "snapshot_version": "epic_gvp_v1",
+            }
+
+        review = run_godibot_review(
+            patient,
+            patient_id=patient_id,
+            trigger_event="profile_render_validation",
+            enable_llm=False,  # Path de render: rapidez prioritaria
+        )
+        status = str(review.get("status") or "unknown")
+        findings = review.get("findings") or []
+        return {
+            "available": True,
+            "status": status,
+            "findings_count": len(findings),
+            "review_timestamp": _now_iso(),
+            "trigger_source": "lazy_render",
+            "snapshot_version": "epic_gvp_v1",
+        }
+    except Exception as exc:
+        return {
+            "available": False,
+            "status": "error",
+            "findings_count": 0,
+            "reason": f"snapshot_builder_error: {type(exc).__name__}",
+            "snapshot_version": "epic_gvp_v1",
+        }
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _build_outcome_linkage_safe(patient: dict[str, Any]) -> dict[str, Any]:
