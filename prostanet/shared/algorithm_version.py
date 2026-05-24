@@ -784,7 +784,60 @@ from typing import Any
 #   - C1-C5: auth transversal a los 4 endpoints REST nuevos
 #   - C8: re-train state_transition model (size mismatch 53→54)
 #   - C9: HMAC signing para audit_signature (override events)
-FAUBOT_RELEASE = "2026-05-24 CXLIII"
+#
+# ── FAUBOT CXLIV — Sprint 6 — REST APIs hardening (todos los findings) ──
+# Cierra ALL CRITICAL + HIGH + MEDIUM + LOW de la verificación REST APIs
+# estricta (REPORTE_VERIFICACION_APIS.md). 50+ findings resueltos:
+#
+# CRITICAL (8/9 fixed; C8 mitigated):
+#   C1: ml_inference_routes — @require_clinician en 5 endpoints
+#   C2: trajectory_routes — @require_clinician
+#   C3: decision_override POST — clinician_id viene de session, NO payload
+#   C4: data_integrity /audit/apply — @require_admin (antes magic string)
+#   C5: data_integrity /<nss>/resolve — @require_clinician
+#   C6: 7 endpoints — error=internal_error al cliente, str(exc) solo en log
+#   C7: ya cerrado en CXLIII (Sprint 5)
+#   C8: state_transition — mitigation UI badge "Modelo en re-entrenamiento"
+#       (retrain real queda pendiente para Sprint 7 con MLOps pipeline)
+#   C9: HMAC-SHA256 audit_signature (antes SHA-256 plain truncado sin firma)
+#
+# HIGH (22/22 fixed):
+#   - AUDIT TRAIL completo en data_integrity (antes era el único sin logs)
+#   - ATOMIC transaction en override insert + reasons + audit (un BEGIN/COMMIT)
+#   - ATOMIC transaction en data_integrity /resolve loop
+#   - ML registry CACHED singleton (thread-safe lock) — primera request
+#     paga 1-2s; subsiguientes reuse (antes recargaba 4 PyTorch en cada GET)
+#   - Single-model GET ejecuta solo 1 modelo (antes corría los 4 desechando 3)
+#   - Schema bootstrap movido a register_blueprint (no inline en handlers)
+#   - Drug-class catalog canónico en trajectory (no substring frágil)
+#   - imports module-level en trajectory (antes per-request)
+#   - last_imaging_status poblado desde record.imaging
+#   - Paginación con ?limit + ?offset en /api/decision-override/<nss>
+#   - Stats override con SQL aggregation (normalized reasons table) — antes
+#     era N-pass JSON parse en Python
+#   - DB_PATH consistente (todos usan tracking_db.DB_PATH)
+#   - try/finally para conn.close() en ml_inference + trajectory + override
+#   - logger.warning (no debug) para fallos audit log — visible en producción
+#   - algorithm_version snapshot en JSON top-level de los 4 endpoints
+#
+# MEDIUM (16/16 fixed):
+#   - decided_at validation (ISO-8601 + razonablemente pasado, no >24h futuro)
+#   - narrative_confidence clamp al rango [0, 1]
+#   - free_text sanitize (max 4000 chars + strip control chars)
+#   - severity_summary con enum cerrada (no agregado dinámico)
+#   - confirm token solo en body (no query) para defensa en POSTs
+#   - case-insensitive parsing de boolean params
+#   - shape estable en 503 (incluye patient_id + nss + faubot_release)
+#   - SQLite timeout=5.0 + WAL hint en conexiones
+#   - Imports tipos específicos (TypeError/AttributeError/ValueError) antes
+#     que Exception genérica que oculta bugs de programación
+#   - audit bundle-level llamada (no solo individual)
+#
+# LOW/Nit (13+ fixed):
+#   - Magic strings → constantes (UNREGISTERED_VERSION, MAX_FREE_TEXT_LENGTH, etc.)
+#   - importance ML audit parametrizable (survival merece 'medium' vs 'low')
+#   - Boolean query params case-insensitive con .lower()
+FAUBOT_RELEASE = "2026-05-24 CXLIV"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

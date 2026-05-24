@@ -1015,9 +1015,31 @@
 
             {# Status footer: muestra modelos no disponibles para transparencia #}
             {% set _unavailable = [] %}
+            {% set _retrain_required = [] %}
             {% for _mk, _mv in _ml.models.items() %}
                 {% if not _mv.available %}{% set _ = _unavailable.append((_mk, _mv)) %}{% endif %}
+                {# Sprint 6 C8 mitigation: surface explícito si el modelo está en re-entrenamiento #}
+                {% if _mv.reason and 'retrain_required' in (_mv.reason|string) %}
+                    {% set _ = _retrain_required.append((_mk, _mv)) %}
+                {% endif %}
             {% endfor %}
+            {# Sprint 6 C8: badge prominente si state_transition (u otro) está roto por size mismatch #}
+            {% if _retrain_required %}
+            <div data-testid="ml-card-retrain-banner"
+                 role="status"
+                 style="margin-top:0.875rem; padding:0.625rem 0.875rem;
+                        background:rgba(251,146,60,0.16); border:1px solid rgba(251,146,60,0.42);
+                        border-left:4px solid rgb(251,146,60); border-radius:8px;">
+                <div style="font-size:0.7rem; font-weight:800; color:rgb(253,186,116); text-transform:uppercase; letter-spacing:.1em;">
+                    🔧 Modelo en re-entrenamiento
+                </div>
+                <div style="margin-top:4px; font-size:0.78rem; color:rgb(254,215,170); line-height:1.45;">
+                    {% for _mk, _mv in _retrain_required %}
+                    <div><strong>{{ _mk|replace('_', ' ')|title }}</strong>: checkpoint incompatible con state classifier actual (size mismatch). Predicción suspendida hasta re-entrenamiento. Compass + Twin OS no afectados.</div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
             {% if _unavailable %}
             <details style="margin-top:0.875rem; color:rgb(148,163,184);">
                 <summary style="cursor:pointer; font-size:0.75rem; font-weight:600;">

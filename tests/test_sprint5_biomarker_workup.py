@@ -202,8 +202,12 @@ def test_s5_d_real_function_works():
 
 
 def test_s5_faubot_release_bumped():
-    """algorithm_version debe declarar CXLIII."""
+    """algorithm_version debe ser al menos CXLIII (release de Sprint 5).
+    Sprint 6+ bumps a CXLIV+ son válidos también."""
     from prostanet.shared.algorithm_version import FAUBOT_RELEASE
-    assert "CXLIII" in FAUBOT_RELEASE, (
-        f"FAUBOT_RELEASE should be CXLIII, got: {FAUBOT_RELEASE}"
+    # Accept CXLIII or any later Roman numeral starting with CXLI/CXLV/...
+    valid_releases = ("CXLIII", "CXLIV", "CXLV", "CXLVI", "CXLVII", "CXLVIII",
+                       "CXLIX", "CL")
+    assert any(rel in FAUBOT_RELEASE for rel in valid_releases), (
+        f"FAUBOT_RELEASE should be ≥CXLIII, got: {FAUBOT_RELEASE}"
     )

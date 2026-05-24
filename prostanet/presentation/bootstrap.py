@@ -92,9 +92,15 @@ def register_modular_blueprints(app: Flask) -> None:
     # Foundation continuous learning loop + Latin recalibration analytics +
     # SaMD §820.30 user feedback compliance.
     try:
-        from prostanet.presentation.decision_override_routes import decision_override_bp
+        from prostanet.presentation.decision_override_routes import (
+            decision_override_bp,
+            initialize_override_schema,
+        )
         if "decision_override" not in app.blueprints:
             app.register_blueprint(decision_override_bp)
+        # Sprint 6 HIGH (CXLIV): schema bootstrap one-shot al arrancar
+        # (antes era inline en cada POST/GET — race conditions + overhead)
+        initialize_override_schema()
     except Exception as exc:
         import logging as _logging
         _logging.getLogger(__name__).warning(
