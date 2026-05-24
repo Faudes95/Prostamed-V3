@@ -891,9 +891,12 @@ def api_decision_audit_patient(patient_ref):
     """
     try:
         # Try to resolve patient
+        # Sprint 5 fix (C7 — FAUBOT CXLIII): `tracking_db.get_patient_by_nss`
+        # NO EXISTE (ghost reference). Reemplazado por load_patient_record_core
+        # que es la función real (acepta nss o id, validada en runtime).
         try:
             import tracking_db
-            patient = tracking_db.get_patient_by_nss(patient_ref)
+            patient = tracking_db.load_patient_record_core(patient_ref)
         except Exception:
             patient = None
 

@@ -761,7 +761,30 @@ from typing import Any
 # Resultado esperado: los 4 blocked_hard del baseline (5 finding types)
 # se convierten en `approved`, % Internal Validation 92% → ~100%.
 # Patrón EPIC 45 cumplido (corrige retroactivo + prospectivo on render).
-FAUBOT_RELEASE = "2026-05-24 CXLII"
+#
+# ── FAUBOT CXLIII — Sprint 5 + bug fixes verificación REST APIs ─────────
+# Sprint 5 — Biomarker workup checklist:
+#   - NEW `prostanet/domains/decisions/biomarker_workup_engine.py`
+#   - Para cada paciente, detecta candidacy a PARP (NCCN PROS-2 cat 1) y
+#     Lu-177-PSMA-617 (VISION). Si falta HRR / PSMA-PET → emite capture
+#     target con guideline citation + action_label + unblock_criterion.
+#   - Reusa lazy-eval de gates pivotal como signal primario (consistente
+#     con CXLII propagation). Hooks en profile_compass bundle como key
+#     `biomarker_workup`. UI card data-testid=biomarker-workup-checklist.
+#   - Cierra los 16 blocked_hard del cohort audit baseline CXLII
+#     transformando "blocked sin acción" en "blocked con acción accionable".
+#
+# Bug fixes derivados de verificación REST APIs estricta:
+#   - C7 CRITICAL: `tracking_db.get_patient_by_nss` no existe (ghost ref).
+#     2 endpoints rotos (trial_eligibility_routes._load_patient + app.py
+#     api_decision_audit_patient). Reemplazado por load_patient_record_core
+#     en ambos. Restaura 2 endpoints completos.
+#
+# Pending Sprint 6+ (no en este release, requieren design dedicado):
+#   - C1-C5: auth transversal a los 4 endpoints REST nuevos
+#   - C8: re-train state_transition model (size mismatch 53→54)
+#   - C9: HMAC signing para audit_signature (override events)
+FAUBOT_RELEASE = "2026-05-24 CXLIII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

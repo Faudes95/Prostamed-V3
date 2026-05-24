@@ -19,7 +19,7 @@ Design:
 - Read-only endpoints (no mutations)
 - JSON responses (excepto UI dashboard)
 - Errors retornan 4XX con JSON {error, message}
-- Patient lookup via tracking_db.get_patient_by_nss()
+- Patient lookup via tracking_db.load_patient_record_core() (Sprint 5 fix CXLIII)
 
 Faubot LXXXV — Iteración #2 (Trial Eligibility Engine + REST API + UI).
 """
@@ -54,12 +54,18 @@ trial_eligibility_bp = Blueprint(
 def _load_patient(nss: str) -> dict | None:
     """Lookup paciente por NSS usando tracking_db.
 
+    Sprint 5 fix (C7): `tracking_db.get_patient_by_nss` NO EXISTE en el
+    módulo (ghost reference). El nombre correcto es `load_patient_record_core`
+    (que acepta nss o id) — verificado vía code review FAUBOT CXLII.
+    Antes: cada llamada lanzaba AttributeError, capturada silently, retornaba
+    None → endpoint respondía 404 a TODOS los pacientes (totalmente roto).
+
     Returns:
         dict con datos del paciente, o None si no existe.
     """
     try:
         import tracking_db
-        return tracking_db.get_patient_by_nss(nss) or None
+        return tracking_db.load_patient_record_core(nss) or None
     except Exception as exc:
         logger.warning(
             f"trial_eligibility._load_patient failed for nss={nss}: "

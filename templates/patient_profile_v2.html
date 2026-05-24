@@ -677,6 +677,110 @@
         {% endif %}
 
         {# ═══════════════════════════════════════════════════════════════ #}
+        {# SPRINT 5 (FAUBOT CXLIII) — Biomarker workup checklist           #}
+        {# ═══════════════════════════════════════════════════════════════ #}
+        {# Cierra los 16 blocked_hard del baseline CXLII: si paciente es   #}
+        {# candidato PARP/Lu-177 sin HRR/PSMA-PET documentado, expone una  #}
+        {# tarjeta con la acción concreta + guideline anchor + unblock     #}
+        {# criterion. Single source of truth: gates pivotal + CXLII.       #}
+        {% set _bw = profile_view_raw.get('biomarker_workup', {}) if profile_view_raw else {} %}
+        {% if _bw and _bw.available %}
+        <section style="margin: var(--space-4) var(--space-6); padding: var(--space-4);
+                        background: linear-gradient(135deg, rgba(217,119,6,0.13), rgba(15,23,42,0.66));
+                        border: 1px solid rgba(217,119,6,0.42);
+                        border-left: 6px solid rgb(217,119,6);
+                        border-radius: 14px;"
+                 class="pm2-biomarker-workup-panel"
+                 data-testid="biomarker-workup-checklist"
+                 data-pending-count="{{ _bw.pending_actions_count }}"
+                 data-parp-candidate="{{ _bw.parp_candidate|lower }}"
+                 data-lu177-candidate="{{ _bw.lu177_candidate|lower }}"
+                 aria-label="Workup biomarker pendiente">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom: 1rem;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(254,215,170); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">
+                        Workup biomarker · Sprint 5 · FAUBOT CXLIII
+                    </div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                        {% if _bw.any_pending %}
+                            ⚠ {{ _bw.pending_actions_count }} acción{{ 'es' if _bw.pending_actions_count != 1 else '' }} pendiente{{ 's' if _bw.pending_actions_count != 1 else '' }} antes de PARP/Lu-177
+                        {% else %}
+                            ✓ Workup biomarker completo
+                        {% endif %}
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:80ch;">
+                        {{ _bw.clinical_summary }}
+                    </p>
+                </div>
+                <span style="font-size:0.7rem; padding:5px 10px; border-radius:6px; font-weight:700;
+                             background:{% if _bw.any_pending %}rgba(239,68,68,0.25); color:rgb(252,165,165){% else %}rgba(34,197,94,0.25); color:rgb(74,222,128){% endif %};">
+                    NCCN PROS-2 cat 1
+                </span>
+            </div>
+
+            {% if _bw.any_pending %}
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px;">
+                {# HRR workup card #}
+                {% set _hrr = _bw.hrr_workup or {} %}
+                {% if _hrr.pending %}
+                <article data-testid="biomarker-workup-hrr"
+                         data-severity="{{ _hrr.severity }}"
+                         style="padding:14px; background:rgba(15,23,42,0.55); border-radius:10px;
+                                border-left:4px solid rgb(239,68,68);">
+                    <div style="font-size:.68rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:rgb(252,165,165);">
+                        🔴 Hard-block · {{ _hrr.candidate_for }}
+                    </div>
+                    <h4 style="margin:6px 0; font-size:.98rem; color:#f8fafc;">{{ _hrr.action_label }}</h4>
+                    <p style="margin:6px 0; color:var(--pn-text-muted); font-size:.78rem; line-height:1.5;">
+                        {{ _hrr.action_detail }}
+                    </p>
+                    <div style="margin-top:9px; padding-top:9px; border-top:1px solid rgba(148,163,184,0.18); font-size:.72rem; color:rgb(148,163,184); line-height:1.5;">
+                        <div><strong>Panel:</strong> {{ _hrr.panel_required|join(', ') }}</div>
+                        <div><strong>Especímen:</strong> {{ _hrr.specimen_required }}</div>
+                        <div style="margin-top:5px;"><strong>Guideline:</strong> {{ _hrr.guideline_anchor }}</div>
+                        <div style="margin-top:5px; color:rgb(252,211,77);"><strong>Cierra al cargar:</strong> {{ _hrr.unblock_criterion }}</div>
+                    </div>
+                </article>
+                {% endif %}
+
+                {# PSMA-PET workup card #}
+                {% set _ppet = _bw.psma_pet_workup or {} %}
+                {% if _ppet.pending %}
+                <article data-testid="biomarker-workup-psma-pet"
+                         data-severity="{{ _ppet.severity }}"
+                         style="padding:14px; background:rgba(15,23,42,0.55); border-radius:10px;
+                                border-left:4px solid rgb(239,68,68);">
+                    <div style="font-size:.68rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:rgb(252,165,165);">
+                        🔴 Hard-block · {{ _ppet.candidate_for }}
+                    </div>
+                    <h4 style="margin:6px 0; font-size:.98rem; color:#f8fafc;">{{ _ppet.action_label }}</h4>
+                    <p style="margin:6px 0; color:var(--pn-text-muted); font-size:.78rem; line-height:1.5;">
+                        {{ _ppet.action_detail }}
+                    </p>
+                    {% if _ppet.local_access_warning %}
+                    <div style="margin-top:9px; padding:8px 10px; background:rgba(217,119,6,0.18); border-radius:6px; color:rgb(252,211,77); font-size:.74rem;">
+                        ⚠ {{ _ppet.local_access_warning }}
+                    </div>
+                    {% endif %}
+                    <div style="margin-top:9px; padding-top:9px; border-top:1px solid rgba(148,163,184,0.18); font-size:.72rem; color:rgb(148,163,184); line-height:1.5;">
+                        <div><strong>Especímen:</strong> {{ _ppet.specimen_required }}</div>
+                        <div style="margin-top:5px;"><strong>Guideline:</strong> {{ _ppet.guideline_anchor }}</div>
+                        <div style="margin-top:5px; color:rgb(252,211,77);"><strong>Cierra al cargar:</strong> {{ _ppet.unblock_criterion }}</div>
+                    </div>
+                </article>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div style="margin-top:10px; font-size:.68rem; color:rgb(148,163,184); display:flex; gap:8px; flex-wrap:wrap;">
+                {% for anchor in (_bw.evidence_anchors or []) %}
+                <span style="padding:2px 7px; background:rgba(148,163,184,0.12); border-radius:4px;">{{ anchor }}</span>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {# ═══════════════════════════════════════════════════════════════ #}
         {# EPIC 46.B (FAUBOT CXXXIII) — ML Predictions panel               #}
         {# ═══════════════════════════════════════════════════════════════ #}
         {# Materialización de 4 modelos PyTorch entrenados:                #}

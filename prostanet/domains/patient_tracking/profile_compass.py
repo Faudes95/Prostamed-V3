@@ -6760,6 +6760,25 @@ def build_patient_profile_view_model(
         copilot_sections["therapeutic_fitness"] = therapeutic_fitness
     psa_forecast["status_label"] = normalize_ui_label(psa_forecast.get("status"), default="No disponible")
 
+    # ── SPRINT 5 — Biomarker workup checklist (FAUBOT CXLIII) ───────────
+    # Para cada paciente, evaluar si tiene workup HRR + PSMA-PET pendiente
+    # (NCCN PROS-2 cat 1, label FDA VISION/PROfound). Cierra los 16
+    # blocked_hard del baseline CXLII transformando "blocked sin acción"
+    # en "blocked con acción concreta + guideline + unblock criterion".
+    try:
+        from prostanet.domains.decisions.biomarker_workup_engine import (
+            build_biomarker_workup_bundle,
+        )
+        _biomarker_workup_bundle = build_biomarker_workup_bundle(patient)
+    except Exception as _bwexc:
+        logger.debug("Sprint5 biomarker_workup_bundle failed: %s", _bwexc)
+        _biomarker_workup_bundle = {
+            "available": False,
+            "reason": f"engine_unavailable: {type(_bwexc).__name__}",
+            "pending_actions_count": 0,
+            "any_pending": False,
+        }
+
     # ── EPIC GVP.E PROPAGATION FIX (FAUBOT CXLII) ────────────────────────
     # GodiBot adversarial validator reads gates from `compass.pivotal_contraindication_gates`
     # (see `prostanet/agents/godibot.py:392`). When raw_assessment.result_snapshot does NOT
@@ -6874,6 +6893,10 @@ def build_patient_profile_view_model(
         # Cierra el bug `gate_omitted:*` que disparaba false-positive blocked_hard cuando
         # raw_assessment.result_snapshot venía vacío pero los gates SÍ aplicaban al paciente.
         "pivotal_contraindication_gates": _compass_pivotal_gates_raw,
+        # SPRINT 5 (FAUBOT CXLIII): Biomarker workup checklist — convierte cada blocked_hard
+        # del baseline CXLII en acción concreta para el clínico (HRR + PSMA-PET pre-PARP/Lu-177).
+        # NCCN PROS-2 cat 1 + FDA VISION/PROfound labels.
+        "biomarker_workup": _biomarker_workup_bundle,
         "evidence_applicability": evidence_applicability,
         "advanced_panel_context": advanced_panel_context,
         "therapy_catalog_options": therapy_select_options(state=state, management_track=management_track, include_empty=True),
