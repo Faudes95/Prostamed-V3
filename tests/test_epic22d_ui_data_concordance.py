@@ -132,6 +132,18 @@ STATIC_NO_DATA_BINDING: set[str] = {
     "trajectory-kpi-velocity",
     "trajectory-kpi-nadir",
     "trajectory-kpi-alp-trend",
+    # EPIC 48 FAUBOT CXXXVI — Decision Loop Closure (narrative + override + outcomes)
+    # Data-binding fluye desde profile_view_raw.decision_narrative + outcome_linkage.
+    # Cards individuales son sub-renders del mismo bundle key (no requieren
+    # bundle keys independientes cada testid).
+    "decision-narrative",
+    "decision-narrative-body",
+    "decision-narrative-confidence-badge",
+    "decision-narrative-override-btn",
+    "decision-override-modal",
+    "decision-override-form",
+    "decision-override-submit-btn",
+    "outcome-linkage-panel",
 }
 
 

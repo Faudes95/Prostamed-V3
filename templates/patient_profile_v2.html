@@ -208,6 +208,314 @@
         {% set _tb_summary = _tumor_board.get('summary', {}) if _tumor_board else {} %}
         {% set _tb_options = _tumor_board.get('options', []) if _tumor_board else [] %}
 
+        {# ═══════════════════════════════════════════════════════════════ #}
+        {# EPIC 48.A (FAUBOT CXXXVI) — Decision Narrative (synthesis layer) #}
+        {# ═══════════════════════════════════════════════════════════════ #}
+        {# 1 párrafo coherente que sintetiza Compass + Twin OS + Fusion +  #}
+        {# gates + trajectory + ML predictions + GodiBot. Reemplaza la     #}
+        {# fragmentación cognitiva. Drill-down via cards individuales abajo.#}
+        {% set _narrative = profile_view_raw.get('decision_narrative', {}) if profile_view_raw else {} %}
+        {% if _narrative and _narrative.available %}
+        <section style="margin: var(--space-4) var(--space-6); padding: var(--space-5);
+                        background: linear-gradient(135deg, rgba(16,185,129,0.10), rgba(15,23,42,0.7));
+                        border: 1px solid rgba(16,185,129,0.32);
+                        border-left: 6px solid rgb(16,185,129);
+                        border-radius: 14px;"
+                 class="pm2-decision-narrative-panel"
+                 data-testid="decision-narrative"
+                 data-confidence="{{ '%.2f'|format(_narrative.confidence_score) }}"
+                 data-discordances-count="{{ _narrative.discordances|length if _narrative.discordances else 0 }}"
+                 aria-label="Narrativa unificada de decisión clínica">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:1rem;">
+                <div>
+                    <div style="font-size:.7rem; color:rgb(167,243,208); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">
+                        Recomendación clínica · EPIC 48 · FAUBOT CXXXVI
+                    </div>
+                    <h3 style="font-family:var(--pm-font-display); font-size:1.2rem; color:#f8fafc; margin:5px 0 0;">
+                        {{ _narrative.primary_recommendation.label }}
+                    </h3>
+                    <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.78rem;">
+                        Sintetizado desde {{ _narrative.evidence_chain|length }} fuentes clínicas ·
+                        confianza {{ '%.0f'|format(_narrative.confidence_score * 100) }}%
+                    </p>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <span data-testid="decision-narrative-confidence-badge"
+                          style="font-size:0.7rem; padding:4px 10px; border-radius:6px; font-weight:700;
+                                 background:{% if _narrative.confidence_score >= 0.75 %}rgba(34,197,94,0.25); color:rgb(74,222,128){% elif _narrative.confidence_score >= 0.5 %}rgba(251,191,36,0.25); color:rgb(252,211,77){% else %}rgba(239,68,68,0.25); color:rgb(252,165,165){% endif %};">
+                        {{ '%.0f'|format(_narrative.confidence_score * 100) }}% confianza
+                    </span>
+                    <button type="button"
+                            data-testid="decision-narrative-override-btn"
+                            onclick="document.querySelector('[data-modal-id=&quot;override-modal&quot;]')?.classList.toggle('hidden')"
+                            style="font-size:0.72rem; padding:5px 11px; border-radius:6px;
+                                   background:rgba(251,146,60,0.2); color:rgb(253,186,116);
+                                   border:1px solid rgba(251,146,60,0.4); font-weight:700; cursor:pointer;">
+                        ⚠ Override
+                    </button>
+                </div>
+            </div>
+
+            {# ── Narrative HTML (con drill-down anchors) ── #}
+            <div data-testid="decision-narrative-body"
+                 style="background:rgba(15,23,42,0.5); padding:1rem 1.25rem; border-radius:10px; color:rgb(226,232,240); line-height:1.6; font-size:.88rem;">
+                {{ _narrative.narrative_html | safe }}
+            </div>
+
+            {# ── Concordance + discordances mini-grid ── #}
+            <div style="margin-top:1rem; display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:8px;">
+                {% for key, value in _narrative.concordance_summary.items() %}
+                <div data-testid="decision-narrative-concordance-{{ key }}"
+                     style="background:rgba(15,23,42,0.4); padding:.5rem .625rem; border-radius:6px;
+                            border-left:3px solid {% if value %}rgb(34,197,94){% else %}rgb(239,68,68){% endif %};">
+                    <span style="font-size:0.68rem; color:rgb(148,163,184); text-transform:uppercase; letter-spacing:.04em; font-weight:600;">
+                        {{ key|replace('_', ' ')|title }}
+                    </span>
+                    <span style="float:right; font-size:0.88rem; color:{% if value %}rgb(74,222,128){% else %}rgb(252,165,165){% endif %};">
+                        {% if value %}✓{% else %}✗{% endif %}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+
+            {# ═══════════════════════════════════════════════════════════ #}
+            {# EPIC 48.C — Outcome Linkage (3/6/12m post-última decisión)  #}
+            {# ═══════════════════════════════════════════════════════════ #}
+            {% set _outcomes = profile_view_raw.get('outcome_linkage', {}) if profile_view_raw else {} %}
+            {% if _outcomes and _outcomes.available and _outcomes.summary.any_window_complete %}
+            <div data-testid="outcome-linkage-panel"
+                 data-best-window="{{ _outcomes.summary.best_response_window or '' }}"
+                 data-best-category="{{ _outcomes.summary.best_response_category or '' }}"
+                 style="margin-top:1rem; padding:.875rem 1rem; background:rgba(15,23,42,0.5);
+                        border-radius:10px; border-left:3px solid rgb(99,102,241);">
+                <div style="font-size:.7rem; color:rgb(199,210,254); font-weight:800; letter-spacing:.16em; text-transform:uppercase; margin-bottom:.5rem;">
+                    Outcomes post-decisión · EPIC 48.C
+                </div>
+                {% if _outcomes.decision_anchor %}
+                <div style="font-size:.78rem; color:rgb(203,213,225); margin-bottom:.75rem;">
+                    Anchor: <strong>{{ _outcomes.decision_anchor.label }}</strong>
+                    <span style="color:rgb(148,163,184);">({{ _outcomes.decision_anchor.decided_at[:10] }} · {{ _outcomes.decision_anchor.source }})</span>
+                </div>
+                {% endif %}
+
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:8px;">
+                    {% for window_key, window_label in [('outcomes_3m', '3 meses'), ('outcomes_6m', '6 meses'), ('outcomes_12m', '12 meses')] %}
+                    {% set w = _outcomes[window_key] %}
+                    <div data-testid="outcome-window-{{ window_key }}"
+                         style="background:rgba(15,23,42,0.6); padding:.625rem .75rem; border-radius:8px;
+                                border:1px solid {% if w.data_available %}rgba(99,102,241,0.4){% else %}rgba(148,163,184,0.2){% endif %};">
+                        <div style="font-size:.7rem; color:rgb(199,210,254); font-weight:700; margin-bottom:4px;">{{ window_label }}</div>
+                        {% if w.data_available %}
+                          {% if w.psa and w.psa.category %}
+                          <div style="font-size:.76rem; color:#f8fafc;">
+                            PSA: <strong>{{ w.psa.category|replace('_', ' ')|title }}</strong>
+                            {% if w.psa.change_pct is not none %}
+                              <span style="color:{% if w.psa.change_pct <= -10 %}rgb(74,222,128){% elif w.psa.change_pct > 25 %}rgb(252,165,165){% else %}rgb(252,211,77){% endif %};">
+                                ({% if w.psa.change_pct > 0 %}+{% endif %}{{ '%.1f'|format(w.psa.change_pct) }}%)
+                              </span>
+                            {% endif %}
+                          </div>
+                          {% endif %}
+                          {% if w.ecog and w.ecog.category %}
+                          <div style="font-size:.72rem; color:rgb(203,213,225); margin-top:2px;">
+                            ECOG: {{ w.ecog.category|replace('_', ' ')|title }}
+                            {% if w.ecog.delta is not none %}({% if w.ecog.delta > 0 %}+{% endif %}{{ w.ecog.delta }}){% endif %}
+                          </div>
+                          {% endif %}
+                          {% if w.alp and w.alp.change_pct is not none %}
+                          <div style="font-size:.7rem; color:rgb(148,163,184); margin-top:2px;">
+                            ALP: {% if w.alp.change_pct > 0 %}+{% endif %}{{ '%.1f'|format(w.alp.change_pct) }}%
+                          </div>
+                          {% endif %}
+                        {% else %}
+                          <div style="font-size:.72rem; color:rgb(148,163,184); font-style:italic;">Sin observaciones aún en esta ventana</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {% if _outcomes.summary.best_response_category %}
+                <div style="margin-top:.625rem; font-size:.74rem; color:rgb(167,243,208);">
+                    <strong>Mejor respuesta:</strong>
+                    {{ _outcomes.summary.best_response_category|replace('_', ' ')|title }}
+                    a {{ _outcomes.summary.best_response_window }}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </section>
+
+        {# ═══════════════════════════════════════════════════════════════ #}
+        {# EPIC 48.B (FAUBOT CXXXVI) — Override modal (hidden por default) #}
+        {# ═══════════════════════════════════════════════════════════════ #}
+        <div data-modal-id="override-modal"
+             data-testid="decision-override-modal"
+             class="hidden"
+             style="position:fixed; top:0; left:0; right:0; bottom:0; z-index:1000;
+                    background:rgba(0,0,0,0.75); display:none; align-items:center;
+                    justify-content:center; padding:2rem;">
+            <div style="background:rgb(15,23,42); border:2px solid rgb(251,146,60);
+                        border-radius:14px; padding:2rem; max-width:600px; width:100%;
+                        box-shadow:0 0 60px rgba(251,146,60,0.3);">
+                <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:1.25rem;">
+                    <div>
+                        <div style="font-size:.7rem; color:rgb(253,186,116); font-weight:800; letter-spacing:.16em; text-transform:uppercase;">
+                            ⚠ Override recomendación · EPIC 48.B
+                        </div>
+                        <h3 style="font-family:var(--pm-font-display); font-size:1.15rem; color:#f8fafc; margin:5px 0 0;">
+                            Capturar tu decisión clínica
+                        </h3>
+                    </div>
+                    <button type="button"
+                            onclick="document.querySelector('[data-modal-id=&quot;override-modal&quot;]').classList.add('hidden'); document.querySelector('[data-modal-id=&quot;override-modal&quot;]').style.display='none';"
+                            style="background:none; border:none; color:rgb(148,163,184); font-size:1.5rem; cursor:pointer; padding:0; line-height:1;">×</button>
+                </div>
+
+                {% if _narrative and _narrative.available %}
+                <div style="background:rgba(15,23,42,0.5); padding:.75rem 1rem; border-radius:8px;
+                            border-left:3px solid rgb(16,185,129); margin-bottom:1rem;">
+                    <div style="font-size:.7rem; color:rgb(167,243,208); font-weight:700;">Recomendación primaria:</div>
+                    <div style="color:#f8fafc; font-size:.92rem; margin-top:2px;">
+                        {{ _narrative.primary_recommendation.label }}
+                    </div>
+                </div>
+                {% endif %}
+
+                <form data-testid="decision-override-form"
+                      onsubmit="event.preventDefault(); window.__epic48SubmitOverride(this);">
+                    <label style="display:block; margin-bottom:.75rem;">
+                        <span style="font-size:.78rem; color:rgb(203,213,225); font-weight:600;">
+                            ¿Qué prescribiste (real)? <span style="color:rgb(252,165,165);">*</span>
+                        </span>
+                        <input type="text"
+                               name="override_label"
+                               required
+                               placeholder="ej. Docetaxel re-challenge 75mg/m2 q3w"
+                               style="display:block; width:100%; padding:.5rem .75rem; margin-top:4px;
+                                      background:rgba(15,23,42,0.8); border:1px solid rgba(148,163,184,0.3);
+                                      border-radius:6px; color:#f8fafc; font-size:.88rem;">
+                    </label>
+
+                    <fieldset style="margin-bottom:1rem; border:none; padding:0;">
+                        <legend style="font-size:.78rem; color:rgb(203,213,225); font-weight:600; margin-bottom:6px;">
+                            ¿Por qué override? (multi-select) <span style="color:rgb(252,165,165);">*</span>
+                        </legend>
+                        {% for reason_code, reason_label in [
+                            ('patient_preference', 'Preferencia del paciente'),
+                            ('access_barrier_local', 'Barrera de acceso local (drug/imaging)'),
+                            ('insurance_coverage', 'Cobertura de seguro insuficiente'),
+                            ('prior_toxicity_intolerance', 'Toxicidad previa intolerable'),
+                            ('comorbidity_contraindication', 'Comorbilidad contraindica'),
+                            ('drug_drug_interaction', 'Interacción medicamentosa relevante'),
+                            ('patient_age_frailty', 'Edad / fragilidad del paciente'),
+                            ('logistics_visit_burden', 'Carga logística (visitas IV, etc.)'),
+                            ('newer_evidence_post_engine', 'Evidencia nueva post-engine'),
+                            ('second_opinion_consensus', 'Tumor board / segunda opinión'),
+                            ('clinical_judgment_other', 'Juicio clínico (otro)'),
+                            ('patient_refusal', 'Paciente rehúsa la recomendación'),
+                            ('other_specify', 'Otro (especificar abajo)'),
+                        ] %}
+                        <label style="display:block; margin:4px 0; font-size:.84rem; color:rgb(226,232,240);">
+                            <input type="checkbox" name="override_reasons" value="{{ reason_code }}"
+                                   style="margin-right:6px; vertical-align:middle;">
+                            {{ reason_label }}
+                        </label>
+                        {% endfor %}
+                    </fieldset>
+
+                    <label style="display:block; margin-bottom:1rem;">
+                        <span style="font-size:.78rem; color:rgb(203,213,225); font-weight:600;">
+                            Texto libre (opcional, requerido si 'Otro'):
+                        </span>
+                        <textarea name="free_text" rows="2"
+                                  placeholder="Contexto adicional para audit trail..."
+                                  style="display:block; width:100%; padding:.5rem .75rem; margin-top:4px;
+                                         background:rgba(15,23,42,0.8); border:1px solid rgba(148,163,184,0.3);
+                                         border-radius:6px; color:#f8fafc; font-size:.84rem; resize:vertical;"></textarea>
+                    </label>
+
+                    <div style="display:flex; gap:8px; justify-content:flex-end;">
+                        <button type="button"
+                                onclick="document.querySelector('[data-modal-id=&quot;override-modal&quot;]').classList.add('hidden'); document.querySelector('[data-modal-id=&quot;override-modal&quot;]').style.display='none';"
+                                style="padding:.5rem 1rem; background:rgba(148,163,184,0.2);
+                                       color:rgb(203,213,225); border:none; border-radius:6px;
+                                       cursor:pointer; font-weight:600;">Cancelar</button>
+                        <button type="submit"
+                                data-testid="decision-override-submit-btn"
+                                style="padding:.5rem 1rem; background:rgb(251,146,60);
+                                       color:#0f172a; border:none; border-radius:6px;
+                                       cursor:pointer; font-weight:700;">
+                            Confirmar override + firmar audit trail
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        {# JS init for override modal toggle + submission #}
+        <script>
+            (function() {
+                const modal = document.querySelector('[data-modal-id="override-modal"]');
+                if (!modal) return;
+
+                // Show modal when override button clicked
+                const overrideBtn = document.querySelector('[data-testid="decision-narrative-override-btn"]');
+                if (overrideBtn) {
+                    overrideBtn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        modal.classList.remove('hidden');
+                        modal.style.display = 'flex';
+                    });
+                }
+
+                window.__epic48SubmitOverride = async function(form) {
+                    const formData = new FormData(form);
+                    const reasons = formData.getAll('override_reasons');
+                    if (reasons.length === 0) {
+                        alert('Selecciona al menos una razón de override.');
+                        return;
+                    }
+                    {% if _narrative and _narrative.available %}
+                    const narrative = {{ {
+                        'recommended_label': _narrative.primary_recommendation.label,
+                        'recommended_action': _narrative.primary_recommendation.action,
+                        'recommendation_source': _narrative.primary_recommendation.source_engine,
+                        'narrative_confidence': _narrative.confidence_score,
+                        'narrative_version': _narrative.narrative_version,
+                    } | tojson }};
+                    {% else %}
+                    const narrative = {};
+                    {% endif %}
+                    const payload = {
+                        nss: '{{ identity.nss }}',
+                        override_label: formData.get('override_label'),
+                        override_reasons: reasons,
+                        free_text: formData.get('free_text') || '',
+                        ...narrative,
+                    };
+                    try {
+                        const resp = await fetch('/api/decision-override', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(payload),
+                        });
+                        const data = await resp.json();
+                        if (data.success) {
+                            alert('Override capturado. Audit signature: ' + data.audit_signature.slice(0, 16) + '...');
+                            modal.classList.add('hidden');
+                            modal.style.display = 'none';
+                            form.reset();
+                        } else {
+                            alert('Error: ' + (data.error || 'unknown'));
+                        }
+                    } catch (e) {
+                        alert('Network error: ' + e.message);
+                    }
+                };
+            })();
+        </script>
+        {% endif %}
+
         {# ─────────────────────────────────────────────────────────────────
            EPIC 45 FAUBOT CXXX — Panel Integridad de Datos
            Renderiza solo si hay contradicciones detectadas O resoluciones

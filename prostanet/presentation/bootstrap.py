@@ -86,3 +86,18 @@ def register_modular_blueprints(app: Flask) -> None:
             f"trajectory_bp registration failed (continuing): "
             f"{type(exc).__name__}: {exc}"
         )
+
+    # EPIC 48.B FAUBOT CXXXVI — Decision Override workflow REST endpoints
+    # (POST /api/decision-override, GET por NSS, stats poblacionales).
+    # Foundation continuous learning loop + Latin recalibration analytics +
+    # SaMD §820.30 user feedback compliance.
+    try:
+        from prostanet.presentation.decision_override_routes import decision_override_bp
+        if "decision_override" not in app.blueprints:
+            app.register_blueprint(decision_override_bp)
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            f"decision_override_bp registration failed (continuing): "
+            f"{type(exc).__name__}: {exc}"
+        )

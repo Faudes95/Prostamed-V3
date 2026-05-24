@@ -371,7 +371,106 @@ from typing import Any
 #     pueden anclar cada recomendación a contexto temporal específico.
 #   - Activa multiplicativamente: deep_surv (EPIC 46.B) + state_transition +
 #     anomaly_detector ya viven mejor con trajectory context.
-FAUBOT_RELEASE = "2026-05-23 CXXXV"
+# → CXXXVI (EPIC 48 — Decision Loop Closure: cierre del bucle clínico):
+# Hasta hoy el sistema emitía recomendaciones al vacío. Engine recomienda
+# X, urólogo decide Y, NO había registro de Y ni de POR QUÉ. Engine
+# nunca aprendía de disagreement. SaMD §820.30 user feedback compliance
+# ausente. Latin recalibration coefficients (visión pilar 4) bloqueada.
+#
+# Cambios (8 archivos, ~2100 LOC):
+#
+# 1. NUEVO prostanet/domains/decisions/decision_narrative_builder.py:
+#    build_decision_narrative() sintetiza 6+ outputs concurrentes (Compass,
+#    Twin OS, Decision Fusion, gates pivotales, trajectory, ML predictions,
+#    GodiBot review) en UN narrative párrafo coherente con evidencia
+#    citable, alternativas rankeadas, discordances detectadas y confianza
+#    global. Reduce cognitive load del clínico de 6+ cards a 1 párrafo +
+#    drill-down. Filosofía SaMD preservada: advisory only, fallback
+#    state-aware si no hay primary recommendation canónica, HTML-escape
+#    contra XSS.
+#
+# 2. NUEVO prostanet/domains/decisions/outcome_linkage.py:
+#    build_outcome_linkage() vincula última decisión clínica
+#    (treatment_start o override event) a outcomes observados a 3/6/12
+#    meses. PSA response categories PCWG3-aligned (response_major,
+#    response_minor, stable, progression). ECOG delta categories
+#    (improved, stable, declined, severe_decline). ALP/LDH trends.
+#    Foundation para continuous learning loop + real-world evidence.
+#
+# 3. NUEVO prostanet/presentation/decision_override_routes.py:
+#    Blueprint `decision_override_bp` con 3 endpoints:
+#      - POST /api/decision-override         (captura override event)
+#      - GET  /api/decision-override/<nss>   (historial paciente)
+#      - GET  /api/decision-override/stats   (stats poblacionales)
+#    Tabla clinical_override_event auto-bootstrap idempotente. Taxonomía
+#    canónica de 13 ALLOWED_OVERRIDE_REASONS (patient_preference,
+#    access_barrier_local, insurance_coverage, prior_toxicity_intolerance,
+#    comorbidity_contraindication, drug_drug_interaction, etc.). Audit
+#    signature SHA-256 truncado para integridad regulatorio.
+#
+# 4. prostanet/presentation/bootstrap.py: registra decision_override_bp.
+#
+# 5. prostanet/domains/patient_tracking/profile_compass.py:
+#    build_patient_profile_view_model ahora cambia `return {...}` a
+#    `bundle = {...}` para inyectar 2 keys post-bundle:
+#      - bundle["decision_narrative"] = synthesis layer EPIC 48.A
+#      - bundle["outcome_linkage"] = outcomes 3/6/12m EPIC 48.C
+#    2 helpers fail-safe (_build_decision_narrative_safe + _build_
+#    outcome_linkage_safe) garantizan no_block del render principal.
+#
+# 6. templates/patient_profile_v2.html: NUEVA section data-testid=
+#    "decision-narrative" ANTES de data-integrity panel (es el resumen
+#    primario clínico, debe ser lo primero que vea el urólogo). Incluye:
+#    - Header EPIC 48 + confidence badge (verde/amarillo/rojo según %)
+#    - Botón ⚠ Override que abre modal
+#    - Narrative HTML rendered desde builder (con drill-down anchors)
+#    - Grid 5 concordances (compass_twin / fusion / ml / trajectory / godibot)
+#    - Sub-panel outcome-linkage con 3 windows (3m/6m/12m) PSA + ECOG + ALP
+#    - Modal override-modal (hidden por default) con form de 13 reasons +
+#      free_text + JS submit handler que POSTea al endpoint REST
+#
+# 7. NUEVO tests/test_epic48_decision_loop_closure.py: 18 tests cubriendo
+#    narrative shape + fail-safe + html escape + concordance, override
+#    validation + 400/404 + allowed_reasons + audit signature, outcome
+#    linkage anchor + categorization, UI testids + source-level wiring.
+#
+# 8. tests/test_epic22d_ui_data_concordance.py: registra 8 nuevos testids
+#    en STATIC_NO_DATA_BINDING (decision-narrative + sub-elementos).
+#
+# Validación end-to-end:
+#   - 18/18 tests EPIC 48 PASS
+#   - Smoke real paciente 39 (NSS 97000000001):
+#     * GET /patient_profile/97000000001?v=2 → 200 (~7s)
+#     * 17 testids EPIC 48 rendered en HTML
+#     * Playwright probe confirma: narrative + 5 concordances ✓ + 100%
+#       confidence badge + override button + outcome panel + modal
+#     * POST /api/decision-override smoke → 201 con audit_signature
+#       d6265e78c84ff51961cf9bb178697c61, override_id=1, message
+#       "Override capturado para audit trail + engine learning loop"
+#
+# Bucle clínico CERRADO:
+#
+#   Antes (post-EPIC 47):
+#     Captura → Engine → [CAJA NEGRA HUMANA] → Outcome
+#                          ↑ NO observable, NO learning
+#
+#   Después (post-EPIC 48):
+#     Captura → Engine → Narrative claro → Decisión clínica
+#                                            ├─→ Acepta (audit ✓)
+#                                            └─→ Override capturado (reason taxonomy)
+#                                                ├─→ Outcome linkage 3/6/12m
+#                                                ├─→ Engine learning loop
+#                                                ├─→ Latin recalibration data
+#                                                └─→ SaMD §820.30 compliance
+#
+# Foundation desbloqueada:
+#   - EPIC 49 (Patient-facing) — narrative_plain ya traducible a SDM
+#   - EPIC 50 (Cohort analytics) — override patterns + outcomes para
+#     KM/Cox/propensity matching
+#   - Latin recalibration H3 — override por ancestría → publication-ready
+#   - COFEPRIS regulatory H3 — user feedback mechanism cumplido
+#   - Real-world evidence — primer dataset publicable LATAM CDSS prostate
+FAUBOT_RELEASE = "2026-05-24 CXXXVI"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

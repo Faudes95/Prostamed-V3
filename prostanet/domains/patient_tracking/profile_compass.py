@@ -6673,7 +6673,10 @@ def build_patient_profile_view_model(
             }
         copilot_sections["therapeutic_fitness"] = therapeutic_fitness
     psa_forecast["status_label"] = normalize_ui_label(psa_forecast.get("status"), default="No disponible")
-    return {
+    # EPIC 48.A — Cambiamos de `return {...}` a `bundle = {...}` para poder
+    # inyectar decision_narrative al final (necesita acceso a todo el bundle
+    # ya construido: compass + twin + fusion + gates + trajectory + ml).
+    bundle = {
         "diagnostic_state": diagnostic_state,
         "management_track": management_track,
         "reconciled_state": state,
@@ -6966,6 +6969,59 @@ def build_patient_profile_view_model(
         # cards y EPIC 20 cards. Alertas con severity badges.
         "trajectory": _build_trajectory_snapshot_view_model(patient, state),
     }
+    # EPIC 48.A FAUBOT CXXXVI — Decision Narrative (synthesis layer).
+    # Inyecta DESPUÉS de construir el bundle completo para tener acceso a
+    # todos los engines simultáneamente (compass + twin + fusion + gates +
+    # trajectory + ml). Produce ONE narrative coherente que reduce cognitive
+    # load del clínico de 6+ cards a 1 párrafo + drill-downs.
+    bundle["decision_narrative"] = _build_decision_narrative_safe(bundle)
+    # EPIC 48.C FAUBOT CXXXVI — Outcome Linkage (decision → outcomes 3/6/12m).
+    # Vincula la última decisión clínica (treatment_start o override event)
+    # a outcomes observados. Foundation continuous learning loop + Latin
+    # recalibration analytics + SaMD post-market surveillance.
+    bundle["outcome_linkage"] = _build_outcome_linkage_safe(patient)
+    return bundle
+
+
+def _build_outcome_linkage_safe(patient: dict[str, Any]) -> dict[str, Any]:
+    """Fail-safe wrapper sobre build_outcome_linkage."""
+    try:
+        from prostanet.domains.decisions.outcome_linkage import build_outcome_linkage
+        return build_outcome_linkage(patient)
+    except Exception as exc:
+        return {
+            "available": False,
+            "reason": f"outcome_linkage_error: {type(exc).__name__}",
+            "decision_anchor": None,
+            "outcomes_3m": {"data_available": False},
+            "outcomes_6m": {"data_available": False},
+            "outcomes_12m": {"data_available": False},
+            "summary": {"any_window_complete": False},
+            "linkage_version": "epic48_v1.0",
+        }
+
+
+def _build_decision_narrative_safe(bundle: dict[str, Any]) -> dict[str, Any]:
+    """Fail-safe wrapper sobre build_decision_narrative. Si el sintetizador
+    falla por cualquier razón, el bundle render del perfil NO se bloquea."""
+    try:
+        from prostanet.domains.decisions.decision_narrative_builder import (
+            build_decision_narrative,
+        )
+        return build_decision_narrative(bundle)
+    except Exception as exc:
+        return {
+            "available": False,
+            "reason": f"narrative_builder_error: {type(exc).__name__}",
+            "narrative_html": "",
+            "narrative_plain": "",
+            "primary_recommendation": {},
+            "alternatives": [],
+            "evidence_chain": [],
+            "discordances": [],
+            "confidence_score": 0.0,
+            "narrative_version": "epic48_v1.0",
+        }
 
 
 def _build_trajectory_snapshot_view_model(
