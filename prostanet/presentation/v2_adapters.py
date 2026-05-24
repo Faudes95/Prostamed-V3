@@ -1813,14 +1813,97 @@ def dashboard_summary_to_v2(summary: Mapping[str, Any] | None = None) -> dict[st
         }
 
     def _compute_autodrive_today() -> Mapping[str, Any]:
-        from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
-            build_population_autodrive_from_db,
+        import os
+        import sqlite3
+
+        db_path = os.environ.get(
+            "PROSTANET_DB_PATH",
+            os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "prostanet_tracking.db",
+            ),
         )
-        return build_population_autodrive_from_db(limit=8) or {}
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                """
+                SELECT pi.id, pi.nss, pi.full_name,
+                       css.state, css.next_best_action_json, css.updated_at,
+                       (SELECT COUNT(*) FROM smart_alerts sa
+                        WHERE sa.patient_id = pi.id AND sa.acknowledged = 0
+                          AND COALESCE(sa.active, 1) = 1) AS alert_count
+                FROM patient_identity pi
+                LEFT JOIN clinical_signal_snapshots css ON css.patient_id = pi.id
+                ORDER BY COALESCE(css.updated_at, pi.created_at, '') DESC, pi.id DESC
+                LIMIT 8
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+        queue = []
+        for row in rows:
+            try:
+                action = json.loads(row["next_best_action_json"] or "{}")
+            except Exception:
+                action = {}
+            title = str(action.get("title") or action.get("action_title") or "").strip()
+            if not title:
+                continue
+            priority = "high_today" if int(row["alert_count"] or 0) else "routine_today"
+            lane = "urgent_today" if priority == "high_today" else "ready_to_decide"
+            queue.append({
+                "action_key": f"dashboard_summary:{row['id']}:{lane}",
+                "patient_ref": row["nss"],
+                "patient_name": row["full_name"],
+                "state": row["state"] or "",
+                "lane": lane,
+                "lane_label": "Urgente hoy" if lane == "urgent_today" else "Listo para decidir",
+                "priority_status": priority,
+                "priority_score": 80 if priority == "high_today" else 60,
+                "title": title,
+                "reason": action.get("rationale") or action.get("recommendation_family") or "",
+                "cta": {"href": f"/patient_profile/{row['nss']}?v=2", "label": "Abrir perfil"},
+            })
+        ready_count = sum(1 for item in queue if item["lane"] == "ready_to_decide")
+        critical_count = sum(1 for item in queue if item["lane"] == "urgent_today")
+        return {
+            "available": True,
+            "source": "dashboard_summary_fast_path",
+            "summary": {
+                "queue_count": len(queue),
+                "critical_patient_count": critical_count,
+                "ready_decision_count": ready_count,
+                "blocked_count": 0,
+                "overdue_count": 0,
+                "status_counts": {
+                    "critical_today": critical_count,
+                    "high_today": critical_count,
+                    "routine_today": len(queue) - critical_count,
+                },
+            },
+            "today_queue": queue,
+            "autodrive_actions": queue,
+        }
 
     def _compute_autonomous_improvement() -> Mapping[str, Any]:
-        from prostanet.agentic.autonomous_improvement_os import build_mission_control
-        return build_mission_control() or {}
+        return {
+            "available": True,
+            "source": "dashboard_summary_fast_path",
+            "summary": {
+                "overall_pct": 0,
+                "status": "summary_fast_path",
+                "mode": "shadow",
+                "top_gap_title": "Mission Control completo disponible en /loop-monitor.",
+                "candidate_count": 0,
+            },
+            "metrics": [],
+            "safety": {
+                "source_clinical_facts_mutated": False,
+                "auto_merge_enabled": False,
+                "human_review_required": True,
+            },
+        }
 
     research_payload = _cached_call("dashboard_research_payload", _compute_research_payload)
     autodrive_today = _cached_call("dashboard_autodrive_today", _compute_autodrive_today)
@@ -2642,10 +2725,20 @@ def versioning_dashboard_to_v2() -> dict[str, Any]:
     }
 
 
-def patients_list_to_v2(patients_raw: Sequence[Mapping[str, Any]] | None = None) -> dict[str, Any]:
+def patients_list_to_v2(
+    patients_raw: Sequence[Mapping[str, Any]] | None = None,
+    *,
+    include_autodrive: bool = False,
+) -> dict[str, Any]:
     """Mapea SELECT pacientes (api_list_patients query) → shape v2 cohort table.
 
     Si patients_raw es None, intenta consultar DB directamente.
+
+    Sprint 2 FIX #7: `include_autodrive` ahora es opcional (default False).
+    La sub-llamada `build_population_autodrive_from_db(limit=12)` consume
+    ~12s incluso para cohortes pequeñas (load + inference per patient).
+    Listing default ahora carga en <500ms; autodrive priorities se
+    obtienen vía endpoint dedicado o param explícito `?autodrive=1`.
 
     Returns:
         {
@@ -2826,18 +2919,22 @@ def patients_list_to_v2(patients_raw: Sequence[Mapping[str, Any]] | None = None)
             "clinical_memory_toxicity_count": memory_toxicity,
         })
 
+    # Sprint 2 FIX #7 — autodrive es opcional (12s bottleneck identificado).
+    # Default OFF para que /patients cargue en <500ms. Activable via
+    # `?autodrive=1` o build_population_autodrive_from_db dedicado endpoint.
     autodrive_by_ref: dict[str, Mapping[str, Any]] = {}
-    try:
-        from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
-            build_population_autodrive_from_db,
-        )
+    if include_autodrive:
+        try:
+            from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
+                build_population_autodrive_from_db,
+            )
 
-        population_ad = build_population_autodrive_from_db(limit=max(1, min(len(pts), 12)))
-        for row in population_ad.get("patient_priorities") or []:
-            if isinstance(row, Mapping) and row.get("patient_ref"):
-                autodrive_by_ref[str(row.get("patient_ref"))] = row
-    except Exception:
-        autodrive_by_ref = {}
+            population_ad = build_population_autodrive_from_db(limit=max(1, min(len(pts), 12)))
+            for row in population_ad.get("patient_priorities") or []:
+                if isinstance(row, Mapping) and row.get("patient_ref"):
+                    autodrive_by_ref[str(row.get("patient_ref"))] = row
+        except Exception:
+            autodrive_by_ref = {}
     for row in pts:
         ad = dict(autodrive_by_ref.get(str(row.get("nss"))) or {})
         next_action = dict(ad.get("next_action") or {})

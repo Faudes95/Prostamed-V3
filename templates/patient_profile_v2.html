@@ -696,11 +696,14 @@
 
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px;">
 
-                {# Card 1: Treatment Response prediction #}
+                {# Card 1: Treatment Response prediction — Sprint 2 FIX #6: extract real values #}
                 {% set _tr = _ml.models.get('treatment_response', {}) %}
                 {% if _tr.available %}
+                {% set _tr_pred = _tr.prediction or {} %}
+                {% set _tr_response_label_map = {'CR': 'Respuesta completa', 'PR': 'Respuesta parcial', 'SD': 'Enfermedad estable', 'PD': 'Progresión'} %}
                 <div data-testid="ml-card-treatment-response"
                      data-maturity="{{ _tr.maturity }}"
+                     data-best-response="{{ _tr_pred.best_expected_response or '' }}"
                      style="background: rgba(15,23,42,0.5); padding: 0.875rem 1rem; border-radius: 10px; border: 1px solid rgba(99,102,241,0.25);">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                         <span style="font-size:0.72rem; color:rgb(199,210,254); font-weight:700; text-transform:uppercase; letter-spacing:.08em;">
@@ -711,18 +714,30 @@
                             {{ _tr.maturity }}
                         </span>
                     </div>
-                    <div style="font-size:0.875rem; color:#f8fafc; font-weight:600;">
-                        {% if _tr.prediction.expected_response %}
-                            {{ _tr.prediction.expected_response }}
-                        {% elif _tr.prediction.predicted_response_score is defined %}
-                            Score predicho: {{ '%.2f'|format(_tr.prediction.predicted_response_score) }}
-                        {% else %}
-                            Predicción disponible
-                        {% endif %}
+                    {% if _tr_pred.best_expected_response %}
+                    <div style="font-size:0.95rem; color:#f8fafc; font-weight:700;">
+                        {{ _tr_response_label_map.get(_tr_pred.best_expected_response, _tr_pred.best_expected_response) }}
+                        <span style="font-size:0.7rem; color:rgb(148,163,184); font-weight:500;">({{ _tr_pred.best_expected_response }})</span>
                     </div>
-                    {% if _tr.prediction.confidence %}
-                    <div style="font-size:0.7rem; color:rgb(148,163,184); margin-top:4px;">
-                        Confianza: {{ '%.0f'|format(_tr.prediction.confidence * 100) }}%
+                    {% endif %}
+                    {% if _tr_pred.response_probabilities %}
+                    {% set _probs = _tr_pred.response_probabilities %}
+                    <div style="margin-top:6px; font-size:0.72rem; color:rgb(203,213,225); line-height:1.5;">
+                        {% for cat in ['CR','PR','SD','PD'] %}{% if _probs[cat] is defined %}<span style="display:inline-block; margin-right:8px;">{{ cat }}: <strong style="color:#f8fafc;">{{ '%.0f'|format(_probs[cat] * 100) }}%</strong></span>{% endif %}{% endfor %}
+                    </div>
+                    {% endif %}
+                    {% if _tr_pred.psa50_probability is defined %}
+                    <div style="font-size:0.74rem; color:rgb(167,243,208); margin-top:4px;">
+                        PSA-50 response: <strong>{{ '%.0f'|format(_tr_pred.psa50_probability * 100) }}%</strong>
+                        {% if _tr_pred.psa90_probability is defined %}· PSA-90: {{ '%.0f'|format(_tr_pred.psa90_probability * 100) }}%{% endif %}
+                    </div>
+                    {% endif %}
+                    {% if _tr_pred.rpfs_median_months is defined %}
+                    <div style="font-size:0.72rem; color:rgb(186,230,253); margin-top:4px;">
+                        rPFS mediana: <strong>{{ '%.1f'|format(_tr_pred.rpfs_median_months) }} m</strong>
+                        {% if _tr_pred.rpfs_ci_lower is defined and _tr_pred.rpfs_ci_upper is defined %}
+                        <span style="color:rgb(148,163,184);">(IC95% {{ '%.1f'|format(_tr_pred.rpfs_ci_lower) }}-{{ '%.1f'|format(_tr_pred.rpfs_ci_upper) }})</span>
+                        {% endif %}
                     </div>
                     {% endif %}
                     <div style="font-size:0.65rem; color:rgb(148,163,184); margin-top:6px;">
@@ -731,71 +746,108 @@
                 </div>
                 {% endif %}
 
-                {# Card 2: Survival (deep_surv) prediction #}
+                {# Card 2: Survival (deep_surv) — Sprint 2 FIX #6: extract from endpoints dict #}
                 {% set _sv = _ml.models.get('survival', {}) %}
                 {% if _sv.available %}
+                {% set _sv_pred = _sv.prediction or {} %}
+                {% set _sv_endpoints = _sv_pred.endpoints or {} %}
+                {% set _sv_os = _sv_endpoints.OS or {} %}
+                {% set _sv_rpfs = _sv_endpoints.rPFS or {} %}
+                {% set _sv_ttcrpc = _sv_endpoints.time_to_crpc or {} %}
                 <div data-testid="ml-card-survival"
                      data-maturity="{{ _sv.maturity }}"
+                     data-os-median="{{ _sv_os.median_months or '' }}"
                      style="background: rgba(15,23,42,0.5); padding: 0.875rem 1rem; border-radius: 10px; border: 1px solid rgba(99,102,241,0.25);">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                         <span style="font-size:0.72rem; color:rgb(199,210,254); font-weight:700; text-transform:uppercase; letter-spacing:.08em;">
-                            Pronóstico OS
+                            Pronóstico (deep_surv · 8 endpoints)
                         </span>
                         <span class="pm2-ml-maturity-badge" style="font-size:0.65rem; padding:2px 8px; border-radius:4px;
                             background: {% if _sv.maturity == 'advisory' %}rgba(34,197,94,0.2); color:rgb(74,222,128){% elif _sv.maturity == 'shadow' %}rgba(251,191,36,0.2); color:rgb(252,211,77){% else %}rgba(148,163,184,0.2); color:rgb(203,213,225){% endif %};">
                             {{ _sv.maturity }}
                         </span>
                     </div>
-                    <div style="font-size:0.875rem; color:#f8fafc; font-weight:600;">
-                        {% if _sv.prediction.median_survival_months is defined %}
-                            {{ '%.1f'|format(_sv.prediction.median_survival_months) }} meses (mediana OS)
-                        {% elif _sv.prediction.risk_score is defined %}
-                            Risk score: {{ '%.2f'|format(_sv.prediction.risk_score) }}
-                        {% else %}
-                            Estimación disponible
-                        {% endif %}
+                    {% if _sv_os.median_months is defined %}
+                    <div style="font-size:0.95rem; color:#f8fafc; font-weight:700;">
+                        OS mediana: {{ '%.1f'|format(_sv_os.median_months) }} <span style="font-size:0.7rem; font-weight:500; color:rgb(148,163,184);">meses</span>
                     </div>
-                    {% if _sv.prediction.ci_lower is defined and _sv.prediction.ci_upper is defined %}
-                    <div style="font-size:0.7rem; color:rgb(148,163,184); margin-top:4px;">
-                        IC 95%: {{ '%.1f'|format(_sv.prediction.ci_lower) }} – {{ '%.1f'|format(_sv.prediction.ci_upper) }} m
+                    {% if _sv_os.reference_median is defined and _sv_os.reference_trial %}
+                    <div style="font-size:0.7rem; color:rgb(148,163,184); margin-top:2px;">
+                        Ref. {{ _sv_os.reference_trial }}: {{ '%.0f'|format(_sv_os.reference_median) }}m
+                        {% set _delta = _sv_os.median_months - _sv_os.reference_median %}
+                        <span style="color:{% if _delta >= 0 %}rgb(74,222,128){% else %}rgb(252,165,165){% endif %};">
+                            ({% if _delta >= 0 %}+{% endif %}{{ '%.0f'|format(_delta) }}m)
+                        </span>
+                    </div>
+                    {% endif %}
+                    {% endif %}
+                    {% if _sv_rpfs.median_months is defined %}
+                    <div style="font-size:0.72rem; color:rgb(186,230,253); margin-top:4px;">
+                        rPFS: <strong>{{ '%.1f'|format(_sv_rpfs.median_months) }}m</strong>
+                        {% if _sv_rpfs.reference_trial %}· ref {{ _sv_rpfs.reference_trial }}{% endif %}
+                    </div>
+                    {% endif %}
+                    {% if _sv_ttcrpc.median_months is defined %}
+                    <div style="font-size:0.72rem; color:rgb(186,230,253); margin-top:2px;">
+                        Time-to-CRPC: <strong>{{ '%.1f'|format(_sv_ttcrpc.median_months) }}m</strong>
                     </div>
                     {% endif %}
                     <div style="font-size:0.65rem; color:rgb(148,163,184); margin-top:6px;">
-                        Modelo: <code>{{ _sv.model_version }}</code>
+                        Modelo: <code>{{ _sv.model_version }}</code> · {{ _sv_endpoints|length }} endpoints
                     </div>
                 </div>
                 {% endif %}
 
-                {# Card 3: Anomaly detector #}
+                {# Card 3: Anomaly detector — Sprint 2 FIX #6: extract is_anomalous + detected_anomalies #}
                 {% set _an = _ml.models.get('anomaly', {}) %}
                 {% if _an.available %}
+                {% set _an_pred = _an.prediction or {} %}
+                {% set _an_is_anom = _an_pred.is_anomalous or _an_pred.is_anomaly %}
+                {% set _an_detected = _an_pred.detected_anomalies or [] %}
                 <div data-testid="ml-card-anomaly"
                      data-maturity="{{ _an.maturity }}"
-                     data-anomaly-flagged="{{ '1' if (_an.prediction.is_anomaly or (_an.prediction.anomaly_score is defined and _an.prediction.anomaly_score > 0.7)) else '0' }}"
+                     data-anomaly-flagged="{{ '1' if _an_is_anom else '0' }}"
+                     data-anomaly-features="{{ _an_detected|length }}"
                      style="background: rgba(15,23,42,0.5); padding: 0.875rem 1rem; border-radius: 10px;
-                            border: 1px solid {% if _an.prediction.is_anomaly or (_an.prediction.anomaly_score is defined and _an.prediction.anomaly_score > 0.7) %}rgba(239,68,68,0.5){% else %}rgba(99,102,241,0.25){% endif %};">
+                            border: 1px solid {% if _an_is_anom %}rgba(239,68,68,0.5){% else %}rgba(99,102,241,0.25){% endif %};">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                         <span style="font-size:0.72rem; color:rgb(199,210,254); font-weight:700; text-transform:uppercase; letter-spacing:.08em;">
                             Presentación atípica
-                            {% if _an.prediction.is_anomaly or (_an.prediction.anomaly_score is defined and _an.prediction.anomaly_score > 0.7) %}
-                                <span style="color:rgb(252,165,165); font-weight:800;">⚠</span>
-                            {% endif %}
+                            {% if _an_is_anom %}<span style="color:rgb(252,165,165); font-weight:800;">⚠</span>{% endif %}
                         </span>
                         <span class="pm2-ml-maturity-badge" style="font-size:0.65rem; padding:2px 8px; border-radius:4px;
                             background: {% if _an.maturity == 'advisory' %}rgba(34,197,94,0.2); color:rgb(74,222,128){% elif _an.maturity == 'shadow' %}rgba(251,191,36,0.2); color:rgb(252,211,77){% else %}rgba(148,163,184,0.2); color:rgb(203,213,225){% endif %};">
                             {{ _an.maturity }}
                         </span>
                     </div>
-                    <div style="font-size:0.875rem; color:#f8fafc; font-weight:600;">
-                        {% if _an.prediction.anomaly_score is defined %}
-                            Score: {{ '%.2f'|format(_an.prediction.anomaly_score) }}
-                            {% if _an.prediction.anomaly_score > 0.7 %}
-                                · Considerar tumor board
-                            {% endif %}
-                        {% else %}
-                            Análisis disponible
+                    {% if _an_is_anom %}
+                    <div style="font-size:0.95rem; color:#f8fafc; font-weight:700;">
+                        ⚠ Anomalía detectada
+                        {% if _an_detected %}<span style="font-size:0.7rem; font-weight:500; color:rgb(252,211,77);">({{ _an_detected|length }} feature{{ 's' if _an_detected|length > 1 else '' }})</span>{% endif %}
+                    </div>
+                    {% else %}
+                    <div style="font-size:0.95rem; color:rgb(167,243,208); font-weight:700;">
+                        ✓ Patrón típico
+                    </div>
+                    {% endif %}
+                    {% if _an_detected %}
+                    <div style="margin-top:6px;">
+                        {% for anom in _an_detected[:3] %}
+                        <div style="font-size:0.7rem; color:rgb(203,213,225); line-height:1.4;">
+                            • <strong style="color:#f8fafc;">{{ anom.feature|upper }}</strong>
+                            <span style="color:{% if anom.severity == 'critical' %}rgb(252,165,165){% elif anom.severity == 'high' %}rgb(253,186,116){% else %}rgb(252,211,77){% endif %};">[{{ anom.severity }}]</span>
+                        </div>
+                        {% endfor %}
+                        {% if _an_detected|length > 3 %}
+                        <div style="font-size:0.65rem; color:rgb(148,163,184); margin-top:2px;">+{{ _an_detected|length - 3 }} más…</div>
                         {% endif %}
                     </div>
+                    {% endif %}
+                    {% if _an_is_anom %}
+                    <div style="font-size:0.7rem; color:rgb(186,230,253); margin-top:6px; font-style:italic;">
+                        → Considerar tumor board / segunda opinión
+                    </div>
+                    {% endif %}
                     <div style="font-size:0.65rem; color:rgb(148,163,184); margin-top:6px;">
                         Modelo: <code>{{ _an.model_version }}</code>
                     </div>

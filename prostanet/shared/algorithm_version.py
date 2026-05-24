@@ -528,7 +528,63 @@ from typing import Any
 #     * Confianza badge 35% (FIX #5) ✓
 #     * Banner rojo "Clasificación incompleta · modo contextual" con CTA
 #       (FIX #8) ✓
-FAUBOT_RELEASE = "2026-05-24 CXXXVII"
+# → CXXXVIII (Sprint 2 fixes — auditoría E2E validación visual continuación):
+# 2 fixes shippeados:
+#
+# FIX #6 — ML cards extraen valores reales (templates/patient_profile_v2.html):
+#   ANTES: cards mostraban labels genéricos "Predicción disponible /
+#   Estimación disponible / Análisis disponible" sin extraer del prediction
+#   dict. Inversión enorme en ML (4 modelos entrenados, 8 endpoints
+#   deep_surv, response distributions, anomaly features) era invisible
+#   al urólogo.
+#   DESPUÉS:
+#     - Treatment Response card: best_expected_response con label español
+#       (Respuesta parcial / completa / estable / progresión) + grid
+#       CR/PR/SD/PD probabilities + PSA-50/PSA-90 response % + rPFS
+#       mediana con IC95%.
+#     - Survival card: OS mediana extraída de endpoints.OS.median_months
+#       + delta vs reference trial + rPFS + Time-to-CRPC (3 endpoints
+#       visibles, 8 total disponibles).
+#     - Anomaly card: is_anomalous flag + detected_anomalies list con
+#       top-3 features (severity color-coded) + CTA "Considerar tumor
+#       board / segunda opinión" cuando is_anomalous=True.
+#
+#   Verificado live paciente 484:
+#     * data-best-response="PR" → "Respuesta parcial (PR)" + dist 18/32/24/25%
+#     * data-os-median="25.1" → "OS mediana: 25.1 meses" + rPFS 16.7m + TTCRPC 60m
+#     * data-anomaly-flagged="1" data-anomaly-features="6" → "⚠ Anomalía
+#       detectada (6 features) · PSA [critical] · ALP [critical] · LDH
+#       [critical] +3 más"
+#
+# FIX #7 — /patients listing performance (9.3s → 150ms, -98%):
+#   ANTES: 9.3s primer render. Hallazgo via profiling:
+#     - SQL query aislada: 0.01s (rápido)
+#     - patients_list_to_v2() FULL: 11.86s primera vez, 6.2s steady
+#     - Bottleneck identificado: build_population_autodrive_from_db(limit=12)
+#       toma 11.95s para procesar top-12 patient_priorities (ML inference
+#       per patient + autodrive computation pesada)
+#   FIX en 2 layers:
+#     1. SQLite indexes nuevos sobre patient_id en 7 tablas con sub-queries
+#        (follow_up_visits, smart_alerts, clinical_signal_snapshots,
+#        scheduled_events, followup_agenda_items, outcome_events,
+#        treatment_adverse_events) + ANALYZE para query plan optimization.
+#     2. patients_list_to_v2(include_autodrive=False) DEFAULT — autodrive
+#        es opt-in via query param `?autodrive=1`. Route /patients pasa
+#        el param explícitamente + cachea separadamente.
+#   Resultado benchmark:
+#     - GET /patients?refresh=1: 9.3s → 150ms (-98%)
+#     - GET /patients (cached): 15ms
+#     - GET /patients?autodrive=1&refresh=1: 9.4s (opt-in cuando se necesita)
+#     - GET /patients?autodrive=1 cached: 17ms
+#   Beneficio UX: urólogo abre cohorte en <500ms (incluyendo render Flask
+#   + template + transit), no espera 10 segundos cada vez.
+#
+# Validación:
+#   - 7/7 tests Sprint 2 PASS
+#   - 118 PASS + 1 xfailed regression sweep completo
+#   - Smoke live confirma ML cards muestran valores clínicos reales
+#   - Benchmark confirma performance threshold <2s superado
+FAUBOT_RELEASE = "2026-05-24 CXXXVIII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

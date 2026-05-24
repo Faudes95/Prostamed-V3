@@ -646,9 +646,16 @@ def patients_list():
             get_or_build_read_model,
         )
 
+        # Sprint 2 FIX #7 — autodrive es opt-in (12s bottleneck).
+        include_autodrive = _is_truthy_param(request.args.get("autodrive"))
+        cache_key = build_cache_key(
+            "patients_list_v2",
+            "with_autodrive" if include_autodrive else "default",
+        )
+
         v2_data = get_or_build_read_model(
-            build_cache_key("patients_list_v2", "default"),
-            patients_list_to_v2,
+            cache_key,
+            lambda: patients_list_to_v2(include_autodrive=include_autodrive),
             ttl_seconds=AGGREGATE_TTL_SECONDS,
             refresh=_is_truthy_param(request.args.get("refresh")),
         )
