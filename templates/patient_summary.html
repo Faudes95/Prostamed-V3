@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="{{ summary.lang or 'es' }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tu Resumen Clínico · ProstaNet</title>
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --border: rgba(99, 102, 241, 0.18);
+            --text: #1e293b;
+            --text-muted: rgb(100, 116, 139);
+            --accent: rgb(99, 102, 241);
+            --green: rgb(34, 197, 94);
+            --yellow: rgb(234, 179, 8);
+            --red: rgb(239, 68, 68);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            line-height: 1.6;
+            font-size: 17px;
+        }
+        .container { max-width: 720px; margin: 0 auto; padding: 24px; }
+        header {
+            background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(255,255,255,1));
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+        }
+        h1 { margin: 0 0 8px; font-size: 1.7rem; font-weight: 800; }
+        h2 { font-size: 1.25rem; margin-top: 24px; color: var(--accent); }
+        h3 { font-size: 1.05rem; margin-top: 16px; font-weight: 700; }
+        .meta { color: var(--text-muted); font-size: 0.85rem; }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 700;
+        }
+        .status-approved { background: rgba(34,197,94,0.15); color: rgb(21,128,61); }
+        .status-warnings { background: rgba(234,179,8,0.15); color: rgb(133,77,14); }
+        .status-blocked { background: rgba(239,68,68,0.15); color: rgb(153,27,27); }
+        .traffic-light {
+            display: inline-flex;
+            gap: 6px;
+            margin-left: 12px;
+            vertical-align: middle;
+        }
+        .traffic-dot {
+            width: 12px; height: 12px; border-radius: 50%;
+            display: inline-block; opacity: 0.4;
+        }
+        .traffic-dot.active { opacity: 1; box-shadow: 0 0 8px currentColor; }
+        .dot-green { background: var(--green); color: var(--green); }
+        .dot-yellow { background: var(--yellow); color: var(--yellow); }
+        .dot-red { background: var(--red); color: var(--red); }
+        .option-card {
+            border-left: 4px solid var(--accent);
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            background: rgba(99,102,241,0.04);
+            border-radius: 10px;
+        }
+        .option-rank {
+            font-size: 0.75rem;
+            font-weight: 800;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        .option-label {
+            font-size: 1.05rem; font-weight: 700; margin: 4px 0;
+        }
+        .tradeoff-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .tradeoff-row strong { color: var(--text); }
+        ul.next-steps { padding-left: 20px; margin: 12px 0; }
+        ul.next-steps li { margin-bottom: 10px; }
+        .footer {
+            text-align: center;
+            margin-top: 32px;
+            padding: 16px;
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            border-top: 1px solid var(--border);
+        }
+        .privacy-note {
+            background: rgba(99,102,241,0.06);
+            border-left: 3px solid var(--accent);
+            padding: 12px 14px;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1 data-testid="patient-summary-header">
+                Hola{% if summary.patient_name_short %}, {{ summary.patient_name_short }}{% endif %} 👋
+            </h1>
+            <p class="meta">Este es tu resumen clínico en lenguaje sencillo · ProstaNet · {{ faubot_release }}</p>
+        </header>
+
+        <div class="privacy-note" role="note">
+            <strong>Privacidad:</strong> Esta página muestra información médica resumida.
+            No se comparte con terceros. Tu equipo médico puede explicarte cualquier término.
+        </div>
+
+        <div class="card" data-testid="patient-summary-current-state">
+            <h2>📋 Tu situación clínica actual</h2>
+            {% if summary.current_stage_plain %}
+            <p><strong>Diagnóstico:</strong> {{ summary.current_stage_plain }}</p>
+            {% endif %}
+            {% if summary.validation_status %}
+            <p>
+                <strong>Validación del plan:</strong>
+                {% set vs = summary.validation_status.status_technical %}
+                <span class="status-badge {% if vs == 'approved' %}status-approved{% elif vs == 'warnings_only' %}status-warnings{% else %}status-blocked{% endif %}"
+                      data-testid="patient-validation-status">
+                    {{ summary.validation_status.status_plain or vs }}
+                </span>
+            </p>
+            {% endif %}
+        </div>
+
+        {% if summary.localized_risk and summary.localized_risk.applicable %}
+        <div class="card" data-testid="patient-summary-risk-group">
+            <h2>🎯 Grupo de riesgo</h2>
+            <p>Según la clasificación de la guía NCCN, tu grupo de riesgo es:
+                <strong>{{ summary.localized_risk.risk_group_plain or summary.localized_risk.risk_group }}</strong></p>
+            {% if summary.localized_risk.recommendation %}
+            <p>{{ summary.localized_risk.recommendation.rationale or '' }}</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if summary.workup and summary.workup.any_pending %}
+        <div class="card" data-testid="patient-summary-workup">
+            <h2>🧪 Pruebas que tu equipo recomienda</h2>
+            <p>{{ summary.workup.summary_plain }}</p>
+            <ul>
+                {% if summary.workup.hrr_pending %}
+                <li><strong>Panel genético HRR</strong> — análisis de sangre para detectar mutaciones BRCA1/BRCA2 y otros genes. Si las tienes, abre la opción de un tratamiento específico (PARP inhibidor) con buena evidencia.</li>
+                {% endif %}
+                {% if summary.workup.psma_pet_pending %}
+                <li><strong>Estudio PSMA-PET</strong> — imagen avanzada que ayuda a planear tratamientos dirigidos (incluyendo Lutecio-177 si aplica).</li>
+                {% endif %}
+                {% if summary.workup.msi_io_pathway %}
+                <li><strong>Inmunoterapia disponible</strong> — tus marcadores (MSI-H) sugieren que podrías beneficiarte de pembrolizumab. Pregunta a tu equipo.</li>
+                {% endif %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if summary.sdm_options %}
+        <div class="card" data-testid="patient-summary-sdm-options">
+            <h2>💊 Opciones de tratamiento (rankeadas por evidencia)</h2>
+            <p>Estas son las opciones que tu equipo médico considera. Revisa los puntos a favor y en contra antes de tu próxima consulta.</p>
+            {% for opt in summary.sdm_options %}
+            <div class="option-card" data-testid="patient-sdm-option-{{ opt.rank }}">
+                <div class="option-rank">Opción {{ opt.rank }}</div>
+                <div class="option-label">{{ opt.label_plain or opt.label_technical }}</div>
+                {% if opt.rationale_plain %}
+                <p style="margin: 6px 0; color: var(--text-muted); font-size: 0.92rem;">{{ opt.rationale_plain }}</p>
+                {% endif %}
+                {% if opt.tradeoffs %}
+                <div class="tradeoff-row">
+                    <span><strong>Tiempo para decidir:</strong>
+                        <span class="traffic-light">
+                            <span class="traffic-dot dot-green {% if opt.tradeoffs.time_to_decision == 'green' %}active{% endif %}"></span>
+                            <span class="traffic-dot dot-yellow {% if opt.tradeoffs.time_to_decision == 'yellow' %}active{% endif %}"></span>
+                            <span class="traffic-dot dot-red {% if opt.tradeoffs.time_to_decision == 'red' %}active{% endif %}"></span>
+                        </span>
+                    </span>
+                    <span><strong>Intensidad:</strong>
+                        <span class="traffic-light">
+                            <span class="traffic-dot dot-green {% if opt.tradeoffs.intensity == 'green' %}active{% endif %}"></span>
+                            <span class="traffic-dot dot-yellow {% if opt.tradeoffs.intensity == 'yellow' %}active{% endif %}"></span>
+                            <span class="traffic-dot dot-red {% if opt.tradeoffs.intensity == 'red' %}active{% endif %}"></span>
+                        </span>
+                    </span>
+                    <span><strong>Efectos secundarios:</strong>
+                        <span class="traffic-light">
+                            <span class="traffic-dot dot-green {% if opt.tradeoffs.side_effects == 'green' %}active{% endif %}"></span>
+                            <span class="traffic-dot dot-yellow {% if opt.tradeoffs.side_effects == 'yellow' %}active{% endif %}"></span>
+                            <span class="traffic-dot dot-red {% if opt.tradeoffs.side_effects == 'red' %}active{% endif %}"></span>
+                        </span>
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if summary.next_steps %}
+        <div class="card" data-testid="patient-summary-next-steps">
+            <h2>📅 Próximos pasos sugeridos</h2>
+            <ul class="next-steps">
+                {% for step in summary.next_steps %}
+                <li>{{ step }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <div class="footer">
+            <p>Este resumen es complementario a tu consulta médica · No reemplaza la opinión de tu equipo · ProstaNet {{ faubot_release }}</p>
+        </div>
+    </div>
+</body>
+</html>

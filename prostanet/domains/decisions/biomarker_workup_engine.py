@@ -58,6 +58,16 @@ LU177_CANDIDATES = (
 """Lu-177-PSMA-617 (Pluvicto) — VISION trial regimen."""
 
 
+# EPIC 49+.C (FAUBOT CXLVII) — HX3 IO pathway
+PEMBROLIZUMAB_TUMOR_AGNOSTIC_TERMS = (
+    "pembrolizumab", "pembro", "keytruda",
+)
+"""Pembrolizumab tumor-agnostic FDA-approved (MSI-H/dMMR + Lynch syndrome)."""
+
+LYNCH_SYNDROME_GENES = ("MLH1", "MSH2", "MSH6", "PMS2", "EPCAM")
+"""Lynch syndrome germline genes — multi-cancer surveillance trigger."""
+
+
 # ── Reglas de elegibilidad (basadas en NCCN v5.2026 + EAU 2026) ──────
 
 
@@ -359,6 +369,111 @@ def _build_psma_pet_workup_target(
     }
 
 
+# ── EPIC 49+.C (HX3) — MSI-H + Lynch IO pathway ─────────────────────
+
+
+def _is_msi_high_or_dmmr(patient: dict[str, Any]) -> tuple[bool, str]:
+    """Detecta MSI-H / dMMR (mismatch repair deficient) — eligibilidad
+    pembrolizumab tumor-agnostic FDA approval."""
+    baseline = patient.get("baseline") or {}
+    biomarkers = patient.get("biomarkers") or {}
+
+    # Direct fields
+    msi_status = str(baseline.get("msi_status")
+                      or biomarkers.get("msi_status") or "").lower()
+    if msi_status in ("msi_high", "msi-h", "high", "msi_high_dmmr"):
+        return (True, f"msi_status={msi_status}")
+
+    # MMR IHC pattern (e.g., MSH2 loss + MSH6 loss)
+    mmr_ihc = str(baseline.get("mmr_ihc")
+                   or biomarkers.get("mmr_ihc") or "").lower()
+    if "loss" in mmr_ihc and any(g in mmr_ihc for g in
+                                  ("mlh1", "msh2", "msh6", "pms2")):
+        return (True, f"mmr_ihc={mmr_ihc[:60]}")
+
+    # HRR status string may include MSI mention
+    hrr_status = str(baseline.get("hrr_status") or "").lower()
+    if "msi_high" in hrr_status or "msi-h" in hrr_status:
+        return (True, "msi_high_in_hrr_status")
+
+    # TMB high (>10 mut/Mb) is FDA-approved tumor-agnostic indication
+    tmb = baseline.get("tmb_mut_mb") or biomarkers.get("tmb_mut_mb")
+    try:
+        if tmb is not None and float(tmb) >= 10:
+            return (True, f"tmb_high_{tmb}_mut_mb")
+    except (ValueError, TypeError):
+        pass
+
+    return (False, "")
+
+
+def _is_lynch_syndrome(patient: dict[str, Any]) -> tuple[bool, str]:
+    """Detecta Lynch syndrome germline confirmado (cascada familiar trigger)."""
+    baseline = patient.get("baseline") or {}
+    biomarkers = patient.get("biomarkers") or {}
+
+    lynch_flag = baseline.get("lynch_syndrome_confirmed") or \
+                  biomarkers.get("lynch_syndrome_confirmed")
+    if lynch_flag:
+        gene = str(baseline.get("lynch_germline_gene") or "MMR")
+        return (True, f"lynch_confirmed_{gene}")
+
+    # Check germline gene mentioned in hrr_status
+    hrr_status = str(baseline.get("hrr_status") or "").upper()
+    for gene in LYNCH_SYNDROME_GENES:
+        if gene in hrr_status and any(kw in hrr_status.lower()
+                                       for kw in ("germinal", "germline", "pathogenic")):
+            return (True, f"lynch_gene_{gene}_germinal")
+
+    return (False, "")
+
+
+def _build_msi_io_workup_target(
+    patient: dict[str, Any],
+) -> dict[str, Any]:
+    """Construye target IO (pembrolizumab) si MSI-H detectado."""
+    is_msi, msi_reason = _is_msi_high_or_dmmr(patient)
+    is_lynch, lynch_reason = _is_lynch_syndrome(patient)
+
+    if not is_msi:
+        return {
+            "biomarker": "msi_dmmr_status",
+            "candidate_for": "Pembrolizumab tumor-agnostic FDA approval (MSI-H/dMMR)",
+            "candidate": False,
+            "candidate_reason": "msi_status_negative_or_unknown",
+            "documented": True,
+            "pending": False,
+            "guideline_anchor": "FDA approval 2017 + NCCN PROS-3",
+        }
+
+    return {
+        "biomarker": "io_pembrolizumab_pathway",
+        "candidate_for": "Pembrolizumab 200mg c/3sem (TPR robusta MSI-H mCRPC)",
+        "candidate": True,
+        "candidate_reason": msi_reason,
+        "documented": True,
+        "pending": False,
+        "guideline_anchor": (
+            "FDA tumor-agnostic 2017 MSI-H/dMMR; NCCN PROS-3; "
+            "KEYNOTE-158 (NCT02628067)"
+        ),
+        "action_label": "Considerar pembrolizumab + baseline autoimmune screen",
+        "action_detail": (
+            "MSI-H/dMMR detectado → pembrolizumab 200mg IV c/3sem indicado. "
+            "Baseline autoimmune screen: TSH, cortisol matutino, anti-TPO, ANA. "
+            "Si autoimmune activa: ver gate `autoimmune_disease_io_contraindication`."
+        ),
+        "lynch_syndrome_detected": is_lynch,
+        "lynch_cascade_required": is_lynch,
+        "lynch_cascade_action": (
+            f"Cascada familiar URGENTE ({lynch_reason}): hermanos/hijos para "
+            f"colonoscopia, endoscopia, US-TV mujeres. "
+            f"Screening multi-cáncer paciente: colonoscopia anual."
+        ) if is_lynch else None,
+        "evidence_tag": "FDA_tumor_agnostic_pembrolizumab_2017_KEYNOTE158",
+    }
+
+
 # ── Public API ────────────────────────────────────────────────────────
 
 
@@ -401,6 +516,8 @@ def build_biomarker_workup_bundle(patient_record: dict[str, Any]) -> dict[str, A
 
         hrr_workup = _build_hrr_workup_target(patient_record, parp_candidate, parp_reason)
         psma_pet_workup = _build_psma_pet_workup_target(patient_record, lu177_candidate, lu177_reason)
+        # EPIC 49+.C (HX3): MSI-H/dMMR + Lynch IO pathway
+        msi_io_workup = _build_msi_io_workup_target(patient_record)
 
         pending = sum(1 for t in (hrr_workup, psma_pet_workup) if t.get("pending"))
 
@@ -434,6 +551,7 @@ def build_biomarker_workup_bundle(patient_record: dict[str, Any]) -> dict[str, A
             "lu177_candidate_reason": lu177_reason,
             "hrr_workup": hrr_workup,
             "psma_pet_workup": psma_pet_workup,
+            "msi_io_workup": msi_io_workup,  # EPIC 49+.C HX3
             "pending_actions_count": pending,
             "any_pending": pending > 0,
             "clinical_summary": summary,

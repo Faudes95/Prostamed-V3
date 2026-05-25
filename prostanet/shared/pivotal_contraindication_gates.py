@@ -1288,6 +1288,212 @@ def detect_lvef_decline_for_apalutamide(payload: dict) -> dict | None:
     }
 
 
+# ────────────────────────────────────────────────────────────────────────
+# EPIC 49+.A (FAUBOT CXLVII) — HX1 6 nuevos gates comorbilidades raras
+# Detectados como ausentes en validación EXTENSA okarbo 10 casos:
+# casos I (hemofilia A), J (ACV reciente + DOAC), M (PTI plaquetas),
+# N (LES corticoides altos + IO), Q (demencia avanzada consent capacity).
+# Sin estos gates el clínico recibe recomendación que OMITE contraindicaciones
+# clínicamente obvias. Evidence: ASH 2024 (hemofilia + cancer tx), AHA 2024
+# (ACV recurrence post-castration), NCCN PROS-3 (autoimmune+IO), AGS 2025
+# (geriatric oncology consent), FDA labels ARSI (CYP3A4 DOAC interactions).
+# ────────────────────────────────────────────────────────────────────────
+
+
+def detect_bleeding_risk_hemophilia(payload: dict) -> dict | None:
+    """Gate 31 (HX1.1): bleeding risk en hemofilia A/B para procedimientos."""
+    factor_viii = _safe_float(payload.get("factor_viii_level_pct"))
+    factor_ix = _safe_float(payload.get("factor_ix_level_pct"))
+    hemophilia_flag = any(
+        "hemofilia" in str(c).lower() or "hemophilia" in str(c).lower()
+        for c in (payload.get("comorbidities") or [])
+    )
+    if not hemophilia_flag and (factor_viii is None or factor_viii > 50) and \
+       (factor_ix is None or factor_ix > 50):
+        return None
+    severe = (factor_viii is not None and factor_viii < 30) or \
+             (factor_ix is not None and factor_ix < 30)
+    return {
+        "code": "bleeding_risk_hemophilia",
+        "triggered": True,
+        "severity": "hard_block" if severe else "soft_warning",
+        "affected_regimen_codes": ["transrectal_biopsy", "rp_surgical",
+                                    "brachytherapy", "psma_pet_biopsy"],
+        "affected_keywords": ["biopsy", "surgery", "brachytherapy"],
+        "message": (
+            f"Hemofilia documentada (factor VIII={factor_viii}%, factor IX={factor_ix}%). "
+            f"Coordinar con hematología ANTES de biopsia, RP o braquiterapia. "
+            f"Considerar transperineal vs transrectal por menor riesgo sangrado."
+        ),
+        "evidence_tag": "ASH_2024_hemophilia_cancer_management",
+        "trial_refs": ["ASH_guideline_2024_factor_replacement_periop"],
+    }
+
+
+def detect_recent_stroke_90_days(payload: dict) -> dict | None:
+    """Gate 32 (HX1.2): ACV reciente (<90d) + considerando ADT/ARSI."""
+    stroke_recent = _truthy_token(payload.get("stroke_recent_90d"))
+    stroke_date = str(payload.get("stroke_date") or "").strip()
+    comorbidities_blob = " ".join(
+        str(c).lower() for c in (payload.get("comorbidities") or [])
+    )
+    has_recent_stroke = stroke_recent or (
+        "acv" in comorbidities_blob and "2026" in comorbidities_blob
+    )
+    if not has_recent_stroke:
+        return None
+    return {
+        "code": "recent_stroke_90d",
+        "triggered": True,
+        "severity": "soft_warning",
+        "affected_regimen_codes": ["adt_initiation", "arsi_initiation"],
+        "affected_keywords": ["adt", "arsi", "androgen_deprivation"],
+        "message": (
+            "ACV reciente (<90 días) — ADT/ARSI aumentan riesgo recurrencia "
+            "cardiovascular (AHA Scientific Statement 2024). Coordinar con "
+            "neurología/cardiología antes de iniciar; preferir darolutamida "
+            "(menor riesgo eventos cardiovasculares vs apalutamida/enzalutamida)."
+        ),
+        "evidence_tag": "AHA_2024_ADT_CV_recurrence",
+        "trial_refs": ["AHA_Scientific_Statement_2024"],
+    }
+
+
+def detect_doac_arsi_cyp3a4_interaction(payload: dict) -> dict | None:
+    """Gate 33 (HX1.3): DOAC (apixaban/rivaroxaban) + abiraterona/enzalutamida CYP3A4 DDI."""
+    meds_blob = " ".join(
+        str(m).lower() for m in (payload.get("current_medications") or [])
+    )
+    has_doac = any(d in meds_blob for d in
+                   ("apixaban", "rivaroxaban", "dabigatran", "edoxaban"))
+    has_strong_cyp3a4_arsi = any(d in meds_blob for d in
+                                  ("abiraterona", "abiraterone", "enzalutamida",
+                                   "enzalutamide"))
+    if not (has_doac and has_strong_cyp3a4_arsi):
+        return None
+    return {
+        "code": "doac_arsi_cyp3a4_ddi",
+        "triggered": True,
+        "severity": "hard_block",
+        "affected_regimen_codes": ["abiraterone", "enzalutamide"],
+        "affected_keywords": ["abi", "enza", "doac", "apixaban"],
+        "message": (
+            "DDI documentado: DOAC (apixaban/rivaroxaban) + ARSI inductores "
+            "CYP3A4 (enzalutamida) reducen niveles DOAC ↑ riesgo trombótico. "
+            "Abiraterona también inhibe CYP3A4 ↑ niveles DOAC ↑ riesgo sangrado. "
+            "Considerar warfarina con INR target O switch ARSI a darolutamida "
+            "(mínimo DDI con DOAC)."
+        ),
+        "evidence_tag": "FDA_label_DDI_DOAC_CYP3A4_ARSI_2024",
+        "trial_refs": ["FDA_label_enzalutamide_2024", "FDA_label_abiraterone_2024"],
+    }
+
+
+def detect_thrombocytopenia_procedure_risk(payload: dict) -> dict | None:
+    """Gate 34 (HX1.4): plaquetas <100k para procedimientos (RP, biopsy, brachy)."""
+    platelets = _safe_float(payload.get("platelet_count"))
+    if platelets is None or platelets >= 100:
+        return None
+    pti_chronic = any(
+        "pti" in str(c).lower() or "trombocitopenia" in str(c).lower()
+        or "itp" in str(c).lower()
+        for c in (payload.get("comorbidities") or [])
+    )
+    severe = platelets < 50
+    return {
+        "code": "thrombocytopenia_procedure_risk",
+        "triggered": True,
+        "severity": "hard_block" if severe else "soft_warning",
+        "affected_regimen_codes": ["transrectal_biopsy", "rp_surgical",
+                                    "brachytherapy", "transperineal_biopsy"],
+        "affected_keywords": ["biopsy", "surgery", "brachytherapy"],
+        "message": (
+            f"Plaquetas {platelets:.0f}k (umbral procedimiento 100k; severo <50k). "
+            f"{'PTI crónica documentada — ' if pti_chronic else ''}"
+            f"Coordinar con hematología pre-procedimiento; considerar HIFU focal "
+            f"o terapia sistémica ADT-only en lugar de cirugía/braquiterapia."
+        ),
+        "evidence_tag": "ASH_2024_thrombocytopenia_procedure_threshold",
+        "trial_refs": ["ASH_guideline_2024_periop_platelet_threshold"],
+    }
+
+
+def detect_autoimmune_disease_io_contraindication(payload: dict) -> dict | None:
+    """Gate 35 (HX1.5): enfermedad autoinmune activa + considerando pembrolizumab/IO."""
+    comorbidities_blob = " ".join(
+        str(c).lower() for c in (payload.get("comorbidities") or [])
+    )
+    # Tokenize blob por separators comunes (espacio, _) para match exacto
+    blob_tokens = set()
+    for sep in (" ", "_", "-", ",", "."):
+        for tok in comorbidities_blob.split(sep):
+            blob_tokens.add(tok.strip())
+    autoimmune_terms = {
+        "les", "lupus", "ar", "artritis", "rheumatoid",
+        "psoriasis", "ibd", "colitis", "crohn", "vasculitis",
+        "esclerosis", "sjogren", "tiroiditis_hashimoto", "hashimoto",
+    }
+    has_autoimmune = bool(blob_tokens & autoimmune_terms) or any(
+        t in comorbidities_blob for t in ("lupus", "rheumatoid", "vasculitis")
+    )
+    msi_high = str(payload.get("msi_status") or "").lower() in (
+        "msi_high", "msi-h", "high", "msi_high_dmmr"
+    )
+    if not (has_autoimmune and msi_high):
+        return None
+    return {
+        "code": "autoimmune_disease_io_contraindication",
+        "triggered": True,
+        "severity": "hard_block",
+        "affected_regimen_codes": ["pembrolizumab", "nivolumab", "ipilimumab"],
+        "affected_keywords": ["pembro", "nivolumab", "io", "checkpoint"],
+        "message": (
+            "Enfermedad autoinmune activa documentada + MSI-H (candidato "
+            "pembrolizumab). Inmunoterapia checkpoint puede precipitar brote "
+            "autoinmune severo (irAE grado 3-4). Coordinar con reumatología; "
+            "evaluar riesgo/beneficio individual; considerar tx alternativa "
+            "(cabazitaxel si post-taxano disponible)."
+        ),
+        "evidence_tag": "NCCN_PROS3_2024_autoimmune_IO_caution",
+        "trial_refs": ["FDA_label_pembrolizumab_2024_autoimmune"],
+    }
+
+
+def detect_dementia_informed_consent_capacity(payload: dict) -> dict | None:
+    """Gate 36 (HX1.6): demencia moderada-avanzada + decisión tx agresivo."""
+    comorbidities_blob = " ".join(
+        str(c).lower() for c in (payload.get("comorbidities") or [])
+    )
+    has_dementia = any(d in comorbidities_blob for d in
+                       ("demencia", "alzheimer", "dementia"))
+    cdr_score = _safe_float(payload.get("cdr_score"))
+    mmse = _safe_float(payload.get("mmse_score"))
+    moca = _safe_float(payload.get("moca_score"))
+    severe = (cdr_score is not None and cdr_score >= 2) or \
+             (mmse is not None and mmse < 18) or \
+             (moca is not None and moca < 17)
+    if not has_dementia and not severe:
+        return None
+    return {
+        "code": "dementia_informed_consent_capacity",
+        "triggered": True,
+        "severity": "hard_block" if severe else "soft_warning",
+        "affected_regimen_codes": ["arsi_initiation", "chemotherapy", "lu_177",
+                                    "parp_inhibitor"],
+        "affected_keywords": ["arsi", "chemo", "lu177", "parp"],
+        "message": (
+            f"Demencia moderada-avanzada documentada "
+            f"(CDR={cdr_score}, MMSE={mmse}, MoCA={moca}). "
+            f"Paciente puede carecer de capacidad para consentimiento informado. "
+            f"Documentar evaluación de capacidad por psiquiatría/geriatría + "
+            f"representante legal autorizado. Considerar goals-of-care: tratamientos "
+            f"agresivos pueden no alinear con expectativa de vida + calidad."
+        ),
+        "evidence_tag": "AGS_2025_geriatric_oncology_consent",
+        "trial_refs": ["AGS_Beers_Criteria_2025", "ASCO_2024_dementia_cancer_care"],
+    }
+
+
 # ── Orquestación ────────────────────────────────────────────────────────
 
 
@@ -1325,6 +1531,13 @@ _DETECTORS = (
     # Faubot 2026-04-25 (VII) — gates 17-18: ARPI cardiotoxicidad (en YAML)
     detect_qtc_prolongation_grade3_for_enzalutamide,
     detect_lvef_decline_for_apalutamide,
+    # EPIC 49+.A (FAUBOT CXLVII) — HX1 6 nuevos gates comorbilidades raras
+    detect_bleeding_risk_hemophilia,
+    detect_recent_stroke_90_days,
+    detect_doac_arsi_cyp3a4_interaction,
+    detect_thrombocytopenia_procedure_risk,
+    detect_autoimmune_disease_io_contraindication,
+    detect_dementia_informed_consent_capacity,
 )
 
 

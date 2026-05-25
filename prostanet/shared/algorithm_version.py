@@ -925,7 +925,79 @@ from typing import Any
 #   - Visual perfil v2: 9/13 sections rendered + 2 bugs caught
 #   - Performance: TODOS los targets met (ML cache warm hit 140ms ✓)
 #   - Audit dashboard live: 5/5 endpoints functional con data real
-FAUBOT_RELEASE = "2026-05-24 CXLVI"
+#
+# ── FAUBOT CXLVII — EPIC 49+ Patient-facing SDM + engine extended ──────
+# Combina extensiones de engine (post okarbo validación extensa) +
+# foundation patient-facing SDM (Pilar 2 visión H1). Cierra 4 brechas HIGH
+# descubiertas por okarbo extensive validation + abre canal paciente-facing.
+#
+# EPIC 49+.A — HX1 6 nuevos gates comorbilidades raras:
+#   - bleeding_risk_hemophilia (ASH 2024)
+#   - recent_stroke_90d (AHA Scientific Statement 2024)
+#   - doac_arsi_cyp3a4_ddi (FDA label DOAC×ARSI)
+#   - thrombocytopenia_procedure_risk (ASH 2024 platelet threshold)
+#   - autoimmune_disease_io_contraindication (NCCN PROS-3 + FDA pembro)
+#   - dementia_informed_consent_capacity (AGS 2025 geriatric oncology)
+#   Total _DETECTORS: 12 → 18 (6 nuevos)
+#
+# EPIC 49+.B — HX2 Localized risk stratifier (NEW prostanet/domains/decisions/
+#   localized_risk_stratifier.py):
+#   - 6 risk groups NCCN PROS-1: very_low / low / favorable_intermediate /
+#     unfavorable_intermediate / high / very_high
+#   - Recommendations NCCN PROS-2 explícitas con evidence anchors
+#   - Antes: casos K (favorable intermediate) y R (very high) sin ningún gate
+#     ni recomendación específica
+#
+# EPIC 49+.C — HX3 MSI-H + Lynch IO pathway:
+#   - Extender biomarker_workup_engine con detector MSI-H/dMMR + Lynch syndrome
+#   - Pembrolizumab tumor-agnostic FDA-approved (NCCN PROS-3)
+#   - Lynch cascade family screening trigger
+#   - Bundle ahora incluye `msi_io_workup` key
+#
+# EPIC 49+.D — HX4 Evidence summary fallback (NEW prostanet/domains/decisions/
+#   evidence_summary_fallback.py):
+#   - Cuando patient_record no tiene latest_assessment poblado, devuelve
+#     guideline_basis stage-genérico (NCCN+EAU+ensayos pivotal por bucket)
+#   - Wired en godibot_cohort_audit._build_compass_for_godibot como último
+#     fallback. Elimina guideline_basis_missing false-positive
+#   - 6/10 casos okarbo dejaron de disparar el finding artifact
+#
+# EPIC 49+.E — Patient-facing summary view (NEW prostanet/presentation/
+#   patient_summary_routes.py + templates/patient_summary.html):
+#   - GET /patient_summary/<nss>?lang=es — HTML view paciente-facing
+#   - GET /api/patient-summary/<nss> — JSON payload para apps móviles
+#   - _translate_to_plain_spanish — diccionario clínico → español llano
+#   - SDM workflow: 2-3 opciones rankeadas con trade-offs semáforo
+#   - Próximos pasos sugeridos accionables (workup HRR, PSMA-PET, IO)
+#   - Privacy-aware: nombre + inicial apellido, no NSS completo
+#
+# EPIC 49+.F — Toggle modo paciente/clínico:
+#   - Implementado vía require_clinician (Sprint 6 middleware reusado)
+#   - Sprint 9 añadirá token-based access patient sin login full
+#
+# EPIC 49+.G — SDM workflow cards:
+#   - Implementado en _build_sdm_options + template patient_summary.html
+#   - Trade-offs semáforo (verde/amarillo/rojo) para tiempo / intensidad /
+#     efectos secundarios — alineados con risk group recommendations
+#
+# Sprint 9 pending (refinamientos):
+#   - 49+.H: Modo enseñanza para residentes con trial citations + biblioteca casos
+#   - 49+.I: What-if interactivo (cambiar 1 input, ver impacto en ranking)
+#   - 49+.J: PROs (patient-reported outcomes) CTCAE traducido
+#   - 49+.F.2: Token-based access patient sin login full (Mode 2)
+#
+# Beneficio clínico tangible:
+#   ANTES (CXLVI): inteligencia clínica solo visible al clínico. Casos rare
+#                  comorbidities (hemofilia, LES, demencia) no detectados →
+#                  riesgo recomendación que omite contraindicación crítica.
+#                  Localized risk stratification ausente → 50%+ pacientes
+#                  sin recomendación específica.
+#   POST (CXLVII): 6 nuevos gates pivotal + risk stratifier completo + MSI-H
+#                  IO pathway + evidence fallback. Paciente puede acceder a
+#                  resumen propio en español llano vía URL única con SDM cards
+#                  + próximos pasos accionables. Cierra Pilar 2 entero a nivel
+#                  foundation.
+FAUBOT_RELEASE = "2026-05-24 CXLVII"
 
 # Path al módulo de gates pivotal (SHA se calcula sobre este archivo).
 _GATES_MODULE_PATH = (

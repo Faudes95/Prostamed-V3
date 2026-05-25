@@ -121,6 +121,20 @@ def register_modular_blueprints(app: Flask) -> None:
             f"{type(exc).__name__}: {exc}"
         )
 
+    # EPIC 49+.E (FAUBOT CXLVII) — Patient-facing summary view + REST endpoint
+    # Pilar 2 visión H1: traer inteligencia clínica al paciente en lenguaje llano
+    # para participación SDM informada.
+    try:
+        from prostanet.presentation.patient_summary_routes import patient_summary_bp
+        if "patient_summary" not in app.blueprints:
+            app.register_blueprint(patient_summary_bp)
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            f"patient_summary_bp registration failed (continuing): "
+            f"{type(exc).__name__}: {exc}"
+        )
+
     # Sprint 7.A (FAUBOT CXLV) — Audit Analytics Dashboard
     # Cohort-level analytics: breakdown × estadio × etnia × ECOG × HRR doc,
     # blocked_hard SLA buckets, override rate por clínico, endpoint usage,

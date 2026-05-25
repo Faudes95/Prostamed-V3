@@ -160,6 +160,20 @@ def _build_compass_for_godibot(patient_record: dict[str, Any]) -> dict[str, Any]
                 if rat:
                     compass["rationale"] = str(rat)[:1200]
 
+        # EPIC 49+.D (FAUBOT CXLVII) — HX4 fix: si después de los checks
+        # de result_snapshot el compass aún no tiene evidence_summary (paciente
+        # nuevo sin latest_assessment poblado), usar fallback genérico por
+        # estadio. Evita false-positive `guideline_basis_missing` que afectaba
+        # 6/10 casos en validación EXTENSA okarbo.
+        if "evidence_summary" not in compass or not compass.get("evidence_summary", {}).get("guideline_basis"):
+            try:
+                from prostanet.domains.decisions.evidence_summary_fallback import (
+                    build_evidence_summary_fallback,
+                )
+                compass["evidence_summary"] = build_evidence_summary_fallback(patient_record)
+            except Exception as exc:
+                logger.debug("evidence_summary_fallback failed: %s", exc)
+
         return compass
     except Exception as exc:
         logger.debug("CLI _build_compass_for_godibot lazy-eval failed: %s", exc)
