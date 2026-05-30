@@ -405,35 +405,29 @@ def _sidecar_module_available(python_bin: str | None, module_name: str) -> bool:
         return False
 
 
+@voice_bp.route("/api/stt/health", methods=["GET"])
 @voice_bp.route("/api/voice/stt/health", methods=["GET"])
 @require_clinical_session(scope="phi:read", redirect_to_login=False)
 def voice_stt_health():
-    # EPIC 30.6 (GodiBot G73 HIGH) — surfaceer LocalSTTEngine.diagnose() en su
-    # totalidad para que la UI banner muestre `mode`, `blockers`,
-    # `in_process_faster_whisper`, `stt_disable_env` que EPIC 24a expuso
-    # explícitamente. Pre-EPIC30 solo se retornaba un subset y la UI quedaba
-    # con microcopy genérico "audio cifrado · STT local pendiente".
-    from prostanet.voice.stt_engine import LocalSTTEngine
+    # Fast-by-default guardrail: summary avoids sidecar subprocess probes unless
+    # explicitly requested with deep=1 or scope=full.
+    from prostanet.voice.stt_health import build_stt_health
 
-    stt = LocalSTTEngine()
-    diag = stt.diagnose()
-    sidecar_python = stt._sidecar_python()
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    deep = str(request.args.get("deep") or "").strip().lower() in {"1", "true", "yes", "full"}
+    payload = build_stt_health(scope=scope, deep=deep)
     return jsonify(
         {
-            "success": True,
-            "local_first": True,
-            # Legacy keys preservados para backward compat
-            "local_stt_available": diag.get("stt_available", False),
-            "model": stt.model_size,
-            "device": stt.device,
-            "sidecar_available": bool(sidecar_python),
+            **payload,
+            # Legacy keys preservados para backward compat.
+            "local_stt_available": payload.get("stt_available", False),
+            "sidecar_available": payload.get("mode") in {"sidecar", "sidecar_unverified"},
             "checks": {
-                "faster_whisper": _sidecar_module_available(sidecar_python, "faster_whisper"),
-                "pyav": _sidecar_module_available(sidecar_python, "av"),
-                "ctranslate2": _sidecar_module_available(sidecar_python, "ctranslate2"),
+                "faster_whisper": "faster_whisper" not in (payload.get("missing_dependencies") or []),
+                "pyav": None if payload.get("scope") == "summary" else None,
+                "ctranslate2": None if payload.get("scope") == "summary" else None,
             },
-            # EPIC 30.6 — full diagnostic for UI banner
-            "diagnostic": diag,
+            "diagnostic": payload.get("stt_health", {}).get("diagnostic", payload.get("stt_health", {}).get("summary", {})),
         }
     )
 

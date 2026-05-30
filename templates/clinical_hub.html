@@ -1040,6 +1040,10 @@
                 hubEmptyState.classList.toggle('hidden', Boolean(domainId));
             }
         };
+        const canonicalModuleId = (stateName) => {
+            const stateText = String(stateName || '').trim();
+            return stateText === 'screening' ? 'diagnostic_workup' : (stateText || 'diagnostic_workup');
+        };
 
         async function runClassifier() {
             syncMetastaticHiddenFields();
@@ -1120,7 +1124,8 @@
                 return;
             }
 
-            const targetDomain = moduleToDomain[data.state] || null;
+            const moduleState = canonicalModuleId(data.state);
+            const targetDomain = moduleToDomain[moduleState] || null;
             lastDerivedMetastaticContext = data.derived_metastatic_context || null;
             updateBoneDistributionSummary(lastDerivedMetastaticContext);
 
@@ -1175,6 +1180,10 @@
                     `prostanet:clinical-hub-prefill:${data.state}`,
                     JSON.stringify(payload),
                 );
+                window.sessionStorage.setItem(
+                    `prostanet:clinical-hub-prefill:${moduleState}`,
+                    JSON.stringify(payload),
+                );
             } catch (error) {
                 console.warn('No se pudo persistir el prefill del hub clínico.', error);
             }
@@ -1187,7 +1196,7 @@
                 ${derivedMeta}
                 ${derivedSummary}
                 ${progressionGate}
-                <a href="/wizard/${data.state}?prefill_source=clinical_hub" class="pn-btn pn-btn-primary mt-4 inline-flex">Ir al asistente clínico</a>
+                <a href="/wizard/${moduleState}?prefill_source=clinical_hub" class="pn-btn pn-btn-primary mt-4 inline-flex">Ir al asistente clínico</a>
             `;
             setActiveDomain(targetDomain);
             window.clinicalPresentation?.normalizeDocument();

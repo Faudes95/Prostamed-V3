@@ -57,16 +57,16 @@ def test_g3217_stage_center_kpi_hero_values_realistic():
 
 
 def test_g3218_stage_center_returns_loop_vectors_live():
-    """H.G3218 — stage_center_to_v2 retorna loop_vectors_live con 8 vectores."""
+    """H.G3218 — stage_center_to_v2 retorna loop_vectors_live con los 8 vectores base."""
     from prostanet.presentation.v2_adapters import stage_center_to_v2
     data = stage_center_to_v2()
     assert "loop_vectors_live" in data
-    assert len(data["loop_vectors_live"]) == 8
+    assert len(data["loop_vectors_live"]) >= 8
     expected_vectors = {"clinical_coverage", "ui_ergonomy", "backend_integrity",
                         "clinical_evidence", "recommendation_accuracy",
                         "fda_samd_compliance", "performance_a11y", "status_reporting"}
     actual_keys = {v["key"] for v in data["loop_vectors_live"]}
-    assert actual_keys == expected_vectors
+    assert expected_vectors <= actual_keys
 
 
 def test_g3219_loop_vectors_have_status_score():

@@ -132,6 +132,16 @@
         Therapy catalog
         <span class="pm2-badge-mini pm2-badge-mini--muted">{{ therapy_count }}</span>
     </a>
+    <a href="/population/treatment-value-registry" class="pm2-sidebar-link {% if active == 'treatment_value' %}is-active{% endif %}">
+        <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 19V5m0 14h16M8 16V9m4 7V7m4 9v-5"/></svg>
+        Registro valor
+        <span class="pm2-badge-mini pm2-badge-mini--muted">12/24</span>
+    </a>
+    <a href="/population/epidemiology-command-center" class="pm2-sidebar-link {% if active == 'epidemiology_command' %}is-active{% endif %}">
+        <svg class="pm2-sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 19V5m0 14h16M7 15l3-3 3 2 4-6"/></svg>
+        Gran tablero
+        <span class="pm2-badge-mini pm2-badge-mini--muted">V2</span>
+    </a>
     {# Faubot LXXXV — Iteración #2: Trial eligibility dashboard link #}
     {% if identity_nss %}
     <a href="/trials-eligibility/{{ identity_nss }}" class="pm2-sidebar-link {% if active == 'trials_eligibility' %}is-active{% endif %}">

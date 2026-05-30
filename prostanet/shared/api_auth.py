@@ -150,6 +150,15 @@ def require_clinician(func: Callable) -> Callable:
         import os
         from flask import g
 
+        try:
+            from prostanet.shared.security_helpers import is_clinical_auth_enabled
+            if not is_clinical_auth_enabled():
+                g.api_auth_user_id = None
+                g.api_auth_user_role = "auth_dormant"
+                return func(*args, **kwargs)
+        except Exception:
+            pass
+
         # Test bypass
         if os.environ.get("PROSTANET_API_AUTH_BYPASS") == "1":
             try:

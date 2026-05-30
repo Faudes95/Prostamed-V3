@@ -92,30 +92,55 @@ class ElicitationItem:
 @dataclass(frozen=True)
 class ElicitationResult:
     priority_weights: dict[str, float] = field(default_factory=dict)
-    items_evaluated: int = 0
+    items_evaluated: list[str] = field(default_factory=list)
+    ranked_priorities: list[str] = field(default_factory=list)
     unresolved_items: list[str] = field(default_factory=list)
     normalized_answers: dict[str, str] = field(default_factory=dict)
+    narrative: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "priority_weights": dict(self.priority_weights),
+            "items_evaluated": list(self.items_evaluated),
+            "ranked_priorities": list(self.ranked_priorities),
+            "unresolved_items": list(self.unresolved_items),
+            "normalized_answers": dict(self.normalized_answers),
+            "narrative": self.narrative,
+        }
 
 
-def build_elicitation_form() -> dict[str, Any]:
-    return {
-        "likert_levels": list(LIKERT_LEVELS),
-        "likert_labels": dict(LIKERT_LABELS_ES),
-        "items": [dict(item) for item in ELICITATION_ITEMS],
-    }
+def build_elicitation_form() -> list[dict[str, Any]]:
+    return [
+        {
+            "item_key": item["item_key"],
+            "prompt_es": item["prompt_es"],
+            "option_a_label": item["option_a_label"],
+            "option_b_label": item["option_b_label"],
+            "levels": list(LIKERT_LEVELS),
+            "level_labels_es": dict(LIKERT_LABELS_ES),
+        }
+        for item in ELICITATION_ITEMS
+    ]
 
 
 def _normalize_answer(raw: Any) -> str:
-    text = str(raw or "").strip().lower()
+    text = str(raw or "").strip().lower().replace(" ", "_").replace("-", "_")
     numeric_aliases = {
+        "1": "strongly_prefer_a",
+        "2": "prefer_a",
+        "3": "neutral",
+        "4": "prefer_b",
+        "5": "strongly_prefer_b",
         "-2": "strongly_prefer_a",
         "-1": "prefer_a",
         "0": "neutral",
-        "1": "prefer_b",
-        "2": "strongly_prefer_b",
     }
     if text in numeric_aliases:
         return numeric_aliases[text]
+    if text in {"a", "aa"}:
+        return "strongly_prefer_a"
+    if text in {"b", "bb"}:
+        return "strongly_prefer_b"
     return text if text in LIKERT_LEVELS else ""
 
 
@@ -123,7 +148,7 @@ def score_elicitation(answers: dict[str, Any]) -> ElicitationResult:
     weights_accum: dict[str, float] = {}
     normalized_answers: dict[str, str] = {}
     unresolved: list[str] = []
-    items_evaluated = 0
+    items_evaluated: list[str] = []
     for item in ELICITATION_ITEMS:
         key = str(item["item_key"])
         answer = _normalize_answer((answers or {}).get(key))
@@ -138,12 +163,26 @@ def score_elicitation(answers: dict[str, Any]) -> ElicitationResult:
         elif numeric > 0:
             priority = str(item["priority_map_b"])
             weights_accum[priority] = weights_accum.get(priority, 0.0) + abs(numeric) * float(item["weight_b"])
-        items_evaluated += 1
+        items_evaluated.append(key)
+    max_weight = max(weights_accum.values(), default=0.0)
+    if max_weight > 0:
+        weights_accum = {
+            priority: round(weight / max_weight, 3)
+            for priority, weight in weights_accum.items()
+        }
+    ranked = sorted(weights_accum.keys(), key=lambda priority: (-weights_accum[priority], priority))
+    narrative_parts: list[str] = []
+    if ranked:
+        narrative_parts.append("Prioridades dominantes elicidadas: " + ", ".join(ranked[:3]) + ".")
+    if unresolved:
+        narrative_parts.append(f"{len(unresolved)} ítem(s) sin respuesta; complete para afinar la matriz SDM.")
     return ElicitationResult(
         priority_weights=weights_accum,
         items_evaluated=items_evaluated,
+        ranked_priorities=ranked,
         unresolved_items=unresolved,
         normalized_answers=normalized_answers,
+        narrative=" ".join(narrative_parts).strip(),
     )
 
 
@@ -153,15 +192,24 @@ def merge_elicited_with_free_text(
 ) -> list[str]:
     if isinstance(elicitation, ElicitationResult):
         priority_weights = elicitation.priority_weights
+        ranked_priorities = list(elicitation.ranked_priorities)
     else:
         priority_weights = dict(elicitation.get("priority_weights") or {})
-    ordered = [
-        key
-        for key, _ in sorted(priority_weights.items(), key=lambda item: (-float(item[1]), item[0]))
-        if key
-    ]
-    seen = set(ordered)
+        ranked_priorities = list(elicitation.get("ranked_priorities") or [])
+    if not ranked_priorities:
+        ranked_priorities = [
+            key
+            for key, _ in sorted(priority_weights.items(), key=lambda item: (-float(item[1]), item[0]))
+            if key
+        ]
+    ordered: list[str] = []
+    seen: set[str] = set()
     for priority in free_text_priorities or []:
+        text = str(priority or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            ordered.append(text)
+    for priority in ranked_priorities:
         text = str(priority or "").strip()
         if text and text not in seen:
             seen.add(text)

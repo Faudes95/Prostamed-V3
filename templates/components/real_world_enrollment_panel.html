@@ -1,0 +1,24 @@
+<section class="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4" data-real-world-enrollment-panel data-testid="real-world-enrollment-panel">
+    <input type="hidden" name="is_real_patient" value="0">
+    <input type="hidden" name="consent_signed" value="0" data-real-world-consent-flag>
+    <input type="hidden" name="real_world_enrollment_mode" value="prospective_v2">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+            <p class="text-xs uppercase tracking-[0.22em] text-amber-200">Muestra real prospectiva</p>
+            <p class="mt-2 text-sm text-slate-200">Por defecto este registro queda como QA/sintético. Active este bloque sólo si el paciente real firmará consentimiento y existe actor clínico responsable.</p>
+        </div>
+        <label class="inline-flex items-center gap-3 rounded-full border border-amber-300/30 bg-slate-950/60 px-4 py-2 text-sm text-amber-100">
+            <input type="checkbox" name="is_real_patient" value="1" class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-amber-300" data-real-world-toggle>
+            Paciente real
+        </label>
+    </div>
+    <div class="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(180px,0.45fr)]">
+        <label class="text-sm text-slate-300">
+            Actor clínico que verifica consentimiento
+            <input type="number" min="1" step="1" name="actor_user_id" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white disabled:opacity-50" placeholder="ID del clínico" data-real-world-actor disabled>
+        </label>
+        <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-300" data-real-world-status>
+            Modo QA/sintético: no contará para evidencia hospitalaria.
+        </div>
+    </div>
+</section>

@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro tratamiento-valor · ProstaMed v2</title>
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='treatment_value_registry_v2') }}">
+    <style>
+    .tv-band { padding: var(--space-5) var(--space-6); }
+    .tv-control-grid { display:grid; grid-template-columns:repeat(5,minmax(150px,1fr)); gap:12px; align-items:end; }
+    .tv-control label { display:block; font-size:.68rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.08em; margin-bottom:5px; }
+    .tv-control select, .tv-control input {
+        width:100%; min-height:38px; border:1px solid var(--border-default); border-radius:8px;
+        background:rgba(15,23,42,.86); color:#e2e8f0; padding:7px 9px; font-size:.82rem;
+    }
+    .tv-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; }
+    .tv-table-wrap { border:1px solid var(--border-default); border-radius:8px; overflow:auto; background:rgba(15,23,42,.78); }
+    .tv-table { width:100%; min-width:1120px; border-collapse:collapse; font-size:.78rem; }
+    .tv-table th {
+        position:sticky; top:0; z-index:1; background:rgba(2,6,23,.94); color:var(--pn-text-muted);
+        text-align:left; padding:10px 12px; border-bottom:1px solid var(--border-default);
+        font-size:.64rem; text-transform:uppercase; letter-spacing:.08em;
+    }
+    .tv-table td { padding:10px 12px; border-bottom:1px solid var(--border-subtle); color:#e2e8f0; vertical-align:top; }
+    .tv-code { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.72rem; color:#cffafe; }
+    .tv-muted { color:var(--pn-text-muted); font-size:.72rem; line-height:1.4; }
+    .tv-pill { display:inline-flex; align-items:center; min-height:22px; padding:2px 7px; border-radius:999px; border:1px solid var(--border-default); background:rgba(15,23,42,.8); color:#dbeafe; font-size:.66rem; margin:2px 4px 2px 0; }
+    .tv-pill--good { color:#bbf7d0; border-color:rgba(52,211,153,.45); }
+    .tv-pill--warn { color:#fde68a; border-color:rgba(251,191,36,.45); }
+    .tv-pill--bad { color:#fecaca; border-color:rgba(248,113,113,.45); }
+    .tv-split { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(320px,.85fr); gap:14px; }
+    @media (max-width: 980px) {
+        .tv-control-grid { grid-template-columns:1fr 1fr; }
+        .tv-split { grid-template-columns:1fr; }
+    }
+    @media (max-width: 640px) {
+        .tv-band { padding:var(--space-4); }
+        .tv-control-grid { grid-template-columns:1fr; }
+        .pm2-header-tools { width:100%; justify-content:stretch; }
+        .pm2-header-tools .pm2-btn { flex:1; justify-content:center; }
+    }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+{% from "components/pm2_sidebar.html" import pm2_sidebar %}
+
+<div class="pm2-app-shell">
+    {{ pm2_sidebar(active='treatment_value') }}
+
+    <header class="pm2-app-header">
+        <div>
+            <div class="pm2-kicker">PROSTAMED · EPIDEMIOLOGIA V2</div>
+            <div style="font-family:var(--pm-font-display);font-size:1.05rem;color:#f8fbff;font-weight:700;">Registro longitudinal tratamiento-valor</div>
+        </div>
+        <div class="pm2-header-tools">
+            <a class="pm2-btn pm2-btn--ghost" href="/dashboard">Tablero</a>
+            <a class="pm2-btn pm2-btn--primary" href="/api/analytics/treatment-value-registry?weeks=12,24&include_rows=1">JSON auditable</a>
+        </div>
+    </header>
+
+    <main id="main-content" class="pm2-app-main" tabindex="-1" data-testid="population-treatment-value-v2">
+        <section class="tv-band" style="padding-bottom:0">
+            <div class="pm2-kicker">COHORTES · 12/24 SEMANAS</div>
+            <h1 style="font-family:var(--pm-font-display);font-size:2rem;font-weight:700;color:#f8fbff;margin:6px 0 4px">Registro comparativo por molecula y regimen</h1>
+            <p style="color:var(--pn-text-muted);font-size:.92rem;max-width:92ch;line-height:1.5;margin:0">
+                Vista poblacional de solo lectura: PSA50/PSA90, cambio ECOG, discontinuacion, toxicidad, retraso de referencia y costo por respuesta, con ajuste por estado basal.
+            </p>
+        </section>
+
+        <section class="tv-band">
+            <article class="pm2-tab-card" data-testid="tv-cohort-builder-v2">
+                <div class="pm2-tab-card-head">
+                    <h3>Cohort Builder V2</h3>
+                    <span id="tvStatus" class="pm2-head-meta">Cargando registro...</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <form id="tvFilters" class="tv-control-grid">
+                        <div class="tv-control">
+                            <label for="tvWindow">Ventana</label>
+                            <select id="tvWindow" data-testid="tv-filter-window">
+                                <option value="24">24 semanas</option>
+                                <option value="12">12 semanas</option>
+                            </select>
+                        </div>
+                        <div class="tv-control">
+                            <label for="tvMolecule">Molecula ARPI</label>
+                            <select id="tvMolecule" data-testid="tv-filter-molecule"><option value="">Todas</option></select>
+                        </div>
+                        <div class="tv-control">
+                            <label for="tvRegimen">Regimen</label>
+                            <select id="tvRegimen" data-testid="tv-filter-regimen"><option value="">Todos</option></select>
+                        </div>
+                        <div class="tv-control">
+                            <label for="tvClinicalState">Estado clinico</label>
+                            <select id="tvClinicalState" data-testid="tv-filter-clinical-state"><option value="">Todos</option></select>
+                        </div>
+                        <div class="tv-control">
+                            <label for="tvLineContext">Linea</label>
+                            <select id="tvLineContext" data-testid="tv-filter-line-context"><option value="">Todas</option></select>
+                        </div>
+                        <div class="tv-control">
+                            <label for="tvPsaBand">APE basal</label>
+                            <select id="tvPsaBand" data-testid="tv-filter-psa-band"><option value="">Todos</option></select>
+                        </div>
+                        <div class="tv-control">
+                            <label for="tvEcogBand">ECOG basal</label>
+                            <select id="tvEcogBand" data-testid="tv-filter-ecog-band"><option value="">Todos</option></select>
+                        </div>
+                        <div class="tv-control">
+                            <label for="tvAgeBand">Edad basal</label>
+                            <select id="tvAgeBand" data-testid="tv-filter-age-band"><option value="">Todas</option></select>
+                        </div>
+                        <div class="tv-control">
+                            <label for="tvMetastaticVolume">Carga metastasica</label>
+                            <select id="tvMetastaticVolume" data-testid="tv-filter-metastatic-volume"><option value="">Todas</option></select>
+                        </div>
+                        <div class="tv-control">
+                            <label for="tvMetric">Metrica</label>
+                            <select id="tvMetric" data-testid="tv-filter-metric"><option value="">Todas</option></select>
+                        </div>
+                        <div class="tv-control">
+                            <label for="tvPatientRef">Paciente</label>
+                            <input id="tvPatientRef" data-testid="tv-filter-patient" placeholder="NSS opcional">
+                        </div>
+                        <button type="submit" class="pm2-btn pm2-btn--primary" style="min-height:38px">Aplicar filtros</button>
+                    </form>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+                        <a id="tvExportJson" class="pm2-btn pm2-btn--ghost" href="/api/analytics/treatment-value-registry?weeks=12,24&include_rows=1" style="font-size:.76rem">Exportar JSON</a>
+                        <a id="tvExportCsv" class="pm2-btn pm2-btn--ghost" href="/api/analytics/treatment-value-registry?weeks=12,24&include_rows=1&format=csv" style="font-size:.76rem">Exportar CSV</a>
+                        <a id="tvResearchPackJson" class="pm2-btn pm2-btn--ghost" data-testid="tv-research-pack-json" href="/api/analytics/treatment-value-registry/research-pack?weeks=12,24" style="font-size:.76rem">Research Pack JSON</a>
+                        <a id="tvResearchPackCsv" class="pm2-btn pm2-btn--ghost" data-testid="tv-research-pack-csv" href="/api/analytics/treatment-value-registry/research-pack?weeks=12,24&format=csv" style="font-size:.76rem">Research Pack CSV</a>
+                        <a id="tvResearchPackDictionary" class="pm2-btn pm2-btn--ghost" data-testid="tv-research-pack-dictionary" href="/api/analytics/treatment-value-registry/research-pack?weeks=12,24&format=dictionary_csv" style="font-size:.76rem">Diccionario</a>
+                        <button id="tvFreezeCohort" type="button" class="pm2-btn pm2-btn--primary" data-testid="tv-freeze-cohort" style="font-size:.76rem">Congelar cohorte</button>
+                    </div>
+                    <div class="tv-muted" style="margin-top:10px" id="tvCohortBuilderSummary">Cohort Builder pendiente de carga.</div>
+                    <div class="tv-muted" style="margin-top:8px" id="tvFreezeStatus"></div>
+                    <div class="tv-muted" style="margin-top:10px" id="tvMethod">Ajuste basal pendiente de carga.</div>
+                </div>
+            </article>
+        </section>
+
+        <section class="tv-band" style="padding-top:0">
+            <article class="pm2-tab-card" data-testid="tv-capture-impact-delta">
+                <div class="pm2-tab-card-head">
+                    <h3>Impacto de captura paciente-a-cohorte</h3>
+                    <span class="pm2-head-meta" id="tvCaptureImpactMeta">seleccione paciente · delta V2</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <div id="tvCaptureImpactBody" class="tv-grid"></div>
+                    <div id="tvCaptureImpactTrace" class="tv-muted" style="margin-top:12px"></div>
+                </div>
+            </article>
+        </section>
+
+        <section class="tv-band" style="padding-top:0">
+            <article class="pm2-tab-card" data-testid="tv-freeze-workspace">
+                <div class="pm2-tab-card-head">
+                    <h3>Workspace de cohortes congeladas</h3>
+                    <span class="pm2-head-meta" id="tvFreezeMeta">hash · filtros · reproducibilidad</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <div id="tvFreezeWorkspace" class="tv-grid"></div>
+                </div>
+            </article>
+        </section>
+
+        <section class="tv-band" style="padding-top:0">
+            <div id="tvKpis" class="tv-grid" data-testid="tv-kpi-grid"></div>
+        </section>
+
+        <section class="tv-band tv-split" style="padding-top:0">
+            <article class="pm2-tab-card" data-testid="tv-completeness-tower">
+                <div class="pm2-tab-card-head">
+                    <h3>Torre de completitud epidemiologica</h3>
+                    <span class="pm2-head-meta" id="tvCompletenessMeta">captura · persistencia · confiabilidad</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <div id="tvCompletenessGrid" class="tv-grid"></div>
+                    <div id="tvCompletenessGaps" class="tv-muted" style="margin-top:12px"></div>
+                </div>
+            </article>
+            <article class="pm2-tab-card" data-testid="tv-research-governance">
+                <div class="pm2-tab-card-head">
+                    <h3>Gobernanza de investigacion</h3>
+                    <span class="pm2-head-meta">readiness · sesgo · preguntas</span>
+                </div>
+                <div class="pm2-tab-card-body" id="tvResearchGovernance" style="font-size:.8rem;color:var(--pn-text-muted);line-height:1.55"></div>
+            </article>
+        </section>
+
+        <section class="tv-band" style="padding-top:0">
+            <article class="pm2-tab-card" data-testid="tv-capture-worklist">
+                <div class="pm2-tab-card-head">
+                    <h3>Cola accionable de brechas</h3>
+                    <span class="pm2-head-meta" id="tvWorklistMeta">captura dirigida · sin recaptura innecesaria</span>
+                </div>
+                <div class="tv-table-wrap">
+                    <table class="tv-table">
+                        <thead>
+                            <tr>
+                                <th>Prioridad</th>
+                                <th>Paciente</th>
+                                <th>Brecha</th>
+                                <th>Contexto</th>
+                                <th>Racional</th>
+                                <th>Auditoria</th>
+                                <th>Estado</th>
+                                <th>Accion</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tvWorklistRows"></tbody>
+                    </table>
+                </div>
+            </article>
+        </section>
+
+        <section class="tv-band tv-split" style="padding-top:0">
+            <article class="pm2-tab-card">
+                <div class="pm2-tab-card-head">
+                    <h3>Cohortes comparativas</h3>
+                    <span class="pm2-head-meta" id="tvCohortMeta">molecula · regimen · ajuste basal</span>
+                </div>
+                <div class="tv-table-wrap" data-testid="tv-cohort-table">
+                    <table class="tv-table">
+                        <thead>
+                            <tr>
+                                <th>Grupo</th>
+                                <th>n</th>
+                                <th>PSA50</th>
+                                <th>PSA90</th>
+                                <th>ECOG mejoro</th>
+                                <th>Discontinuacion</th>
+                                <th>Tox G3+</th>
+                                <th>Costo / PSA50</th>
+                                <th>PSA50 ajustado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tvCohortRows"></tbody>
+                    </table>
+                </div>
+            </article>
+
+            <article class="pm2-tab-card">
+                <div class="pm2-tab-card-head">
+                    <h3>Lectura epidemiologica</h3>
+                    <span class="pm2-head-meta">señales accionables</span>
+                </div>
+                <div class="pm2-tab-card-body" id="tvInterpretation" style="font-size:.8rem;color:var(--pn-text-muted);line-height:1.55"></div>
+            </article>
+        </section>
+
+        <section class="tv-band" style="padding-top:0">
+            <article class="pm2-tab-card">
+                <div class="pm2-tab-card-head">
+                    <h3>Trazabilidad paciente-a-metrica</h3>
+                    <span class="pm2-head-meta" id="tvTraceMeta">perfil V2 · evidencia · costo</span>
+                </div>
+                <div class="tv-table-wrap" data-testid="tv-patient-trace">
+                    <table class="tv-table">
+                        <thead>
+                            <tr>
+                                <th>Paciente</th>
+                                <th>Ventana</th>
+                                <th>Regimen</th>
+                                <th>Estado basal</th>
+                                <th>APE</th>
+                                <th>Respuesta</th>
+                                <th>ECOG</th>
+                                <th>Costo</th>
+                                <th>Toxicidad / referencia</th>
+                                <th>Evidencia</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tvTraceRows"></tbody>
+                    </table>
+                </div>
+            </article>
+        </section>
+    </main>
+</div>
+
+<script>
+(() => {
+    const state = { window: '24', payload: null, currentParams: new URLSearchParams(), freezeBusy: false };
+    const $ = (id) => document.getElementById(id);
+    const status = $('tvStatus');
+    const kpis = $('tvKpis');
+    const cohortRows = $('tvCohortRows');
+    const traceRows = $('tvTraceRows');
+    const method = $('tvMethod');
+    const interpretation = $('tvInterpretation');
+    const completenessGrid = $('tvCompletenessGrid');
+    const completenessGaps = $('tvCompletenessGaps');
+    const researchGovernance = $('tvResearchGovernance');
+    const worklistRows = $('tvWorklistRows');
+    const cohortBuilderSummary = $('tvCohortBuilderSummary');
+    const freezeStatus = $('tvFreezeStatus');
+    const freezeWorkspace = $('tvFreezeWorkspace');
+    const captureImpactMeta = $('tvCaptureImpactMeta');
+    const captureImpactBody = $('tvCaptureImpactBody');
+    const captureImpactTrace = $('tvCaptureImpactTrace');
+
+    function esc(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    }
+    function money(value) {
+        const n = Number(value || 0);
+        return Number.isFinite(n) && n > 0 ? `$ ${n.toLocaleString('es-MX', {maximumFractionDigits: 0})} MXN` : 'No calculable';
+    }
+    function pct(value) {
+        if (value === null || value === undefined || value === '') return 'No calculable';
+        const n = Number(value);
+        return Number.isFinite(n) ? `${n.toFixed(1)}%` : esc(value);
+    }
+    function meanDays(bundle) {
+        if (!bundle) return 'No calculable';
+        if (bundle.display) return esc(bundle.display);
+        const n = Number(bundle.mean);
+        return Number.isFinite(n) ? `${n.toFixed(0)} dias` : 'No calculable';
+    }
+    function yesNo(value, label) {
+        if (value === true) return `<span class="tv-pill tv-pill--good">${label}</span>`;
+        if (value === false) return `<span class="tv-pill">No ${label.toLowerCase()}</span>`;
+        return `<span class="tv-pill">No evaluable</span>`;
+    }
+    function setOptions(select, items, getValue, getLabel, current) {
+        const first = select.querySelector('option[value=""]')?.outerHTML || '<option value="">Todos</option>';
+        select.innerHTML = first + items.map(item => {
+            const value = getValue(item);
+            const label = getLabel(item);
+            return `<option value="${esc(value)}"${value === current ? ' selected' : ''}>${esc(label)}</option>`;
+        }).join('');
+    }
+    function selectedFilters() {
+        return {
+            molecule: $('tvMolecule').value,
+            regimen: $('tvRegimen').value,
+            clinical_state: $('tvClinicalState').value,
+            line_context: $('tvLineContext').value,
+            psa_band: $('tvPsaBand').value,
+            ecog_band: $('tvEcogBand').value,
+            age_band: $('tvAgeBand').value,
+            metastatic_volume: $('tvMetastaticVolume').value,
+            metric: $('tvMetric').value,
+            patient_ref: $('tvPatientRef').value.trim(),
+        };
+    }
+    function initFiltersFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const patientRef = params.get('patient_ref') || params.get('nss') || '';
+        const windowWeeks = params.get('window') || params.get('weeks_primary') || '';
+        if (patientRef && $('tvPatientRef')) $('tvPatientRef').value = patientRef;
+        if (windowWeeks && $('tvWindow')) {
+            const normalized = String(windowWeeks).split(',')[0].trim();
+            if ([...$('tvWindow').options].some(option => option.value === normalized)) {
+                $('tvWindow').value = normalized;
+                state.window = normalized;
+            }
+        }
+    }
+    async function loadRegistry() {
+        status.textContent = 'Cargando registro...';
+        const filters = selectedFilters();
+        const params = new URLSearchParams({
+            weeks: '12,24',
+            include_rows: '1',
+            trace_limit: '250',
+            real_only: '0',
+        });
+        if (filters.molecule) params.set('molecule', filters.molecule);
+        if (filters.regimen) params.set('regimen', filters.regimen);
+        if (filters.clinical_state) params.set('clinical_state', filters.clinical_state);
+        if (filters.line_context) params.set('line_context', filters.line_context);
+        if (filters.psa_band) params.set('psa_band', filters.psa_band);
+        if (filters.ecog_band) params.set('ecog_band', filters.ecog_band);
+        if (filters.age_band) params.set('age_band', filters.age_band);
+        if (filters.metastatic_volume) params.set('metastatic_volume', filters.metastatic_volume);
+        if (filters.metric) params.set('metric', filters.metric);
+        if (filters.patient_ref) params.set('patient_ref', filters.patient_ref);
+        state.currentParams = new URLSearchParams(params);
+        updateExportLinks(params);
+        const res = await fetch(`/api/analytics/treatment-value-registry?${params.toString()}`);
+        const body = await res.json();
+        if (!res.ok || body.success === false) throw new Error(body.error || 'registry_unavailable');
+        state.payload = body;
+        render(body);
+        loadCaptureImpact(params).catch(err => {
+            captureImpactMeta.textContent = `impacto no disponible: ${err.message || err}`;
+        });
+    }
+    function render(body) {
+        const options = body.filter_options || {};
+        setOptions($('tvMolecule'), options.molecules || [], item => item, item => item, (body.active_filters || {}).molecule || '');
+        setOptions($('tvRegimen'), options.regimens || [], item => item.code, item => item.label || item.code, (body.active_filters || {}).regimen || '');
+        setOptions($('tvClinicalState'), options.clinical_states || [], item => item.code, item => `${item.label} (${item.n})`, (body.active_filters || {}).clinical_state || '');
+        setOptions($('tvLineContext'), options.line_contexts || [], item => item.code, item => `${item.label} (${item.n})`, (body.active_filters || {}).line_context || '');
+        setOptions($('tvPsaBand'), options.psa_bands || [], item => item.code, item => `${item.label} (${item.n})`, (body.active_filters || {}).psa_band || '');
+        setOptions($('tvEcogBand'), options.ecog_bands || [], item => item.code, item => `${item.label} (${item.n})`, (body.active_filters || {}).ecog_band || '');
+        setOptions($('tvAgeBand'), options.age_bands || [], item => item.code, item => `${item.label} (${item.n})`, (body.active_filters || {}).age_band || '');
+        setOptions($('tvMetastaticVolume'), options.metastatic_volumes || [], item => item.code, item => `${item.label} (${item.n})`, (body.active_filters || {}).metastatic_volume || '');
+        setOptions($('tvMetric'), options.metrics || [], item => item.code, item => item.label, (body.active_filters || {}).metric || '');
+        method.textContent = body.baseline_adjustment_method || '';
+        status.textContent = body.kpi_label || 'Registro cargado';
+        renderCohortBuilder(body);
+        renderWindow(body);
+    }
+    function renderCohortBuilder(body) {
+        const builder = body.cohort_builder || {};
+        const active = Object.entries(builder.active_filters || {}).filter(([, value]) => value);
+        cohortBuilderSummary.innerHTML = `
+            <span class="tv-pill tv-pill--good">${esc(builder.version || 'cohort_builder_v2')}</span>
+            <span class="tv-pill">${esc(builder.source_patient_count || 0)} pacientes fuente</span>
+            <span class="tv-pill">${esc(builder.source_row_count || 0)} filas ventana</span>
+            <span class="tv-pill">${esc((builder.source_windows || []).join('/'))} semanas</span>
+            ${active.length ? active.map(([key, value]) => `<span class="tv-pill tv-pill--warn">${esc(key)}=${esc(value)}</span>`).join('') : '<span class="tv-pill">sin filtros restrictivos</span>'}
+        `;
+    }
+    function renderWindow(body) {
+        state.window = $('tvWindow').value || '24';
+        const win = (body.windows || {})[state.window] || {};
+        const summary = win.summary || {};
+        kpis.innerHTML = [
+            ['Pacientes', summary.n_patients ?? 0, `${summary.n_response_evaluable ?? 0} evaluables respuesta`],
+            ['PSA50 / PSA90', `${pct(summary.psa50_rate_pct)} · ${pct(summary.psa90_rate_pct)}`, `${summary.psa50_responder_count ?? 0}/${summary.psa90_responder_count ?? 0} respondedores`],
+            ['ECOG mejoro', pct(summary.ecog_improvement_rate_pct), `${summary.n_ecog_evaluable ?? 0} evaluables ECOG`],
+            ['Toxicidad G3+', pct(summary.high_grade_toxicity_rate_pct), `${summary.high_grade_toxicity_count ?? 0} pacientes`],
+            ['Retraso referencia', pct(summary.referral_delay_rate_pct), `${summary.referral_delay_patient_count ?? 0} pacientes`],
+            ['Costo / PSA50', money(summary.cost_per_psa50_responder_mxn), money(summary.estimated_spend_to_window_mxn)],
+            ['Persistencia línea', meanDays((body.longitudinal_outcomes || {}).line_persistence_days), 'tiempo en regimen'],
+            ['Costo no respuesta', money((body.economic_layer || {}).cost_per_non_responder_mxn), 'paciente sin PSA50'],
+        ].map(([label, value, sub]) => `
+            <article class="pm2-kpi-card" data-variant="info">
+                <div class="pm2-kpi-label">${esc(label)}</div>
+                <div class="pm2-kpi-value" style="font-size:1.25rem">${value}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">${esc(sub)}</span></div>
+            </article>
+        `).join('');
+        renderCompleteness(body);
+        renderGovernance(body);
+        renderWorklist(body);
+        renderCohorts(body);
+        renderTrace(body);
+        interpretation.innerHTML = `
+            <p>${esc(body.interpretation || '')}</p>
+            <p style="margin-top:10px">Ventana activa: <strong style="color:#e2e8f0">${esc(state.window)} semanas</strong>. Los grupos con n pequeño se mantienen visibles para auditoria interna, con señal de supresion cuando aplica.</p>
+            <p style="margin-top:10px">El rastro paciente-a-metrica abre el perfil V2 del paciente para revisar APE, ECOG, toxicidad, dosis y banda terapeutica sin recaptura.</p>
+            <p style="margin-top:10px">Outcomes longitudinales: progresion APE, discontinuacion, persistencia, hospitalizacion, referencia, eventos oseos y muerte se muestran cuando existen hechos capturados.</p>
+        `;
+    }
+    function updateExportLinks(params) {
+        const jsonParams = new URLSearchParams(params);
+        jsonParams.set('include_rows', '1');
+        const csvParams = new URLSearchParams(jsonParams);
+        csvParams.set('format', 'csv');
+        $('tvExportJson').href = `/api/analytics/treatment-value-registry?${jsonParams.toString()}`;
+        $('tvExportCsv').href = `/api/analytics/treatment-value-registry?${csvParams.toString()}`;
+        const packParams = new URLSearchParams(jsonParams);
+        packParams.delete('include_rows');
+        packParams.set('trace_limit', '1000');
+        $('tvResearchPackJson').href = `/api/analytics/treatment-value-registry/research-pack?${packParams.toString()}`;
+        const packCsvParams = new URLSearchParams(packParams);
+        packCsvParams.set('format', 'csv');
+        $('tvResearchPackCsv').href = `/api/analytics/treatment-value-registry/research-pack?${packCsvParams.toString()}`;
+        const dictParams = new URLSearchParams(packParams);
+        dictParams.set('format', 'dictionary_csv');
+        $('tvResearchPackDictionary').href = `/api/analytics/treatment-value-registry/research-pack?${dictParams.toString()}`;
+    }
+    async function loadCaptureImpact(params) {
+        const patientRef = (params.get('patient_ref') || '').trim();
+        if (!patientRef) {
+            captureImpactMeta.textContent = 'seleccione paciente · delta V2';
+            captureImpactBody.innerHTML = '<div class="tv-muted">Use el filtro Paciente para ver como sus mediciones APE, ECOG, dosis y costos cambian la cohorte sin recaptura.</div>';
+            captureImpactTrace.textContent = '';
+            return;
+        }
+        const impactParams = new URLSearchParams(params);
+        impactParams.set('patient_ref', patientRef);
+        impactParams.set('weeks', '12,24,36,52');
+        impactParams.set('trace_limit', '20');
+        impactParams.delete('include_rows');
+        const res = await fetch(`/api/analytics/treatment-value-registry/capture-impact?${impactParams.toString()}`);
+        const body = await res.json();
+        if (!res.ok || body.success === false) throw new Error(body.error || 'capture_impact_unavailable');
+        renderCaptureImpact(body);
+    }
+    function renderCaptureImpact(body) {
+        const after = body.after || {};
+        const delta = body.delta_since_before || {};
+        const primaryWindow = after.primary_window_weeks || body.primary_window_weeks || '—';
+        captureImpactMeta.textContent = `${esc(body.patient_ref || '')} · ventana primaria ${esc(primaryWindow)} sem`;
+        captureImpactBody.innerHTML = [
+            ['Contribuye al registro', after.patient_contributes_to_registry ? 'Si' : 'No', `${after.active_window_count || 0} ventanas activas`],
+            ['Filas paciente', after.row_count || 0, `${after.response_evaluable_count || 0} evaluables respuesta`],
+            ['Gasto en cohorte', money(after.estimated_spend_mxn), `${after.local_dose_count || 0} dosis locales`],
+            ['PSA50 / PSA90', `${after.psa50_responder_count || 0} / ${after.psa90_responder_count || 0}`, `${after.ecog_improved_count || 0} ECOG mejoro`],
+            ['Delta gasto', money(delta.estimated_spend_mxn_delta), `${delta.local_dose_count_delta || 0} dosis delta`],
+            ['Brechas abiertas', (body.capture_worklist || {}).open_gap_count || 0, body.clinical_message || 'Sin mensaje'],
+        ].map(([label, value, sub]) => `
+            <div>
+                <div class="pm2-kicker">${esc(label)}</div>
+                <div style="font-weight:800;color:#f0fbff">${value}</div>
+                <div class="tv-muted">${esc(sub)}</div>
+            </div>
+        `).join('');
+        const rows = body.patient_metric_trace || [];
+        captureImpactTrace.innerHTML = rows.length
+            ? rows.map(row => `<span class="tv-pill">${esc(row.week)} sem · ${esc(row.regimen_label || row.regimen_code || '')} · ${esc((row.metric_flags || []).join('/') || row.evidence_quality || 'sin flags')}</span>`).join('')
+            : '<span class="tv-pill tv-pill--warn">Aun sin fila paciente-a-metrica; capture APE/ECOG/dosis o refresque ventanas ARPI.</span>';
+    }
+    function packParamsFromState() {
+        const params = new URLSearchParams(state.currentParams || new URLSearchParams());
+        params.delete('include_rows');
+        params.set('trace_limit', '1000');
+        return params;
+    }
+    async function freezeCurrentCohort() {
+        if (state.freezeBusy) return;
+        const defaultTitle = `Research Pack V2 ${new Date().toISOString().slice(0, 10)}`;
+        const title = window.prompt('Titulo de cohorte congelada', defaultTitle);
+        if (title === null) return;
+        state.freezeBusy = true;
+        $('tvFreezeCohort').disabled = true;
+        freezeStatus.textContent = 'Congelando cohorte...';
+        const params = packParamsFromState();
+        const payload = Object.fromEntries(params.entries());
+        payload.title = title.trim() || defaultTitle;
+        payload.created_by = 'clinician';
+        try {
+            const res = await fetch('/api/analytics/treatment-value-registry/research-pack/freeze', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const body = await res.json();
+            if (!res.ok || body.success === false) throw new Error(body.error || res.status);
+            freezeStatus.innerHTML = `Cohorte ${body.created ? 'congelada' : 'ya existia'}: <span class="tv-code">${esc(body.freeze_key)}</span> · SHA ${esc(String(body.payload_sha256 || '').slice(0, 12))}`;
+            await loadFreezes();
+        } catch (err) {
+            freezeStatus.textContent = `No se pudo congelar cohorte: ${err.message || err}`;
+        } finally {
+            state.freezeBusy = false;
+            $('tvFreezeCohort').disabled = false;
+        }
+    }
+    async function loadFreezes() {
+        try {
+            const res = await fetch('/api/analytics/treatment-value-registry/research-pack/freezes?limit=6');
+            const body = await res.json();
+            if (!res.ok || body.success === false) throw new Error(body.error || res.status);
+            renderFreezes(body.freezes || []);
+        } catch (err) {
+            $('tvFreezeMeta').textContent = `sin workspace: ${err.message || err}`;
+        }
+    }
+    function renderFreezes(items) {
+        $('tvFreezeMeta').textContent = `${items.length} cohortes congeladas`;
+        freezeWorkspace.innerHTML = items.map(item => `
+            <div>
+                <div class="pm2-kicker">${esc(item.status || 'frozen')}</div>
+                <div style="font-weight:800;color:#f0fbff">${esc(item.title || item.freeze_key)}</div>
+                <div class="tv-muted">${esc(item.cohort_label || '')}</div>
+                <div style="margin-top:6px">
+                    <span class="tv-pill">${esc(item.patient_count_primary_window || 0)} pacientes</span>
+                    <span class="tv-pill">${esc(item.trace_row_count || 0)} filas</span>
+                    <span class="tv-pill">${esc((item.weeks || []).join('/'))} sem</span>
+                </div>
+                <div class="tv-code" style="margin-top:6px">${esc(item.freeze_key || '')}</div>
+                <a class="pm2-btn pm2-btn--ghost" style="font-size:.72rem;margin-top:8px" href="/api/analytics/treatment-value-registry/research-pack/freezes/${esc(item.freeze_key)}">Ver paquete</a>
+            </div>
+        `).join('') || '<div class="tv-muted">Aun no hay cohortes congeladas en este entorno.</div>';
+    }
+    function renderCompleteness(body) {
+        const tower = body.completeness_tower || {};
+        $('tvCompletenessMeta').textContent = `${tower.overall_completeness_pct ?? '—'}% · ${tower.status || ''}`;
+        completenessGrid.innerHTML = (tower.domains || []).map(item => `
+            <div>
+                <div class="pm2-kicker">${esc(item.label)}</div>
+                <div style="font-weight:800;color:#f0fbff">${pct(item.coverage_pct)}</div>
+                <div class="tv-muted">${esc(item.present)}/${esc(item.total)} · ${esc(item.status)}</div>
+            </div>
+        `).join('') || '<div class="tv-muted">Sin dominios de completitud disponibles.</div>';
+        completenessGaps.innerHTML = (tower.critical_gaps || []).length
+            ? `<strong style="color:#fbbf24">Brechas:</strong> ${(tower.critical_gaps || []).map(g => `${esc(g.label)} ${pct(g.coverage_pct)}`).join(' · ')}`
+            : '<span style="color:#bbf7d0">Sin brechas criticas de completitud en la cohorte filtrada.</span>';
+    }
+    function renderGovernance(body) {
+        const gov = body.research_governance || {};
+        researchGovernance.innerHTML = `
+            <div style="font-weight:800;color:#f0fbff">${esc(gov.status || 'sin clasificar')}</div>
+            <p style="margin-top:8px">${esc(gov.methods_summary || '')}</p>
+            <div style="margin-top:10px">${(gov.bias_warnings || []).map(w => `<span class="tv-pill tv-pill--warn">${esc(w)}</span>`).join('') || '<span class="tv-pill tv-pill--good">Sin alertas de sesgo principales</span>'}</div>
+            <ol style="margin-top:10px;padding-left:18px">${(gov.suggested_research_questions || []).map(q => `<li>${esc(q)}</li>`).join('')}</ol>
+        `;
+    }
+    function renderWorklist(body) {
+        const worklist = body.capture_worklist || {};
+        const items = worklist.items || [];
+        $('tvWorklistMeta').textContent = `${worklist.open_gap_count || 0} activas · ${worklist.unreviewed_gap_count || 0} sin revisar · ${worklist.patient_count_with_gaps || 0} pacientes`;
+        worklistRows.innerHTML = items.map(item => `
+            <tr>
+                <td><span class="tv-pill ${item.priority === 'high' ? 'tv-pill--bad' : 'tv-pill--warn'}">${esc(item.priority)}</span></td>
+                <td><a href="${esc(item.profile_url)}" style="color:#67e8f9;font-weight:750">${esc(item.patient_ref)}</a><div class="tv-muted">${esc(item.patient_name || '')}</div></td>
+                <td><div style="font-weight:750;color:#f0fbff">${esc(item.gap_label)}</div><div class="tv-code">${esc(item.gap_key)}</div></td>
+                <td>${esc(item.molecule || '')}<div class="tv-code">${esc(item.regimen_code || '')}</div></td>
+                <td class="tv-muted">${esc(item.rationale || '')}</td>
+                <td class="tv-muted">
+                    <div>Detectada: ${esc(item.detected_at || item.target_date || '—')}</div>
+                    <div>${item.reviewed ? `Revisada: ${esc(item.reviewed_at || '—')}` : `Abierta: ${esc(item.days_open ?? '—')} d`}</div>
+                    <div>Resp: ${esc(item.owner_role || item.assigned_to || '—')} · vence ${esc(item.due_date || '—')}</div>
+                    <div class="tv-code">${esc(item.audit_state || '')}</div>
+                    <div class="tv-code">${esc(item.sla_state || '')}</div>
+                </td>
+                <td><span class="tv-pill ${item.reviewed ? 'tv-pill--good' : 'tv-pill--warn'}">${esc(item.closure_status || 'open')}</span><div class="tv-muted">${esc((item.closure_state || {}).clinical_note || '')}</div></td>
+                <td>
+                    <a class="pm2-btn pm2-btn--ghost" style="font-size:.72rem" href="${esc(item.capture_url)}">Capturar dato</a>
+                    <button type="button" class="pm2-btn pm2-btn--ghost tv-gap-review-btn" style="font-size:.72rem;margin-top:4px"
+                        data-patient-ref="${esc(item.patient_ref)}"
+                        data-gap-key="${esc(item.gap_key)}"
+                        data-detected-at="${esc(item.detected_at || '')}"
+                        data-target-weeks="${esc(item.target_weeks || item.week || '')}"
+                        data-regimen-code="${esc(item.regimen_code || '')}"
+                        data-molecule="${esc(item.molecule || '')}"
+                        data-detection-anchor="${esc(item.detection_anchor || '')}"
+                        data-owner-role="${esc(item.owner_role || '')}"
+                        data-assigned-to="${esc(item.assigned_to || item.owner_role || '')}"
+                        data-due-date="${esc(item.due_date || '')}"
+                        data-sla-days="${esc(item.sla_days || '')}"
+                        data-sla-policy="${esc(item.sla_policy || '')}">Revisar</button>
+                </td>
+            </tr>
+        `).join('') || '<tr><td colspan="8" class="tv-muted">Sin brechas accionables para la cohorte filtrada.</td></tr>';
+        document.querySelectorAll('.tv-gap-review-btn').forEach(btn => {
+            btn.addEventListener('click', () => reviewGap(btn.dataset));
+        });
+    }
+    async function reviewGap(dataset) {
+        const closureStatus = window.prompt('Estado: captured_structured, captured_elsewhere, followup_scheduled, not_applicable, still_blocked', 'followup_scheduled');
+        if (!closureStatus) return;
+        const clinicalNote = window.prompt('Nota clínica breve obligatoria', 'Revision epidemiologica programada');
+        if (!clinicalNote) return;
+        const assignedTo = window.prompt('Responsable operativo', dataset.assignedTo || dataset.ownerRole || 'registro_clinico');
+        if (!assignedTo) return;
+        const dueDate = window.prompt('Fecha compromiso YYYY-MM-DD', dataset.dueDate || '');
+        const res = await fetch('/api/analytics/treatment-value-registry/gap-review', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                patient_ref: dataset.patientRef,
+                gap_key: dataset.gapKey,
+                closure_status: closureStatus,
+                clinical_note: clinicalNote,
+                reviewed_by: 'clinician',
+                detected_at: dataset.detectedAt || '',
+                detection_anchor: dataset.detectionAnchor || '',
+                target_weeks: dataset.targetWeeks || '',
+                regimen_code: dataset.regimenCode || '',
+                molecule: dataset.molecule || '',
+                selected_action_key: 'registry_gap_review',
+                assigned_to: assignedTo,
+                owner_role: dataset.ownerRole || assignedTo,
+                due_date: dueDate || dataset.dueDate || '',
+                sla_days: dataset.slaDays || '',
+                sla_policy: dataset.slaPolicy || '',
+                acknowledged_missing_fields: [dataset.gapKey],
+            }),
+        });
+        const body = await res.json();
+        if (!res.ok || body.success === false) {
+            window.alert(`No se pudo registrar revision: ${body.error || res.status}`);
+            return;
+        }
+        await loadRegistry();
+    }
+    function renderCohorts(body) {
+        const rows = body.cohort_matrix || [];
+        const html = rows.map(item => {
+            const w = (item.windows || {})[state.window] || {};
+            if (!w.n) return '';
+            return `
+                <tr>
+                    <td><span class="tv-pill">${esc(item.group_type)}</span><div style="font-weight:750;color:#f0fbff">${esc(item.label)}</div><div class="tv-code">${esc(item.key)}</div></td>
+                    <td>${esc(w.n)}</td>
+                    <td>${esc(w.psa50_rate || '—')}</td>
+                    <td>${esc(w.psa90_rate || '—')}</td>
+                    <td>${esc(w.ecog_improvement_rate || '—')}</td>
+                    <td>${esc(w.discontinuation_rate || '—')}</td>
+                    <td>${esc(w.high_grade_toxicity_rate || '—')}</td>
+                    <td>${money(w.cost_per_psa50_responder_mxn)}</td>
+                    <td>${esc(w.adjusted_psa50_rate || '—')}${w.suppressed ? '<div class="tv-muted">n pequeño</div>' : ''}</td>
+                </tr>
+            `;
+        }).join('');
+        cohortRows.innerHTML = html || '<tr><td colspan="9" class="tv-muted">Sin cohortes para los filtros actuales.</td></tr>';
+    }
+    function renderTrace(body) {
+        const trace = (body.patient_metric_trace || []).filter(row => String(row.week) === String(state.window));
+        $('tvTraceMeta').textContent = `${trace.length} filas trazables`;
+        traceRows.innerHTML = trace.map(row => `
+            <tr>
+                <td><a href="${esc(row.profile_url)}" style="color:#67e8f9;font-weight:750">${esc(row.patient_ref)}</a><div class="tv-muted">${esc(row.patient_name || '')}</div></td>
+                <td>${esc(row.week)} sem</td>
+                <td><div>${esc(row.regimen_label || row.regimen_code || '')}</div><div class="tv-code">${esc(row.molecule || '')}</div></td>
+                <td><span class="tv-code">${esc(row.baseline_state_bucket || '')}</span></td>
+                <td><div>${esc(row.baseline_psa)} → ${esc(row.actual_psa)}</div><div class="tv-muted">${pct(row.psa_decline_pct)} descenso</div></td>
+                <td>${yesNo(row.psa50_response, 'PSA50')} ${yesNo(row.psa90_response, 'PSA90')}</td>
+                <td>${esc(row.baseline_ecog)} → ${esc(row.actual_ecog)}<div class="tv-muted">Δ ${esc(row.ecog_change_from_baseline)}</div></td>
+                <td>${money(row.spend_to_window_mxn)}<div class="tv-muted">${money(row.cost_per_pct_psa_decline_mxn)} / % descenso</div></td>
+                <td>${row.max_ctcae_grade_to_window ? `<span class="tv-pill tv-pill--bad">CTCAE ${esc(row.max_ctcae_grade_to_window)}</span>` : '<span class="tv-pill">sin G3+</span>'}<div class="tv-muted">${esc(row.referral_status || '')} ${row.referral_delay_days ? `· ${esc(row.referral_delay_days)} dias` : ''}</div></td>
+                <td><span class="tv-pill">${esc(row.evidence_quality || '')}</span><div>${(row.metric_flags || []).map(flag => `<span class="tv-pill tv-pill--warn">${esc(flag)}</span>`).join('')}</div></td>
+            </tr>
+        `).join('') || '<tr><td colspan="10" class="tv-muted">Sin trazabilidad paciente-a-metrica para los filtros actuales.</td></tr>';
+    }
+    $('tvFilters').addEventListener('submit', (event) => {
+        event.preventDefault();
+        loadRegistry().catch(err => { status.textContent = `Error al cargar registro: ${err.message || err}`; });
+    });
+    $('tvFreezeCohort').addEventListener('click', freezeCurrentCohort);
+    $('tvWindow').addEventListener('change', () => {
+        if (state.payload) renderWindow(state.payload);
+    });
+    initFiltersFromUrl();
+    loadRegistry().catch(err => { status.textContent = `Error al cargar registro: ${err.message || err}`; });
+    loadFreezes();
+})();
+</script>
+</body>
+</html>

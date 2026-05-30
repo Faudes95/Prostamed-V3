@@ -210,6 +210,7 @@ STATE_FIELD_ALLOWLISTS = {
     },
     "localized_initial": {
         "psa_value", "psa_baseline_ng_ml", "gleason_score",
+        "psa",
         "gleason_primary", "gleason_secondary", "clinical_tstage",
         "clinical_t_stage", "clinical_n_stage", "clinical_m_stage",
         "nodal_status", "metastasis_site", "clinical_risk_group",
@@ -267,6 +268,7 @@ DIAGNOSTIC_FIELD_ALLOWLIST = {
     "dre_suspicious",
     "dre_finding",
     "mri_pirads_score",
+    "mpmri_status",
     "pirads_score",
     "prior_mpmri_pirads_score",
     "biopsy_status",
@@ -329,9 +331,12 @@ def build_clinical_field_router(
             name = field.get("name")
             if not name or name in used_names:
                 continue
-            used_names.add(name)
             unique_for_context.append(field)
         limited = unique_for_context[: GROUP_LIMITS[normalized_phase][group_key]]
+        for field in limited:
+            name = field.get("name")
+            if name:
+                used_names.add(name)
         groups[group_key] = _group_payload(group_key, limited, normalized_phase)
 
     total_fields = sum(group["field_count"] for group in groups.values())
@@ -582,7 +587,7 @@ def _seed_groups(state: str, phase: str, readiness_lane: str = "") -> dict[str, 
             "psa_value", "castrate_testosterone_status", "testosterone_value",
             "current_adt_context", "progression_pattern",
             "conventional_imaging_status", "prior_treatment_lines_count", "metastasis_site",
-            "visceral_metastasis_present", "hrr_status",
+            "visceral_metastasis_present", "hrr_status", "ecog_score",
         ))
         groups["decision_refiners"].extend(_fields(
             "brca1_status", "brca2_status", "atm_status",
@@ -616,7 +621,8 @@ def _seed_groups(state: str, phase: str, readiness_lane: str = "") -> dict[str, 
             ))
     elif state == "localized_initial":
         groups["required"].extend(_fields(
-            "psa_baseline_ng_ml", "gleason_score", "gleason_primary",
+            ("psa_value" if phase == "longitudinal_followup" else "psa"),
+            "gleason_score", "gleason_primary",
             "gleason_secondary", "clinical_tstage", "nodal_status",
             "metastasis_site", "clinical_risk_group",
             "life_expectancy_years",
@@ -645,14 +651,15 @@ def _seed_groups(state: str, phase: str, readiness_lane: str = "") -> dict[str, 
         ))
     elif state in {"screening", "diagnostic_workup", "post_negative_biopsy_followup"}:
         groups["required"].extend(_fields(
-            "psa_value", "psa_density", "mri_pirads_score",
-            "dre_suspicious", "biopsy_status", "family_history",
+            ("psa_value" if phase == "longitudinal_followup" else "psa"),
+            "prostate_volume_ml", "mpmri_status", "mri_pirads_score",
+            "dre_finding", "dre_suspicious", "biopsy_status", "family_history",
             "germline_risk",
         ))
         groups["decision_refiners"].extend(_fields(
             "repeat_psa_value", "phi_value", "fourkscore_value",
             "planned_biopsy_type", "planned_biopsy_route",
-            "prior_negative_biopsy", "prostate_volume_ml",
+            "prior_negative_biopsy",
         ))
     elif state == "adt_progression_verification":
         groups["required"].extend(_fields(
@@ -662,10 +669,9 @@ def _seed_groups(state: str, phase: str, readiness_lane: str = "") -> dict[str, 
         ))
 
     if phase == "longitudinal_followup":
-        groups["monitoring"].extend(_fields(
-            "psa_value", "testosterone_value", "ecog_score",
-            "imaging_modality_used_for_m_staging", "ctcae_grade_max",
-        ))
+        groups["monitoring"].extend(
+            _longitudinal_monitoring_seed_fields(state, readiness_lane)
+        )
         if (
             readiness_lane in {
                 "patient_twin_readiness",
@@ -689,6 +695,49 @@ def _seed_groups(state: str, phase: str, readiness_lane: str = "") -> dict[str, 
             ))
     groups["optional"].extend(_fields("etnia", "seguridad_social"))
     return groups
+
+
+def _longitudinal_monitoring_seed_fields(state: str, readiness_lane: str = "") -> list[dict[str, Any]]:
+    """Stage-aware follow-up seeds.
+
+    This keeps the longitudinal surface append-only without making diagnostic
+    or localized patients look like systemic-treatment visits.
+    """
+    if readiness_lane in {
+        "adt_arpi_safety_readiness",
+        "m0crpc_arpi_readiness",
+        "m1crpc_sequence_readiness",
+        "parp_hrr_readiness",
+        "psma_rlt_readiness",
+        "mhspc_precision_readiness",
+    }:
+        return _fields(
+            "psa_value", "testosterone_value", "ecog_score",
+            "imaging_modality_used_for_m_staging", "ctcae_grade_max",
+        )
+    if state in {"screening", "diagnostic_workup", "post_negative_biopsy_followup"}:
+        return _fields(
+            "psa_value", "mri_pirads_score", "biopsy_status",
+        )
+    if state == "localized_initial":
+        return _fields(
+            "psa_value", "imaging_modality_used_for_m_staging",
+        )
+    if state in {"post_prostatectomy", "post_radiotherapy_followup", "post_radiotherapy_or_local_salvage", "recurrence_bcr"}:
+        return _fields(
+            "psa_value", "psma_pet_staging_recent", "imaging_modality_used_for_m_staging",
+        )
+    if state == "m0_crpc":
+        return _fields(
+            "psa_value", "testosterone_value", "ecog_score",
+            "imaging_modality_used_for_m_staging", "ctcae_grade_max",
+        )
+    if state == "m1_crpc" or state.startswith("mcspc"):
+        return _fields(
+            "psa_value", "testosterone_value", "ecog_score",
+            "imaging_modality_used_for_m_staging", "ctcae_grade_max",
+        )
+    return _fields("psa_value")
 
 
 def _fields(*names: str) -> list[dict[str, Any]]:

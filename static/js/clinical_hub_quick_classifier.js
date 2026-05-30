@@ -96,6 +96,20 @@
     return rawOptions;
   }
 
+  function isRealWorldLaunchMode() {
+    const raw = new URLSearchParams(window.location.search || "").get("real_world_enrollment");
+    return ["1", "true", "yes", "si", "sí"].includes(String(raw || "").trim().toLowerCase());
+  }
+
+  function buildWizardHref(stateName) {
+    const params = new URLSearchParams();
+    params.set("prefill_source", "clinical_hub");
+    if (isRealWorldLaunchMode()) {
+      params.set("real_world_enrollment", "1");
+    }
+    return `/wizard/${encodeURIComponent(stateName)}?${params.toString()}`;
+  }
+
   function createField(field) {
     const wrapper = document.createElement("div");
     wrapper.className = "pm2-legacy-field";
@@ -480,6 +494,12 @@
     return "diagnostic";
   }
 
+  function canonicalModuleId(stateName) {
+    const stateText = String(stateName || "").trim();
+    if (stateText === "screening") return "diagnostic_workup";
+    return stateText || "diagnostic_workup";
+  }
+
   function focusStage(stateName) {
     const stageKey = stageKeyForState(stateName);
     const railButton = document.querySelector(`.pm2-stage-rail-pill[data-stage="${CSS.escape(stageKey)}"]`);
@@ -515,7 +535,8 @@
   }
 
   function renderResult(data, payload) {
-    const stateName = data.state || data.disease_state || "diagnostic_workup";
+    const rawStateName = data.state || data.disease_state || "diagnostic_workup";
+    const stateName = canonicalModuleId(rawStateName);
     const label = data.state_label || stateName.replace(/_/g, " ");
     const derived = data.derived_metastatic_context || {};
     const derivedMeta = derived.metastasis_count
@@ -546,10 +567,22 @@
       ${derivedMeta}
       ${gate}
       ${decisionPreview}
-      <a class="pm2-btn pm2-btn--primary" href="/wizard/${encodeURIComponent(stateName)}?prefill_source=clinical_hub" data-legacy-wizard-link>
+      <a class="pm2-btn pm2-btn--primary" href="${buildWizardHref(stateName)}" data-legacy-wizard-link>
         Abrir asistente correcto
       </a>
     `;
+    if (isRealWorldLaunchMode() && window.ProstaNetFirstRealLaunchChecklist?.recordStep) {
+      window.ProstaNetFirstRealLaunchChecklist.recordStep(
+        "module_classified",
+        `Modulo ${stateName} clasificado desde V2; enlace al wizard listo.`
+      );
+      resultEl.querySelector("[data-legacy-wizard-link]")?.addEventListener("click", () => {
+        window.ProstaNetFirstRealLaunchChecklist.recordStep(
+          "module_classified",
+          `Modulo ${stateName} enviado al wizard con contexto real-world.`
+        );
+      });
+    }
     try {
       window.sessionStorage.setItem(`prostanet:clinical-hub-prefill:${stateName}`, JSON.stringify(payload));
     } catch (error) {

@@ -32,6 +32,15 @@
 .pm2-router-count{color:#67e8f9;font-family:ui-monospace,monospace;}
 .pm2-router-fields{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.65rem;}
 .pm2-router-chip{display:inline-flex;max-width:100%;align-items:center;border:1px solid rgba(103,232,249,.16);background:rgba(8,145,178,.1);color:#d8efff;border-radius:8px;padding:.28rem .45rem;font-size:.72rem;line-height:1.2;overflow-wrap:anywhere;}
+.pm2-first-real-guard{margin-bottom:1.25rem;border:1px solid rgba(251,191,36,.38);background:linear-gradient(135deg,rgba(146,64,14,.22),rgba(15,23,42,.82));border-radius:18px;padding:1rem 1.1rem;box-shadow:0 18px 42px rgba(2,6,23,.24);}
+.pm2-first-real-guard-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.pm2-first-real-guard-kicker{color:#fde68a;font-size:.72rem;font-weight:800;letter-spacing:.18em;text-transform:uppercase;}
+.pm2-first-real-guard-title{margin:.25rem 0 0;color:#fff7ed;font-size:1.05rem;font-weight:800;line-height:1.25;}
+.pm2-first-real-guard-copy{margin:.45rem 0 0;color:#e2e8f0;font-size:.86rem;line-height:1.45;max-width:74ch;}
+.pm2-first-real-guard-metrics{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;}
+.pm2-first-real-guard-pill{display:inline-flex;align-items:center;border:1px solid rgba(251,191,36,.34);background:rgba(15,23,42,.62);color:#fef3c7;border-radius:999px;padding:.35rem .6rem;font-size:.72rem;font-weight:800;line-height:1.2;max-width:100%;overflow-wrap:anywhere;}
+.pm2-first-real-guard-actions{display:flex;gap:.55rem;flex-wrap:wrap;margin-top:.85rem;}
+@media (max-width:640px){.pm2-first-real-guard-head{gap:.75rem}.pm2-first-real-guard-actions .pn-btn{width:100%;justify-content:center;text-align:center;}}
 </style>
 {% endif %}
 {% endblock %}
@@ -91,6 +100,35 @@
             {# v2: hidden submit button para wire del top button (preserva JS legacy) #}
             <button type="button" id="submitWizard" class="hidden" aria-hidden="true">Evaluar módulo</button>
             {% endif %}
+            {% if chrome_mode == 'v2' and real_world_launch_requested|default(false) %}
+            {% set first_real_launch = real_world_first_patient_launch_mode or {} %}
+            {% set first_real_summary = first_real_launch.summary or {} %}
+            <section class="pm2-first-real-guard"
+                     data-testid="first-real-wizard-handoff-guard"
+                     data-source-clinical-facts-mutated="false"
+                     data-external-order-created="false"
+                     data-model-trained="false"
+                     aria-label="Contexto institucional de primer paciente real">
+                <div class="pm2-first-real-guard-head">
+                    <div>
+                        <div class="pm2-first-real-guard-kicker">Primer paciente real · Wizard V2</div>
+                        <h2 class="pm2-first-real-guard-title">Contexto institucional activo</h2>
+                        <p class="pm2-first-real-guard-copy">
+                            {{ first_real_summary.next_operator_action or 'Complete la evaluacion, prepare registro longitudinal y active Paciente real solo con consentimiento firmado y actor clinico responsable.' }}
+                        </p>
+                    </div>
+                    <div class="pm2-first-real-guard-metrics">
+                        <span class="pm2-first-real-guard-pill">{{ first_real_summary.launch_mode_status or 'launch_context' }}</span>
+                        <span class="pm2-first-real-guard-pill">dry-run {{ first_real_summary.dry_run_contract_status or 'unknown' }}</span>
+                        <span class="pm2-first-real-guard-pill">{{ first_real_summary.real_patient_count or 0 }} reales · {{ first_real_summary.registry_ready_real_count or 0 }} listos</span>
+                    </div>
+                </div>
+                <div class="pm2-first-real-guard-actions">
+                    <a class="pn-btn pn-btn-secondary" href="/clinical-hub?real_world_enrollment=1#pm2OfficialClassifier">Volver al launch strip</a>
+                    <a class="pn-btn pn-btn-secondary" href="/platform-readiness#real-world-launch-flow-verifier">Verificador</a>
+                </div>
+            </section>
+            {% endif %}
             <div class="mb-5 grid gap-3 md:grid-cols-3">
                 <div class="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
                     <p class="text-xs uppercase tracking-[0.2em] text-emerald-300">Mínimo para decidir</p>
@@ -137,12 +175,97 @@
                 </div>
             </section>
             {% endif %}
+            {% if pivotal_gate_control_state %}
+            <section class="rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-5">
+                <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-cyan-300">Gates pivotales avanzados</p>
+                        <p class="mt-1 text-sm text-slate-400">Abra solo la familia que corresponde al momento clinico actual.</p>
+                    </div>
+                    {% if pivotal_gate_control_state.requested_families %}
+                    <a href="{{ pivotal_gate_control_state.clear_href }}" class="rounded-full border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-cyan-400 hover:text-cyan-100">
+                        Cerrar paneles manuales
+                    </a>
+                    {% endif %}
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    {% for control in pivotal_gate_control_state.controls %}
+                    <a
+                        href="{{ control.href }}"
+                        title="{{ control.description }}"
+                        class="rounded-full border px-3 py-2 text-xs font-semibold transition {{ 'border-cyan-400 bg-cyan-400/15 text-cyan-100' if control.active else 'border-slate-700 bg-slate-950/70 text-slate-300 hover:border-cyan-500/60 hover:text-cyan-100' }}"
+                    >
+                        {{ control.label }}
+                        {% if control.default_active and not control.selected %}
+                        <span class="ml-1 text-[10px] uppercase tracking-[0.16em] text-cyan-200/80">por estado</span>
+                        {% endif %}
+                    </a>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+            {% set ledger_wizard = clinical_fact_ledger_wizard_context or {} %}
+            {% set ledger_wizard_summary = ledger_wizard.get('summary', {}) if ledger_wizard else {} %}
+            {% if ledger_wizard and ledger_wizard.get('field_prefills') %}
+            <section class="rounded-3xl border border-emerald-500/25 bg-emerald-500/5 p-5"
+                     data-testid="wizard-ledger-prefill-panel"
+                     data-source-clinical-facts-mutated="false"
+                     data-external-order-created="false"
+                     data-model-trained="false"
+                     aria-label="Clinical Fact Ledger wizard reuse">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-emerald-300">Clinical Fact Ledger v1</p>
+                        <h3 class="mt-1 text-base font-semibold text-white">Datos ya conocidos para este paciente</h3>
+                        <p class="mt-1 text-sm text-slate-400">Los datos conocidos sin contradicción se prellenan y se ocultan para evitar recaptura; los conflictos quedan visibles para resolución clínica.</p>
+                    </div>
+                    <span class="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-100"
+                          data-testid="wizard-ledger-contract">read-only · no muta hechos</span>
+                </div>
+                <div class="mt-4 grid gap-3 md:grid-cols-4">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Prellenados</p>
+                        <p class="mt-1 text-lg font-bold text-white" data-ledger-reuse-count>{{ ledger_wizard_summary.reusable_field_count or 0 }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Conflictos</p>
+                        <p class="mt-1 text-lg font-bold {{ 'text-rose-200' if ledger_wizard_summary.conflict_field_count else 'text-emerald-200' }}"
+                           data-ledger-conflict-count>{{ ledger_wizard_summary.conflict_field_count or 0 }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Campos mapeados</p>
+                        <p class="mt-1 text-lg font-bold text-white">{{ ledger_wizard_summary.mapped_field_count or 0 }}/{{ ledger_wizard_summary.schema_field_count or 0 }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Hechos Ledger</p>
+                        <p class="mt-1 text-lg font-bold text-white">{{ ledger_wizard_summary.ledger_known_fact_count or 0 }}/{{ ledger_wizard_summary.ledger_registered_fact_count or 0 }}</p>
+                    </div>
+                </div>
+                {% if ledger_wizard.get('reusable_fields') %}
+                <div class="mt-4 flex flex-wrap gap-2" data-testid="wizard-ledger-reusable-fields">
+                    {% for fact in ledger_wizard.reusable_fields[:10] %}
+                    <span class="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-100">{{ fact.field_label }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% if ledger_wizard.get('conflict_fields') %}
+                <div class="mt-3 flex flex-wrap gap-2" data-testid="wizard-ledger-conflict-fields">
+                    {% for fact in ledger_wizard.conflict_fields[:8] %}
+                    <span class="rounded-full border border-rose-400/30 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-100">{{ fact.field_label }} · conflicto</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </section>
+            <script id="wizardClinicalFactLedgerContext" type="application/json">{{ ledger_wizard | tojson }}</script>
+            {% endif %}
             <form id="wizardForm" class="space-y-5">
                 {% set active_wizard_fields = wizard_form_fields if wizard_form_fields else schema.fields %}
+                {% set suppress_schema_defaults = true %}
                 {% set ns = namespace(current_group='') %}
                 {% for field in active_wizard_fields %}
                     {% set skip_standalone_occam_field = field.name.startswith('occam_') %}
-                    {% if not skip_standalone_occam_field %}
+                    {% set suppress_canonical_alias_field = field.suppress_in_wizard|default(false) %}
+                    {% if not skip_standalone_occam_field and not suppress_canonical_alias_field %}
                         {% if field.group != ns.current_group %}
                             {% if ns.current_group %}
                                     </div>
@@ -159,13 +282,22 @@
                             {% set ns.current_group = field.group %}
                         {% endif %}
                         {% set full_width_widget = field.field_type in ['epic26_questionnaire', 'occam_life_expectancy'] %}
+                        {% set derived_psad_hidden_field = field.name in ['psad', 'psa_density', 'mri_psa_density'] and not field.conditional_visibility %}
                         <div
-                            class="text-sm {{ 'md:col-span-2' if full_width_widget else '' }}"
+                            class="text-sm {{ 'md:col-span-2' if full_width_widget else '' }} {{ 'hidden' if derived_psad_hidden_field else '' }}"
                             data-field-wrapper
                             data-field-name="{{ field.name }}"
+                            {% if derived_psad_hidden_field %}data-derived-psad-wrapper="1"{% endif %}
                             {% if field.conditional_visibility %}data-conditions='{{ field.conditional_visibility | tojson }}'{% endif %}
                         >
-                        {% if field.field_type == 'metastatic_components' %}
+                        {% if derived_psad_hidden_field %}
+                            <input
+                                type="hidden"
+                                name="{{ field.name }}"
+                                value="{{ '' if suppress_schema_defaults else field.default if field.default is not none else '' }}"
+                                data-derived-psad-input="1"
+                            >
+                        {% elif field.field_type == 'metastatic_components' %}
                             <div class="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4" data-metastatic-widget="1" data-field-name="{{ field.name }}">
                                 <div class="flex flex-wrap items-start justify-between gap-3">
                                     <div>
@@ -247,18 +379,18 @@
                                     <p class="mt-2 text-sm text-slate-200" data-role="summary-text">Seleccione los componentes metastásicos documentados para derivar la composición del caso.</p>
                                 </div>
                                 <input type="hidden" name="{{ field.name }}" value="">
-                                <input type="hidden" name="metastatic_disease_known" value="0">
-                                <input type="hidden" name="metastasis_site" value="M0">
-                                <input type="hidden" name="metastasis_count" value="0">
-                                <input type="hidden" name="metastatic_total_lesion_count" value="0">
-                                <input type="hidden" name="bone_metastasis_present" value="0">
-                                <input type="hidden" name="bone_site_entries" value="[]">
-                                <input type="hidden" name="visceral_metastasis_present" value="0">
-                                <input type="hidden" name="visceral_site_entries" value="[]">
-                                <input type="hidden" name="visceral_lesion_count" value="0">
-                                <input type="hidden" name="nonregional_nodal_metastasis_present" value="0">
-                                <input type="hidden" name="nonregional_nodal_count" value="0">
-                                <input type="hidden" name="nonregional_nodal_site_entries" value="[]">
+                                <input type="hidden" name="metastatic_disease_known" value="">
+                                <input type="hidden" name="metastasis_site" value="">
+                                <input type="hidden" name="metastasis_count" value="">
+                                <input type="hidden" name="metastatic_total_lesion_count" value="">
+                                <input type="hidden" name="bone_metastasis_present" value="">
+                                <input type="hidden" name="bone_site_entries" value="">
+                                <input type="hidden" name="visceral_metastasis_present" value="">
+                                <input type="hidden" name="visceral_site_entries" value="">
+                                <input type="hidden" name="visceral_lesion_count" value="">
+                                <input type="hidden" name="nonregional_nodal_metastasis_present" value="">
+                                <input type="hidden" name="nonregional_nodal_count" value="">
+                                <input type="hidden" name="nonregional_nodal_site_entries" value="">
                             </div>
                         {% elif field.field_type == 'epic26_questionnaire' %}
                             <div
@@ -349,17 +481,19 @@
                                                         {{ badge(occam_field.clinical_role_label, role_tones.get(occam_field.clinical_role, 'muted')) }}
                                                     </div>
                                                     {% if occam_field.field_type == 'select' %}
-                                                        <select name="{{ occam_field.name }}" class="pn-input w-full px-3 py-2">
+                                                        <select name="{{ occam_field.name }}" class="pn-input w-full px-3 py-2" data-occam-input="1">
+                                                            <option value="" selected>No documentado</option>
                                                             {% for option in occam_field.display_options %}
-                                                                <option value="{{ option.value }}" {% if option.value == occam_field.default %}selected{% endif %}>{{ option.label }}</option>
+                                                                <option value="{{ option.value }}">{{ option.label }}</option>
                                                             {% endfor %}
                                                         </select>
                                                     {% else %}
                                                         <input
                                                             type="number"
                                                             name="{{ occam_field.name }}"
-                                                            value="{{ occam_field.default if occam_field.default is not none else '' }}"
+                                                            value=""
                                                             class="pn-input w-full px-3 py-2"
+                                                            data-occam-input="1"
                                                         >
                                                     {% endif %}
                                                     <div class="mt-1 space-y-1">
@@ -391,9 +525,10 @@
                                                         <span class="block text-slate-300">{{ occam_field.label }}</span>
                                                         {{ badge(occam_field.clinical_role_label, role_tones.get(occam_field.clinical_role, 'muted')) }}
                                                     </div>
-                                                    <select name="{{ occam_field.name }}" class="pn-input w-full px-3 py-2">
+                                                    <select name="{{ occam_field.name }}" class="pn-input w-full px-3 py-2" data-occam-input="1">
+                                                        <option value="" selected>No documentado</option>
                                                         {% for option in occam_field.display_options %}
-                                                            <option value="{{ option.value }}" {% if option.value == occam_field.default %}selected{% endif %}>{{ option.label }}</option>
+                                                            <option value="{{ option.value }}">{{ option.label }}</option>
                                                         {% endfor %}
                                                     </select>
                                                     <div class="mt-1 space-y-1">
@@ -406,15 +541,15 @@
                                         {% endfor %}
                                     </div>
                                 </div>
-                                <input type="hidden" name="{{ field.name }}" value="{{ field.default }}">
-                                <input type="hidden" name="occam_base_life_expectancy_years" value="">
-                                <input type="hidden" name="occam_5yr_other_cause_mortality" value="">
-                                <input type="hidden" name="occam_10yr_other_cause_mortality" value="">
-                                <input type="hidden" name="occam_model_variant" value="">
-                                <input type="hidden" name="occam_truncated_15_plus" value="0">
+                                <input type="hidden" name="{{ field.name }}" value="" data-occam-derived-input="1">
+                                <input type="hidden" name="occam_base_life_expectancy_years" value="" data-occam-derived-input="1">
+                                <input type="hidden" name="occam_5yr_other_cause_mortality" value="" data-occam-derived-input="1">
+                                <input type="hidden" name="occam_10yr_other_cause_mortality" value="" data-occam-derived-input="1">
+                                <input type="hidden" name="occam_model_variant" value="" data-occam-derived-input="1">
+                                <input type="hidden" name="occam_truncated_15_plus" value="" data-occam-derived-input="1">
                             </div>
                         {% elif field.field_type == 'gleason_profile' %}
-                            {% set gleason_default = field.default if field.default is mapping else {} %}
+                            {% set gleason_default = {} if suppress_schema_defaults else field.default if field.default is mapping else {} %}
                             {% set gleason_primary = gleason_default.get('gleason_primary', '') %}
                             {% set gleason_secondary = gleason_default.get('gleason_secondary', '') %}
                             {% set gleason_tertiary = gleason_default.get('gleason_tertiary', '') %}
@@ -480,16 +615,19 @@
                                     {{ badge(field.clinical_role_label, role_tones.get(field.clinical_role, 'muted')) }}
                                 </div>
                                 {% if field.field_type == 'select' %}
-                                    <select name="{{ field.name }}" class="pn-input w-full px-3 py-2">
+                                    <select name="{{ field.name }}" class="pn-input w-full px-3 py-2" {% if field.required %}required{% endif %}>
+                                        {% if suppress_schema_defaults %}
+                                            <option value="" selected>No documentado</option>
+                                        {% endif %}
                                         {% for option in field.display_options %}
-                                            <option value="{{ option.value }}" {% if option.value == field.default %}selected{% endif %}>{{ option.label }}</option>
+                                            <option value="{{ option.value }}" {% if not suppress_schema_defaults and option.value == field.default %}selected{% endif %}>{{ option.label }}</option>
                                         {% endfor %}
                                     </select>
                                 {% else %}
                                     <input
                                         type="{{ 'number' if field.field_type == 'number' else 'date' if field.field_type == 'date' else 'text' }}"
                                         name="{{ field.name }}"
-                                        value="{{ field.default if field.default is not none and field.field_type != 'date' else '' }}"
+                                        value="{{ '' if suppress_schema_defaults else field.default if field.default is not none and field.field_type != 'date' else '' }}"
                                         class="pn-input w-full px-3 py-2"
                                         {% if field.required %}required{% endif %}
                                     >
@@ -503,6 +641,11 @@
                                     {% endif %}
                                     {% if field.benchmark_note %}
                                         <span class="block rounded-2xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-200">{{ field.benchmark_note }}</span>
+                                    {% endif %}
+                                    {% if field.name == 'prostate_volume_ml' %}
+                                        <span class="block rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-200" data-derived-psad-readout>
+                                            PSAD: pendiente de PSA y volumen prostático.
+                                        </span>
                                     {% endif %}
                                 </div>
                             </label>
@@ -609,6 +752,19 @@
                         <input type="hidden" name="assessment_id" id="registrationAssessmentId">
                         <input type="hidden" name="assessment_state" id="registrationAssessmentState">
                         <div id="registrationFragments" class="space-y-5"></div>
+                        {% if chrome_mode == 'v2' and real_world_launch_requested|default(false) %}
+                        <section class="rounded-2xl border border-amber-300/35 bg-amber-500/10 p-4"
+                                 data-testid="first-real-wizard-registration-guard"
+                                 data-source-clinical-facts-mutated="false"
+                                 data-external-order-created="false"
+                                 data-model-trained="false">
+                            <p class="text-xs uppercase tracking-[0.22em] text-amber-200">Registro real bajo control humano</p>
+                            <p class="mt-2 text-sm text-slate-200">
+                                El contexto del primer real se conservo desde el Clinical Hub. Active <strong>Paciente real</strong> solamente despues de confirmar consentimiento firmado, actor clinico e historia APE longitudinal.
+                            </p>
+                        </section>
+                        {% endif %}
+                        {% include "components/real_world_enrollment_panel.html" %}
                         <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
                             <p class="text-xs uppercase tracking-[0.22em] text-slate-500">Estado del registro</p>
                             <p class="mt-2 text-sm text-slate-300" id="registrationStatus">Prepare primero el borrador clínico para habilitar este paso.</p>
@@ -643,7 +799,11 @@
 {% endblock %}
 
 {% block page_scripts %}
-    <script src="{{ url_for('static', filename='js/registration_context_ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/registration_context_ui.js') }}?v=real_world_enrollment_v2"></script>
+    <script src="{{ url_for('static', filename='js/real_world_enrollment_panel.js') }}?v=real_world_enrollment_v2"></script>
+    {% if chrome_mode == 'v2' and real_world_launch_requested|default(false) %}
+    <script src="{{ url_for('static', filename='js/first_real_launch_checklist.js') }}?v=operator_checklist_v2"></script>
+    {% endif %}
     <script src="{{ url_for('static', filename='js/consent_flow.js') }}"></script>
     <script>
         const humanizeClinicalText = window.clinicalPresentation?.humanize || ((value) => value);
@@ -671,6 +831,23 @@
         const registrationAssessmentBadge = document.getElementById('registrationAssessmentBadge');
         const registerPatientButton = document.getElementById('registerPatientButton');
         const cancelRegistrationButton = document.getElementById('cancelRegistrationButton');
+        const firstRealLaunchWizardMode = {{ (chrome_mode == 'v2' and real_world_launch_requested|default(false))|tojson }};
+        const wizardLedgerContextNode = document.getElementById('wizardClinicalFactLedgerContext');
+        let wizardLedgerContext = null;
+        if (wizardLedgerContextNode) {
+            try {
+                wizardLedgerContext = JSON.parse(wizardLedgerContextNode.textContent || 'null');
+            } catch (error) {
+                wizardLedgerContext = null;
+            }
+        }
+        const wizardSearchParams = new URLSearchParams(window.location.search);
+        const wizardPatientRef = (
+            wizardSearchParams.get('patient_ref')
+            || wizardSearchParams.get('nss')
+            || wizardSearchParams.get('patient')
+            || ''
+        ).trim();
         const consentFlow = new window.ProstaNetConsentFlow({
             onStatus: (message, tone) => {
                 registrationStatus.textContent = message;
@@ -689,6 +866,53 @@
             'eligible': 'border-slate-600 bg-slate-800 text-slate-200',
         };
 
+        function recordFirstRealLaunchStep(stepKey, evidence) {
+            if (!firstRealLaunchWizardMode || !window.ProstaNetFirstRealLaunchChecklist?.recordStep) {
+                return;
+            }
+            window.ProstaNetFirstRealLaunchChecklist.recordStep(stepKey, evidence || 'Paso V2 verificado en wizard.');
+        }
+
+        function auditFirstRealLaunchRegistrationState() {
+            if (!firstRealLaunchWizardMode || !window.ProstaNetFirstRealLaunchChecklist?.auditWizardRegistrationState) {
+                return;
+            }
+            window.ProstaNetFirstRealLaunchChecklist.auditWizardRegistrationState();
+        }
+
+        function isTruthyRegistrationValue(value) {
+            return ['1', 'true', 'yes', 'si', 'sí'].includes(String(value ?? '').trim().toLowerCase());
+        }
+
+        function firstRealValidPsaHistoryRows() {
+            if (!window.ProstaNetFirstRealLaunchChecklist?.validPsaHistoryRows) {
+                return [];
+            }
+            return window.ProstaNetFirstRealLaunchChecklist.validPsaHistoryRows(registrationForm);
+        }
+
+        function requireFirstRealApeSeriesBeforeConsent(payload) {
+            if (!firstRealLaunchWizardMode || !isTruthyRegistrationValue(payload?.is_real_patient)) {
+                return true;
+            }
+            const validRows = firstRealValidPsaHistoryRows();
+            if (validRows.length >= 2) {
+                recordFirstRealLaunchStep('ape_payload_ready', 'Historia APE local lista en el payload longitudinal.');
+                return true;
+            }
+            const missing = 2 - validRows.length;
+            window.ProstaNetFirstRealLaunchChecklist?.recordStepStatus?.(
+                'ape_payload_ready',
+                'watch',
+                `Faltan ${missing} medicion(es) APE con fecha para cerrar historia longitudinal.`
+            );
+            registrationStatus.textContent = 'Para primer paciente real se requieren al menos 2 mediciones APE con fecha antes de abrir consentimiento. Agregue la medición faltante en Historia APE.';
+            registrationStatus.className = 'mt-2 text-sm text-rose-300';
+            return false;
+        }
+
+        recordFirstRealLaunchStep('wizard_context_preserved', 'Wizard V2 abierto con real_world_enrollment=1.');
+
         function renderTextList(items, emptyMessage) {
             if (!items || !items.length) {
                 return `<li>${emptyMessage}</li>`;
@@ -703,6 +927,93 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
+        }
+
+        function normalizeLedgerInputValue(value) {
+            if (value === true) return '1';
+            if (value === false) return '0';
+            if (value === null || value === undefined) return '';
+            return String(value);
+        }
+
+        function setLedgerControlValue(control, value) {
+            const normalized = normalizeLedgerInputValue(value);
+            if (!control) return false;
+            if (control.type === 'checkbox') {
+                control.checked = ['1', 'true', 'yes', 'si', 'sí'].includes(normalized.trim().toLowerCase());
+                return true;
+            }
+            if (control.tagName === 'SELECT') {
+                const optionValues = Array.from(control.options || []).map((option) => String(option.value));
+                if (optionValues.includes(normalized)) {
+                    control.value = normalized;
+                    return true;
+                }
+                const lowered = normalized.trim().toLowerCase();
+                const booleanAlias = ['true', 'yes', 'si', 'sí'].includes(lowered)
+                    ? '1'
+                    : ['false', 'no'].includes(lowered)
+                        ? '0'
+                        : null;
+                if (booleanAlias && optionValues.includes(booleanAlias)) {
+                    control.value = booleanAlias;
+                    return true;
+                }
+                return false;
+            }
+            control.value = normalized;
+            return true;
+        }
+
+        function addLedgerNotice(wrapper, item, tone) {
+            if (!wrapper || wrapper.querySelector('[data-ledger-field-notice]')) return;
+            const notice = document.createElement('div');
+            notice.dataset.ledgerFieldNotice = '1';
+            notice.className = tone === 'conflict'
+                ? 'mb-2 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100'
+                : 'mb-2 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100';
+            notice.textContent = tone === 'conflict'
+                ? `Ledger: ${item.fact_key} tiene ${item.source_count || 0} fuentes en conflicto; confirmar antes de reutilizar.`
+                : `Ledger: ${item.fact_key} prellenado desde ${item.current_source || 'fuente estructurada'}.`;
+            wrapper.prepend(notice);
+        }
+
+        function escapeCssIdentifier(value) {
+            if (window.CSS && typeof window.CSS.escape === 'function') {
+                return window.CSS.escape(String(value));
+            }
+            return String(value).replace(/"/g, '\\"');
+        }
+
+        function applyClinicalFactLedgerWizardContext() {
+            if (!wizardLedgerContext || !wizardLedgerContext.field_prefills) return;
+            Object.entries(wizardLedgerContext.field_prefills).forEach(([fieldName, item]) => {
+                const escapedFieldName = escapeCssIdentifier(fieldName);
+                const wrapper = document.querySelector(`[data-field-wrapper][data-field-name="${escapedFieldName}"]`);
+                const controls = Array.from(document.querySelectorAll(`#wizardForm [name="${escapedFieldName}"]`));
+                if (!wrapper || !controls.length) return;
+                if (wrapper.classList.contains('hidden') && wrapper.hasAttribute('data-conditions')) return;
+                if (item.action === 'resolve_conflict_before_reuse') {
+                    wrapper.dataset.ledgerConflict = '1';
+                    addLedgerNotice(wrapper, item, 'conflict');
+                    return;
+                }
+                if (item.action !== 'reuse_prefill_hide') return;
+                const setOk = controls.some((control) => setLedgerControlValue(control, item.current_value));
+                if (!setOk) return;
+                controls.forEach((control) => {
+                    control.dataset.ledgerPrefilled = '1';
+                    control.disabled = false;
+                });
+                wrapper.dataset.ledgerReused = '1';
+                wrapper.dataset.ledgerFactKey = item.fact_key || '';
+                wrapper.classList.add('hidden');
+            });
+            document.querySelectorAll('[data-field-section="1"]').forEach((section) => {
+                const wrappers = Array.from(section.querySelectorAll('[data-field-wrapper]'));
+                const hasVisibleFields = wrappers.some((wrapper) => !wrapper.classList.contains('hidden'));
+                section.classList.toggle('hidden', !hasVisibleFields);
+            });
         }
 
         function formatRegistrationValue(value) {
@@ -1714,7 +2025,31 @@
             `;
         }
 
+        function isOccamWidgetTouched(container) {
+            return container?.dataset?.occamTouched === 'true';
+        }
+
+        function clearOccamWidgetOutputs(container) {
+            if (!container) return;
+            container.querySelectorAll('[data-occam-derived-input="1"]').forEach((field) => {
+                field.value = '';
+            });
+            const summaryNode = container.querySelector('[data-role="occam-summary"]');
+            const missingNode = container.querySelector('[data-role="occam-missing"]');
+            if (summaryNode) {
+                summaryNode.textContent = 'Capture talla, peso, diabetes, hipertensión, evento vascular cerebral previo y tabaquismo para derivar automáticamente la expectativa de vida. La escolaridad y el estado civil son opcionales y activan las variantes públicas ampliadas de OCCAM.';
+            }
+            if (missingNode) {
+                missingNode.textContent = 'Si faltan entradas estructuradas, la expectativa de vida queda pendiente de cálculo.';
+            }
+            renderOccamCards(container, { available: false });
+        }
+
         function syncOccamWidget(container) {
+            if (!isOccamWidgetTouched(container)) {
+                clearOccamWidgetOutputs(container);
+                return;
+            }
             const config = JSON.parse(container.dataset.widgetConfig || '{}');
             const payload = {
                 age: occamFieldValue('age'),
@@ -1768,9 +2103,23 @@
         }
 
         function initializeOccamWidgets() {
+            const form = document.getElementById('wizardForm');
             document.querySelectorAll('[data-occam-widget="1"]').forEach((container) => {
-                document.getElementById('wizardForm')?.addEventListener('change', () => syncOccamWidget(container));
-                syncOccamWidget(container);
+                container.dataset.occamTouched = 'false';
+                container.querySelectorAll('[data-occam-input="1"]').forEach((control) => {
+                    const markTouchedAndSync = () => {
+                        container.dataset.occamTouched = 'true';
+                        syncOccamWidget(container);
+                    };
+                    control.addEventListener('input', markTouchedAndSync);
+                    control.addEventListener('change', markTouchedAndSync);
+                });
+                form?.addEventListener('change', () => {
+                    if (isOccamWidgetTouched(container)) {
+                        syncOccamWidget(container);
+                    }
+                });
+                clearOccamWidgetOutputs(container);
             });
         }
 
@@ -1780,6 +2129,41 @@
                 const lesionCount = Math.max(0, Number.parseInt(row.querySelector(countSelector)?.value || '0', 10) || 0);
                 return { site_key: siteKey, lesion_count: lesionCount };
             }).filter((entry) => entry.site_key && entry.lesion_count > 0);
+        }
+
+        function isMetastaticWidgetTouched(container) {
+            return container?.dataset?.metastaticTouched === 'true';
+        }
+
+        function clearMetastaticWidgetOutputs(container) {
+            if (!container) return;
+            container.querySelector('[data-role="components-shell"]')?.classList.add('hidden');
+            container.querySelector('[data-role="bone-block"]')?.classList.add('hidden');
+            container.querySelector('[data-role="visceral-block"]')?.classList.add('hidden');
+            container.querySelector('[data-role="nodal-block"]')?.classList.add('hidden');
+            const summaryNode = container.querySelector('[data-role="summary-text"]');
+            if (summaryNode) {
+                summaryNode.textContent = 'Seleccione los componentes metastásicos documentados para derivar la composición del caso.';
+            }
+            [
+                'metastatic_components_capture',
+                'metastatic_disease_known',
+                'metastasis_site',
+                'metastasis_count',
+                'metastatic_total_lesion_count',
+                'bone_metastasis_present',
+                'bone_site_entries',
+                'visceral_metastasis_present',
+                'visceral_site_entries',
+                'visceral_lesion_count',
+                'nonregional_nodal_metastasis_present',
+                'nonregional_nodal_count',
+                'nonregional_nodal_site_entries',
+            ].forEach((name) => {
+                const field = container.querySelector(`[name="${name}"]`);
+                if (field) field.value = '';
+            });
+            container.dataset.valid = '0';
         }
 
         function resetMetastaticWidget(container) {
@@ -1802,7 +2186,8 @@
             if (visceralRows) {
                 visceralRows.innerHTML = '';
             }
-            syncMetastaticWidget(container);
+            container.dataset.metastaticTouched = 'false';
+            clearMetastaticWidgetOutputs(container);
         }
 
         function ensureMetastaticWidgetRows(container) {
@@ -1827,6 +2212,10 @@
         }
 
         function syncMetastaticWidget(container) {
+            if (!isMetastaticWidgetTouched(container)) {
+                clearMetastaticWidgetOutputs(container);
+                return;
+            }
             const knownSelect = container.querySelector('[data-role="metastatic-known-select"]');
             const toggles = Array.from(container.querySelectorAll('[data-role="component-toggle"]'));
             const known = String(knownSelect?.value || '0') === '1';
@@ -1928,6 +2317,7 @@
             if (knownSelect) {
                 knownSelect.value = metastaticKnown ? '1' : '0';
             }
+            container.dataset.metastaticTouched = 'true';
             toggles.forEach((toggle) => {
                 if (toggle.value === 'bone') {
                     toggle.checked = boneEntries.length > 0 || String(payload.bone_metastasis_present || '0') === '1';
@@ -1977,45 +2367,55 @@
             document.querySelectorAll('[data-metastatic-widget="1"]').forEach((container) => {
                 container.addEventListener('click', (event) => {
                     if (event.target.closest('[data-role="add-nodal-row"]')) {
+                        container.dataset.metastaticTouched = 'true';
                         createNodalRowForWidget(container);
                         syncMetastaticWidget(container);
                         return;
                     }
                     if (event.target.closest('[data-role="add-bone-row"]')) {
+                        container.dataset.metastaticTouched = 'true';
                         createBoneRowForWidget(container);
                         syncMetastaticWidget(container);
                         return;
                     }
                     if (event.target.closest('[data-role="add-visceral-row"]')) {
+                        container.dataset.metastaticTouched = 'true';
                         createVisceralRowForWidget(container);
                         syncMetastaticWidget(container);
                         return;
                     }
                     if (event.target.closest('[data-role="remove-bone-row"]')) {
+                        container.dataset.metastaticTouched = 'true';
                         event.target.closest('[data-bone-row="1"]')?.remove();
                         syncMetastaticWidget(container);
                         return;
                     }
                     if (event.target.closest('[data-role="remove-nodal-row"]')) {
+                        container.dataset.metastaticTouched = 'true';
                         event.target.closest('[data-nodal-row="1"]')?.remove();
                         syncMetastaticWidget(container);
                         return;
                     }
                     if (event.target.closest('[data-role="remove-visceral-row"]')) {
+                        container.dataset.metastaticTouched = 'true';
                         event.target.closest('[data-visceral-row="1"]')?.remove();
                         syncMetastaticWidget(container);
                     }
                 });
-                container.addEventListener('input', () => syncMetastaticWidget(container));
+                container.addEventListener('input', () => {
+                    container.dataset.metastaticTouched = 'true';
+                    syncMetastaticWidget(container);
+                });
                 container.addEventListener('change', () => {
+                    container.dataset.metastaticTouched = 'true';
                     ensureMetastaticWidgetRows(container);
                     syncMetastaticWidget(container);
                 });
                 if (hubPrefill) {
                     applyHubPrefillToMetastaticWidget(container, hubPrefill);
                 } else {
-                    ensureMetastaticWidgetRows(container);
-                    syncMetastaticWidget(container);
+                    container.dataset.metastaticTouched = 'false';
+                    clearMetastaticWidgetOutputs(container);
                 }
             });
         }
@@ -2049,12 +2449,74 @@
                 const conditions = JSON.parse(wrapper.dataset.conditions || '{}');
                 const visible = evaluateVisibilityConditions(conditions);
                 wrapper.classList.toggle('hidden', !visible);
+                setConditionalWrapperDisabled(wrapper, !visible);
             });
             document.querySelectorAll('[data-field-section="1"]').forEach((section) => {
                 const wrappers = Array.from(section.querySelectorAll('[data-field-wrapper]'));
                 const hasVisibleFields = wrappers.some((wrapper) => !wrapper.classList.contains('hidden'));
                 section.classList.toggle('hidden', !hasVisibleFields);
             });
+        }
+
+        function setConditionalWrapperDisabled(wrapper, disabled) {
+            wrapper.querySelectorAll('input, select, textarea, button').forEach((node) => {
+                if (disabled) {
+                    node.dataset.disabledByConditions = 'true';
+                    node.disabled = true;
+                    return;
+                }
+                if (node.dataset.disabledByConditions === 'true') {
+                    delete node.dataset.disabledByConditions;
+                    node.disabled = false;
+                }
+            });
+        }
+
+        function parseWizardNumber(value) {
+            if (value === null || value === undefined) return null;
+            const numeric = Number(String(value).trim().replace(',', '.'));
+            return Number.isFinite(numeric) ? numeric : null;
+        }
+
+        function updateDerivedPsadReadout() {
+            const readout = document.querySelector('[data-derived-psad-readout]');
+            const psa = parseWizardNumber(document.querySelector('[name="psa"]')?.value);
+            const volume = parseWizardNumber(document.querySelector('[name="prostate_volume_ml"]')?.value);
+            const derivedValue = psa && volume && volume > 0 ? (psa / volume).toFixed(2) : '';
+            document.querySelectorAll('[data-derived-psad-input="1"]').forEach((input) => {
+                input.value = derivedValue;
+            });
+            if (!readout) return;
+            if (psa && volume && volume > 0) {
+                readout.textContent = `PSAD calculada: ${derivedValue} ng/mL/cc.`;
+                return;
+            }
+            if (psa && !volume) {
+                readout.textContent = 'PSAD: no calculable por falta de volumen prostático.';
+                return;
+            }
+            readout.textContent = 'PSAD: pendiente de PSA y volumen prostático.';
+        }
+
+        function buildWizardPayload(form) {
+            const payload = {};
+            if (!form) return payload;
+            const formData = new FormData(form);
+            formData.forEach((value, key) => {
+                const escapedName = escapeCssIdentifier(key);
+                const controls = Array.from(form.querySelectorAll(`[name="${escapedName}"]`));
+                const control = controls.find((node) => !node.disabled) || controls[0];
+                const occamWidget = control?.closest('[data-occam-widget="1"]');
+                if (occamWidget && !isOccamWidgetTouched(occamWidget)) {
+                    return;
+                }
+                const metastaticWidget = control?.closest('[data-metastatic-widget="1"]');
+                if (metastaticWidget && !isMetastaticWidgetTouched(metastaticWidget)) {
+                    return;
+                }
+                payload[key] = value;
+            });
+            return payload;
         }
 
         function renderRegistrationField(field, providedValue) {
@@ -2153,12 +2615,14 @@
             return html;
         }
 
-        function renderRegistrationFragments(fragments, defaults, captureLayers) {
+        function renderRegistrationFragments(fragments, defaults, captureLayers, ledgerContext = null) {
             window.ProstaNetRegistrationContextUI.renderRegistrationContext({
                 target: registrationFragments,
                 fragments,
                 defaults,
                 captureLayers,
+                ledgerContext,
+                clinicalState: registrationAssessmentState.value || latestDraft?.assessment?.state || latestResult?.state || '',
             });
         }
 
@@ -2202,10 +2666,13 @@
                 draftData.registration_fragments || [],
                 draftData.registration_defaults || {},
                 draftData.capture_layers || [],
+                draftData.clinical_fact_ledger_registration_context || null,
             );
             registrationStatus.textContent = 'Complete los datos longitudinales faltantes y guarde para abrir el expediente integrado del paciente.';
             registrationPhase.classList.remove('hidden');
             createDraftButton.classList.add('hidden');
+            recordFirstRealLaunchStep('registration_prepared', 'Registro longitudinal visible desde el wizard V2.');
+            window.setTimeout(auditFirstRealLaunchRegistrationState, 0);
             registrationPhase.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
@@ -2223,7 +2690,8 @@
                 syncGleasonProfileWidget(container);
             });
             document.querySelectorAll('[data-occam-widget="1"]').forEach((container) => {
-                syncOccamWidget(container);
+                container.dataset.occamTouched = 'false';
+                clearOccamWidgetOutputs(container);
             });
             document.getElementById('resultCard').classList.add('hidden');
             document.getElementById('resultBody').innerHTML = '';
@@ -2238,7 +2706,11 @@
 
         resetWizardButton.addEventListener('click', resetWizard);
         document.querySelectorAll('#wizardForm input, #wizardForm select').forEach((field) => {
-            field.addEventListener('change', updateConditionalFields);
+            field.addEventListener('change', () => {
+                updateConditionalFields();
+                updateDerivedPsadReadout();
+            });
+            field.addEventListener('input', updateDerivedPsadReadout);
         });
 
         button.addEventListener('click', async () => {
@@ -2262,6 +2734,7 @@
             gleasonWidgets.forEach((container) => syncGleasonProfileWidget(container));
             const occamWidgets = Array.from(document.querySelectorAll('[data-occam-widget="1"]'));
             occamWidgets.forEach((container) => syncOccamWidget(container));
+            updateDerivedPsadReadout();
             const invalidGleasonWidget = gleasonWidgets.find((container) => container.dataset.valid !== '1');
             if (invalidGleasonWidget) {
                 const card = document.getElementById('resultCard');
@@ -2273,7 +2746,7 @@
                 invalidGleasonWidget.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 return;
             }
-            const payload = Object.fromEntries(new FormData(document.getElementById('wizardForm')).entries());
+            const payload = buildWizardPayload(document.getElementById('wizardForm'));
             latestPayload = payload;
             const originalButtonText = button.textContent;
             button.disabled = true;
@@ -2501,6 +2974,8 @@
                 body: JSON.stringify({
                     module_id: '{{ schema.module }}',
                     payload: latestPayload,
+                    patient_ref: wizardPatientRef,
+                    clinical_fact_ledger_wizard_context: wizardLedgerContext,
                 }),
             });
             const data = await response.json();
@@ -2520,6 +2995,9 @@
             registrationStatus.textContent = 'El registro longitudinal quedó oculto. Puede reabrirlo sin perder el borrador clínico.';
         });
 
+        registrationForm.addEventListener('input', auditFirstRealLaunchRegistrationState);
+        registrationForm.addEventListener('change', auditFirstRealLaunchRegistrationState);
+
         registrationForm.addEventListener('submit', async (event) => {
             event.preventDefault();
             if (!latestDraft?.assessment_id) {
@@ -2527,14 +3005,18 @@
                 return;
             }
 
+            auditFirstRealLaunchRegistrationState();
             const payload = window.ProstaNetRegistrationContextUI.buildRegistrationPayload(registrationForm);
+            if (!requireFirstRealApeSeriesBeforeConsent(payload)) {
+                return;
+            }
             payload.assessment_id = latestDraft.assessment_id;
             payload.assessment_state = registrationAssessmentState.value || latestResult?.state || '';
             registrationStatus.textContent = 'Preparando consentimiento informado y evidencia de firma electrónica.';
             try {
                 await consentFlow.open({
                     payload,
-                    sourceContext: 'wizard',
+                    sourceContext: firstRealLaunchWizardMode ? 'first_real_wizard_v2' : 'wizard',
                     redirectUrl: payload.nss ? `/patient_profile/${encodeURIComponent(payload.nss)}` : '/patients',
                 });
             } catch (error) {
@@ -2549,5 +3031,7 @@
         initializeGleasonProfileWidgets();
         initializeOccamWidgets();
         updateConditionalFields();
+        applyClinicalFactLedgerWizardContext();
+        updateDerivedPsadReadout();
     </script>
 {% endblock %}

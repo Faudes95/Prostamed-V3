@@ -153,7 +153,8 @@
     };
 
     // ── Drill-down lateral panel ────────────────────────────────────────────
-    PM2.showDrillDown = ({ context, title, html }) => {
+    PM2.showDrillDown = (payload = {}) => {
+        const { context, title, html } = payload;
         const panel = document.getElementById("pm2-drilldown");
         if (!panel) return;
         const ctxEl = panel.querySelector("[data-drilldown-context]");
@@ -161,10 +162,16 @@
         const bodyEl = panel.querySelector("[data-drilldown-body]");
         if (ctxEl) ctxEl.textContent = context || "";
         if (titleEl) titleEl.textContent = title || "";
-        if (bodyEl) bodyEl.innerHTML = html || "";
+        if (bodyEl && Object.prototype.hasOwnProperty.call(payload, "html")) {
+            bodyEl.innerHTML = html || "";
+        }
         PM2.state.focusReturnTo = document.activeElement;
+        panel.hidden = false;
+        panel.removeAttribute("hidden");
+        panel.removeAttribute("inert");
         panel.classList.add("is-open");
         panel.setAttribute("aria-hidden", "false");
+        panel.setAttribute("aria-modal", "true");
         PM2.state.activeDrillDown = true;
         const closeBtn = panel.querySelector("[data-drilldown-close]");
         closeBtn?.focus();
@@ -175,8 +182,13 @@
         if (!panel) return;
         panel.classList.remove("is-open");
         panel.setAttribute("aria-hidden", "true");
+        panel.removeAttribute("aria-modal");
+        panel.setAttribute("inert", "");
+        panel.hidden = true;
         PM2.state.activeDrillDown = false;
-        PM2.state.focusReturnTo?.focus();
+        if (PM2.state.focusReturnTo && typeof PM2.state.focusReturnTo.focus === "function") {
+            PM2.state.focusReturnTo.focus();
+        }
     };
 
     // ── Global ESC binding ──────────────────────────────────────────────────

@@ -1,0 +1,14 @@
+{
+  "_expected_status": "blocked_hard",
+  "_description": "Caso #3 — Abiraterona en paciente Child-Pugh B. Contraindicación FDA label.",
+  "reconciled_state": "m1_crpc",
+  "baseline": {"baseline_psa": 80.0},
+  "child_pugh_class": "B",
+  "cirrhosis": true,
+  "ecog_current": 2,
+  "clinical_compass": {
+    "headline": "Abiraterona 1000mg/día + prednisona 5mg BID",
+    "rationale": "ARSI primera línea mCRPC sintomático.",
+    "evidence_summary": {"guideline_basis": ["NCCN PROS-7"]}
+  }
+}

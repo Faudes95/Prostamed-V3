@@ -5,7 +5,9 @@ from copy import deepcopy
 from typing import Any
 
 from prostanet.domains.patient_tracking.mhspc_frontline_reference import component_metadata
-from prostanet.domains.patient_tracking.palliative_longitudinal import PALLIATIVE_TRACKS
+
+
+PALLIATIVE_TRACKS = {"concurrent_palliative_care", "hospice_pathway", "supportive_only"}
 
 
 ADVANCED_STATE_SCOPE = [

@@ -18,6 +18,14 @@ from prostanet.shared.advanced_support_catalog import (
 from prostanet.shared.ddi_engine import DDIEngine
 
 
+CANONICAL_LAB_ALIASES = {
+    "alkaline_phosphatase_u_l": ("alp", "alkaline_phosphatase", "fosfatasa_alcalina"),
+    "ldh_u_l": ("ldh", "serum_ldh", "lactate_dehydrogenase"),
+    "hemoglobin_g_dl": ("hemoglobin", "hgb", "hb", "hemoglobina"),
+    "creatinine_mg_dl": ("creatinine", "serum_creatinine"),
+}
+
+
 def _safe_float(value: Any) -> float | None:
     try:
         if value in (None, ""):
@@ -57,6 +65,31 @@ def _truthy(value: Any) -> bool:
 
 def _nonempty(value: Any) -> bool:
     return value not in (None, "", [], {}, "Desconocido", "Desconocida", "No documentado", "unknown")
+
+
+def normalize_canonical_lab_aliases(payload: dict[str, Any]) -> dict[str, Any]:
+    """Mirror canonical lab fields and legacy aliases without changing values.
+
+    The wizard should ask a lab only once, but older rules and pivotal gates
+    still consume short aliases such as ``alp`` or ``hemoglobin``.  This keeps
+    backend compatibility while allowing the V2 UI to suppress duplicate alias
+    fields from the visible form.
+    """
+    data = dict(payload or {})
+    for canonical, aliases in CANONICAL_LAB_ALIASES.items():
+        canonical_value = data.get(canonical)
+        if not _nonempty(canonical_value):
+            for alias in aliases:
+                if _nonempty(data.get(alias)):
+                    canonical_value = data.get(alias)
+                    data[canonical] = canonical_value
+                    break
+        if not _nonempty(canonical_value):
+            continue
+        for alias in aliases:
+            if not _nonempty(data.get(alias)):
+                data[alias] = canonical_value
+    return data
 
 
 def parse_medication_list(value: Any) -> list[str]:
@@ -268,7 +301,7 @@ def build_variant_histology_bundle(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_advanced_support_payload(payload: dict[str, Any] | None, *, state: str = "") -> dict[str, Any]:
-    data = deepcopy(payload or {})
+    data = normalize_canonical_lab_aliases(deepcopy(payload or {}))
 
     if _nonempty(data.get("baseline_qol")) and not _nonempty(data.get("eq5d_vas")):
         data["eq5d_vas"] = data.get("baseline_qol")

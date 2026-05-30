@@ -462,6 +462,31 @@ def _evaluate_override(override: dict | None, payload: dict) -> bool:
 
 _YAML_CACHE: dict[str, dict] | None = None
 _YAML_PATHS_CACHE: dict[str, Path] | None = None
+_YAML_DUPLICATES_CACHE: dict[str, list[Path]] | None = None
+
+
+def find_duplicate_yaml_codes(force_reload: bool = False) -> dict[str, list[str]]:
+    """Return duplicate gate codes in the YAML catalog, grouped by code."""
+    global _YAML_DUPLICATES_CACHE
+    if _YAML_DUPLICATES_CACHE is None or force_reload:
+        by_code: dict[str, list[Path]] = {}
+        if CATALOG_DIR.exists():
+            for yaml_path in sorted(CATALOG_DIR.glob("*.yaml")):
+                try:
+                    with yaml_path.open("r", encoding="utf-8") as f:
+                        config = yaml.safe_load(f) or {}
+                except (OSError, yaml.YAMLError):
+                    continue
+                code = str(config.get("code") or "").strip()
+                if code:
+                    by_code.setdefault(code, []).append(yaml_path)
+        _YAML_DUPLICATES_CACHE = {
+            code: paths for code, paths in by_code.items() if len(paths) > 1
+        }
+    return {
+        code: [str(path) for path in paths]
+        for code, paths in (_YAML_DUPLICATES_CACHE or {}).items()
+    }
 
 
 def _load_yaml_files(force_reload: bool = False) -> dict[str, dict]:
@@ -473,6 +498,12 @@ def _load_yaml_files(force_reload: bool = False) -> dict[str, dict]:
     global _YAML_CACHE, _YAML_PATHS_CACHE
     if _YAML_CACHE is not None and not force_reload:
         return _YAML_CACHE
+    duplicates = find_duplicate_yaml_codes(force_reload=force_reload)
+    if duplicates:
+        detail = "; ".join(
+            f"{code}: {', '.join(paths)}" for code, paths in sorted(duplicates.items())
+        )
+        raise ValueError(f"Duplicate pivotal gate YAML code(s): {detail}")
     cache: dict[str, dict] = {}
     paths: dict[str, Path] = {}
     if not CATALOG_DIR.exists():
@@ -497,9 +528,10 @@ def _load_yaml_files(force_reload: bool = False) -> dict[str, dict]:
 
 def reset_yaml_cache() -> None:
     """Útil en tests para forzar recarga."""
-    global _YAML_CACHE, _YAML_PATHS_CACHE, _CATALOG_RESOLVER_CACHE
+    global _YAML_CACHE, _YAML_PATHS_CACHE, _YAML_DUPLICATES_CACHE, _CATALOG_RESOLVER_CACHE
     _YAML_CACHE = None
     _YAML_PATHS_CACHE = None
+    _YAML_DUPLICATES_CACHE = None
     _CATALOG_RESOLVER_CACHE = {}
 
 

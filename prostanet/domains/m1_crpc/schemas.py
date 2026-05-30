@@ -143,7 +143,7 @@ M1_CRPC_SCHEMA = module_schema(
         FieldSpec("comorbidity_seizure", "Riesgo convulsivo", "select", options=["0", "1"], default="0", group="Fitness y seguridad", group_order=4, clinical_role="decision_refiner", evidence_tags=["arsi_safety"]),
         FieldSpec("comorbidity_cardio", "Riesgo cardiovascular", "select", options=["0", "1"], default="0", group="Fitness y seguridad", group_order=4, clinical_role="decision_refiner", evidence_tags=["cardio_oncology"]),
         FieldSpec("peripheral_neuropathy_grade", "Neuropatía periférica", "select", options=["0", "1", "2", "3", "4"], default="0", group="Fitness y seguridad", group_order=4, clinical_role="decision_refiner", unit="CTCAE"),
-        *advanced_variant_histology_fields(group="Fitness y seguridad", group_order=4, include_neuroendocrine_toggle=True),
+        *advanced_variant_histology_fields(group="Fitness y seguridad", group_order=4, include_neuroendocrine_toggle=False),
         FieldSpec("cv_risk_documented", "Riesgo cardiovascular documentado", "select", options=["0", "1"], default="0", group="Fitness y seguridad", group_order=4, clinical_role="monitoring", evidence_tags=["cardio_oncology"]),
         *advanced_ddi_fields(group="Fitness y seguridad", group_order=4),
         FieldSpec("dermatitis_history", "Antecedente dermatológico relevante", "select", options=["0", "1"], default="0", group="Fitness y seguridad", group_order=4, clinical_role="decision_refiner", evidence_tags=["arsi_safety"]),

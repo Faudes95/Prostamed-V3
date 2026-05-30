@@ -11,6 +11,7 @@ from prostanet.domains.localized_initial.rules_nccn import (
     classify_nccn,
 )
 from prostanet.domains.localized_initial.schemas import LOCALIZED_SCHEMA
+from prostanet.domains.diagnostic_workup.derivations import derive_psad_context
 from prostanet.domains.patient_tracking.localized_modality import (
     build_active_surveillance_monitoring_profile,
     build_localized_modality_fitness_bundle,
@@ -56,6 +57,10 @@ class LocalizedInitialService:
 
     def evaluate(self, payload: dict) -> dict:
         payload = normalized_localized_values(normalize_epic26_payload(payload))
+        psad_context = derive_psad_context(payload)
+        if psad_context.value is not None:
+            payload["psad"] = psad_context.value
+            payload.setdefault("mri_psa_density", psad_context.value)
         missing = self._missing(payload, ["psa", "clinical_tstage", "isup_grade", "num_cores_positive", "total_cores"])
         nccn = classify_nccn(payload)
         eau = classify_eau(payload)
@@ -421,6 +426,7 @@ class LocalizedInitialService:
         result["localized_tradeoff_bundle"] = localized_tradeoff_bundle
         result["radical_prostatectomy_candidacy_profile"] = radical_prostatectomy_candidacy_profile
         result["localized_survival_context_bundle"] = localized_survival_context_bundle
+        result["psad_context"] = psad_context.to_dict()
         result["occam_life_expectancy_bundle"] = occam_life_expectancy_bundle
         result["active_surveillance_monitoring_profile"] = active_surveillance_monitoring_profile
         result["patient_priority_profile"] = patient_priority_profile

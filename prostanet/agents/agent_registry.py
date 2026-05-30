@@ -160,6 +160,7 @@ class AgentRegistry:
         from prostanet.agents.treatment_optimization_agent import TreatmentOptimizationAgent
         from prostanet.agents.research_intelligence_agent import ResearchIntelligenceAgent
         from prostanet.agents.quality_assurance_agent import QualityAssuranceAgent
+        from prostanet.agents.godibot import GodiBotValidator
 
         _AGENTS = [
             ("cda", ClinicalDecisionAgent),
@@ -201,6 +202,27 @@ class AgentRegistry:
                 logger.warning("QAA failed: %s", exc)
                 agent_outputs["qaa"] = {"error": str(exc)}
 
+        # GodiBot — segunda opinión adversarial (Iteración C). Corre DESPUÉS
+        # de QAA porque necesita el compass/recommendation ya construido en
+        # agent_input.record["clinical_compass"]. Si el record no contiene
+        # compass, GodiBot devuelve approved sin discrepancias.
+        try:
+            godibot = GodiBotValidator(enable_llm_adversarial=False)
+            godibot_output = godibot.evaluate_safe(agent_input)
+            agent_outputs["godibot"] = godibot_output.to_dict() if hasattr(
+                godibot_output, "to_dict"
+            ) else vars(godibot_output)
+            # Add godibot alerts so they participate in dedup downstream
+            for a in (godibot_output.alerts or []):
+                all_alerts.append(a)
+            # Bubble the review dict up at top-level for UI convenience
+            review = (godibot_output.metadata or {}).get("godibot_review")
+            if review:
+                agent_outputs["godibot_review"] = review
+        except Exception as exc:
+            logger.warning("GodiBot validator failed: %s", exc)
+            agent_outputs["godibot"] = {"error": str(exc)}
+
         # Deduplicate alerts by message (handle both dataclasses and dicts)
         seen_alerts: set[str] = set()
         unique_alerts = []
@@ -239,7 +261,9 @@ class AgentRegistry:
             "consolidated_alerts": unique_alerts,
             "overall_confidence": overall_confidence,
             "narrative": narrative,
-            "agents_run": list(agent_outputs.keys()),
+            "agents_run": [
+                k for k in agent_outputs.keys() if k != "godibot_review"
+            ],
         }
 
     @property

@@ -15,6 +15,7 @@ appropriate home in wizard or longitudinal capture.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from typing import Any, Iterable, Mapping
 
 
@@ -159,13 +160,24 @@ class GateContractRow:
         return asdict(self)
 
 
-def build_gate_contract_matrix() -> list[GateContractRow]:
+def build_gate_contract_matrix(*, force_reload: bool = False) -> list[GateContractRow]:
     """Build one contract row per YAML pivotal gate."""
+    if force_reload:
+        return list(_build_gate_contract_matrix_uncached(force_reload=True))
+    return list(_build_gate_contract_matrix_cached())
+
+
+@lru_cache(maxsize=1)
+def _build_gate_contract_matrix_cached() -> tuple[GateContractRow, ...]:
+    return tuple(_build_gate_contract_matrix_uncached(force_reload=False))
+
+
+def _build_gate_contract_matrix_uncached(*, force_reload: bool) -> list[GateContractRow]:
     from prostanet.shared.pivotal_gates_yaml_loader import _load_yaml_files
 
     registry = _capture_registry()
     rows: list[GateContractRow] = []
-    for gate_code, config in sorted(_load_yaml_files(force_reload=True).items()):
+    for gate_code, config in sorted(_load_yaml_files(force_reload=force_reload).items()):
         trigger_fields = sorted(_extract_gate_fields(config))
         classifier = _covered_members(trigger_fields, registry["classifier"])
         initial = _covered_members(trigger_fields, registry["initial_wizard"])
@@ -214,6 +226,7 @@ def summarize_gate_contract_matrix() -> dict[str, Any]:
     }
 
 
+@lru_cache(maxsize=1)
 def _capture_registry() -> dict[str, set[str]]:
     return {
         "classifier": _classifier_fields(),
@@ -224,6 +237,7 @@ def _capture_registry() -> dict[str, set[str]]:
     }
 
 
+@lru_cache(maxsize=1)
 def _classifier_fields() -> set[str]:
     try:
         from prostanet.presentation.v2_adapters import quick_classify_schema
@@ -237,6 +251,7 @@ def _classifier_fields() -> set[str]:
         return set()
 
 
+@lru_cache(maxsize=8)
 def _router_fields(phase: str) -> set[str]:
     try:
         from prostanet.presentation.clinical_field_router import build_clinical_field_router
@@ -258,6 +273,7 @@ def _router_fields(phase: str) -> set[str]:
     return _expand_aliases(names)
 
 
+@lru_cache(maxsize=1)
 def _support_field_specs() -> set[str]:
     names: set[str] = set()
     try:

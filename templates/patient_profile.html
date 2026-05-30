@@ -1253,7 +1253,14 @@
                                 <span class="text-xs text-slate-500">({{ regimen.trial_source }})</span>
                             </div>
                             <div class="text-xs text-slate-400 mt-1">
-                                OS gain esperada: <span class="text-white">{{ '%.1f' % regimen.predicted_os_gain_mo }}mo</span>
+                                OS gain esperada:
+                                <span class="text-white">
+                                    {% if regimen.predicted_os_gain_mo is number %}
+                                        {{ '%.1f' % regimen.predicted_os_gain_mo }}mo
+                                    {% else %}
+                                        No estimado
+                                    {% endif %}
+                                </span>
                             </div>
                             {% if regimen.tolerance_mismatches %}
                             <ul class="mt-2 space-y-1 text-xs text-rose-300">

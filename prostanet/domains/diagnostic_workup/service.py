@@ -3,6 +3,11 @@ from __future__ import annotations
 from prostanet.domains.diagnostic_workup.rules_eau import classify_diagnostic_workup_eau
 from prostanet.domains.diagnostic_workup.rules_nccn import classify_diagnostic_workup
 from prostanet.domains.diagnostic_workup.schemas import DIAGNOSTIC_WORKUP_SCHEMA
+from prostanet.domains.diagnostic_workup.derivations import (
+    derive_dre_context,
+    derive_mri_context,
+    derive_psad_context,
+)
 from prostanet.domains.evidence_registry.service import EvidenceRegistryService
 from prostanet.domains.guideline_comparison.service import GuidelineComparisonService
 from prostanet.shared.contracts import evaluation_result
@@ -24,14 +29,14 @@ class DiagnosticWorkupService:
         eau = classify_diagnostic_workup_eau(payload)
         comparison = self.comparison.compare(nccn, eau)
 
-        psa = float(payload.get("psa", 0) or 0)
-        psad = float(payload.get("psad", 0) or 0)
-        pirads = int(float(payload.get("pirads_score", 0) or 0))
-        dre_suspicious = str(payload.get("dre_suspicious", "0"))
+        psa = _safe_float(payload.get("psa"), default=0.0)
+        psad_context = derive_psad_context(payload, psa_value=psa)
+        mri_context = derive_mri_context(payload)
+        dre_context = derive_dre_context(payload)
         erspc_ready = all(
             payload.get(field) not in (None, "")
-            for field in ("age", "psa", "dre_suspicious")
-        )
+            for field in ("age", "psa")
+        ) and dre_context.source != "absent_or_normal"
 
         treatments = []
         if nccn["biopsy_indicated"]:
@@ -60,7 +65,7 @@ class DiagnosticWorkupService:
         if not nccn["biopsy_indicated"]:
             treatments.append(
                 {
-                    "name": "Repetición estructurada de antígeno prostático específico y densidad del antígeno prostático específico",
+                    "name": "Repetición estructurada de antígeno prostático específico y cálculo de densidad al documentar volumen prostático",
                     "priority": "eligible",
                     "notes": "Adecuado cuando la sospecha es baja y no existe una señal clínica fuerte.",
                 }
@@ -237,14 +242,14 @@ class DiagnosticWorkupService:
             *not_recommended_emergency,
         ]
         durations = [
-            "Si la sospecha es baja, repetir antígeno prostático específico y densidad del antígeno prostático específico en 6 a 12 semanas antes de descartar la vía diagnóstica.",
+            "Si la sospecha es baja, repetir antígeno prostático específico y calcular densidad cuando exista volumen prostático en 6 a 12 semanas antes de descartar la vía diagnóstica.",
             "Si la sospecha es intermedia o alta, priorizar resonancia magnética y biopsia sin demoras prolongadas.",
         ]
 
         case_summary = (
             f"El paciente se encuentra en estudio diagnóstico sin confirmación histológica previa, con antígeno prostático específico de {psa:g} ng/mL, "
-            f"densidad del antígeno prostático específico de {psad:g}, tacto rectal {'sospechoso' if dre_suspicious in {'1', 'true'} else 'no sospechoso'} "
-            f"y resonancia magnética multiparamétrica con PI-RADS {pirads if pirads else 'no disponible'}. "
+            f"densidad del antígeno prostático específico {psad_context.display}, tacto rectal {dre_context.summary_label} "
+            f"y resonancia magnética multiparamétrica {mri_context.display}. "
             f"La Red Nacional Integral del Cáncer (NCCN) 5.2026 lo sitúa en {nccn['label'].lower()} y la Asociación Europea de Urología (EAU) 2026 lo compara como {eau['label'].lower()}."
         )
 
@@ -299,7 +304,7 @@ class DiagnosticWorkupService:
                 "La confirmación histológica sigue siendo el punto de entrada obligatorio antes de una ruta terapéutica formal.",
             ],
             alternatives=[
-                "Repetir antígeno prostático específico y densidad del antígeno prostático específico cuando la sospecha es baja y no hay disparadores clínicos mayores.",
+                "Repetir antígeno prostático específico y calcular densidad al disponer de volumen prostático cuando la sospecha es baja y no hay disparadores clínicos mayores.",
                 "Revisar la resonancia magnética multiparamétrica antes de indicar una biopsia repetida si existe una biopsia benigna previa.",
             ],
             shared_decision_message=(
@@ -309,3 +314,12 @@ class DiagnosticWorkupService:
                 "La comparación con la Asociación Europea de Urología (EAU) 2026 ayuda a confirmar si la sospecha es suficiente para avanzar a biopsia o si aún puede mantenerse una revaloración estructurada."
             ),
         )
+
+
+def _safe_float(value, *, default: float = 0.0) -> float:
+    if value is None or value == "":
+        return default
+    try:
+        return float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return default

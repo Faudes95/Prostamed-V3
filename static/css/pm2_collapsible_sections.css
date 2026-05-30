@@ -114,12 +114,20 @@
     backdrop-filter: blur(8px);
     border-bottom: 1px solid rgba(31, 184, 255, 0.15);
     padding: 8px 14px;
-    margin: 0 -14px 12px;
+    margin: 0 0 12px;
     overflow-x: auto;
     white-space: nowrap;
     display: flex;
     gap: 8px;
     font-size: 0.72rem;
+    box-sizing: border-box;
+    max-width: 100%;
+}
+
+@media (max-width: 640px) {
+    .pm2-section-nav {
+        margin: 0 0 12px;
+    }
 }
 
 .pm2-section-nav a {

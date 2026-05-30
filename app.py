@@ -8,34 +8,112 @@ import sys
 import json
 import logging
 import sqlite3
+import csv
+import io
 from datetime import datetime
-from typing import Any
+from functools import wraps
+from typing import Any, Mapping
+from urllib.parse import quote, urlencode
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, current_app, render_template, request, jsonify, redirect, url_for, Response
 
 from prostanet.shared.utc_time import utc_now_iso  # EPIC 32.G G78 — UTC unification
 
 # Añadir directorio actual al path para importar el modelo
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from prostate_cancer_model import load_all
-from prostanet.domains.patient_tracking.service import PatientTrackingService
-from prostanet.presentation.bootstrap import register_modular_blueprints
-from prostanet.presentation.ui_assets import build_ui_assets
-from prostanet.presentation.view_models import build_page_chrome
-from prostanet.shared.feature_flags import resolve_feature_flags
-from prostanet.shared.official_diagnosis import (
-    build_official_diagnosis_context,
-    diagnosis_capture_options,
-    diagnosis_field_label,
-)
-from prostanet.shared.gleason_profile import normalize_gleason_profile
-# Faubot 2026-04-25 (XXXII) — Tier 7 G5: auth gateway HTML
-from prostanet.shared.security_helpers import require_clinical_session
 from tracking_db import configure_db_path, get_stats, init_tracking_db, patient_exists
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
-tracking_service = PatientTrackingService()
+
+
+class _LazyPatientTrackingService:
+    def __init__(self):
+        self._instance = None
+
+    def _get(self):
+        if self._instance is None:
+            from prostanet.domains.patient_tracking.service import PatientTrackingService
+
+            self._instance = PatientTrackingService()
+        return self._instance
+
+    def __getattr__(self, name):
+        return getattr(self._get(), name)
+
+
+def build_ui_assets():
+    from prostanet.presentation.ui_assets import build_ui_assets as _build_ui_assets
+
+    return _build_ui_assets()
+
+
+def build_page_chrome(*args, **kwargs):
+    from prostanet.presentation.view_models import build_page_chrome as _build_page_chrome
+
+    return _build_page_chrome(*args, **kwargs)
+
+
+def register_modular_blueprints(app_obj):
+    if os.environ.get("PROSTANET_DATALLESS_SAFE_START") == "1":
+        logger.warning("Modular blueprint registration skipped in dataless-safe startup mode.")
+        return None
+    from prostanet.presentation.bootstrap import register_modular_blueprints as _register_modular_blueprints
+
+    return _register_modular_blueprints(app_obj)
+
+
+def resolve_feature_flags(config=None):
+    resolved = dict(config or {})
+    load_model_env = os.environ.get("PROSTANET_LOAD_MODEL")
+    if str(load_model_env or "").lower() in {"0", "false", "no", "off"}:
+        resolved["LOAD_MODEL"] = False
+    return resolved
+
+
+def build_official_diagnosis_context(*args, **kwargs):
+    from prostanet.shared.official_diagnosis import build_official_diagnosis_context as _build_context
+
+    return _build_context(*args, **kwargs)
+
+
+def diagnosis_capture_options(*args, **kwargs):
+    from prostanet.shared.official_diagnosis import diagnosis_capture_options as _capture_options
+
+    return _capture_options(*args, **kwargs)
+
+
+def diagnosis_field_label(*args, **kwargs):
+    from prostanet.shared.official_diagnosis import diagnosis_field_label as _field_label
+
+    return _field_label(*args, **kwargs)
+
+
+def normalize_gleason_profile(*args, **kwargs):
+    from prostanet.shared.gleason_profile import normalize_gleason_profile as _normalize_gleason_profile
+
+    return _normalize_gleason_profile(*args, **kwargs)
+
+
+def require_clinical_session(*decorator_args, **decorator_kwargs):
+    def _decorator(fn):
+        @wraps(fn)
+        def _wrapped(*args, **kwargs):
+            try:
+                if current_app.config.get("TESTING") or os.environ.get("PROSTANET_AUTH_DISABLED") == "1":
+                    return fn(*args, **kwargs)
+            except RuntimeError:
+                pass
+            from prostanet.shared.security_helpers import require_clinical_session as _require_clinical_session
+
+            return _require_clinical_session(*decorator_args, **decorator_kwargs)(fn)(*args, **kwargs)
+
+        return _wrapped
+
+    return _decorator
+
+
+tracking_service = _LazyPatientTrackingService()
 
 # ── Funciones de conversión segura (campos vacíos del formulario) ──────────
 def safe_float(val, default=0.0):
@@ -79,6 +157,10 @@ REGISTER_NUMERIC_FIELDS = (
     "prior_arpi_duration",
     "line_of_therapy",
     "line_of_therapy_number",
+    "doses_received_before_unit",
+    "local_doses_administered",
+    "doses_administered_in_unit",
+    "local_dose_count",
     "metastasis_count",
     "ecog_score",
     "gleason_score",
@@ -346,7 +428,7 @@ def ensure_model_loaded():
     import torch
     import prostate_cancer_model as pcm
 
-    loaded_model, loaded_artifacts, loaded_ts_risk = load_all(app.config["MODEL_DIR"])
+    loaded_model, loaded_artifacts, loaded_ts_risk = pcm.load_all(app.config["MODEL_DIR"])
     pcm.DEVICE = torch.device("cpu")
     model = loaded_model.cpu()
     artifacts = loaded_artifacts
@@ -407,30 +489,36 @@ def create_app(config=None):
     # desde env var (requerido para sessions/CSRF/Flask-Login futuro).
     # Modo TESTING usa key dev determinística (acepta tests aislados).
     # Modo producción (FLASK_ENV=production) RAISES si no está set.
-    from prostanet.shared.security_helpers import get_secret_key
     if not app.config.get("SECRET_KEY"):
-        app.config["SECRET_KEY"] = get_secret_key()
+        if app.config.get("TESTING") or os.environ.get("PROSTANET_AUTH_DISABLED") == "1":
+            app.config["SECRET_KEY"] = "prostanet-local-test-secret"
+        else:
+            from prostanet.shared.security_helpers import get_secret_key
+
+            app.config["SECRET_KEY"] = get_secret_key()
     app.secret_key = app.config["SECRET_KEY"]
 
     configure_db_path(app.config["DB_PATH"])
     init_tracking_db()
+    dataless_safe_start = os.environ.get("PROSTANET_DATALLESS_SAFE_START") == "1"
 
     # Faubot 2026-04-25 (XXVIII) — Tier 7 G1.5: auth tables + endpoints
     # + security middleware (all opt-in via env vars; default OFF for compat).
-    try:
-        from prostanet.shared.auth_db import init_auth_db
-        init_auth_db()
-    except Exception as exc:
-        # Fail-open: auth tables not critical for legacy endpoints
-        import logging as _logging
-        _logging.getLogger(__name__).warning(
-            f"init_auth_db failed (continuing): {type(exc).__name__}: {exc}"
-        )
+    if not dataless_safe_start:
+        try:
+            from prostanet.shared.auth_db import init_auth_db
+            init_auth_db()
+        except Exception as exc:
+            # Fail-open: auth tables not critical for legacy endpoints
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                f"init_auth_db failed (continuing): {type(exc).__name__}: {exc}"
+            )
 
     # Faubot LXXXIV.b — Hooks/blueprints/middleware UNA SOLA VEZ.
     # Las DB inits arriba SÍ corren cada vez (idempotente, tests usan paths
     # nuevos). Las siguientes registrations FALLAN post-primera-request.
-    if not _already_initialized:
+    if not _already_initialized and not dataless_safe_start:
         try:
             from prostanet.presentation.auth_endpoints import auth_bp
             app.register_blueprint(auth_bp)
@@ -519,7 +607,7 @@ def create_app(config=None):
                 pass  # No-op si content_type invalido
             return response
 
-    if app.config.get("TESTING"):
+    if app.config.get("TESTING") and not dataless_safe_start:
         try:
             from prostanet.ai.inference.runtime_registry import reset_runtime_model_registry
 
@@ -650,12 +738,16 @@ def patients_list():
         include_autodrive = _is_truthy_param(request.args.get("autodrive"))
         cache_key = build_cache_key(
             "patients_list_v2",
+            str(app.config["DB_PATH"]),
             "with_autodrive" if include_autodrive else "default",
         )
 
         v2_data = get_or_build_read_model(
             cache_key,
-            lambda: patients_list_to_v2(include_autodrive=include_autodrive),
+            lambda: patients_list_to_v2(
+                db_path=app.config["DB_PATH"],
+                include_autodrive=include_autodrive,
+            ),
             ttl_seconds=AGGREGATE_TTL_SECONDS,
             refresh=_is_truthy_param(request.args.get("refresh")),
         )
@@ -994,6 +1086,1226 @@ def therapy_catalog_page():
     return render_template("catalog_v2.html", **therapy_catalog_to_v2())
 
 
+@app.route("/api/treatment-regimens", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_treatment_regimens():
+    from prostanet.domains.patient_tracking.therapy_catalog import therapy_select_options
+    from prostanet.domains.patient_tracking.treatment_course_tracker import regimen_intensity
+
+    state = request.args.get("state") or "advanced"
+    management_track = request.args.get("management_track") or "systemic_surveillance"
+    line_context = request.args.get("line_context") or ""
+    options = therapy_select_options(
+        state=state,
+        management_track=management_track,
+        line_context=line_context,
+        include_empty=True,
+    )
+    enriched = []
+    for option in options:
+        value = option.get("value") or ""
+        enriched.append(
+            {
+                **option,
+                "intensity": regimen_intensity(value) if value else {
+                    "intensity": "none",
+                    "intensity_label": "Sin esquema",
+                    "component_count": 0,
+                    "agents": [],
+                },
+            }
+        )
+    return jsonify({"success": True, "state": state, "options": enriched})
+
+
+@app.route("/api/medication-price-catalog", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_medication_price_catalog():
+    import tracking_db
+    from prostanet.domains.patient_tracking.treatment_course_tracker import build_price_catalog_audit
+
+    catalog = tracking_db.get_medication_price_catalog()
+
+    return jsonify({
+        "success": True,
+        "currency": "MXN",
+        "catalog": catalog,
+        "audit": build_price_catalog_audit(catalog),
+        "audit_note": "Precios operativos estimados con fuente publica; no sustituyen compra hospitalaria vigente.",
+    })
+
+
+@app.route("/api/analytics/price-catalog-audit", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_price_catalog_audit():
+    import tracking_db
+    from prostanet.domains.patient_tracking.treatment_course_tracker import build_price_catalog_audit
+
+    return jsonify({
+        "success": True,
+        "currency": "MXN",
+        "audit": build_price_catalog_audit(tracking_db.get_medication_price_catalog()),
+    })
+
+
+@app.route("/api/analytics/arpi-spend", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_arpi_spend():
+    import tracking_db
+    from prostanet.domains.patient_tracking.treatment_course_tracker import (
+        build_price_catalog_audit,
+        regimen_intensity,
+    )
+
+    month = (request.args.get("month") or datetime.now().strftime("%Y-%m")).strip()[:7]
+    conn = sqlite3.connect(tracking_db.get_db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT tda.*, pi.nss, pi.full_name
+            FROM treatment_dose_administrations tda
+            JOIN patient_identity pi ON pi.id = tda.patient_id
+            WHERE substr(COALESCE(tda.dose_date, ''), 1, 7) = ?
+            ORDER BY tda.dose_date ASC, tda.id ASC
+            """,
+            (month,),
+        ).fetchall()
+    finally:
+        conn.close()
+    arpi_rows = []
+    total = 0.0
+    for row in rows:
+        item = dict(row)
+        intensity = regimen_intensity(item.get("regimen_code"))
+        if not intensity.get("is_arpi_regimen"):
+            continue
+        cost_source = {}
+        try:
+            cost_source = json.loads(item.get("cost_source_json") or "{}")
+        except (TypeError, ValueError):
+            cost_source = {}
+        arpi_cost = safe_float(
+            cost_source.get("estimated_arpi_cost_mxn"),
+            safe_float(item.get("estimated_cost_mxn"), 0.0),
+        )
+        total_cost = safe_float(item.get("estimated_cost_mxn"), 0.0)
+        total += arpi_cost
+        arpi_rows.append({
+            "patient_ref": item.get("nss"),
+            "patient_name": item.get("full_name"),
+            "dose_date": item.get("dose_date"),
+            "regimen_code": item.get("regimen_code"),
+            "regimen_label": intensity.get("regimen_label"),
+            "dose_number_local": item.get("dose_number_local"),
+            "dose_number_global": item.get("dose_number_global"),
+            "estimated_cost_mxn": round(arpi_cost, 2),
+            "estimated_total_medication_cost_mxn": round(total_cost, 2),
+            "is_partial_cost": bool(cost_source.get("is_partial")) or item.get("estimated_cost_mxn") in (None, ""),
+            "price_coverage_status": cost_source.get("coverage_status") or "",
+            "medication_total_coverage_status": cost_source.get("medication_total_coverage_status") or "",
+            "cost_confidence": cost_source.get("cost_confidence") or "",
+            "stale_price_components": cost_source.get("stale_price_components") or [],
+            "missing_arpi_components": cost_source.get("missing_arpi_components") or [],
+            "missing_non_arpi_components": cost_source.get("missing_non_arpi_components") or [],
+            "unpriced_backbone_components": cost_source.get("unpriced_backbone_components") or [],
+        })
+    price_catalog_audit = build_price_catalog_audit(tracking_db.get_medication_price_catalog())
+    return jsonify({
+        "success": True,
+        "month": month,
+        "arpi_dose_count": len(arpi_rows),
+        "estimated_arpi_spend_mxn": round(total, 2),
+        "rows": arpi_rows,
+        "price_catalog_audit": {
+            "catalog_status": price_catalog_audit.get("catalog_status"),
+            "coverage_pct": price_catalog_audit.get("coverage_pct"),
+            "missing_agents": price_catalog_audit.get("missing_agents"),
+            "stale_agents": price_catalog_audit.get("stale_agents"),
+            "warnings": price_catalog_audit.get("warnings"),
+        },
+        "audit_note": "Gasto mensual ARPI estimado a partir de dosis registradas y catalogo de precios trazable.",
+    })
+
+
+@app.route("/api/analytics/arpi-real-world-value", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_arpi_real_world_value():
+    from prostanet.domains.population_intelligence.arpi_value_analytics import (
+        aggregate_arpi_value_by_response,
+    )
+
+    weeks = safe_int(request.args.get("weeks") or 24, 24)
+    if weeks not in (8, 12, 16, 24, 36, 52):
+        return jsonify({
+            "success": False,
+            "error": "weeks_must_be_supported_response_window",
+            "accepted": [8, 12, 16, 24, 36, 52],
+        }), 400
+    real_only = str(request.args.get("real_only") or "0").lower() in {"1", "true", "yes", "si"}
+    include_rows = str(request.args.get("include_rows") or "1").lower() in {"1", "true", "yes", "si"}
+    bundle = aggregate_arpi_value_by_response(weeks=weeks, real_only=real_only)
+    if not include_rows:
+        bundle.pop("patient_rows", None)
+    return jsonify({
+        "success": True,
+        **bundle,
+        "audit_note": (
+            "Analitica exploratoria: gasto y dosis ARPI locales enlazados a PSA/APE "
+            "y ECOG. No sustituye analisis inferencial formal ni auditoria de compras."
+        ),
+    })
+
+
+@app.route("/api/analytics/treatment-value-registry", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_treatment_value_registry():
+    from prostanet.domains.population_intelligence.arpi_value_analytics import (
+        build_treatment_value_registry,
+    )
+
+    raw_weeks = request.args.get("weeks") or "12,24"
+    weeks_list: list[int] = []
+    for item in str(raw_weeks).replace(";", ",").split(","):
+        value = safe_int(item.strip(), None)
+        if value in (8, 12, 16, 24, 36, 52) and value not in weeks_list:
+            weeks_list.append(value)
+    if not weeks_list:
+        return jsonify({
+            "success": False,
+            "error": "weeks_must_include_supported_response_window",
+            "accepted": [8, 12, 16, 24, 36, 52],
+        }), 400
+    real_only = str(request.args.get("real_only") or "0").lower() in {"1", "true", "yes", "si"}
+    include_rows = str(request.args.get("include_rows") or "1").lower() in {"1", "true", "yes", "si"}
+    trace_limit = safe_int(request.args.get("trace_limit") or request.args.get("limit") or 100, 100)
+    filters = {
+        "molecule": request.args.get("molecule") or request.args.get("arpi_agent") or "",
+        "regimen": request.args.get("regimen") or request.args.get("regimen_code") or "",
+        "baseline_bucket": request.args.get("baseline_bucket") or "",
+        "patient_ref": request.args.get("patient_ref") or request.args.get("nss") or "",
+        "clinical_state": request.args.get("clinical_state") or "",
+        "line_context": request.args.get("line_context") or "",
+        "psa_band": request.args.get("psa_band") or "",
+        "ecog_band": request.args.get("ecog_band") or "",
+        "age_band": request.args.get("age_band") or "",
+        "metastatic_volume": request.args.get("metastatic_volume") or request.args.get("volume_disease") or "",
+        "metric": request.args.get("metric") or "",
+    }
+    if str(request.args.get("refresh") or "0").lower() in {"1", "true", "yes", "si"}:
+        from prostanet.domains.population_intelligence.mx_cohort_aggregator import (
+            populate_arpi_response_windows_for_cohort,
+        )
+
+        refresh_stats = populate_arpi_response_windows_for_cohort(
+            weeks_list=tuple(weeks_list),
+            force_recompute=True,
+        )
+    else:
+        refresh_stats = None
+    bundle = build_treatment_value_registry(
+        weeks_list=tuple(weeks_list),
+        real_only=real_only,
+        include_patient_rows=include_rows,
+        filters=filters,
+        trace_limit=trace_limit,
+    )
+    requested_format = str(request.args.get("format") or "").lower()
+    if requested_format == "csv":
+        output = io.StringIO()
+        fieldnames = [
+            "week", "patient_ref", "patient_name", "molecule", "regimen_code",
+            "baseline_state_bucket", "baseline_psa", "actual_psa", "psa_decline_pct",
+            "psa50_response", "psa90_response", "baseline_ecog", "actual_ecog",
+            "ecog_change_from_baseline", "spend_to_window_mxn",
+            "high_grade_toxicity_to_window", "hospitalization_toxicity_to_window",
+            "referral_status", "referral_delay_days", "discontinued_by_window",
+            "time_to_psa_progression_days", "time_to_discontinuation_days",
+            "line_persistence_days_to_window", "bone_event_to_window", "death_to_window",
+            "evidence_quality", "profile_url",
+        ]
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for row in bundle.get("patient_metric_trace") or []:
+            writer.writerow(row)
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=treatment_value_registry_v2.csv"},
+        )
+    return jsonify({
+        "success": True,
+        **bundle,
+        "refresh_stats": refresh_stats,
+        "audit_note": (
+            "Registro longitudinal comparativo exploratorio: requiere captura "
+            "sistematica de PSA/APE, ECOG, CTCAE, discontinuacion, dosis locales "
+            "y referencia HGZ/HGR."
+        ),
+    })
+
+
+@app.route("/api/analytics/treatment-value-registry/capture-impact", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_treatment_value_capture_impact():
+    from prostanet.domains.population_intelligence.arpi_value_analytics import (
+        build_treatment_value_capture_impact,
+    )
+
+    patient_ref = str(request.args.get("patient_ref") or request.args.get("nss") or "").strip()
+    if not patient_ref:
+        return jsonify({
+            "success": False,
+            "error": "missing_patient_ref",
+            "message": "Se requiere patient_ref para calcular impacto poblacional paciente-a-cohorte.",
+        }), 400
+    raw_weeks = request.args.get("weeks") or "12,24,36,52"
+    weeks_list: list[int] = []
+    for item in str(raw_weeks).replace(";", ",").split(","):
+        value = safe_int(item.strip(), None)
+        if value in (8, 12, 16, 24, 36, 52) and value not in weeks_list:
+            weeks_list.append(value)
+    if not weeks_list:
+        return jsonify({
+            "success": False,
+            "error": "weeks_must_include_supported_response_window",
+            "accepted": [8, 12, 16, 24, 36, 52],
+        }), 400
+    real_only = str(request.args.get("real_only") or "0").lower() in {"1", "true", "yes", "si"}
+    trace_limit = safe_int(request.args.get("trace_limit") or request.args.get("limit") or 20, 20)
+    filters = {
+        "molecule": request.args.get("molecule") or request.args.get("arpi_agent") or "",
+        "regimen": request.args.get("regimen") or request.args.get("regimen_code") or "",
+        "baseline_bucket": request.args.get("baseline_bucket") or "",
+        "clinical_state": request.args.get("clinical_state") or "",
+        "line_context": request.args.get("line_context") or "",
+        "psa_band": request.args.get("psa_band") or "",
+        "ecog_band": request.args.get("ecog_band") or "",
+        "age_band": request.args.get("age_band") or "",
+        "metastatic_volume": request.args.get("metastatic_volume") or request.args.get("volume_disease") or "",
+        "metric": request.args.get("metric") or "",
+    }
+    payload = build_treatment_value_capture_impact(
+        patient_ref,
+        weeks_list=tuple(weeks_list),
+        real_only=real_only,
+        filters=filters,
+        trace_limit=trace_limit,
+    )
+    return jsonify({
+        "success": True,
+        **payload,
+        "audit_note": (
+            "Impacto poblacional read-only: calcula contribucion paciente-a-cohorte "
+            "sin mutar hechos clinicos ni crear ordenes."
+        ),
+    })
+
+
+@app.route("/api/analytics/epidemiology-command-center", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_epidemiology_command_center():
+    from prostanet.domains.population_intelligence.arpi_value_analytics import (
+        build_epidemiology_command_center,
+    )
+
+    raw_weeks = request.args.get("weeks") or "12,24,36,52"
+    weeks_list: list[int] = []
+    for item in str(raw_weeks).replace(";", ",").split(","):
+        value = safe_int(item.strip(), None)
+        if value in (8, 12, 16, 24, 36, 52) and value not in weeks_list:
+            weeks_list.append(value)
+    if not weeks_list:
+        return jsonify({
+            "success": False,
+            "error": "weeks_must_include_supported_response_window",
+            "accepted": [8, 12, 16, 24, 36, 52],
+        }), 400
+    real_only = str(request.args.get("real_only") or "0").lower() in {"1", "true", "yes", "si"}
+    trace_limit = safe_int(request.args.get("trace_limit") or request.args.get("limit") or 250, 250)
+    filters = {
+        "molecule": request.args.get("molecule") or request.args.get("arpi_agent") or "",
+        "regimen": request.args.get("regimen") or request.args.get("regimen_code") or "",
+        "baseline_bucket": request.args.get("baseline_bucket") or "",
+        "patient_ref": request.args.get("patient_ref") or request.args.get("nss") or "",
+        "clinical_state": request.args.get("clinical_state") or "",
+        "line_context": request.args.get("line_context") or "",
+        "psa_band": request.args.get("psa_band") or "",
+        "ecog_band": request.args.get("ecog_band") or "",
+        "age_band": request.args.get("age_band") or "",
+        "metastatic_volume": request.args.get("metastatic_volume") or request.args.get("volume_disease") or "",
+        "metric": request.args.get("metric") or "",
+    }
+    bundle = build_epidemiology_command_center(
+        weeks_list=tuple(weeks_list),
+        real_only=real_only,
+        filters=filters,
+        trace_limit=trace_limit,
+        source_freeze_key=request.args.get("source_freeze_key") or request.args.get("freeze_key") or "",
+    )
+    requested_format = str(request.args.get("format") or "").lower()
+    if requested_format == "csv":
+        output = io.StringIO()
+        fieldnames = [
+            "week", "patient_ref", "patient_name", "molecule", "regimen_code",
+            "baseline_state_bucket", "baseline_psa", "actual_psa", "psa_decline_pct",
+            "psa50_response", "psa90_response", "baseline_ecog", "actual_ecog",
+            "ecog_change_from_baseline", "spend_to_window_mxn",
+            "high_grade_toxicity_to_window", "hospitalization_toxicity_to_window",
+            "referral_status", "referral_delay_days", "discontinued_by_window",
+            "time_to_psa_progression_days", "time_to_discontinuation_days",
+            "line_persistence_days_to_window", "bone_event_to_window", "death_to_window",
+            "evidence_quality", "profile_url",
+        ]
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for row in bundle.get("patient_metric_trace") or []:
+            writer.writerow(row)
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=epidemiology_command_center_v2.csv"},
+        )
+    return jsonify({
+        "success": True,
+        **bundle,
+    })
+
+
+@app.route("/api/analytics/epidemiology-command-center/provenance", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_epidemiology_command_center_provenance():
+    from prostanet.domains.population_intelligence.arpi_value_analytics import (
+        build_epidemiology_command_center,
+    )
+
+    raw_weeks = request.args.get("weeks") or "12,24,36,52"
+    weeks_list: list[int] = []
+    for item in str(raw_weeks).replace(";", ",").split(","):
+        value = safe_int(item.strip(), None)
+        if value in (8, 12, 16, 24, 36, 52) and value not in weeks_list:
+            weeks_list.append(value)
+    if not weeks_list:
+        weeks_list = [12, 24, 36, 52]
+    real_only = str(request.args.get("real_only") or "0").lower() in {"1", "true", "yes", "si"}
+    trace_limit = safe_int(request.args.get("trace_limit") or request.args.get("limit") or 250, 250)
+    filters = {
+        "molecule": request.args.get("molecule") or request.args.get("arpi_agent") or "",
+        "regimen": request.args.get("regimen") or request.args.get("regimen_code") or "",
+        "baseline_bucket": request.args.get("baseline_bucket") or "",
+        "patient_ref": request.args.get("patient_ref") or request.args.get("nss") or "",
+        "clinical_state": request.args.get("clinical_state") or "",
+        "line_context": request.args.get("line_context") or "",
+        "psa_band": request.args.get("psa_band") or "",
+        "ecog_band": request.args.get("ecog_band") or "",
+        "age_band": request.args.get("age_band") or "",
+        "metastatic_volume": request.args.get("metastatic_volume") or request.args.get("volume_disease") or "",
+        "metric": request.args.get("metric") or "",
+    }
+    bundle = build_epidemiology_command_center(
+        weeks_list=tuple(weeks_list),
+        real_only=real_only,
+        filters=filters,
+        trace_limit=trace_limit,
+        source_freeze_key=request.args.get("source_freeze_key") or request.args.get("freeze_key") or "",
+    )
+    return jsonify({
+        "success": True,
+        **(bundle.get("metric_provenance") or {}),
+    })
+
+
+def _parse_epidemiology_weeks(raw_value, *, default="12,24,36,52"):
+    raw = raw_value if raw_value not in (None, "") else default
+    if isinstance(raw, (list, tuple)):
+        items = raw
+    else:
+        items = str(raw).replace(";", ",").split(",")
+    weeks_list: list[int] = []
+    for item in items:
+        value = safe_int(str(item).strip(), None)
+        if value in (8, 12, 16, 24, 36, 52) and value not in weeks_list:
+            weeks_list.append(value)
+    return weeks_list
+
+
+def _parse_epidemiology_bool(value) -> bool:
+    return str(value or "0").lower() in {"1", "true", "yes", "si"}
+
+
+def _epidemiology_filters_from_picker(pick) -> dict:
+    return {
+        "molecule": pick("molecule", pick("arpi_agent", "")) or "",
+        "regimen": pick("regimen", pick("regimen_code", "")) or "",
+        "baseline_bucket": pick("baseline_bucket", "") or "",
+        "patient_ref": pick("patient_ref", pick("nss", "")) or "",
+        "clinical_state": pick("clinical_state", "") or "",
+        "line_context": pick("line_context", "") or "",
+        "psa_band": pick("psa_band", "") or "",
+        "ecog_band": pick("ecog_band", "") or "",
+        "age_band": pick("age_band", "") or "",
+        "metastatic_volume": pick("metastatic_volume", pick("volume_disease", "")) or "",
+        "metric": pick("metric", "") or "",
+    }
+
+
+@app.route("/api/analytics/epidemiology-command-center/snapshot-pack", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_epidemiology_command_center_snapshot_pack():
+    from prostanet.domains.population_intelligence.epidemiology_metric_snapshot import (
+        build_epidemiology_metric_snapshot_pack,
+        csv_for_snapshot_component,
+    )
+
+    weeks_list = _parse_epidemiology_weeks(request.args.get("weeks"))
+    if not weeks_list:
+        return jsonify({
+            "success": False,
+            "error": "weeks_must_include_supported_response_window",
+            "accepted": [8, 12, 16, 24, 36, 52],
+        }), 400
+    filters = _epidemiology_filters_from_picker(lambda name, default="": request.args.get(name, default))
+    pack = build_epidemiology_metric_snapshot_pack(
+        weeks_list=tuple(weeks_list),
+        real_only=_parse_epidemiology_bool(request.args.get("real_only")),
+        filters=filters,
+        trace_limit=safe_int(request.args.get("trace_limit") or request.args.get("limit") or 250, 250),
+        source_freeze_key=request.args.get("source_freeze_key") or request.args.get("freeze_key") or "",
+        governance_status=request.args.get("governance_status"),
+        approval_status=request.args.get("approval_status"),
+        approved_by=request.args.get("approved_by"),
+        reviewer_role=request.args.get("reviewer_role"),
+        approval_note=request.args.get("approval_note"),
+        methodology_version=request.args.get("methodology_version"),
+        signed_at=request.args.get("signed_at"),
+    )
+    requested_format = str(request.args.get("format") or "").lower()
+    if requested_format in {"executive_kpis_csv", "outcome_matrix_csv", "metric_provenance_csv", "comparison_panel_csv"}:
+        filename = requested_format.replace("_csv", "") + ".csv"
+        return Response(
+            csv_for_snapshot_component(pack, requested_format),
+            mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename=epidemiology_snapshot_{filename}"},
+        )
+    return jsonify({"success": True, **pack})
+
+
+@app.route("/api/analytics/epidemiology-command-center/snapshot-pack/freeze", methods=["POST"])
+@require_clinical_session(scope="audit:write", redirect_to_login=False)
+def api_analytics_epidemiology_command_center_snapshot_pack_freeze():
+    from prostanet.domains.population_intelligence.epidemiology_metric_snapshot import (
+        freeze_epidemiology_metric_snapshot_pack,
+    )
+
+    body = request.get_json(silent=True) or {}
+
+    def pick(name, default=""):
+        value = body.get(name)
+        if value in (None, ""):
+            value = request.args.get(name, default)
+        return value
+
+    weeks_list = _parse_epidemiology_weeks(pick("weeks", "12,24,36,52"))
+    if not weeks_list:
+        return jsonify({
+            "success": False,
+            "error": "weeks_must_include_supported_response_window",
+            "accepted": [8, 12, 16, 24, 36, 52],
+        }), 400
+    filters = _epidemiology_filters_from_picker(pick)
+    result = freeze_epidemiology_metric_snapshot_pack(
+        weeks_list=tuple(weeks_list),
+        real_only=_parse_epidemiology_bool(pick("real_only", "0")),
+        filters=filters,
+        trace_limit=safe_int(pick("trace_limit", pick("limit", 250)), 250),
+        source_freeze_key=pick("source_freeze_key", pick("freeze_key", "")) or "",
+        title=pick("title", None),
+        created_by=pick("created_by", "clinician") or "clinician",
+        audit_note=pick("audit_note", None),
+        governance_status=pick("governance_status", None),
+        approval_status=pick("approval_status", None),
+        approved_by=pick("approved_by", None),
+        reviewer_role=pick("reviewer_role", None),
+        approval_note=pick("approval_note", None),
+        methodology_version=pick("methodology_version", None),
+        signed_at=pick("signed_at", None),
+    )
+    if not result.get("success"):
+        return jsonify(result), 400
+    return jsonify({
+        **result,
+        "message": "Snapshot epidemiologico V2 congelado con hash reproducible y sin PHI.",
+    })
+
+
+@app.route("/api/analytics/epidemiology-command-center/snapshot-pack/freezes", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_epidemiology_command_center_snapshot_pack_freezes():
+    from prostanet.domains.population_intelligence.epidemiology_metric_snapshot import (
+        list_epidemiology_metric_snapshot_freezes,
+    )
+
+    library = list_epidemiology_metric_snapshot_freezes(
+        limit=safe_int(request.args.get("limit") or 25, 25),
+        include_payload=_parse_epidemiology_bool(request.args.get("include_payload")),
+    )
+    return jsonify({"success": True, **library})
+
+
+@app.route("/api/analytics/epidemiology-command-center/snapshot-pack/freezes/<freeze_key>", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_epidemiology_command_center_snapshot_pack_freeze_detail(freeze_key):
+    from prostanet.domains.population_intelligence.epidemiology_metric_snapshot import (
+        get_epidemiology_metric_snapshot_freeze,
+    )
+
+    freeze = get_epidemiology_metric_snapshot_freeze(freeze_key)
+    if not freeze:
+        return jsonify({"success": False, "error": "freeze_not_found"}), 404
+    return jsonify({
+        "success": True,
+        "version": "epidemiology_metric_snapshot_freeze_v1",
+        "freeze": freeze,
+    })
+
+
+@app.route("/api/analytics/epidemiology-command-center/snapshot-pack/freezes/<freeze_key>/download", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_epidemiology_command_center_snapshot_pack_download(freeze_key):
+    from prostanet.domains.population_intelligence.epidemiology_metric_snapshot import (
+        build_epidemiology_metric_snapshot_zip_bytes,
+        get_epidemiology_metric_snapshot_freeze,
+    )
+
+    freeze = get_epidemiology_metric_snapshot_freeze(freeze_key)
+    if not freeze:
+        return jsonify({"success": False, "error": "freeze_not_found"}), 404
+    zip_bytes = build_epidemiology_metric_snapshot_zip_bytes(freeze)
+    return Response(
+        zip_bytes,
+        mimetype="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={freeze_key}.zip"},
+    )
+
+
+@app.route("/api/analytics/epidemiology-command-center/snapshot-pack/freezes/<freeze_key>/reproduction-pack", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_epidemiology_command_center_reproduction_pack(freeze_key):
+    from prostanet.domains.population_intelligence.epidemiology_metric_snapshot import (
+        build_statistical_reproduction_pack,
+        get_epidemiology_metric_snapshot_freeze,
+    )
+
+    freeze = get_epidemiology_metric_snapshot_freeze(freeze_key)
+    if not freeze:
+        return jsonify({"success": False, "error": "freeze_not_found"}), 404
+    package = build_statistical_reproduction_pack(freeze)
+    if not _parse_epidemiology_bool(request.args.get("include_files")):
+        package = {key: value for key, value in package.items() if key != "files"}
+    return jsonify({
+        "success": True,
+        **package,
+    })
+
+
+@app.route("/api/analytics/epidemiology-command-center/snapshot-pack/freezes/<freeze_key>/reproduction-pack/download", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_epidemiology_command_center_reproduction_pack_download(freeze_key):
+    from prostanet.domains.population_intelligence.epidemiology_metric_snapshot import (
+        build_statistical_reproduction_pack_zip_bytes,
+        get_epidemiology_metric_snapshot_freeze,
+    )
+
+    freeze = get_epidemiology_metric_snapshot_freeze(freeze_key)
+    if not freeze:
+        return jsonify({"success": False, "error": "freeze_not_found"}), 404
+    zip_bytes = build_statistical_reproduction_pack_zip_bytes(freeze)
+    return Response(
+        zip_bytes,
+        mimetype="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={freeze_key}_reproduction_pack.zip"},
+    )
+
+
+@app.route("/api/analytics/treatment-value-registry/research-pack", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_treatment_value_research_pack():
+    from prostanet.domains.population_intelligence.arpi_value_analytics import (
+        build_treatment_value_research_pack,
+    )
+
+    raw_weeks = request.args.get("weeks") or "12,24"
+    weeks_list: list[int] = []
+    for item in str(raw_weeks).replace(";", ",").split(","):
+        value = safe_int(item.strip(), None)
+        if value in (8, 12, 16, 24, 36, 52) and value not in weeks_list:
+            weeks_list.append(value)
+    if not weeks_list:
+        return jsonify({
+            "success": False,
+            "error": "weeks_must_include_supported_response_window",
+            "accepted": [8, 12, 16, 24, 36, 52],
+        }), 400
+    real_only = str(request.args.get("real_only") or "0").lower() in {"1", "true", "yes", "si"}
+    trace_limit = safe_int(request.args.get("trace_limit") or request.args.get("limit") or 1000, 1000)
+    filters = {
+        "molecule": request.args.get("molecule") or request.args.get("arpi_agent") or "",
+        "regimen": request.args.get("regimen") or request.args.get("regimen_code") or "",
+        "baseline_bucket": request.args.get("baseline_bucket") or "",
+        "patient_ref": request.args.get("patient_ref") or request.args.get("nss") or "",
+        "clinical_state": request.args.get("clinical_state") or "",
+        "line_context": request.args.get("line_context") or "",
+        "psa_band": request.args.get("psa_band") or "",
+        "ecog_band": request.args.get("ecog_band") or "",
+        "age_band": request.args.get("age_band") or "",
+        "metastatic_volume": request.args.get("metastatic_volume") or request.args.get("volume_disease") or "",
+        "metric": request.args.get("metric") or "",
+    }
+    pack = build_treatment_value_research_pack(
+        weeks_list=tuple(weeks_list),
+        real_only=real_only,
+        filters=filters,
+        trace_limit=trace_limit,
+    )
+    requested_format = str(request.args.get("format") or "").lower()
+    if requested_format == "dictionary_csv":
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=["field", "label", "type", "source", "definition"])
+        writer.writeheader()
+        for row in pack.get("data_dictionary") or []:
+            writer.writerow(row)
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=treatment_value_research_pack_dictionary_v2.csv"},
+        )
+    if requested_format == "csv":
+        output = io.StringIO()
+        fieldnames = [item["field"] for item in pack.get("data_dictionary") or []]
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for row in (pack.get("dataset") or {}).get("rows") or []:
+            writer.writerow({
+                key: json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value
+                for key, value in row.items()
+            })
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=treatment_value_research_pack_dataset_v2.csv"},
+        )
+    return jsonify({
+        "success": True,
+        **pack,
+    })
+
+
+@app.route("/api/analytics/treatment-value-registry/research-pack/freeze", methods=["POST"])
+@require_clinical_session(scope="audit:write", redirect_to_login=False)
+def api_analytics_treatment_value_research_pack_freeze():
+    """Freeze a filtered Research Pack V2 for reproducible study/audit use."""
+    import tracking_db
+    from prostanet.domains.population_intelligence.arpi_value_analytics import (
+        build_treatment_value_research_pack,
+    )
+
+    body = request.get_json(silent=True) or {}
+
+    def pick(name, default=""):
+        value = body.get(name)
+        if value in (None, ""):
+            value = request.args.get(name, default)
+        return value
+
+    raw_weeks = pick("weeks", "12,24")
+    if isinstance(raw_weeks, (list, tuple)):
+        week_items = raw_weeks
+    else:
+        week_items = str(raw_weeks).replace(";", ",").split(",")
+    weeks_list: list[int] = []
+    for item in week_items:
+        value = safe_int(str(item).strip(), None)
+        if value in (8, 12, 16, 24, 36, 52) and value not in weeks_list:
+            weeks_list.append(value)
+    if not weeks_list:
+        return jsonify({
+            "success": False,
+            "error": "weeks_must_include_supported_response_window",
+            "accepted": [8, 12, 16, 24, 36, 52],
+        }), 400
+
+    real_only = str(pick("real_only", "0")).lower() in {"1", "true", "yes", "si"}
+    trace_limit = safe_int(pick("trace_limit", pick("limit", 1000)), 1000)
+    filters = {
+        "molecule": pick("molecule", pick("arpi_agent", "")) or "",
+        "regimen": pick("regimen", pick("regimen_code", "")) or "",
+        "baseline_bucket": pick("baseline_bucket", "") or "",
+        "patient_ref": pick("patient_ref", pick("nss", "")) or "",
+        "clinical_state": pick("clinical_state", "") or "",
+        "line_context": pick("line_context", "") or "",
+        "psa_band": pick("psa_band", "") or "",
+        "ecog_band": pick("ecog_band", "") or "",
+        "age_band": pick("age_band", "") or "",
+        "metastatic_volume": pick("metastatic_volume", pick("volume_disease", "")) or "",
+        "metric": pick("metric", "") or "",
+    }
+    pack = build_treatment_value_research_pack(
+        weeks_list=tuple(weeks_list),
+        real_only=real_only,
+        filters=filters,
+        trace_limit=trace_limit,
+    )
+    result = tracking_db.freeze_treatment_value_research_pack(
+        pack,
+        created_by=pick("created_by", "clinician") or "clinician",
+        title=pick("title", None),
+        audit_note=pick("audit_note", None),
+    )
+    if not result.get("success"):
+        return jsonify(result), 400
+    return jsonify({
+        **result,
+        "message": "Cohorte V2 congelada con hash reproducible.",
+    })
+
+
+@app.route("/api/analytics/treatment-value-registry/research-pack/freezes", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_treatment_value_research_pack_freezes():
+    import tracking_db
+
+    limit = safe_int(request.args.get("limit") or 25, 25)
+    freezes = tracking_db.list_research_cohort_freezes(limit=limit)
+    return jsonify({
+        "success": True,
+        "version": "research_cohort_freezes_v2",
+        "freezes": freezes,
+        "count": len(freezes),
+    })
+
+
+@app.route("/api/analytics/treatment-value-registry/research-pack/freezes/<freeze_key>", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=False)
+def api_analytics_treatment_value_research_pack_freeze_detail(freeze_key):
+    import tracking_db
+
+    freeze = tracking_db.get_research_cohort_freeze(freeze_key)
+    if not freeze:
+        return jsonify({"success": False, "error": "freeze_not_found"}), 404
+    return jsonify({
+        "success": True,
+        "version": "research_cohort_freeze_v2",
+        "freeze": freeze,
+    })
+
+
+@app.route("/api/analytics/treatment-value-registry/gap-review", methods=["POST"])
+@require_clinical_session(scope="audit:write", redirect_to_login=False)
+def api_analytics_treatment_value_gap_review():
+    """Audit-only closure loop for epidemiology readiness gaps."""
+    import tracking_db
+
+    payload = request.get_json(silent=True) or {}
+    patient_ref = str(payload.get("patient_ref") or payload.get("nss") or "").strip()
+    gap_key = str(payload.get("gap_key") or "").strip()
+    closure_status = str(payload.get("closure_status") or "").strip()
+    clinical_note = str(payload.get("clinical_note") or "").strip()
+    reviewed_by = str(payload.get("reviewed_by") or "clinician").strip() or "clinician"
+    next_followup_date = str(payload.get("next_followup_date") or "").strip()
+    detected_at = str(payload.get("detected_at") or "").strip()[:10]
+    detection_anchor = str(payload.get("detection_anchor") or "").strip()
+    target_weeks = str(payload.get("target_weeks") or payload.get("week") or "").strip()
+    regimen_code = str(payload.get("regimen_code") or "").strip()
+    molecule = str(payload.get("molecule") or "").strip()
+    selected_action_key = str(payload.get("selected_action_key") or "").strip()
+    assigned_to = str(payload.get("assigned_to") or "").strip()
+    owner_role = str(payload.get("owner_role") or assigned_to or "").strip()
+    due_date = str(payload.get("due_date") or "").strip()[:10]
+    sla_days = str(payload.get("sla_days") or "").strip()
+    sla_policy = str(payload.get("sla_policy") or "").strip()
+    acknowledged_missing_fields = payload.get("acknowledged_missing_fields") or []
+    if isinstance(acknowledged_missing_fields, str):
+        acknowledged_missing_fields = [
+            item.strip()
+            for item in acknowledged_missing_fields.split(",")
+            if item.strip()
+        ]
+    if not isinstance(acknowledged_missing_fields, list):
+        acknowledged_missing_fields = []
+    accepted_statuses = {
+        "captured_structured",
+        "captured_elsewhere",
+        "followup_scheduled",
+        "not_applicable",
+        "still_blocked",
+    }
+    if not patient_ref or not gap_key:
+        return jsonify({"success": False, "error": "patient_ref_and_gap_key_required"}), 400
+    if closure_status not in accepted_statuses:
+        return jsonify({
+            "success": False,
+            "error": "invalid_closure_status",
+            "accepted": sorted(accepted_statuses),
+        }), 400
+    if len(clinical_note) < 3:
+        return jsonify({"success": False, "error": "clinical_note_required"}), 400
+    conn = sqlite3.connect(tracking_db.get_db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT id, nss FROM patient_identity WHERE nss = ?",
+            (patient_ref,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"success": False, "error": "patient_not_found"}), 404
+    event_payload = {
+        "gap_key": gap_key,
+        "closure_status": closure_status,
+        "clinical_note": clinical_note,
+        "reviewed_by": reviewed_by,
+        "next_followup_date": next_followup_date,
+        "detected_at": detected_at,
+        "detection_anchor": detection_anchor,
+        "target_weeks": target_weeks,
+        "regimen_code": regimen_code,
+        "molecule": molecule,
+        "selected_action_key": selected_action_key,
+        "assigned_to": assigned_to,
+        "owner_role": owner_role,
+        "due_date": due_date,
+        "sla_days": sla_days,
+        "sla_policy": sla_policy,
+        "acknowledged_missing_fields": acknowledged_missing_fields,
+        "reviewed_at": utc_now_iso(),
+        "source_surface": "population_treatment_value_registry_v2",
+        "source_clinical_facts_mutated": False,
+        "external_order_created": False,
+        "model_trained": False,
+    }
+    event_id = tracking_db.record_patient_event(
+        int(row["id"]),
+        event_type="epidemiology_readiness_gap_reviewed",
+        state_context="population_epidemiology_registry",
+        management_track="treatment_value_registry",
+        source_type="cohort_readiness_closure_loop",
+        status=closure_status,
+        payload=event_payload,
+    )
+    if not event_id:
+        return jsonify({"success": False, "error": "event_persist_failed"}), 500
+    try:
+        from prostanet.presentation.v2_adapters import invalidate_profile_view_cache
+        from prostanet.shared.read_model_cache import invalidate_read_model_cache
+
+        invalidate_profile_view_cache(str(row["nss"]), reason="epidemiology_gap_review")
+        invalidate_read_model_cache("epidemiology_command_center")
+        invalidate_read_model_cache("treatment_value_registry")
+        invalidate_read_model_cache(str(row["nss"]))
+    except Exception:
+        pass
+    return jsonify({
+        "success": True,
+        "event_id": event_id,
+        "patient_ref": patient_ref,
+        "gap_key": gap_key,
+        "closure_status": closure_status,
+        "detected_at": detected_at,
+        "target_weeks": target_weeks,
+        "assigned_to": assigned_to,
+        "due_date": due_date,
+        "source_clinical_facts_mutated": False,
+        "external_order_created": False,
+        "model_trained": False,
+        "message": "Revision de brecha epidemiologica registrada en patient_events.",
+    })
+
+
+@app.route("/population/treatment-value-registry", methods=["GET"])
+@app.route("/treatment-value-registry", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=True)
+def treatment_value_registry_v2_page():
+    """V2 population view for 12/24-week treatment-value cohorts."""
+    return render_template("treatment_value_registry_v2.html")
+
+
+@app.route("/population/epidemiology-command-center", methods=["GET"])
+@app.route("/epidemiology-command-center", methods=["GET"])
+@require_clinical_session(scope="audit:read", redirect_to_login=True)
+def epidemiology_command_center_v2_page():
+    """Final V2 epidemiology command center for outcomes, value and research readiness."""
+    return render_template("epidemiology_command_center_v2.html")
+
+
+def _refresh_arpi_windows_after_write(patient_ref, *, reason: str) -> dict:
+    """Refresh ARPI response cache after a clinical write without breaking writes."""
+    try:
+        from prostanet.domains.population_intelligence.mx_cohort_aggregator import (
+            refresh_arpi_response_windows_for_patient,
+        )
+
+        return refresh_arpi_response_windows_for_patient(patient_ref, reason=reason)
+    except Exception as exc:
+        logger.warning("ARPI response window refresh failed for %s: %s", patient_ref, exc)
+        return {"success": False, "error": str(exc)[:200], "reason": reason}
+
+
+def _build_treatment_economic_snapshot_safely(patient_ref: str) -> dict:
+    try:
+        from prostanet.domains.patient_tracking.treatment_economic_impact import (
+            build_patient_treatment_economic_snapshot,
+        )
+
+        return build_patient_treatment_economic_snapshot(patient_ref)
+    except Exception as exc:
+        return {
+            "available": False,
+            "patient_ref": patient_ref,
+            "error": str(exc)[:180],
+            "read_only": True,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+            "external_transfer_performed": False,
+        }
+
+
+def _build_treatment_economic_impact_safely(
+    patient_ref: str,
+    *,
+    before_snapshot: dict | None,
+    kind: str,
+    append_result: dict | None,
+    recompute_result: dict | None,
+) -> dict:
+    try:
+        from prostanet.domains.patient_tracking.treatment_economic_impact import (
+            build_treatment_economic_capture_impact,
+        )
+
+        return build_treatment_economic_capture_impact(
+            patient_ref,
+            before_snapshot=before_snapshot or {},
+            kind=kind,
+            append_result=append_result or {},
+            recompute_result=recompute_result or {},
+        )
+    except Exception as exc:
+        return {
+            "available": False,
+            "version": "treatment_economic_capture_impact_v1",
+            "patient_ref": patient_ref,
+            "kind_appended": kind,
+            "error": str(exc)[:180],
+            "read_only_impact_model": True,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+            "external_transfer_performed": False,
+        }
+
+
+def _build_treatment_value_capture_impact_safely(
+    patient_ref: str,
+    *,
+    before_snapshot: dict | None = None,
+    kind: str = "",
+    append_result: dict | None = None,
+    recompute_result: dict | None = None,
+) -> dict:
+    try:
+        from prostanet.domains.population_intelligence.arpi_value_analytics import (
+            build_treatment_value_capture_impact,
+        )
+
+        return build_treatment_value_capture_impact(
+            patient_ref,
+            weeks_list=(12, 24, 36, 52),
+            before_snapshot=before_snapshot or {},
+            kind=kind,
+            append_result=append_result or {},
+            recompute_result=recompute_result or {},
+            trace_limit=20,
+        )
+    except Exception as exc:
+        return {
+            "available": False,
+            "version": "treatment_value_capture_impact_v1",
+            "patient_ref": patient_ref,
+            "kind_appended": kind,
+            "error": str(exc)[:180],
+            "read_only_impact_model": True,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+            "external_transfer_performed": False,
+        }
+
+
+def _should_build_treatment_value_capture_impact(kind: str) -> bool:
+    return str(kind or "").lower() in {
+        "psa",
+        "ape",
+        "ecog",
+        "treatment_course",
+        "treatment_change",
+        "treatment_dose",
+        "epidemiology_gap",
+        "ctcae",
+    }
+
+
+def _build_patient_epidemiology_gap_sla_safely(patient_ref: str) -> dict:
+    try:
+        from prostanet.domains.population_intelligence.arpi_value_analytics import (
+            build_patient_epidemiology_gap_sla,
+        )
+
+        return build_patient_epidemiology_gap_sla(
+            patient_ref,
+            weeks_list=(12, 24),
+            trace_limit=0,
+        )
+    except Exception as exc:
+        return {
+            "available": False,
+            "version": "patient_epidemiology_gap_sla_v1",
+            "patient_ref": patient_ref,
+            "error": str(exc)[:180],
+            "read_only_impact_model": True,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+            "external_transfer_performed": False,
+        }
+
+
+@app.route("/api/patients/<patient_ref>/epidemiology-gap-sla", methods=["GET"])
+@require_clinical_session(scope="phi:read", redirect_to_login=False)
+def api_patient_epidemiology_gap_sla(patient_ref):
+    snapshot = _build_patient_epidemiology_gap_sla_safely(patient_ref)
+    status = 200 if snapshot.get("available") else 404
+    return jsonify({"success": bool(snapshot.get("available")), "snapshot": snapshot}), status
+
+
+@app.route("/api/patients/<patient_ref>/treatment-economic-impact", methods=["GET"])
+@require_clinical_session(scope="phi:read", redirect_to_login=False)
+def api_patient_treatment_economic_impact(patient_ref):
+    snapshot = _build_treatment_economic_snapshot_safely(patient_ref)
+    status = 200 if not snapshot.get("error") else 404
+    return jsonify({"success": not snapshot.get("error"), "snapshot": snapshot}), status
+
+
+@app.route("/api/patients/<patient_ref>/treatment-course/current", methods=["GET"])
+@require_clinical_session(scope="phi:read", redirect_to_login=False)
+def api_patient_treatment_course_current(patient_ref):
+    import tracking_db
+
+    payload = tracking_db.get_patient_treatment_course_summary(patient_ref)
+    status = 200 if payload.get("success") else 404
+    return jsonify(payload), status
+
+
+@app.route("/api/patients/<patient_ref>/treatment-course", methods=["POST"])
+@require_clinical_session(scope="phi:write", redirect_to_login=False)
+def api_patient_treatment_course_start(patient_ref):
+    import tracking_db
+
+    body = request.get_json(silent=True) or {}
+    before_snapshot = _build_treatment_economic_snapshot_safely(patient_ref)
+    value_before_snapshot = _build_treatment_value_capture_impact_safely(
+        patient_ref,
+        kind="treatment_course",
+    )
+    result = tracking_db.start_or_update_treatment_course(patient_ref, body)
+    if result.get("success"):
+        arpi_refresh = _refresh_arpi_windows_after_write(
+            patient_ref,
+            reason="treatment_course_started_or_updated",
+        )
+        cache_invalidation = _invalidate_longitudinal_read_models(
+            patient_ref,
+            kind="treatment_course",
+        )
+        result["arpi_response_windows"] = arpi_refresh
+        result["cache_invalidation"] = cache_invalidation
+        result["treatment_economic_impact"] = _build_treatment_economic_impact_safely(
+            patient_ref,
+            before_snapshot=before_snapshot,
+            kind="treatment_course",
+            append_result=result.get("course") or result,
+            recompute_result={
+                "success": True,
+                "arpi_response_windows": arpi_refresh,
+                "cache_invalidation": cache_invalidation,
+            },
+        )
+        result["treatment_value_capture_impact"] = _build_treatment_value_capture_impact_safely(
+            patient_ref,
+            before_snapshot=value_before_snapshot,
+            kind="treatment_course",
+            append_result=result.get("course") or result,
+            recompute_result={
+                "success": True,
+                "arpi_response_windows": arpi_refresh,
+                "cache_invalidation": cache_invalidation,
+            },
+        )
+    status = 200 if result.get("success") else (404 if result.get("error") == "patient_not_found" else 400)
+    return jsonify(result), status
+
+
+@app.route("/api/patients/<patient_ref>/treatment-course/<int:course_id>/dose", methods=["POST"])
+@require_clinical_session(scope="phi:write", redirect_to_login=False)
+def api_patient_treatment_course_dose(patient_ref, course_id):
+    import tracking_db
+
+    body = request.get_json(silent=True) or {}
+    body["treatment_history_id"] = course_id
+    before_snapshot = _build_treatment_economic_snapshot_safely(patient_ref)
+    value_before_snapshot = _build_treatment_value_capture_impact_safely(
+        patient_ref,
+        kind="treatment_dose",
+    )
+    result = tracking_db.append_treatment_dose_administration(patient_ref, body)
+    if result.get("success"):
+        arpi_refresh = _refresh_arpi_windows_after_write(
+            patient_ref,
+            reason="treatment_dose_administered",
+        )
+        cache_invalidation = _invalidate_longitudinal_read_models(
+            patient_ref,
+            kind="treatment_dose",
+        )
+        result["arpi_response_windows"] = arpi_refresh
+        result["cache_invalidation"] = cache_invalidation
+        result["treatment_economic_impact"] = _build_treatment_economic_impact_safely(
+            patient_ref,
+            before_snapshot=before_snapshot,
+            kind="treatment_dose",
+            append_result=result,
+            recompute_result={
+                "success": True,
+                "arpi_response_windows": arpi_refresh,
+                "cache_invalidation": cache_invalidation,
+            },
+        )
+        result["treatment_value_capture_impact"] = _build_treatment_value_capture_impact_safely(
+            patient_ref,
+            before_snapshot=value_before_snapshot,
+            kind="treatment_dose",
+            append_result=result,
+            recompute_result={
+                "success": True,
+                "arpi_response_windows": arpi_refresh,
+                "cache_invalidation": cache_invalidation,
+            },
+        )
+    status = 200 if result.get("success") else (404 if result.get("error") == "patient_not_found" else 400)
+    return jsonify(result), status
+
+
 @app.route("/patient_intake")
 @require_clinical_session(scope="phi:write", redirect_to_login=True)
 def patient_intake():
@@ -1029,16 +2341,31 @@ def favicon():
 def patient_profile(nss):
     import tracking_db # Import local para evitar circularidad si la hubiera, o simplemente consistencia
     try:
+        profile_is_v2 = request.args.get("v") != "legacy"
+        force_profile_refresh = str(request.args.get("refresh") or "").lower() in {"1", "true", "yes", "si", "sí"}
+        profile_cache_key = f"profile_v2_html:{nss}"
+        if profile_is_v2 and not force_profile_refresh:
+            try:
+                from prostanet.presentation.v2_adapters import get_cached_profile_html
+
+                cached_profile_html = get_cached_profile_html(profile_cache_key)
+                if cached_profile_html:
+                    return cached_profile_html
+            except Exception:
+                pass
         core_record = tracking_db.load_patient_record_core(nss)
         data = tracking_db.build_patient_record_derivatives(core_record) if core_record else None
         if not data:
             return "Paciente no encontrado", 404
-        longitudinal_bundle = tracking_db.refresh_longitudinal_intelligence(
-            nss,
-            force_recompute=False,
-            record=data,
-            include_live_benchmark=False,
-        )
+        if profile_is_v2 and not force_profile_refresh:
+            longitudinal_bundle = tracking_db.build_patient_longitudinal_profile_read_bundle(data)
+        else:
+            longitudinal_bundle = tracking_db.refresh_longitudinal_intelligence(
+                nss,
+                force_recompute=False,
+                record=data,
+                include_live_benchmark=False,
+            )
         agenda_board = tracking_db.refresh_followup_agenda(data, longitudinal_bundle=longitudinal_bundle)
         if agenda_board:
             data["agenda_items"] = list(agenda_board.get("items") or [])
@@ -1054,7 +2381,7 @@ def patient_profile(nss):
         else:
             age = 0
         data['identity']['age'] = age
-        
+
         recs = {}
         latest_assessment = {}
         state_timeline = []
@@ -1066,19 +2393,34 @@ def patient_profile(nss):
                 humanize_care_overlays,
                 humanize_state_timeline,
             )
-            from prostanet.domains.patient_tracking.profile_compass import build_patient_profile_view_model
 
             latest_assessment = humanize_assessment(data["latest_assessment"])
             state_timeline = humanize_state_timeline(data.get("state_timeline", []))
             care_overlays = humanize_care_overlays(data.get("care_overlays", []))
-            profile_view = build_patient_profile_view_model(
-                patient=data,
-                latest_assessment_raw=data.get("latest_assessment"),
-                latest_assessment=latest_assessment,
-                state_timeline=state_timeline,
-                care_overlays=care_overlays,
-                longitudinal_bundle=longitudinal_bundle,
-            )
+            if profile_is_v2 and not force_profile_refresh:
+                from prostanet.domains.patient_tracking.profile_v2_read_model import (
+                    build_patient_profile_v2_read_model,
+                )
+
+                profile_view = build_patient_profile_v2_read_model(
+                    patient=data,
+                    latest_assessment_raw=data.get("latest_assessment"),
+                    latest_assessment=latest_assessment,
+                    state_timeline=state_timeline,
+                    care_overlays=care_overlays,
+                    longitudinal_bundle=longitudinal_bundle,
+                )
+            else:
+                from prostanet.domains.patient_tracking.profile_compass import build_patient_profile_view_model
+
+                profile_view = build_patient_profile_view_model(
+                    patient=data,
+                    latest_assessment_raw=data.get("latest_assessment"),
+                    latest_assessment=latest_assessment,
+                    state_timeline=state_timeline,
+                    care_overlays=care_overlays,
+                    longitudinal_bundle=longitudinal_bundle,
+                )
         else:
             # Fallback legado solo cuando todavía no existe evaluación modular persistida.
             current_context = dict(data.get('baseline') or {})
@@ -1101,28 +2443,46 @@ def patient_profile(nss):
             current_context['child_pugh_score'] = current_context.get('child_pugh_score') or 'A'
             current_context['rt_primary_received'] = current_context.get('rt_primary_received') or 0
 
-            from prostanet.shared.precision_medicine_legacy import evaluate_patient_for_mhspc
-            from prostanet.domains.patient_tracking.profile_compass import build_patient_profile_view_model
+            if profile_is_v2 and not force_profile_refresh:
+                from prostanet.domains.patient_tracking.profile_v2_read_model import (
+                    build_patient_profile_v2_read_model,
+                )
 
-            try:
-                recs = evaluate_patient_for_mhspc(current_context)
-            except Exception as e:
-                logger.warning(f"Error generando recomendaciones: {e}")
-                recs = {"info": "Recomendaciones no disponibles para este perfil"}
-
-            try:
-                profile_view = build_patient_profile_view_model(
+                latest_assessment = {}
+                state_timeline = []
+                care_overlays = []
+                profile_view = build_patient_profile_v2_read_model(
                     patient=data,
                     latest_assessment_raw={},
                     latest_assessment={},
                     state_timeline=[],
                     care_overlays=[],
-                    recommendations=recs,
                     longitudinal_bundle=longitudinal_bundle,
                 )
-            except Exception as e:
-                logger.warning(f"Error construyendo el perfil estructurado: {e}")
-                profile_view = {
+                recs = {}
+            else:
+                from prostanet.shared.precision_medicine_legacy import evaluate_patient_for_mhspc
+                from prostanet.domains.patient_tracking.profile_compass import build_patient_profile_view_model
+
+                try:
+                    recs = evaluate_patient_for_mhspc(current_context)
+                except Exception as e:
+                    logger.warning(f"Error generando recomendaciones: {e}")
+                    recs = {"info": "Recomendaciones no disponibles para este perfil"}
+
+                try:
+                    profile_view = build_patient_profile_view_model(
+                        patient=data,
+                        latest_assessment_raw={},
+                        latest_assessment={},
+                        state_timeline=[],
+                        care_overlays=[],
+                        recommendations=recs,
+                        longitudinal_bundle=longitudinal_bundle,
+                    )
+                except Exception as e:
+                    logger.warning(f"Error construyendo el perfil estructurado: {e}")
+                    profile_view = {
                     "diagnostic_state": False,
                     "management_track": "",
                     "clinical_compass": {},
@@ -1157,8 +2517,8 @@ def patient_profile(nss):
                     "missing_inputs_by_panel": {},
                     "evidence_applicability": {},
                     "recommendations": recs,
-                    "copilot": {},
-                }
+                        "copilot": {},
+                    }
 
         page_chrome = build_page_chrome(
             "patients",
@@ -1171,51 +2531,63 @@ def patient_profile(nss):
 
         # Faubot 2026-04-26 (LXXVII #67D) — v2 toggle: ?v=2 renders the
         # production v2 template (Mayo/Epic re-skin) via v2_adapters.
-        if request.args.get("v") != "legacy":
+        if profile_is_v2:
             # Faubot LXXX #67E — v2 es DEFAULT. Legacy disponible vía ?v=legacy.
             from prostanet.presentation.v2_adapters import bundle_to_v2_profile_full
-            try:
-                from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
-                    build_patient_autodrive,
+            if not force_profile_refresh:
+                _v2_signals = dict((longitudinal_bundle or {}).get("signals") or profile_view.get("clinical_signals") or {})
+                _snapshot_action = dict(
+                    _v2_signals.get("next_best_action")
+                    or (longitudinal_bundle or {}).get("next_best_action")
+                    or profile_view.get("next_best_action")
+                    or {}
                 )
-                from prostanet.domains.patient_tracking.clinical_decision_today_fusion_kernel import (
-                    build_decision_today,
+                _snapshot_missing = [
+                    item if isinstance(item, dict) else {"field": str(item), "label": str(item)}
+                    for item in list(_v2_signals.get("critical_missing") or [])
+                ]
+                profile_view["autodrive"] = dict(
+                    _v2_signals.get("autodrive")
+                    or profile_view.get("autodrive")
+                    or {
+                        "available": False,
+                        "deferred": True,
+                        "source": "profile_v2_cached_read",
+                    }
                 )
+                profile_view["decision_today_fusion_kernel"] = dict(
+                    _v2_signals.get("decision_today_fusion_kernel")
+                    or profile_view.get("decision_today_fusion_kernel")
+                    or {
+                        "available": bool(_snapshot_action),
+                        "source": "profile_v2_cached_read",
+                        "decision_state": "snapshot_review" if _snapshot_action else "not_actionable",
+                        "decision_today": {
+                            "title": _snapshot_action.get("title") or "Sin decisión clínica activa",
+                            "rationale": _snapshot_action.get("rationale") or "",
+                            "status": "snapshot_review" if _snapshot_action else "not_actionable",
+                        },
+                        "next_safe_action": _snapshot_action,
+                        "clinical_rationale": _snapshot_action.get("rationale") or "",
+                        "unified_missing_fields": _snapshot_missing,
+                        "version": "profile_v2_cached_read_v1",
+                    }
+                )
+                if _snapshot_action:
+                    profile_view["next_best_action"] = _snapshot_action
+            else:
+                try:
+                    from prostanet.domains.patient_tracking.clinical_autodrive_command_center import (
+                        build_patient_autodrive,
+                    )
+                    from prostanet.domains.patient_tracking.clinical_decision_today_fusion_kernel import (
+                        build_decision_today,
+                    )
 
-                signals_for_autodrive = dict((longitudinal_bundle or {}).get("signals") or profile_view.get("clinical_signals") or {})
-                profile_view["autodrive"] = build_patient_autodrive(
-                    data,
-                    longitudinal_bundle=longitudinal_bundle or {},
-                    state=str(
-                        signals_for_autodrive.get("effective_state_final")
-                        or signals_for_autodrive.get("effective_state")
-                        or signals_for_autodrive.get("reconciled_state")
-                        or (data.get("latest_assessment") or {}).get("state")
-                        or ""
-                    ),
-                    management_track=str(
-                        signals_for_autodrive.get("effective_management_track_final")
-                        or signals_for_autodrive.get("effective_management_track")
-                        or signals_for_autodrive.get("reconciled_management_track")
-                        or ""
-                    ),
-                    patient_ref=str(nss),
-                )
-                # Clinical Logic Hardening — Patient Profile must render the
-                # same Decision Today contract exposed by the API. Do not
-                # inject clinical_compass here; that can surface an older
-                # treatment headline while Autodrive/API already requires
-                # re-opening the decision.
-                _canonical_decision_today = dict(
-                    (profile_view.get("autodrive") or {}).get("decision_today") or {}
-                )
-                if _canonical_decision_today.get("source") == "clinical_decision_today_fusion_kernel":
-                    profile_view["decision_today_fusion_kernel"] = _canonical_decision_today
-                else:
-                    profile_view["decision_today_fusion_kernel"] = build_decision_today(
+                    signals_for_autodrive = dict((longitudinal_bundle or {}).get("signals") or profile_view.get("clinical_signals") or {})
+                    profile_view["autodrive"] = build_patient_autodrive(
                         data,
                         longitudinal_bundle=longitudinal_bundle or {},
-                        clinical_autodrive=profile_view["autodrive"],
                         state=str(
                             signals_for_autodrive.get("effective_state_final")
                             or signals_for_autodrive.get("effective_state")
@@ -1231,15 +2603,45 @@ def patient_profile(nss):
                         ),
                         patient_ref=str(nss),
                     )
-                _canonical_next_safe_action = dict(
-                    (profile_view.get("decision_today_fusion_kernel") or {}).get("next_safe_action") or {}
-                )
-                if _canonical_next_safe_action:
-                    profile_view["next_best_action"] = _canonical_next_safe_action
-            except Exception as e:
-                logger.warning(f"Error construyendo Autodrive v2: {e}")
-                profile_view["autodrive"] = {}
-                profile_view["decision_today_fusion_kernel"] = {}
+                    # Clinical Logic Hardening — Patient Profile must render the
+                    # same Decision Today contract exposed by the API. Do not
+                    # inject clinical_compass here; that can surface an older
+                    # treatment headline while Autodrive/API already requires
+                    # re-opening the decision.
+                    _canonical_decision_today = dict(
+                        (profile_view.get("autodrive") or {}).get("decision_today") or {}
+                    )
+                    if _canonical_decision_today.get("source") == "clinical_decision_today_fusion_kernel":
+                        profile_view["decision_today_fusion_kernel"] = _canonical_decision_today
+                    else:
+                        profile_view["decision_today_fusion_kernel"] = build_decision_today(
+                            data,
+                            longitudinal_bundle=longitudinal_bundle or {},
+                            clinical_autodrive=profile_view["autodrive"],
+                            state=str(
+                                signals_for_autodrive.get("effective_state_final")
+                                or signals_for_autodrive.get("effective_state")
+                                or signals_for_autodrive.get("reconciled_state")
+                                or (data.get("latest_assessment") or {}).get("state")
+                                or ""
+                            ),
+                            management_track=str(
+                                signals_for_autodrive.get("effective_management_track_final")
+                                or signals_for_autodrive.get("effective_management_track")
+                                or signals_for_autodrive.get("reconciled_management_track")
+                                or ""
+                            ),
+                            patient_ref=str(nss),
+                        )
+                    _canonical_next_safe_action = dict(
+                        (profile_view.get("decision_today_fusion_kernel") or {}).get("next_safe_action") or {}
+                    )
+                    if _canonical_next_safe_action:
+                        profile_view["next_best_action"] = _canonical_next_safe_action
+                except Exception as e:
+                    logger.warning(f"Error construyendo Autodrive v2: {e}")
+                    profile_view["autodrive"] = {}
+                    profile_view["decision_today_fusion_kernel"] = {}
             patient_for_v2 = dict(data.get("identity") or {})
             patient_for_v2["full_name"] = data["identity"].get("full_name")
             patient_for_v2["nss"] = nss
@@ -1249,7 +2651,7 @@ def patient_profile(nss):
             patient_for_v2["clinical_baseline"] = data.get("baseline") or {}
             patient_for_v2["baseline"] = data.get("baseline") or {}  # EPIC 22c — needed by _geriatric_frail_summary
             patient_for_v2["baseline_psa"] = (data.get("baseline") or {}).get("baseline_psa")
-            patient_for_v2["consent"] = data.get("consent") or {}
+            patient_for_v2["consent"] = data.get("consent") or data.get("consent_summary") or {}
             patient_for_v2["treatments"] = data.get("treatments") or []
             patient_for_v2["biomarker_longitudinal"] = data.get("biomarker_longitudinal") or []
             # EPIC 22c — expose clinical_facts + structured biopsy data so v2 adapter
@@ -1614,7 +3016,88 @@ def patient_profile(nss):
             except Exception as e:
                 logger.debug(f"EPIC 20 oligoprogression bundle: {e}")
 
-            return render_template("patient_profile_v2.html", **v2_ctx, page_chrome=page_chrome)
+            # Clinical Fact Ledger v1 Closure — perfil V2 debe mostrar la
+            # procedencia y el contrato anti-recaptura antes de pedir más datos.
+            try:
+                from prostanet.domains.clinical_fact_ledger import (
+                    build_decision_today_ledger_quality,
+                    build_patient_clinical_fact_ledger,
+                    build_patient_clinical_fact_ledger_summary,
+                    build_patient_profile_v2_capture_governance,
+                )
+
+                _ledger_v1 = build_patient_clinical_fact_ledger(data)
+                v2_ctx["clinical_fact_ledger"] = _ledger_v1
+                v2_ctx["clinical_fact_ledger_summary"] = build_patient_clinical_fact_ledger_summary(
+                    data,
+                    ledger=_ledger_v1,
+                )
+                _capture_governance = build_patient_profile_v2_capture_governance(
+                    data,
+                    ledger=_ledger_v1,
+                    cta_context={
+                        "castration_capture_cta": v2_ctx.get("castration_capture_cta") or {},
+                        "psma_pet_capture_cta": v2_ctx.get("psma_pet_capture_cta") or {},
+                        "hrr_capture_cta": v2_ctx.get("hrr_capture_cta") or {},
+                        "ecog_capture_cta": v2_ctx.get("ecog_capture_cta") or {},
+                    },
+                )
+                v2_ctx["clinical_fact_ledger_capture_governance"] = _capture_governance
+                _decision_ledger_quality = build_decision_today_ledger_quality(
+                    data,
+                    ledger=_ledger_v1,
+                )
+                v2_ctx["decision_today_ledger_quality"] = _decision_ledger_quality
+                if isinstance(v2_ctx.get("decision_today"), dict):
+                    v2_ctx["decision_today"]["ledger_quality"] = _decision_ledger_quality
+                    v2_ctx["decision_today"]["ledger_quality_status"] = _decision_ledger_quality.get("status")
+                if isinstance(v2_ctx.get("decision_today_fusion_kernel"), dict):
+                    v2_ctx["decision_today_fusion_kernel"]["ledger_quality"] = _decision_ledger_quality
+                for _gate in _capture_governance.get("gates") or []:
+                    _cta_key = _gate.get("cta_context_key")
+                    if not _cta_key:
+                        continue
+                    _cta_payload = dict(v2_ctx.get(_cta_key) or {})
+                    _cta_payload["ledger_governance"] = _gate
+                    _cta_payload["available_before_ledger"] = bool(_cta_payload.get("available"))
+                    _cta_payload["ledger_action"] = _gate.get("action")
+                    _cta_payload["ledger_message"] = _gate.get("message")
+                    _cta_payload["ledger_suppressed"] = bool(_gate.get("suppressed_by_ledger"))
+                    if _gate.get("suppressed_by_ledger"):
+                        _cta_payload["available"] = False
+                    v2_ctx[_cta_key] = _cta_payload
+            except Exception as e:
+                logger.debug(f"Clinical Fact Ledger v1 summary failed: {e}")
+                v2_ctx["clinical_fact_ledger"] = {}
+                v2_ctx["clinical_fact_ledger_summary"] = {
+                    "available": False,
+                    "error": str(e),
+                    "source_clinical_facts_mutated": False,
+                    "external_order_created": False,
+                    "model_trained": False,
+                }
+                v2_ctx["clinical_fact_ledger_capture_governance"] = {
+                    "available": False,
+                    "error": str(e),
+                    "source_clinical_facts_mutated": False,
+                    "external_order_created": False,
+                    "model_trained": False,
+                }
+
+            # Epidemiology Gap SLA v1 — patient-scoped bridge from profile V2
+            # to the population worklist. Read-only: it shows what is missing,
+            # who owns it and when it is due without editing clinical facts.
+            v2_ctx["epidemiology_gap_sla"] = _build_patient_epidemiology_gap_sla_safely(nss)
+
+            rendered_profile = render_template("patient_profile_v2.html", **v2_ctx, page_chrome=page_chrome)
+            if not force_profile_refresh:
+                try:
+                    from prostanet.presentation.v2_adapters import set_cached_profile_html
+
+                    set_cached_profile_html(profile_cache_key, rendered_profile)
+                except Exception:
+                    pass
+            return rendered_profile
 
         # EPIC 19: Patient Twin OS — personalized regimen rankings + AI predictions
         patient_twin_view: dict = {"available": False}
@@ -3789,6 +5272,10 @@ def api_patient_ecog_capture(patient_ref):
     ecog_value = payload.get('ecog_value')
     if ecog_value is None:
         return jsonify({'success': False, 'error': 'missing_ecog_value'}), 400
+    value_before_snapshot = _build_treatment_value_capture_impact_safely(
+        patient_ref,
+        kind="ecog",
+    )
     res = _td.record_ecog_capture(
         patient_ref,
         ecog_value,
@@ -3797,6 +5284,21 @@ def api_patient_ecog_capture(patient_ref):
         actor_session_id=payload.get('actor_session_id'),
         notes=payload.get('notes', ''),
     )
+    if res.get("success"):
+        res["arpi_response_windows"] = _refresh_arpi_windows_after_write(
+            patient_ref,
+            reason="ecog_capture",
+        )
+        res["treatment_value_capture_impact"] = _build_treatment_value_capture_impact_safely(
+            patient_ref,
+            before_snapshot=value_before_snapshot,
+            kind="ecog",
+            append_result=res,
+            recompute_result={
+                "success": True,
+                "arpi_response_windows": res.get("arpi_response_windows") or {},
+            },
+        )
     status = 200 if res.get('success') else (
         404 if res.get('error') == 'patient_not_found' else 400
     )
@@ -4091,6 +5593,1096 @@ def _request_scope(default: str = "full") -> str:
     return "summary" if scope == "summary" else "full"
 
 
+def _safe_int_param(value, default: int = 50, *, minimum: int = 1, maximum: int = 250) -> int:
+    try:
+        parsed = int(value or default)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(parsed, maximum))
+
+
+@app.route('/api/clinical-fact-ledger/dictionary', methods=['GET'])
+def api_clinical_fact_ledger_dictionary():
+    """Canonical fact dictionary used by the read-only clinical fact ledger."""
+    try:
+        from prostanet.domains.clinical_fact_ledger import build_clinical_fact_dictionary
+
+        scope = _request_scope(default="summary")
+        payload = build_clinical_fact_dictionary(scope=scope)
+        return jsonify({
+            "success": True,
+            "scope": scope,
+            "dictionary": payload,
+            **payload,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting clinical fact dictionary: {e}")
+        return error_response(str(e), 500)
+
+
+def _load_patient_record_for_clinical_fact_ledger(tracking_db_module, patient_ref):
+    """Load the same patient shape used by Profile V2 before Ledger rendering."""
+    record = None
+    try:
+        core_record = tracking_db_module.load_patient_record_core(patient_ref)
+        if core_record:
+            record = tracking_db_module.build_patient_record_derivatives(core_record)
+    except Exception:
+        record = None
+    if not record:
+        record = tracking_db_module.get_patient_full_record(patient_ref, include_derivatives=False)
+    if record:
+        identity = record.setdefault("identity", {})
+        dob_str = identity.get("dob")
+        if dob_str and not identity.get("age"):
+            try:
+                dob = datetime.strptime(str(dob_str), "%Y-%m-%d")
+                identity["age"] = (datetime.now() - dob).days // 365
+            except (ValueError, TypeError):
+                pass
+    return record
+
+
+@app.route('/api/patients/<patient_ref>/clinical-fact-ledger', methods=['GET'])
+@app.route('/api/patient/<patient_ref>/clinical-fact-ledger', methods=['GET'])
+def api_patient_clinical_fact_ledger(patient_ref):
+    """Read-only patient fact ledger: lineage, alias reuse and recapture watch."""
+    try:
+        import tracking_db
+        from prostanet.domains.clinical_fact_ledger import build_patient_clinical_fact_ledger
+
+        record = _load_patient_record_for_clinical_fact_ledger(tracking_db, patient_ref)
+        if not record:
+            return jsonify({"success": False, "error": "patient_not_found"}), 404
+        ledger = build_patient_clinical_fact_ledger(record)
+        return jsonify({
+            "success": True,
+            "ledger": ledger,
+            **ledger,
+            "resolved_patient_id": (record.get("identity") or {}).get("id"),
+            "resolved_patient_ref": (record.get("identity") or {}).get("nss") or str(patient_ref),
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting patient clinical fact ledger: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/patients/<patient_ref>/clinical-fact-ledger/summary', methods=['GET'])
+@app.route('/api/patient/<patient_ref>/clinical-fact-ledger/summary', methods=['GET'])
+def api_patient_clinical_fact_ledger_summary(patient_ref):
+    """Compact read-only Ledger summary for V2 UI anti-recapture behavior."""
+    try:
+        import tracking_db
+        from prostanet.domains.clinical_fact_ledger import (
+            build_patient_clinical_fact_ledger,
+            build_patient_clinical_fact_ledger_summary,
+        )
+
+        record = _load_patient_record_for_clinical_fact_ledger(tracking_db, patient_ref)
+        if not record:
+            return jsonify({"success": False, "error": "patient_not_found"}), 404
+        ledger = build_patient_clinical_fact_ledger(record)
+        summary = build_patient_clinical_fact_ledger_summary(record, ledger=ledger)
+        return jsonify({
+            "success": True,
+            "clinical_fact_ledger_summary": summary,
+            **summary,
+            "resolved_patient_id": (record.get("identity") or {}).get("id"),
+            "resolved_patient_ref": (record.get("identity") or {}).get("nss") or str(patient_ref),
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting patient clinical fact ledger summary: {e}")
+        return error_response(str(e), 500)
+
+
+def _build_clinical_fact_reconciliation_bundle_for_ref(patient_ref: str, *, limit: int = 24):
+    import tracking_db
+    from prostanet.domains.clinical_fact_ledger import (
+        build_patient_clinical_fact_ledger,
+        build_patient_clinical_fact_reconciliation_bundle,
+    )
+
+    record = _load_patient_record_for_clinical_fact_ledger(tracking_db, patient_ref)
+    if not record:
+        return None, None, None
+    ledger = build_patient_clinical_fact_ledger(record)
+    bundle = build_patient_clinical_fact_reconciliation_bundle(record, ledger=ledger, limit=limit)
+    return record, ledger, bundle
+
+
+def _load_clinical_fact_ledger_population_refs(limit: int) -> list[str]:
+    scan_limit = max(1, min(int(limit or 50), 500))
+    conn = sqlite3.connect(app.config["DB_PATH"])
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT nss
+            FROM patient_identity
+            ORDER BY COALESCE(created_at, '') DESC, id DESC
+            LIMIT ?
+            """,
+            (scan_limit,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [str(row["nss"]) for row in rows if row["nss"]]
+
+
+def _json_blob_for_ledger(value, default=None):
+    if value in (None, ""):
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return default
+
+
+def _fetch_optional_ledger_row(cursor, query: str, params: tuple = ()) -> dict:
+    try:
+        row = cursor.execute(query, params).fetchone()
+    except sqlite3.OperationalError:
+        row = None
+    return dict(row) if row else {}
+
+
+def _fetch_optional_ledger_rows(cursor, query: str, params: tuple = ()) -> list[dict]:
+    try:
+        rows = cursor.execute(query, params).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    return [dict(row) for row in rows]
+
+
+def _light_patient_record_for_clinical_fact_ledger_population(patient_ref: str) -> dict | None:
+    """Fast Ledger-only patient shape for population queues.
+
+    Profile V2 still uses the full patient record. The population queue only
+    needs canonical facts, baseline, demographics, latest assessment and
+    longitudinal biomarker/document sources, so avoid hydrating the entire
+    treatment/outcomes profile for every candidate row.
+    """
+    conn = sqlite3.connect(app.config["DB_PATH"])
+    conn.row_factory = sqlite3.Row
+    try:
+        if str(patient_ref).isdigit():
+            identity = _fetch_optional_ledger_row(
+                conn,
+                "SELECT * FROM patient_identity WHERE nss = ? OR id = ? ORDER BY id DESC LIMIT 1",
+                (str(patient_ref), int(patient_ref)),
+            )
+        else:
+            identity = _fetch_optional_ledger_row(
+                conn,
+                "SELECT * FROM patient_identity WHERE nss = ? ORDER BY id DESC LIMIT 1",
+                (str(patient_ref),),
+            )
+        if not identity:
+            return None
+        patient_id = int(identity.get("id"))
+        baseline = _fetch_optional_ledger_row(
+            conn,
+            "SELECT * FROM clinical_baseline WHERE patient_id = ? ORDER BY id DESC LIMIT 1",
+            (patient_id,),
+        )
+        demographics = _fetch_optional_ledger_row(
+            conn,
+            "SELECT * FROM patient_demographics WHERE patient_id = ? ORDER BY id DESC LIMIT 1",
+            (patient_id,),
+        )
+        latest_assessment = _fetch_optional_ledger_row(
+            conn,
+            """
+            SELECT * FROM clinical_assessments
+            WHERE patient_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (patient_id,),
+        )
+        if latest_assessment:
+            latest_assessment["input_snapshot"] = _json_blob_for_ledger(
+                latest_assessment.get("input_snapshot"),
+                {},
+            )
+            latest_assessment["result_snapshot"] = _json_blob_for_ledger(
+                latest_assessment.get("result_snapshot"),
+                {},
+            )
+            latest_assessment["guideline_versions"] = _json_blob_for_ledger(
+                latest_assessment.get("guideline_versions"),
+                {},
+            )
+            latest_assessment["context_snapshot"] = _json_blob_for_ledger(
+                latest_assessment.get("context_snapshot"),
+                {},
+            )
+        patient_facts = _fetch_optional_ledger_rows(
+            conn,
+            "SELECT * FROM patient_clinical_facts WHERE patient_id = ? ORDER BY fact_key ASC, updated_at DESC, id DESC",
+            (patient_id,),
+        )
+        for item in patient_facts:
+            item["value"] = _json_blob_for_ledger(item.get("value_json"), None)
+            item["clinician_verified"] = bool(item.get("clinician_verified"))
+            item["is_active"] = bool(item.get("is_active", 1))
+        biomarker_rows = _fetch_optional_ledger_rows(
+            conn,
+            "SELECT * FROM biomarker_longitudinal WHERE patient_id = ? ORDER BY sample_date ASC, id ASC",
+            (patient_id,),
+        )
+        for item in biomarker_rows:
+            if not item.get("context"):
+                metadata = _json_blob_for_ledger(item.get("lab_source"), {}) or {}
+                if isinstance(metadata, dict):
+                    item["context"] = metadata.get("context") or metadata.get("entry_origin") or ""
+                    item["source_metadata"] = metadata
+        verified_facts = _fetch_optional_ledger_rows(
+            conn,
+            "SELECT * FROM verified_document_facts WHERE patient_id = ? ORDER BY created_at DESC, id DESC",
+            (patient_id,),
+        )
+        for item in verified_facts:
+            item["value"] = _json_blob_for_ledger(item.get("value_json"), None)
+        return {
+            "identity": identity,
+            "baseline": baseline,
+            "demographics": demographics,
+            "latest_assessment": latest_assessment,
+            "patient_clinical_facts": patient_facts,
+            "biomarker_longitudinal": biomarker_rows,
+            "verified_document_facts": verified_facts,
+        }
+    finally:
+        conn.close()
+
+
+def _build_clinical_fact_reconciliation_population_for_api(
+    *,
+    limit: int = 50,
+    include_clear: bool = False,
+    scan_limit: int | None = None,
+) -> dict:
+    from prostanet.domains.clinical_fact_ledger import build_clinical_fact_reconciliation_population
+
+    max_limit = _safe_int_param(limit, 50, maximum=100)
+    max_scan_limit = _safe_int_param(scan_limit, max_limit, maximum=250)
+    patient_refs = _load_clinical_fact_ledger_population_refs(max_scan_limit)
+    records = []
+    skipped = []
+    for patient_ref in patient_refs:
+        record = _light_patient_record_for_clinical_fact_ledger_population(patient_ref)
+        if not record:
+            skipped.append({"patient_ref": patient_ref, "reason": "patient_not_found"})
+            continue
+        records.append(record)
+    population = build_clinical_fact_reconciliation_population(
+        records,
+        limit=max_limit,
+        include_clear=include_clear,
+    )
+    if skipped:
+        population["skipped"] = skipped[:12]
+        population["skipped_patient_count"] = int(population.get("skipped_patient_count") or 0) + len(skipped)
+    population["scan"] = {
+        "requested_limit": max_limit,
+        "scan_limit": max_scan_limit,
+        "patient_refs_scanned": len(patient_refs),
+        "include_clear": bool(include_clear),
+    }
+    return population
+
+
+def _compact_decision_today_for_reconciliation(decision_payload: Mapping[str, Any] | None) -> dict:
+    """Small stable snapshot for reconciliation before/after comparisons."""
+    payload = dict(decision_payload or {})
+    if (
+        payload.get("source") == "clinical_decision_today_fusion_kernel"
+        or "next_safe_action" in payload
+        or "ledger_quality" in payload
+    ):
+        fusion = payload
+    else:
+        fusion = dict(payload.get("decision_today") or payload or {})
+    decision = dict(fusion.get("decision_today") or {})
+    next_action = dict(fusion.get("next_safe_action") or {})
+    next_cta = dict(next_action.get("cta") or {})
+    ledger_quality = dict(fusion.get("ledger_quality") or {})
+    ledger_gate = dict(next_action.get("ledger_quality_gate") or {})
+    missing = [
+        str(item.get("field") or item.get("key") or item)
+        for item in (fusion.get("unified_missing_fields") or [])
+        if item
+    ]
+    return {
+        "available": bool(fusion.get("available", True)),
+        "source": fusion.get("source") or "",
+        "state": fusion.get("state") or "",
+        "state_label": fusion.get("state_label") or "",
+        "decision_state": fusion.get("decision_state") or decision.get("status") or "",
+        "title": decision.get("title") or fusion.get("title") or next_action.get("title") or "",
+        "label": decision.get("label") or next_action.get("label") or "",
+        "management_track": fusion.get("management_track") or "",
+        "next_action_key": next_action.get("action_key") or next_action.get("key") or "",
+        "next_action_label": next_action.get("label") or next_action.get("title") or "",
+        "next_action": {
+            "label": next_action.get("label") or "",
+            "title": next_action.get("title") or "",
+            "action_mode": next_cta.get("action_mode") or "",
+            "href": next_cta.get("href") or "",
+            "decision_field": next_cta.get("decision_field") or "",
+            "ledger_gate_active": bool(ledger_gate),
+            "ledger_gate_status": ledger_gate.get("status") or "",
+            "ledger_gate_primary_fact_key": ledger_gate.get("primary_fact_key") or "",
+        },
+        "ledger_quality": {
+            "status": ledger_quality.get("status") or "",
+            "conflict_count": int(ledger_quality.get("conflict_count") or 0),
+            "critical_conflict_count": int(ledger_quality.get("critical_conflict_count") or 0),
+            "resolved_watch_count": int(ledger_quality.get("resolved_watch_count") or 0),
+            "requires_reconciliation": bool(ledger_quality.get("requires_reconciliation")),
+            "uses_reconciled_facts": bool(ledger_quality.get("uses_reconciled_facts")),
+        },
+        "missing_field_count": len(missing),
+        "missing_fields": missing[:12],
+    }
+
+
+def _build_clinical_fact_reconciliation_snapshot(
+    patient_ref: str,
+    *,
+    ledger: Mapping[str, Any] | None = None,
+    bundle: Mapping[str, Any] | None = None,
+    force_decision_recompute: bool = False,
+) -> dict:
+    """Build a read-only snapshot used to prove reconciliation refreshed V2 state."""
+    if ledger is None or bundle is None:
+        _, ledger, bundle = _build_clinical_fact_reconciliation_bundle_for_ref(patient_ref)
+    ledger = dict(ledger or {})
+    bundle = dict(bundle or {})
+    summary = dict(ledger.get("summary") or bundle.get("summary") or {})
+    queue = list(bundle.get("queue") or [])
+    facts = list(ledger.get("facts") or [])
+    decision_snapshot = {
+        "available": False,
+        "error": "",
+    }
+    try:
+        decision_payload, decision_error = _build_patient_decision_today_for_api(
+            patient_ref,
+            force_recompute=force_decision_recompute,
+        )
+        if decision_error:
+            decision_snapshot["error"] = "decision_today_unavailable"
+        else:
+            decision_snapshot = _compact_decision_today_for_reconciliation(
+                (decision_payload or {}).get("decision_today") or {}
+            )
+    except Exception as exc:
+        decision_snapshot["error"] = str(exc)[:160]
+    return {
+        "captured_at": utc_now_iso(),
+        "ledger": {
+            "fact_count": int(summary.get("fact_count") or len(facts) or 0),
+            "conflict_count": int(summary.get("conflict_count") or 0),
+            "critical_conflict_count": int(summary.get("critical_conflict_count") or 0),
+            "resolved_watch_count": int(summary.get("resolved_watch_count") or 0),
+        },
+        "queue": {
+            "count": len(queue),
+            "fact_keys": [str(item.get("fact_key") or "") for item in queue if item.get("fact_key")],
+        },
+        "decision_today": decision_snapshot,
+        "profile_v2": f"/patient_profile/{patient_ref}?v=2&refresh=1",
+        "reconciliation_v2": f"/clinical-fact-reconciliation/{patient_ref}",
+    }
+
+
+def _build_clinical_fact_reconciliation_impact(
+    patient_ref: str,
+    *,
+    fact_key: str,
+    selected_value: Any,
+    before_snapshot: Mapping[str, Any],
+    after_snapshot: Mapping[str, Any],
+    recompute_delta: Mapping[str, Any] | None,
+) -> dict:
+    before = dict(before_snapshot or {})
+    after = dict(after_snapshot or {})
+    before_ledger = dict(before.get("ledger") or {})
+    after_ledger = dict(after.get("ledger") or {})
+    before_queue = dict(before.get("queue") or {})
+    after_queue = dict(after.get("queue") or {})
+    before_decision = dict(before.get("decision_today") or {})
+    after_decision = dict(after.get("decision_today") or {})
+    before_action = dict(before_decision.get("next_action") or {})
+    after_action = dict(after_decision.get("next_action") or {})
+    before_quality = dict(before_decision.get("ledger_quality") or {})
+    after_quality = dict(after_decision.get("ledger_quality") or {})
+    recompute = dict(recompute_delta or {})
+    decision_changed = bool(recompute.get("decision_changed")) or any(
+        before_decision.get(key) != after_decision.get(key)
+        for key in ("decision_state", "title", "next_action_key", "next_action_label")
+    )
+    ledger_gate_was_active = bool(before_action.get("ledger_gate_active")) or int(
+        before_quality.get("critical_conflict_count") or 0
+    ) > 0
+    ledger_gate_is_active = bool(after_action.get("ledger_gate_active")) or int(
+        after_quality.get("critical_conflict_count") or 0
+    ) > 0
+    return {
+        "version": "clinical_fact_reconciliation_decision_refresh_v1",
+        "fact_key": str(fact_key or ""),
+        "selected_value": selected_value,
+        "before": before,
+        "after": after,
+        "delta": {
+            "conflict_count_delta": int(after_ledger.get("conflict_count") or 0)
+            - int(before_ledger.get("conflict_count") or 0),
+            "critical_conflict_count_delta": int(after_ledger.get("critical_conflict_count") or 0)
+            - int(before_ledger.get("critical_conflict_count") or 0),
+            "queue_count_delta": int(after_queue.get("count") or 0) - int(before_queue.get("count") or 0),
+            "closed_fact_key": str(fact_key or "") not in set(after_queue.get("fact_keys") or []),
+            "ledger_gate_was_active": ledger_gate_was_active,
+            "ledger_gate_is_active": ledger_gate_is_active,
+            "ledger_gate_cleared": ledger_gate_was_active and not ledger_gate_is_active,
+            "next_action_before": {
+                "label": before_action.get("label") or "",
+                "action_mode": before_action.get("action_mode") or "",
+                "href": before_action.get("href") or "",
+                "decision_field": before_action.get("decision_field") or "",
+            },
+            "next_action_after": {
+                "label": after_action.get("label") or "",
+                "action_mode": after_action.get("action_mode") or "",
+                "href": after_action.get("href") or "",
+                "decision_field": after_action.get("decision_field") or "",
+            },
+            "decision_changed": decision_changed,
+            "decision_before": {
+                "state": before_decision.get("decision_state") or "",
+                "title": before_decision.get("title") or "",
+                "ledger_quality_status": before_quality.get("status") or "",
+            },
+            "decision_after": {
+                "state": after_decision.get("decision_state") or "",
+                "title": after_decision.get("title") or "",
+                "ledger_quality_status": after_quality.get("status") or "",
+            },
+        },
+        "recompute": {
+            "success": bool(recompute.get("success")),
+            "decision_changed": bool(recompute.get("decision_changed")),
+            "alerts_count": int(recompute.get("alerts_count") or 0),
+            "cache_invalidation": recompute.get("cache_invalidation") or {},
+            "error": recompute.get("recompute_error") or "",
+        },
+        "refreshed_surfaces": {
+            "profile_v2": f"/patient_profile/{patient_ref}?v=2&refresh=1",
+            "reconciliation_v2": f"/clinical-fact-reconciliation/{patient_ref}",
+            "ledger_summary_api": f"/api/patients/{patient_ref}/clinical-fact-ledger/summary",
+            "decision_today_api": f"/api/patients/{patient_ref}/decision-today?refresh=1",
+            "longitudinal_capture": f"/longitudinal-capture/{patient_ref}",
+        },
+        "source_clinical_facts_mutated": True,
+        "original_sources_mutated": False,
+        "external_order_created": False,
+        "model_trained": False,
+    }
+
+
+@app.route("/clinical-fact-reconciliation", methods=["GET"])
+def clinical_fact_reconciliation_population_v2():
+    """V2 population queue for Ledger conflicts that need reconciliation."""
+    try:
+        limit = _safe_int_param(request.args.get("limit"), 50, maximum=100)
+        include_clear = _is_truthy_param(request.args.get("include_clear"))
+        scan_limit = request.args.get("scan_limit")
+        population = _build_clinical_fact_reconciliation_population_for_api(
+            limit=limit,
+            include_clear=include_clear,
+            scan_limit=scan_limit,
+        )
+        return render_template(
+            "clinical_fact_reconciliation_population_v2.html",
+            population=population,
+            limit=limit,
+            include_clear=include_clear,
+        )
+    except Exception as e:
+        logger.error(f"Error rendering clinical fact reconciliation population: {e}")
+        return render_template("error.html", error=str(e)), 500
+
+
+@app.route("/api/clinical-fact-ledger/reconciliation/today", methods=["GET"])
+@app.route("/api/clinical-fact-ledger/reconciliation/population", methods=["GET"])
+def api_clinical_fact_reconciliation_population():
+    """Read-only population queue for open Clinical Fact Ledger conflicts."""
+    try:
+        limit = _safe_int_param(request.args.get("limit"), 50, maximum=100)
+        include_clear = _is_truthy_param(request.args.get("include_clear"))
+        scan_limit = request.args.get("scan_limit")
+        population = _build_clinical_fact_reconciliation_population_for_api(
+            limit=limit,
+            include_clear=include_clear,
+            scan_limit=scan_limit,
+        )
+        return jsonify({
+            "success": True,
+            "population": population,
+            **population,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting clinical fact reconciliation population: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/clinical-fact-reconciliation/<patient_ref>", methods=["GET"])
+@app.route("/patient_profile/<patient_ref>/fact-reconciliation", methods=["GET"])
+def clinical_fact_reconciliation_v2(patient_ref):
+    """V2 surface to resolve Clinical Fact Ledger conflicts without recapture."""
+    try:
+        record, ledger, bundle = _build_clinical_fact_reconciliation_bundle_for_ref(patient_ref)
+        if not record:
+            return render_template("error.html", error="Paciente no encontrado"), 404
+        return render_template(
+            "clinical_fact_reconciliation_v2.html",
+            patient=record.get("identity") or {},
+            ledger=ledger,
+            bundle=bundle,
+            patient_ref=(record.get("identity") or {}).get("nss") or str(patient_ref),
+        )
+    except Exception as e:
+        logger.error(f"Error rendering clinical fact reconciliation: {e}")
+        return render_template("error.html", error=str(e)), 500
+
+
+@app.route("/api/patients/<patient_ref>/clinical-fact-ledger/reconciliation", methods=["GET"])
+@app.route("/api/patient/<patient_ref>/clinical-fact-ledger/reconciliation", methods=["GET"])
+def api_patient_clinical_fact_reconciliation(patient_ref):
+    """Read-only actionable reconciliation queue for Ledger conflicts."""
+    try:
+        limit = request.args.get("limit", 24, type=int)
+        record, ledger, bundle = _build_clinical_fact_reconciliation_bundle_for_ref(patient_ref, limit=limit)
+        if not record:
+            return jsonify({"success": False, "error": "patient_not_found"}), 404
+        return jsonify({
+            "success": True,
+            "bundle": bundle,
+            **bundle,
+            "resolved_patient_id": (record.get("identity") or {}).get("id"),
+            "resolved_patient_ref": (record.get("identity") or {}).get("nss") or str(patient_ref),
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting clinical fact reconciliation bundle: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/api/patients/<patient_ref>/clinical-fact-ledger/reconcile", methods=["POST"])
+@app.route("/api/patient/<patient_ref>/clinical-fact-ledger/reconcile", methods=["POST"])
+def api_patient_clinical_fact_reconcile(patient_ref):
+    """Write a clinician-verified reconciliation fact and audit event."""
+    try:
+        import tracking_db
+
+        data = request.get_json(silent=True) or {}
+        fact_key = str(data.get("fact_key") or "").strip()
+        clinical_note = str(data.get("clinical_note") or "").strip()
+        reviewed_by = str(data.get("reviewed_by") or "clinician").strip() or "clinician"
+        if not fact_key:
+            return jsonify({"success": False, "error": "missing_fact_key"}), 400
+        if len(clinical_note) < 4:
+            return jsonify({"success": False, "error": "clinical_note_required"}), 400
+
+        record, ledger, bundle = _build_clinical_fact_reconciliation_bundle_for_ref(patient_ref)
+        if not record:
+            return jsonify({"success": False, "error": "patient_not_found"}), 404
+        resolved_patient_ref = (record.get("identity") or {}).get("nss") or str(patient_ref)
+        before_snapshot = _build_clinical_fact_reconciliation_snapshot(
+            resolved_patient_ref,
+            ledger=ledger,
+            bundle=bundle,
+            force_decision_recompute=True,
+        )
+        queue_item = next((item for item in bundle.get("queue") or [] if item.get("fact_key") == fact_key), None)
+        if not queue_item:
+            return jsonify({"success": False, "error": "fact_key_not_in_open_conflict_queue"}), 409
+        source_options = list(queue_item.get("source_options") or [])
+        selected_source = None
+        selected_index = data.get("selected_source_index")
+        if selected_index is not None:
+            try:
+                selected_index_int = int(selected_index)
+            except (TypeError, ValueError):
+                selected_index_int = -1
+            selected_source = next(
+                (item for item in source_options if int(item.get("source_index")) == selected_index_int),
+                None,
+            )
+        selected_normalized = str(data.get("selected_normalized_value") or "").strip()
+        if not selected_source and selected_normalized:
+            selected_source = next(
+                (item for item in source_options if str(item.get("normalized_value") or "") == selected_normalized),
+                None,
+            )
+        if not selected_source:
+            return jsonify({"success": False, "error": "selected_source_not_found"}), 400
+        selected_value = data.get("selected_value")
+        if selected_value in (None, "", [], {}):
+            selected_value = selected_source.get("value")
+
+        result = tracking_db.reconcile_patient_clinical_fact(
+            patient_ref,
+            fact_key=fact_key,
+            selected_value=selected_value,
+            selected_source=selected_source,
+            reviewed_by=reviewed_by,
+            clinical_note=clinical_note,
+        )
+        if not result.get("success"):
+            status_code = 404 if result.get("error") == "patient_not_found" else 400
+            return jsonify(result), status_code
+        recompute_delta = _recompute_after_append(
+            resolved_patient_ref,
+            kind="clinical_fact_reconciliation",
+        )
+        if not recompute_delta.get("success"):
+            try:
+                recompute_delta["cache_invalidation"] = _invalidate_longitudinal_read_models(
+                    resolved_patient_ref,
+                    kind="clinical_fact_reconciliation",
+                )
+            except Exception:
+                pass
+        try:
+            _invalidate_longitudinal_read_models(resolved_patient_ref, kind="clinical_fact_reconciliation")
+        except Exception:
+            pass
+        _, refreshed_ledger, refreshed_bundle = _build_clinical_fact_reconciliation_bundle_for_ref(
+            resolved_patient_ref
+        )
+        after_snapshot = _build_clinical_fact_reconciliation_snapshot(
+            resolved_patient_ref,
+            ledger=refreshed_ledger,
+            bundle=refreshed_bundle,
+            force_decision_recompute=True,
+        )
+        reconciliation_impact = _build_clinical_fact_reconciliation_impact(
+            resolved_patient_ref,
+            fact_key=fact_key,
+            selected_value=selected_value,
+            before_snapshot=before_snapshot,
+            after_snapshot=after_snapshot,
+            recompute_delta=recompute_delta,
+        )
+        return jsonify({
+            **result,
+            "bundle": refreshed_bundle,
+            "ledger_summary": (refreshed_ledger or {}).get("summary") or {},
+            "recompute_delta": recompute_delta,
+            "reconciliation_impact": reconciliation_impact,
+            "message": "Conflicto Ledger reconciliado y fact canónico verificado.",
+        })
+    except Exception as e:
+        logger.error(f"Error reconciling clinical fact: {e}")
+        return error_response(str(e), 500)
+
+
+def _invalidate_redecision_read_models():
+    try:
+        from prostanet.shared.read_model_cache import invalidate_read_model_cache
+
+        for prefix in (
+            "patient_decision_today",
+            "patient_autodrive",
+            "autodrive_population",
+            "autodrive",
+            "redecision_population",
+        ):
+            invalidate_read_model_cache(prefix)
+    except Exception:
+        pass
+
+
+def _load_redecision_candidate_refs(limit: int) -> list[str]:
+    scan_limit = max(1, min(int(limit or 50), 250))
+    conn = sqlite3.connect(app.config["DB_PATH"])
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT nss
+            FROM patient_identity
+            ORDER BY COALESCE(created_at, '') DESC, id DESC
+            LIMIT ?
+            """,
+            (scan_limit,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [str(row["nss"]) for row in rows if row["nss"]]
+
+
+def _build_patient_redecision_for_api(patient_ref, *, force_recompute=False):
+    from prostanet.domains.patient_tracking.clinical_redecision_closure import (
+        build_patient_redecision_bundle,
+    )
+
+    built, error = _build_patient_decision_today_for_api(
+        patient_ref,
+        force_recompute=bool(force_recompute),
+    )
+    if error:
+        return None, error
+    resolved = built["resolved"]
+    resolved_ref = resolved.get("nss") or resolved.get("patient_ref") or str(patient_ref)
+    redecision = build_patient_redecision_bundle(
+        built.get("patient") or {},
+        decision_today=built.get("decision_today") or {},
+        autodrive=built.get("autodrive") or {},
+        patient_ref=str(resolved_ref),
+    )
+    return {
+        **built,
+        "redecision": redecision,
+        "resolved_patient_ref": str(resolved_ref),
+    }, None
+
+
+def _build_redecision_population_for_api(*, limit: int = 50, stage: str = "", scope: str = "full", force_recompute=False):
+    from prostanet.domains.patient_tracking.clinical_redecision_closure import (
+        build_redecision_population,
+        summarize_redecision_population,
+    )
+
+    max_limit = _safe_int_param(limit, 50)
+    if scope != "summary":
+        fast_candidates = _build_redecision_population_summary_fast(
+            limit=min(max(max_limit * 3, max_limit), 50),
+            stage=stage,
+        )
+        candidate_refs = [
+            str(item.get("patient_ref") or "")
+            for item in fast_candidates.get("today_queue", [])
+            if item.get("patient_ref")
+        ]
+        if not candidate_refs:
+            candidate_refs = _load_redecision_candidate_refs(max_limit)
+    else:
+        candidate_refs = _load_redecision_candidate_refs(max_limit)
+    bundles = []
+    skipped = []
+    for patient_ref in candidate_refs:
+        built, error = _build_patient_redecision_for_api(
+            patient_ref,
+            force_recompute=bool(force_recompute),
+        )
+        if error:
+            skipped.append({"patient_ref": patient_ref, "reason": "resolve_or_build_failed"})
+            continue
+        bundles.append(built.get("redecision") or {})
+    population = build_redecision_population(
+        bundles,
+        stage=stage,
+        limit=max_limit,
+    )
+    if skipped:
+        population["skipped"] = skipped[:10]
+    if scope == "summary":
+        return summarize_redecision_population(population)
+    return population
+
+
+def _redecision_summary_label_for_status(status: str) -> str:
+    normalized = str(status or "open").strip() or "open"
+    return {
+        "open": "Abierta",
+        "resolved_after_recompute": "Resuelta tras recálculo",
+        "tumor_board_required": "Requiere Tumor Board",
+        "followup_scheduled": "Seguimiento programado",
+        "still_blocked": "Sigue bloqueada",
+    }.get(normalized, normalized)
+
+
+def _redecision_summary_field_label(field_key: str) -> str:
+    labels = {
+        "psa_density": "Densidad de PSA",
+        "mri_pirads_score": "PI-RADS en MRI",
+        "biopsy_status": "Estado de biopsia",
+        "pathology_report": "Reporte histopatológico",
+        "risk_group": "Grupo de riesgo",
+        "life_expectancy_years": "Expectativa de vida",
+        "ipss_score": "IPSS basal",
+        "iief5_score": "IIEF-5 basal",
+        "hrr_status": "HRR/BRCA",
+        "msi_status": "MSI",
+        "tmb_status": "TMB",
+        "real_treatment_line": "Línea terapéutica real",
+    }
+    return labels.get(str(field_key or ""), str(field_key or "Revisión clínica"))
+
+
+def _redecision_summary_lane_for_field(field_key: str, state: str = "") -> str:
+    field = str(field_key or "").strip()
+    state_key = str(state or "").strip()
+    if field in {"psa_density", "mri_pirads_score", "biopsy_status", "pathology_report"}:
+        return "diagnostic_biopsy_readiness"
+    if field in {"risk_group", "life_expectancy_years", "ipss_score", "iief5_score"}:
+        return "localized_treatment_readiness"
+    if field in {"hrr_status", "msi_status", "tmb_status"}:
+        return "precision_medicine_readiness"
+    if field in {"real_treatment_line", "line_of_therapy", "prior_docetaxel"}:
+        return "treatment_line_readiness"
+    if state_key == "localized_initial":
+        return "localized_treatment_readiness"
+    if state_key == "m1_crpc":
+        return "precision_medicine_readiness"
+    return "diagnostic_biopsy_readiness"
+
+
+def _redecision_summary_missing_fields(action: Mapping[str, Any], row: Mapping[str, Any]) -> list[dict[str, str]]:
+    raw_candidates: list[Any] = []
+    critical = _json_array(row.get("critical_missing_json"))
+    awaiting = _json_array(row.get("awaiting_review_json"))
+    data_that_could_change = action.get("data_that_could_change_course")
+    if isinstance(data_that_could_change, list):
+        raw_candidates.extend(data_that_could_change)
+    raw_candidates.extend(critical)
+    raw_candidates.extend(awaiting)
+    text = " ".join(str(item or "") for item in raw_candidates).lower()
+    mapped: list[str] = []
+    for token, field_key in [
+        ("psad", "psa_density"),
+        ("densidad", "psa_density"),
+        ("mri", "mri_pirads_score"),
+        ("resonancia", "mri_pirads_score"),
+        ("pirads", "mri_pirads_score"),
+        ("biopsia", "biopsy_status"),
+        ("histopat", "pathology_report"),
+        ("patolog", "pathology_report"),
+        ("gleason", "risk_group"),
+        ("isup", "risk_group"),
+        ("riesgo", "risk_group"),
+        ("risk_group", "risk_group"),
+        ("life_expectancy", "life_expectancy_years"),
+        ("expectativa", "life_expectancy_years"),
+        ("ipss", "ipss_score"),
+        ("iief", "iief5_score"),
+        ("hrr", "hrr_status"),
+        ("brca", "hrr_status"),
+        ("msi", "msi_status"),
+        ("tmb", "tmb_status"),
+        ("line", "real_treatment_line"),
+        ("línea", "real_treatment_line"),
+    ]:
+        if token in text and field_key not in mapped:
+            mapped.append(field_key)
+    for raw in raw_candidates:
+        field_key = str(raw or "").strip()
+        if field_key in {
+            "psa_density",
+            "mri_pirads_score",
+            "biopsy_status",
+            "pathology_report",
+            "risk_group",
+            "life_expectancy_years",
+            "ipss_score",
+            "iief5_score",
+            "hrr_status",
+            "msi_status",
+            "tmb_status",
+            "real_treatment_line",
+        } and field_key not in mapped:
+            mapped.append(field_key)
+    state_key = str(row.get("state") or "")
+    if not mapped:
+        mapped.append("risk_group" if state_key == "localized_initial" else "hrr_status" if state_key == "m1_crpc" else "psa_density")
+    return [
+        {
+            "field": field_key,
+            "label": _redecision_summary_field_label(field_key),
+            "readiness_lane": _redecision_summary_lane_for_field(field_key, state_key),
+        }
+        for field_key in mapped
+    ]
+
+
+def _redecision_summary_is_candidate(action: Mapping[str, Any], row: Mapping[str, Any]) -> bool:
+    state_key = str(row.get("state") or "").strip()
+    if state_key not in {"diagnostic_workup", "localized_initial", "m1_crpc"}:
+        return False
+    text = " ".join(
+        str(value or "")
+        for value in (
+            action.get("title"),
+            action.get("recommendation_family"),
+            action.get("rationale"),
+            action.get("action_title"),
+            action.get("action_rationale"),
+            action.get("governance_status"),
+            " ".join(str(item or "") for item in action.get("immediate_actions") or []),
+        )
+    ).lower()
+    if str(action.get("governance_status") or "").strip() == "hard_stop":
+        return True
+    return any(
+        token in text
+        for token in (
+            "reabrir",
+            "re-decision",
+            "redecisión",
+            "redecision",
+            "nueva decision",
+            "nueva decisión",
+            "decisión actual necesita datos",
+            "decision actual necesita datos",
+        )
+    )
+
+
+def _build_redecision_population_summary_fast(*, limit: int, stage: str = ""):
+    """SQL-only re-decision queue for warm workbench and audit paths."""
+    max_limit = max(1, min(int(limit or 25), 250))
+    supported_states = ["diagnostic_workup", "localized_initial", "m1_crpc"]
+    conn = sqlite3.connect(app.config["DB_PATH"])
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT pi.id, pi.nss, pi.full_name, pi.created_at,
+                   css.state, css.next_best_action_json, css.critical_missing_json,
+                   css.awaiting_review_json, css.updated_at,
+                   (
+                     SELECT pe.status
+                     FROM patient_events pe
+                     WHERE pe.patient_id = pi.id
+                       AND pe.event_type = 'clinical_redecision_closed'
+                     ORDER BY COALESCE(pe.created_at, pe.event_date, '') DESC, pe.id DESC
+                     LIMIT 1
+                   ) AS closure_status
+            FROM patient_identity pi
+            LEFT JOIN clinical_signal_snapshots css ON css.patient_id = pi.id
+            WHERE css.next_best_action_json IS NOT NULL
+              AND css.next_best_action_json != ''
+            ORDER BY COALESCE(css.updated_at, pi.created_at, '') DESC, pi.id DESC
+            LIMIT 500
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    stage_filter = str(stage or "").strip().lower()
+    queue: list[dict[str, Any]] = []
+    lane_counts: dict[str, int] = {}
+    state_counts: dict[str, int] = {}
+    for row in rows:
+        row_data = dict(row)
+        state_key = str(row_data.get("state") or "").strip()
+        if stage_filter and stage_filter not in state_key.lower():
+            continue
+        action = _json_dict(row_data.get("next_best_action_json"))
+        if not _redecision_summary_is_candidate(action, row_data):
+            continue
+        missing_fields = _redecision_summary_missing_fields(action, row_data)
+        primary_missing = missing_fields[0]
+        lane = primary_missing["readiness_lane"]
+        closure_status = str(row_data.get("closure_status") or "open").strip() or "open"
+        patient_ref = str(row_data.get("nss") or "")
+        cta_query = urlencode({
+            "decision_lane": lane,
+            "decision_field": primary_missing["field"],
+        })
+        item = {
+            "patient_ref": patient_ref,
+            "patient_name": row_data.get("full_name") or "Paciente",
+            "state": state_key,
+            "state_label": {
+                "diagnostic_workup": "Diagnostico",
+                "localized_initial": "Localizado",
+                "m1_crpc": "m1 CRPC",
+            }.get(state_key, state_key),
+            "decision_state": "redecision_required",
+            "priority_status": "critical_today" if str(action.get("governance_status") or "") == "hard_stop" else "routine_today",
+            "priority_score": 100 if str(action.get("governance_status") or "") == "hard_stop" else 75,
+            "title": "Reabrir decision clinica",
+            "reason": str(action.get("rationale") or action.get("recommendation_family") or ""),
+            "risk_avoided": "Evita continuar una ruta off-track sin reevaluacion.",
+            "missing_field": primary_missing["field"],
+            "missing_label": primary_missing["label"],
+            "missing_count": len(missing_fields),
+            "readiness_lane": lane,
+            "closure_state": {
+                "available": closure_status != "open",
+                "closure_status": closure_status,
+                "closure_label": _redecision_summary_label_for_status(closure_status),
+            },
+            "cta": {
+                "label": "Capturar dato",
+                "href": f"/longitudinal-capture/{quote(str(patient_ref))}?{cta_query}",
+                "action_mode": "capture",
+                "patient_ref": patient_ref,
+                "readiness_lane": lane,
+                "decision_field": primary_missing["field"],
+            },
+            "workbench_href": f"/redecision-workbench/{quote(str(patient_ref))}",
+        }
+        queue.append(item)
+        lane_counts[lane] = lane_counts.get(lane, 0) + 1
+        state_counts[state_key] = state_counts.get(state_key, 0) + 1
+
+    queue = sorted(
+        queue,
+        key=lambda item: (
+            -int(item.get("priority_score") or 0),
+            str(item.get("patient_ref") or ""),
+        ),
+    )[:max_limit]
+    top = queue[0] if queue else {}
+    return {
+        "available": True,
+        "source": "clinical_redecision_closure_loop",
+        "version": "clinical_redecision_closure_population_summary_fast_v1",
+        "scope": "summary",
+        "summary": {
+            "queue_count": len(queue),
+            "supported_states": supported_states,
+            "lane_counts": lane_counts,
+            "state_counts": state_counts,
+            "top_action_title": top.get("title") if top else "Sin re-decisiones activas",
+        },
+        "queue_count": len(queue),
+        "today_queue": queue[:10],
+        "redecision_triggers": queue[:10],
+        "audit": {
+            "deterministic_v1": True,
+            "read_model_only": True,
+            "summary_payload": True,
+            "summary_fast_path": True,
+            "full_scope_available": True,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        },
+    }
+
+
 def _summarize_population_autodrive(payload):
     payload = dict(payload or {})
     summary = dict(payload.get("summary") or {})
@@ -4172,8 +6764,20 @@ def _json_dict(value):
         return {}
 
 
+def _json_array(value):
+    if isinstance(value, list):
+        return value
+    try:
+        parsed = json.loads(value or "[]")
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
 def _autodrive_lane_from_title(title: str, family: str, rationale: str) -> tuple[str, str]:
     text = f"{title} {family} {rationale}".lower()
+    if any(token in text for token in ("reabrir", "re-decision", "redecisión", "redecision", "nueva decision", "nueva decisión")):
+        return "redecision_required", "Reabrir decisión clínica"
     if any(token in text for token in ("faltan", "completar", "datos críticos", "dato critico", "captura")):
         return "blocked_by_data", "Bloqueado por datos"
     if any(token in text for token in ("confirmar", "priorizar", "activar", "decidir", "salvage", "reestadificación")):
@@ -4535,6 +7139,202 @@ def api_patient_autodrive_action_status(patient_ref, action_key):
     except Exception as e:
         logger.error(f"Error updating Autodrive action status: {e}")
         return error_response(str(e), 500)
+
+
+@app.route('/api/redecision/today', methods=['GET'])
+def api_redecision_today():
+    """Population queue for patients requiring auditable clinical re-decision closure."""
+    try:
+        from prostanet.shared.read_model_cache import (
+            AGGREGATE_TTL_SECONDS,
+            build_cache_key,
+            get_or_build_read_model,
+        )
+
+        scope = _request_scope(default="summary")
+        limit = _safe_int_param(request.args.get("limit"), 50)
+        stage = str(request.args.get("stage") or "").strip()
+        refresh = _is_truthy_param(request.args.get("refresh"))
+        key = build_cache_key("redecision_population", scope, limit, stage)
+        if scope == "summary":
+            payload = get_or_build_read_model(
+                key,
+                lambda: _build_redecision_population_summary_fast(
+                    limit=limit,
+                    stage=stage,
+                ),
+                ttl_seconds=AGGREGATE_TTL_SECONDS,
+                refresh=refresh,
+            )
+        else:
+            payload = get_or_build_read_model(
+                key,
+                lambda: _build_redecision_population_for_api(
+                    limit=limit,
+                    stage=stage,
+                    scope=scope,
+                    force_recompute=False,
+                ),
+                ttl_seconds=AGGREGATE_TTL_SECONDS,
+                refresh=refresh,
+            )
+        return jsonify({
+            "success": True,
+            "scope": scope,
+            "redecision": payload,
+            **payload,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting redecision queue: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/patients/<patient_ref>/redecision', methods=['GET'])
+@app.route('/api/patient/<patient_ref>/redecision', methods=['GET'])
+def api_patient_redecision(patient_ref):
+    """Patient-level re-decision workbench bundle."""
+    try:
+        built, error = _build_patient_redecision_for_api(
+            patient_ref,
+            force_recompute=_is_truthy_param(request.args.get("refresh")),
+        )
+        if error:
+            return error
+        redecision = built["redecision"]
+        return jsonify({
+            "success": True,
+            "redecision": redecision,
+            **redecision,
+            "decision_today": built.get("decision_today") or {},
+            "autodrive": built.get("autodrive") or {},
+            "resolved_patient_id": built["patient_id"],
+            "resolved_patient_ref": built["resolved_patient_ref"],
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        })
+    except Exception as e:
+        logger.error(f"Error getting patient redecision bundle: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route('/api/patients/<patient_ref>/redecision/close', methods=['POST'])
+def api_patient_redecision_close(patient_ref):
+    """Close a clinical re-decision review by writing only an auditable patient_event."""
+    import tracking_db
+    from prostanet.domains.patient_tracking.clinical_redecision_closure import (
+        REDECISION_CLOSURE_EVENT_TYPE,
+        closure_event_payload,
+        validate_closure_request,
+    )
+
+    try:
+        request_payload = request.get_json(silent=True) or {}
+        built, error = _build_patient_redecision_for_api(patient_ref, force_recompute=True)
+        if error:
+            return error
+        redecision = built["redecision"]
+        ok, message, closure = validate_closure_request(request_payload, redecision)
+        if not ok:
+            return jsonify({
+                "success": False,
+                "error": message,
+                "redecision": redecision,
+                "source_clinical_facts_mutated": False,
+                "external_order_created": False,
+                "model_trained": False,
+            }), 400
+        event_payload = closure_event_payload(closure, redecision)
+        event_id = tracking_db.record_patient_event(
+            built["patient_id"],
+            event_type=REDECISION_CLOSURE_EVENT_TYPE,
+            state_context=str(redecision.get("state") or ""),
+            management_track=str(
+                (built.get("decision_today") or {}).get("management_track")
+                or (built.get("bundle") or {}).get("signals", {}).get("effective_management_track_final")
+                or ""
+            ),
+            source_type="clinical_redecision_workbench",
+            status=str(closure.get("closure_status") or "recorded"),
+            payload=event_payload,
+        )
+        if not event_id:
+            return jsonify({
+                "success": False,
+                "error": "No se pudo registrar el evento auditable de cierre",
+                "source_clinical_facts_mutated": False,
+                "external_order_created": False,
+                "model_trained": False,
+            }), 500
+        _invalidate_redecision_read_models()
+        refreshed, error = _build_patient_redecision_for_api(patient_ref, force_recompute=True)
+        if error:
+            return error
+        return jsonify({
+            "success": True,
+            "event_id": event_id,
+            "message": "Cierre de re-decisión registrado en patient_events",
+            "redecision": refreshed["redecision"],
+            **refreshed["redecision"],
+            "resolved_patient_id": refreshed["patient_id"],
+            "resolved_patient_ref": refreshed["resolved_patient_ref"],
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        })
+    except Exception as e:
+        logger.error(f"Error closing patient redecision: {e}")
+        return error_response(str(e), 500)
+
+
+@app.route("/redecision-workbench")
+@require_clinical_session(scope="phi:read", redirect_to_login=True)
+def redecision_workbench():
+    """UI queue for clinical re-decision closure."""
+    limit = _safe_int_param(request.args.get("limit"), 50)
+    stage = str(request.args.get("stage") or "").strip()
+    scope = _request_scope(default="summary")
+    if scope == "full":
+        population = _build_redecision_population_for_api(
+            limit=limit,
+            stage=stage,
+            scope="full",
+            force_recompute=_is_truthy_param(request.args.get("refresh")),
+        )
+    else:
+        population = _build_redecision_population_summary_fast(limit=limit, stage=stage)
+    return render_template(
+        "redecision_workbench.html",
+        redecision=population,
+        queue=population.get("today_queue") or [],
+        summary=population.get("summary") or {},
+        stage=stage,
+        limit=limit,
+    )
+
+
+@app.route("/redecision-workbench/<patient_ref>")
+@require_clinical_session(scope="phi:read", redirect_to_login=True)
+def redecision_patient_workbench(patient_ref):
+    """Patient UI for targeted missing-data capture and auditable closure."""
+    built, error = _build_patient_redecision_for_api(
+        patient_ref,
+        force_recompute=_is_truthy_param(request.args.get("refresh")),
+    )
+    if error:
+        return error
+    return render_template(
+        "redecision_patient_workbench.html",
+        redecision=built["redecision"],
+        decision_today=built.get("decision_today") or {},
+        autodrive=built.get("autodrive") or {},
+        patient=built.get("patient") or {},
+        resolved_patient_id=built["patient_id"],
+        resolved_patient_ref=built["resolved_patient_ref"],
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -6820,7 +9620,7 @@ def clinical_result_v2(nss: str):
     patient_for_v2["full_name"] = data["identity"].get("full_name")
     patient_for_v2["clinical_baseline"] = data.get("baseline") or {}
     patient_for_v2["baseline_psa"] = (data.get("baseline") or {}).get("baseline_psa")
-    patient_for_v2["consent"] = data.get("consent") or {}
+    patient_for_v2["consent"] = data.get("consent") or data.get("consent_summary") or {}
     ctx = bundle_to_v2_profile(profile_view, patient_for_v2)
 
     # Adapt v2 ctx → clinical_result template shape
@@ -6865,6 +9665,60 @@ def clinical_result_v2(nss: str):
     return render_template("demos/clinical_result_v2_demo.html", **result_ctx)
 
 
+LONGITUDINAL_CAPTURE_KEYS_BY_STATE = {
+    "screening": {"psa_new", "imaging", "biopsy_capture"},
+    "diagnostic_workup": {"psa_new", "imaging", "biopsy_capture"},
+    "post_negative_biopsy_followup": {"psa_new", "imaging", "biopsy_capture"},
+    "localized_initial": {"psa_new", "imaging", "biopsy_capture", "pro_scores"},
+    "post_prostatectomy": {"psa_new", "imaging", "clinical_event"},
+    "post_radiotherapy_followup": {"psa_new", "imaging", "clinical_event"},
+    "post_radiotherapy_or_local_salvage": {"psa_new", "imaging", "clinical_event"},
+    "recurrence_bcr": {"psa_new", "imaging", "clinical_event"},
+    "m0_crpc": {"psa_new", "testosterone_history", "lab_panel", "imaging", "treatment_change", "ecog", "ctcae"},
+    "m1_crpc": {
+        "psa_new", "testosterone_history", "lab_panel", "imaging", "treatment_change",
+        "clinical_event", "ecog", "ctcae",
+    },
+}
+
+LONGITUDINAL_CAPTURE_KEYS_BY_LANE = {
+    "diagnostic_biopsy_readiness": {"psa_new", "imaging", "biopsy_capture"},
+    "active_surveillance_readiness": {"psa_new", "imaging", "biopsy_capture", "pro_scores"},
+    "localized_treatment_readiness": {"psa_new", "imaging", "biopsy_capture", "pro_scores"},
+    "bcr_salvage_readiness": {"psa_new", "imaging", "clinical_event"},
+    "mhspc_precision_readiness": {"psa_new", "lab_panel", "imaging", "treatment_change", "clinical_event"},
+    "crpc_confirmation_readiness": {"psa_new", "testosterone_history", "imaging", "ecog"},
+    "m0crpc_arpi_readiness": {"psa_new", "testosterone_history", "lab_panel", "imaging", "treatment_change", "ecog", "ctcae"},
+    "m1crpc_sequence_readiness": {
+        "psa_new", "testosterone_history", "lab_panel", "imaging", "treatment_change",
+        "clinical_event", "ecog", "ctcae",
+    },
+    "adt_arpi_safety_readiness": {"testosterone_history", "lab_panel", "treatment_change", "ecog", "ctcae"},
+    "supportive_palliative_readiness": {"clinical_event", "pro_scores", "ecog", "ctcae"},
+    "epidemiology_registry": {"treatment_change", "clinical_event", "pro_scores", "ecog", "ctcae"},
+}
+
+
+def _longitudinal_state_css_key(state: str) -> str:
+    value = str(state or "localized_initial").strip().lower()
+    return "".join(ch if ch.isalnum() else "_" for ch in value).strip("_") or "localized_initial"
+
+
+def _state_scoped_longitudinal_capture_rows(rows: list[dict], *, state: str, readiness_lane: str = "") -> list[dict]:
+    state_key = _longitudinal_state_css_key(state)
+    lane_key = str(readiness_lane or "").strip()
+    allowed = LONGITUDINAL_CAPTURE_KEYS_BY_LANE.get(lane_key) or LONGITUDINAL_CAPTURE_KEYS_BY_STATE.get(state_key)
+    if state_key.startswith("mcspc"):
+        allowed = {
+            "psa_new", "lab_panel", "imaging", "treatment_change",
+            "clinical_event", "ecog", "ctcae",
+        }
+    if not allowed:
+        return rows
+    filtered = [row for row in rows if row.get("key") in allowed]
+    return filtered or rows
+
+
 @app.route("/longitudinal-capture/<nss>", methods=["GET"])
 @require_clinical_session(scope="phi:read", redirect_to_login=True)
 def longitudinal_capture_v2(nss: str):
@@ -6893,10 +9747,11 @@ def longitudinal_capture_v2(nss: str):
     patient_for_v2["nss"] = nss
     patient_for_v2["full_name"] = data["identity"].get("full_name")
     patient_for_v2["clinical_baseline"] = data.get("baseline") or {}
-    patient_for_v2["consent"] = data.get("consent") or {}
+    patient_for_v2["consent"] = data.get("consent") or data.get("consent_summary") or {}
     ctx = bundle_to_v2_profile(profile_view, patient_for_v2)
     decision_lane_filter = (request.args.get("decision_lane") or "").strip()
     decision_field_filter = (request.args.get("decision_field") or "").strip()
+    epidemiology_gap_key_filter = (request.args.get("gap_key") or "").strip()
     readiness_lane_filter = (
         request.args.get("readiness_lane")
         or decision_lane_filter
@@ -6935,6 +9790,7 @@ def longitudinal_capture_v2(nss: str):
     except Exception as exc:
         logger.exception(f"clinical_field_router longitudinal failed: {exc}")
         longitudinal_field_router = None
+    field_router_state_key = _longitudinal_state_css_key(str(field_router_state))
     from prostanet.shared.psa_unified import unified_psa_timeline, unified_testosterone_timeline
     from prostanet.domains.patient_tracking.psa_line_monitor import _classify_line_type
 
@@ -6978,12 +9834,95 @@ def longitudinal_capture_v2(nss: str):
         or profile_view.get("clinical_readiness_tower")
         or {}
     )
+    ape_capture_snapshot = _build_ape_completion_snapshot_safely(nss)
+    treatment_economic_snapshot = _build_treatment_economic_snapshot_safely(nss)
+    epidemiology_capture_catalog = {
+        "vital_status": {
+            "gap_key": "survival_status",
+            "label": "Estado vital/contacto",
+            "help": "Cierra supervivencia/censura del registro longitudinal con ultimo contacto o defuncion documentada.",
+        },
+        "volume_disease": {
+            "gap_key": "metastatic_context",
+            "label": "Carga metastasica",
+            "help": "Estandariza bajo/alto volumen y sitio metastasico para ajuste basal de cohortes.",
+        },
+        "metastasis_site": {
+            "gap_key": "metastatic_context",
+            "label": "Sitio/carga metastasica",
+            "help": "Documenta M0/M1b/M1c y la carga CHAARTED/LATITUDE cuando aplique.",
+        },
+        "comorbidities": {
+            "gap_key": "comorbidity",
+            "label": "Comorbilidad basal",
+            "help": "Permite ajustar comparaciones por fragilidad y carga cardiovascular/metabolica.",
+        },
+        "ecog": {
+            "gap_key": "actual_ecog",
+            "label": "ECOG de ventana",
+            "help": "Use el bloque ECOG existente; este dato alimenta respuesta funcional 12/24 semanas.",
+        },
+        "ctcae_toxicity": {
+            "gap_key": "toxicity_ctcae",
+            "label": "Toxicidad CTCAE",
+            "help": "Use el bloque CTCAE para distinguir ausencia de evento de ausencia de revision.",
+        },
+        "treatment_dose_cost": {
+            "gap_key": "cost_trace",
+            "label": "Dosis/costo trazable",
+            "help": "Use el bloque de dosis terapeutica para enlazar farmaco, dosis local y costo.",
+        },
+    }
+    epidemiology_capture_focus = dict(
+        epidemiology_capture_catalog.get(decision_field_filter)
+        or {"gap_key": epidemiology_gap_key_filter or "", "label": decision_field_filter or "Brecha epidemiologica", "help": "Capture el dato estructurado que alimenta la torre epidemiologica."}
+    )
+    if epidemiology_gap_key_filter:
+        epidemiology_capture_focus["gap_key"] = epidemiology_gap_key_filter
+    epidemiology_capture_focus["decision_field"] = decision_field_filter
     readiness_lane_detail = {}
     if readiness_lane_filter and clinical_readiness_tower:
         for lane in clinical_readiness_tower.get("lanes") or []:
             if isinstance(lane, dict) and lane.get("key") == readiness_lane_filter:
                 readiness_lane_detail = lane
                 break
+    try:
+        from prostanet.domains.clinical_fact_ledger import (
+            build_longitudinal_capture_ledger_context,
+            build_patient_clinical_fact_ledger,
+        )
+
+        _longitudinal_ledger = build_patient_clinical_fact_ledger(data)
+        longitudinal_ledger_context = build_longitudinal_capture_ledger_context(
+            data,
+            ledger=_longitudinal_ledger,
+            decision_field=decision_field_filter,
+            readiness_lane=readiness_lane_filter,
+            moment=moment_filter,
+        )
+    except Exception as exc:
+        logger.debug(f"Longitudinal Ledger context failed: {exc}")
+        longitudinal_ledger_context = {
+            "available": False,
+            "error": str(exc),
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        }
+
+    what_can_capture_rows = [
+        {"key": "psa_new", "label": "Nueva medición PSA", "freq": "Mensual",
+         "last_capture": (psa_real[-1]["date"] if psa_real else "—")},
+        {"key": "lab_panel", "label": "Panel labs (Hb·ALP·LDH·Testo)", "freq": "30-60 d", "last_capture": "—"},
+        {"key": "imaging", "label": "Imaging event", "freq": "Ad-hoc", "last_capture": "—"},
+        {"key": "treatment_change", "label": "Cambio línea / inicio / fin", "freq": "Si switch", "last_capture": "—"},
+        {"key": "clinical_event", "label": "Evento clínico", "freq": "Ad-hoc", "last_capture": "—"},
+        {"key": "pro_scores", "label": "PRO scores (BPI · ESAS)", "freq": "Cada visita", "last_capture": "—"},
+        {"key": "dexa", "label": "DEXA / densidad ósea", "freq": "Cada 24m bajo ADT", "last_capture": "—"},
+        {"key": "ctcae", "label": "Toxicidad CTCAE v5", "freq": "Cada visita", "last_capture": "—"},
+        {"key": "biopsy_capture", "label": "Reporte histopatológico (biopsia)",
+         "freq": "Por evento", "last_capture": "—"},
+    ]
 
     long_ctx = {
         "identity": {
@@ -7027,10 +9966,16 @@ def longitudinal_capture_v2(nss: str):
         "pro_scores": [],
         "longitudinal_field_router": longitudinal_field_router,
         "clinical_readiness_tower": clinical_readiness_tower,
+        "field_router_state_key": field_router_state_key,
+        "ape_capture_snapshot": ape_capture_snapshot,
+        "treatment_economic_snapshot": treatment_economic_snapshot,
         "decision_lane_filter": decision_lane_filter,
         "decision_field_filter": decision_field_filter,
+        "epidemiology_gap_key_filter": epidemiology_gap_key_filter,
+        "epidemiology_capture_focus": epidemiology_capture_focus,
         "readiness_lane_filter": readiness_lane_filter,
         "readiness_lane_detail": readiness_lane_detail,
+        "longitudinal_ledger_context": longitudinal_ledger_context,
         "smart_hints": [
             {"icon": "info", "severity": "info",
              "title": f"{len(psa_real)} mediciones PSA capturadas",
@@ -7042,23 +9987,174 @@ def longitudinal_capture_v2(nss: str):
                      else f"HRR: {cb.get('hrr_status')}"),
              "action": "Solicitar test" if not cb.get("hrr_status") else "Ver detalle"},
         ],
-        "what_can_capture": [
-            {"key": "psa_new", "label": "Nueva medición PSA", "freq": "Mensual",
-             "last_capture": (psa_real[-1]["date"] if psa_real else "—")},
-            {"key": "lab_panel", "label": "Panel labs (Hb·ALP·LDH·Testo)", "freq": "30-60 d", "last_capture": "—"},
-            {"key": "imaging", "label": "Imaging event", "freq": "Ad-hoc", "last_capture": "—"},
-            {"key": "treatment_change", "label": "Cambio línea / inicio / fin", "freq": "Si switch", "last_capture": "—"},
-            {"key": "clinical_event", "label": "Evento clínico", "freq": "Ad-hoc", "last_capture": "—"},
-            {"key": "pro_scores", "label": "PRO scores (BPI · ESAS)", "freq": "Cada visita", "last_capture": "—"},
-            {"key": "dexa", "label": "DEXA / densidad ósea", "freq": "Cada 24m bajo ADT", "last_capture": "—"},
-            {"key": "ctcae", "label": "Toxicidad CTCAE v5", "freq": "Cada visita", "last_capture": "—"},
-            {"key": "biopsy_capture", "label": "Reporte histopatológico (biopsia)",
-             "freq": "Por evento", "last_capture": "—"},
-        ],
+        "what_can_capture": _state_scoped_longitudinal_capture_rows(
+            what_can_capture_rows,
+            state=field_router_state_key,
+            readiness_lane=readiness_lane_filter,
+        ),
         # BUG FIX (smoke 2026-05-17) — pass moment to template para auto-open section
         "moment_filter": moment_filter,
     }
     return render_template("demos/longitudinal_capture_v2_demo.html", **long_ctx)
+
+
+def _should_build_ape_capture_impact(kind: str) -> bool:
+    """Return whether a longitudinal write affects the APE tower contract."""
+    kind_key = str(kind or "").strip().lower()
+    return kind_key in {"psa", "ape", "treatment_change", "treatment_dose"}
+
+
+def _should_build_treatment_economic_impact(kind: str) -> bool:
+    kind_key = str(kind or "").strip().lower()
+    return kind_key in {"treatment_change", "treatment_dose"}
+
+
+def _build_ape_completion_snapshot_safely(nss: str) -> dict:
+    try:
+        from prostanet.domains.platform_readiness.ape_longitudinal_completion_sprint import (
+            build_patient_ape_completion_snapshot,
+        )
+
+        return build_patient_ape_completion_snapshot(nss)
+    except Exception as exc:
+        return {
+            "available": False,
+            "patient_ref": nss,
+            "error": str(exc)[:180],
+            "read_only": True,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+            "external_transfer_performed": False,
+        }
+
+
+def _build_ape_capture_impact_safely(
+    nss: str,
+    *,
+    before_snapshot: dict | None,
+    kind: str,
+    append_result: dict | None,
+    recompute_result: dict | None,
+) -> dict:
+    try:
+        from prostanet.domains.platform_readiness.ape_longitudinal_completion_sprint import (
+            build_ape_capture_impact,
+        )
+
+        return build_ape_capture_impact(
+            nss,
+            before_snapshot=before_snapshot or {},
+            kind=kind,
+            append_result=append_result or {},
+            recompute_result=recompute_result or {},
+        )
+    except Exception as exc:
+        return {
+            "available": False,
+            "version": "ape_capture_impact_loop_v1",
+            "patient_ref": nss,
+            "kind_appended": kind,
+            "error": str(exc)[:180],
+            "read_only_impact_model": True,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+            "external_transfer_performed": False,
+        }
+
+
+@app.route("/api/patients/<patient_ref>/ape-capture-impact", methods=["GET"])
+@require_clinical_session(scope="phi:read", redirect_to_login=False)
+def api_patient_ape_capture_impact(patient_ref: str):
+    """Read-only patient APE completion state used by V2 longitudinal capture."""
+    snapshot = _build_ape_completion_snapshot_safely(patient_ref)
+    status = 200 if snapshot.get("available") else 404
+    return jsonify({"success": bool(snapshot.get("available")), "snapshot": snapshot}), status
+
+
+def _build_longitudinal_append_ledger_guard(
+    nss: str,
+    *,
+    kind: str,
+    body: dict,
+    ledger_context: dict | None = None,
+) -> dict:
+    """Server-side guard mirroring V2 longitudinal Ledger decisions.
+
+    UI disables fields for comfort, but this is the clinical safety contract:
+    direct REST writes with a targeted Ledger context must not recapture a
+    field that the Ledger marks as current or conflicting.
+    """
+    kind = str(kind or "").strip().lower()
+    if not kind or not isinstance(body, dict):
+        return {"allowed": True, "reason": "no_structured_body"}
+    try:
+        import tracking_db as _tracking_db
+        from prostanet.domains.clinical_fact_ledger import (
+            build_longitudinal_capture_ledger_context,
+            build_patient_clinical_fact_ledger,
+        )
+
+        context_hint = dict(ledger_context or {})
+        record = _load_patient_record_for_clinical_fact_ledger(_tracking_db, nss)
+        if not record:
+            return {"allowed": True, "reason": "patient_record_unavailable"}
+        ledger = build_patient_clinical_fact_ledger(record)
+        context = build_longitudinal_capture_ledger_context(
+            record,
+            ledger=ledger,
+            decision_field=str(context_hint.get("decision_field") or ""),
+            readiness_lane=str(context_hint.get("readiness_lane") or ""),
+            moment=str(context_hint.get("moment") or ""),
+        )
+        form_decision = (context.get("forms_by_key") or {}).get(kind)
+        if not isinstance(form_decision, dict):
+            return {
+                "allowed": True,
+                "reason": "kind_not_ledger_governed",
+                "ledger_context_version": context.get("version"),
+            }
+        requested_fields = set(body.keys())
+        blocked_fields = []
+        for field_name, field_decision in (form_decision.get("field_decisions") or {}).items():
+            if field_name not in requested_fields:
+                continue
+            if field_decision.get("suppress_recapture") or field_decision.get("capture_allowed") is False:
+                blocked_fields.append({
+                    "field_name": field_name,
+                    "fact_key": field_decision.get("fact_key"),
+                    "action": field_decision.get("action"),
+                    "current_value": field_decision.get("current_value"),
+                    "freshness_status": field_decision.get("freshness_status"),
+                    "has_conflict": bool(field_decision.get("has_conflict")),
+                })
+        form_blocked = bool(form_decision.get("suppress_recapture") or form_decision.get("capture_allowed") is False)
+        allowed = not (form_blocked or blocked_fields)
+        return {
+            "allowed": allowed,
+            "reason": "allowed_by_ledger" if allowed else "ledger_recapture_blocked",
+            "kind": kind,
+            "form_action": form_decision.get("action"),
+            "form_capture_allowed": form_decision.get("capture_allowed"),
+            "form_suppress_recapture": form_decision.get("suppress_recapture"),
+            "blocked_fields": blocked_fields,
+            "requested_fields": sorted(requested_fields),
+            "ledger_context_version": context.get("version"),
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        }
+    except Exception as exc:
+        logger.debug(f"Longitudinal Ledger write guard failed open: {exc}")
+        return {
+            "allowed": True,
+            "reason": "ledger_guard_unavailable_fail_open",
+            "guard_error": str(exc)[:180],
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        }
 
 
 @app.route("/api/longitudinal/<nss>/append", methods=["POST"])
@@ -7081,6 +10177,39 @@ def api_longitudinal_append(nss: str):
     body = payload.get("payload") or {}
     if not kind:
         return jsonify({"success": False, "error": "missing 'kind'"}), 400
+    ledger_guard = _build_longitudinal_append_ledger_guard(
+        nss,
+        kind=kind,
+        body=body if isinstance(body, dict) else {},
+        ledger_context=payload.get("ledger_context") or {},
+    )
+    if ledger_guard.get("allowed") is False:
+        return jsonify({
+            "success": False,
+            "error": "ledger_recapture_blocked",
+            "message": "Clinical Fact Ledger bloqueo una recaptura dirigida; resolver conflicto o usar nueva medicion longitudinal valida.",
+            "kind": kind,
+            "nss": nss,
+            "ledger_guard": ledger_guard,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        }), 409
+    ape_before_snapshot = (
+        _build_ape_completion_snapshot_safely(nss)
+        if _should_build_ape_capture_impact(kind)
+        else None
+    )
+    treatment_before_snapshot = (
+        _build_treatment_economic_snapshot_safely(nss)
+        if _should_build_treatment_economic_impact(kind)
+        else None
+    )
+    treatment_value_before_snapshot = (
+        _build_treatment_value_capture_impact_safely(nss, kind=kind)
+        if _should_build_treatment_value_capture_impact(kind)
+        else None
+    )
 
     # Map kind → biomarker_type. PSA, testo, HB, ALP, LDH son los más comunes.
     biomarker_map = {
@@ -7123,6 +10252,7 @@ def api_longitudinal_append(nss: str):
                 "decision_changed": recompute_delta.get("decision_changed", False),
                 "delta": recompute_delta.get("delta") or {},
                 "alerts_count": recompute_delta.get("alerts_count", 0),
+                "arpi_response_windows": recompute_delta.get("arpi_response_windows") or {},
                 "source": "longitudinal_v2_panel",
                 "audit_note": "Lab panel append → recompute → CDE updated · LXXXVI #67F",
             }), (200 if ok_count > 0 else 409)
@@ -7141,6 +10271,20 @@ def api_longitudinal_append(nss: str):
         if result.get("success"):
             # Faubot LXXXVI #67F — Recompute post-write (CDE Auditable real)
             recompute_delta = _recompute_after_append(nss, kind=kind)
+            ape_capture_impact = _build_ape_capture_impact_safely(
+                nss,
+                before_snapshot=ape_before_snapshot,
+                kind=kind,
+                append_result=result,
+                recompute_result=recompute_delta,
+            ) if ape_before_snapshot else {}
+            treatment_value_capture_impact = _build_treatment_value_capture_impact_safely(
+                nss,
+                before_snapshot=treatment_value_before_snapshot,
+                kind=kind,
+                append_result=result,
+                recompute_result=recompute_delta,
+            ) if treatment_value_before_snapshot else {}
             return jsonify({
                 **result,
                 "kind": kind,
@@ -7152,6 +10296,10 @@ def api_longitudinal_append(nss: str):
                 "compass_keys_rendered": recompute_delta.get("compass_keys_rendered", 0),
                 "recompute_success": recompute_delta.get("success", False),
                 "recompute_error": recompute_delta.get("recompute_error"),
+                "arpi_response_windows": recompute_delta.get("arpi_response_windows") or {},
+                "cache_invalidation": recompute_delta.get("cache_invalidation") or {},
+                "ape_capture_impact": ape_capture_impact,
+                "treatment_value_capture_impact": treatment_value_capture_impact,
                 "audit_note": "Append → recompute → CDE updated · LXXXVI #67F",
             })
         # Error: 404 patient_not_found, 409 duplicate, 400 missing field
@@ -7250,11 +10398,20 @@ def api_longitudinal_append(nss: str):
         )
         if result.get("success"):
             recompute_delta = _recompute_after_append(nss, kind=kind)
+            treatment_value_capture_impact = _build_treatment_value_capture_impact_safely(
+                nss,
+                before_snapshot=treatment_value_before_snapshot,
+                kind=kind,
+                append_result=result,
+                recompute_result=recompute_delta,
+            ) if treatment_value_before_snapshot else {}
             return jsonify({
                 **result, "kind": kind, "nss": nss,
                 "appended_at": utc_now_iso(),
                 "decision_changed": recompute_delta.get("decision_changed", False),
                 "delta": recompute_delta.get("delta") or {},
+                "arpi_response_windows": recompute_delta.get("arpi_response_windows") or {},
+                "treatment_value_capture_impact": treatment_value_capture_impact,
                 "source": f"longitudinal_v2_{kind}",
                 "audit_note": f"{kind} captured · CDE recomputed · LXC",
             })
@@ -7284,6 +10441,7 @@ def api_longitudinal_append(nss: str):
                 "alerts_count": recompute_delta.get("alerts_count", 0),
                 "recompute_success": recompute_delta.get("success", False),
                 "recompute_error": recompute_delta.get("recompute_error"),
+                "arpi_response_windows": recompute_delta.get("arpi_response_windows") or {},
                 "source": "longitudinal_v2_biopsy",
                 "audit_note": (
                     "Structured biopsy persisted → canonical facts updated → "
@@ -7299,6 +10457,27 @@ def api_longitudinal_append(nss: str):
         result = tracking_db.append_treatment_line_update(nss, body)
         if result.get("success"):
             recompute_delta = _recompute_after_append(nss, kind=kind)
+            ape_capture_impact = _build_ape_capture_impact_safely(
+                nss,
+                before_snapshot=ape_before_snapshot,
+                kind=kind,
+                append_result=result,
+                recompute_result=recompute_delta,
+            ) if ape_before_snapshot else {}
+            treatment_economic_impact = _build_treatment_economic_impact_safely(
+                nss,
+                before_snapshot=treatment_before_snapshot,
+                kind=kind,
+                append_result=result,
+                recompute_result=recompute_delta,
+            ) if treatment_before_snapshot else {}
+            treatment_value_capture_impact = _build_treatment_value_capture_impact_safely(
+                nss,
+                before_snapshot=treatment_value_before_snapshot,
+                kind=kind,
+                append_result=result,
+                recompute_result=recompute_delta,
+            ) if treatment_value_before_snapshot else {}
             return jsonify({
                 **result,
                 "kind": kind,
@@ -7309,11 +10488,98 @@ def api_longitudinal_append(nss: str):
                 "alerts_count": recompute_delta.get("alerts_count", 0),
                 "recompute_success": recompute_delta.get("success", False),
                 "recompute_error": recompute_delta.get("recompute_error"),
+                "arpi_response_windows": recompute_delta.get("arpi_response_windows") or {},
+                "cache_invalidation": recompute_delta.get("cache_invalidation") or {},
+                "ape_capture_impact": ape_capture_impact,
+                "treatment_economic_impact": treatment_economic_impact,
+                "treatment_value_capture_impact": treatment_value_capture_impact,
                 "audit_note": "Treatment line persisted → PSA tower bands recomputed · FAUBOT",
             })
         status_code = 404 if result.get("error") == "patient_not_found" else (
             409 if result.get("error") == "duplicate" else 400
         )
+        return jsonify({**result, "kind": kind, "nss": nss}), status_code
+
+    if kind == "treatment_dose":
+        result = tracking_db.append_treatment_dose_administration(nss, body)
+        if result.get("success"):
+            recompute_delta = _recompute_after_append(nss, kind=kind)
+            ape_capture_impact = _build_ape_capture_impact_safely(
+                nss,
+                before_snapshot=ape_before_snapshot,
+                kind=kind,
+                append_result=result,
+                recompute_result=recompute_delta,
+            ) if ape_before_snapshot else {}
+            treatment_economic_impact = _build_treatment_economic_impact_safely(
+                nss,
+                before_snapshot=treatment_before_snapshot,
+                kind=kind,
+                append_result=result,
+                recompute_result=recompute_delta,
+            ) if treatment_before_snapshot else {}
+            treatment_value_capture_impact = _build_treatment_value_capture_impact_safely(
+                nss,
+                before_snapshot=treatment_value_before_snapshot,
+                kind=kind,
+                append_result=result,
+                recompute_result=recompute_delta,
+            ) if treatment_value_before_snapshot else {}
+            return jsonify({
+                **result,
+                "kind": kind,
+                "nss": nss,
+                "appended_at": utc_now_iso(),
+                "decision_changed": recompute_delta.get("decision_changed", False),
+                "delta": recompute_delta.get("delta") or {},
+                "alerts_count": recompute_delta.get("alerts_count", 0),
+                "recompute_success": recompute_delta.get("success", False),
+                "recompute_error": recompute_delta.get("recompute_error"),
+                "arpi_response_windows": recompute_delta.get("arpi_response_windows") or {},
+                "cache_invalidation": recompute_delta.get("cache_invalidation") or {},
+                "ape_capture_impact": ape_capture_impact,
+                "treatment_economic_impact": treatment_economic_impact,
+                "treatment_value_capture_impact": treatment_value_capture_impact,
+                "audit_note": "Dosis terapéutica persistida → alerta HGZ/HGR evaluada → CDE recomputado",
+            })
+        status_code = 404 if result.get("error") == "patient_not_found" else 400
+        return jsonify({**result, "kind": kind, "nss": nss}), status_code
+
+    if kind == "epidemiology_gap":
+        result = tracking_db.append_epidemiology_readiness_capture(nss, body)
+        if result.get("success"):
+            recompute_delta = _recompute_after_append(nss, kind=kind)
+            treatment_value_capture_impact = _build_treatment_value_capture_impact_safely(
+                nss,
+                before_snapshot=treatment_value_before_snapshot,
+                kind=kind,
+                append_result=result,
+                recompute_result=recompute_delta,
+            ) if treatment_value_before_snapshot else {}
+            epidemiology_gap_sla = _build_patient_epidemiology_gap_sla_safely(nss)
+            return jsonify({
+                **result,
+                "kind": kind,
+                "nss": nss,
+                "appended_at": utc_now_iso(),
+                "decision_changed": recompute_delta.get("decision_changed", False),
+                "delta": recompute_delta.get("delta") or {},
+                "alerts_count": recompute_delta.get("alerts_count", 0),
+                "recompute_success": recompute_delta.get("success", False),
+                "recompute_error": recompute_delta.get("recompute_error"),
+                "arpi_response_windows": recompute_delta.get("arpi_response_windows") or {},
+                "treatment_value_capture_impact": treatment_value_capture_impact,
+                "epidemiology_gap_sla": epidemiology_gap_sla,
+                "next_surfaces": {
+                    "profile_v2": f"/patient_profile/{nss}?v=2&refresh=1",
+                    "treatment_value_registry": f"/population/treatment-value-registry?patient_ref={nss}",
+                    "epidemiology_command_center": f"/population/epidemiology-command-center?patient_ref={nss}",
+                    "epidemiology_gap_sla_api": f"/api/patients/{nss}/epidemiology-gap-sla",
+                },
+                "source": "longitudinal_v2_epidemiology_registry",
+                "audit_note": "Brecha epidemiologica persistida en fuente estructurada y lista para recalc de torre.",
+            })
+        status_code = 404 if result.get("error") == "patient_not_found" else 400
         return jsonify({**result, "kind": kind, "nss": nss}), status_code
 
     # Other kinds (imaging, clinical_event, pro_scores generic)
@@ -7333,6 +10599,44 @@ def api_longitudinal_append(nss: str):
 # Convierte append-only → CDE recompute real. Resuelve bug B1 raíz: capturar
 # nuevo PSA AHORA dispara refresh_longitudinal_intelligence + ClinicalAlertEngine
 # + new clinical_compass + new decision_audit snapshot.
+def _invalidate_longitudinal_read_models(nss: str, *, kind: str) -> dict:
+    """Invalidate patient and population read models after longitudinal writes."""
+    invalidated: dict[str, int] = {}
+    try:
+        from prostanet.shared.read_model_cache import invalidate_read_model_cache
+        from prostanet.presentation.v2_adapters import invalidate_profile_view_cache
+
+        patient_id = None
+        try:
+            import tracking_db
+
+            core = tracking_db.load_patient_record_core(nss)
+            identity = (core or {}).get("identity") or {}
+            patient_id = identity.get("id")
+        except Exception:
+            patient_id = None
+        if patient_id:
+            try:
+                invalidate_profile_view_cache(patient_id, reason=f"longitudinal_write:{kind}")
+                invalidated["profile_v2"] = 1
+            except Exception:
+                invalidated["profile_v2"] = 0
+        for prefix in (
+            "patient_decision_today",
+            "patient_autodrive",
+            "autodrive_population",
+            "population_cohort_dashboard",
+            "epidemiology_command_center",
+            str(nss or ""),
+        ):
+            if not prefix:
+                continue
+            invalidated[str(prefix)] = int(invalidate_read_model_cache(prefix))
+    except Exception as exc:
+        return {"success": False, "error": str(exc)[:160], "invalidated": invalidated}
+    return {"success": True, "invalidated": invalidated}
+
+
 def _recompute_after_append(nss: str, kind: str) -> dict:
     """Force-recompute del bundle clínico tras append. Retorna delta vs OLD compass.
 
@@ -7351,6 +10655,23 @@ def _recompute_after_append(nss: str, kind: str) -> dict:
     """
     import tracking_db
     try:
+        if current_app.config.get("TESTING") or os.environ.get("PROSTANET_DATALLESS_SAFE_START") == "1":
+            arpi_windows_refresh = _refresh_arpi_windows_after_write(
+                nss,
+                reason=f"longitudinal_append:{kind}",
+            )
+            cache_invalidation = _invalidate_longitudinal_read_models(nss, kind=kind)
+            return {
+                "success": True,
+                "decision_changed": False,
+                "delta": {},
+                "alerts_count": 0,
+                "compass_keys_rendered": 0,
+                "kind_appended": kind,
+                "arpi_response_windows": arpi_windows_refresh,
+                "cache_invalidation": cache_invalidation,
+            }
+
         # 1. Cargar bundle OLD (antes de recompute)
         core_old = tracking_db.load_patient_record_core(nss)
         if not core_old:
@@ -7407,7 +10728,14 @@ def _recompute_after_append(nss: str, kind: str) -> dict:
         except Exception:
             pass
 
-        # 5. Compute delta
+        # 5. Refresh ARPI response windows used by real-world value analytics.
+        arpi_windows_refresh = _refresh_arpi_windows_after_write(
+            nss,
+            reason=f"longitudinal_append:{kind}",
+        )
+        cache_invalidation = _invalidate_longitudinal_read_models(nss, kind=kind)
+
+        # 6. Compute delta
         old_dir = old_compass.get("recommended_direction") or ""
         new_dir = new_compass.get("recommended_direction") or ""
         decision_changed = bool(old_dir) and (old_dir != new_dir)
@@ -7439,6 +10767,8 @@ def _recompute_after_append(nss: str, kind: str) -> dict:
             "alerts_count": alerts_count,
             "compass_keys_rendered": compass_keys,
             "kind_appended": kind,
+            "arpi_response_windows": arpi_windows_refresh,
+            "cache_invalidation": cache_invalidation,
         }
     except Exception as exc:
         logger.warning(f"_recompute_after_append({nss}, {kind}) error: {exc}")
@@ -8555,10 +11885,15 @@ if __name__ == "__main__":
     # 127.0.0.1 (localhost-only). Para escuchar en 0.0.0.0 (red),
     # set PROSTANET_ALLOW_PUBLIC_BIND=true explícitamente. Esto previene
     # exposiciones accidentales del server en redes compartidas.
-    from prostanet.shared.security_helpers import get_bind_host
+    import os as _os
+    if _os.environ.get("PROSTANET_AUTH_DISABLED") == "1" or _os.environ.get("PROSTANET_DATALLESS_SAFE_START") == "1":
+        _host = "127.0.0.1"
+    else:
+        from prostanet.shared.security_helpers import get_bind_host
+
+        _host = get_bind_host()
     # EPIC 0.A (CXLV verification): allow override via PROSTANET_PORT env var
     # para soportar deploys multi-instance + validación side-by-side de versiones
     # (no fricciona producción — default sigue siendo 8080 cuando env unset).
-    import os as _os
     _port = int(_os.environ.get("PROSTANET_PORT", "8080"))
-    app.run(host=get_bind_host(), port=_port, debug=False)
+    app.run(host=_host, port=_port, debug=False)

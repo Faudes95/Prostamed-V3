@@ -4,6 +4,7 @@ from typing import Any
 
 from prostanet.shared.genomic_classifier_scores import classify_genomic_score
 from prostanet.shared.life_expectancy import classify_localized_life_expectancy_band
+from prostanet.shared.converters import safe_float, safe_int
 
 
 def _resolve_genomic_band(payload: dict[str, Any]) -> tuple[str, str, str]:
@@ -82,14 +83,14 @@ def _attach_protocol_ranking(
 
 def classify_nccn(payload: dict[str, Any]) -> dict[str, Any]:
     tstage = str(payload.get("clinical_tstage") or "T2a").upper()
-    gg = int(payload.get("isup_grade") or 1)
-    psa = float(payload.get("psa") or 0)
-    n_pos = int(payload.get("num_cores_positive") or 0)
-    total_cores = max(int(payload.get("total_cores") or 12), 1)
+    gg = safe_int(payload.get("isup_grade"), default=1)
+    psa = safe_float(payload.get("psa"), default=0.0)
+    n_pos = safe_int(payload.get("num_cores_positive"), default=0)
+    total_cores = max(safe_int(payload.get("total_cores"), default=12), 1)
     pct = payload.get("pct_cores_positive")
     if pct in (None, ""):
         pct = n_pos / total_cores
-    pct = float(pct or 0)
+    pct = safe_float(pct, default=0.0)
     nodal_status = str(payload.get("nodal_status", "N0")).upper()
 
     if nodal_status == "N1":
@@ -186,12 +187,12 @@ def active_surveillance_position(payload: dict[str, Any], nccn_group: str) -> di
 
 
 def _active_surveillance_position_core(payload: dict[str, Any], nccn_group: str) -> dict[str, Any]:
-    gg = int(payload.get("isup_grade") or 1)
-    psad = float(payload.get("psad") or 0)
-    pct = float(payload.get("pct_cores_positive") or 0)
-    max_inv = float(payload.get("max_core_involvement", 0) or 0)
-    life_expectancy = float(payload.get("life_expectancy_years", 15) or 15)
-    percent_pattern_4 = float(payload.get("percent_pattern_4", 0) or 0)
+    gg = safe_int(payload.get("isup_grade"), default=1)
+    psad = safe_float(payload.get("psad"), default=0.0)
+    pct = safe_float(payload.get("pct_cores_positive"), default=0.0)
+    max_inv = safe_float(payload.get("max_core_involvement"), default=0.0)
+    life_expectancy = safe_float(payload.get("life_expectancy_years"), default=15.0)
+    percent_pattern_4 = safe_float(payload.get("percent_pattern_4"), default=0.0)
     cribriform = str(payload.get("cribriform_pattern", "0")) == "1"
     intraductal = str(payload.get("intraductal_carcinoma", "0")) == "1"
     prior_mpmri = str(payload.get("prior_mpmri", "0")) == "1"

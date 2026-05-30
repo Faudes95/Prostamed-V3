@@ -98,6 +98,18 @@ def extract_training_records(
                 skipped_no_record += 1
                 continue
             full = tracking_db.build_patient_record_derivatives(full) or full
+            if model == "state_transition":
+                from prostanet.domains.patient_tracking.reconciled_state import (
+                    build_reconciled_state,
+                )
+
+                reconciliation = build_reconciled_state(full, full.get("latest_assessment"))
+                full["reconciled_state"] = (
+                    reconciliation.get("reconciled_state")
+                    or (full.get("latest_assessment") or {}).get("state")
+                    or (full.get("prior_history") or {}).get("current_state")
+                    or ""
+                )
         except Exception:
             skipped_no_record += 1
             continue
@@ -119,6 +131,10 @@ def extract_training_records(
 
     conn.close()
 
+    n_trainable_samples = None
+    if model == "state_transition":
+        n_trainable_samples = _estimate_state_transition_trainable_samples(records)
+
     # Cohort hash for reproducibility (no PHI, solo patient_ids)
     pid_blob = ",".join(str((full.get("identity") or {}).get("id") or 0)
                          for full in records)
@@ -139,12 +155,40 @@ def extract_training_records(
         "n_eligible": len(records),
         "n_skipped_no_record": skipped_no_record,
         "n_skipped_no_outcome": skipped_no_outcome,
+        "n_trainable_samples": n_trainable_samples,
         "cohort_hash": cohort_hash,
         "most_recent_assessment": most_recent_ts,
         "freshness_days": freshness_days,
         "extraction_timestamp": datetime.now(timezone.utc).isoformat(),
     }
     return records, summary
+
+
+def _estimate_state_transition_trainable_samples(records: list[dict[str, Any]]) -> int:
+    """Count records that would produce a state-transition training sample.
+
+    This mirrors the dataset inclusion gates without writing artifacts or
+    running epochs, so dry-run remains a true preflight.
+    """
+    try:
+        from prostanet.ai.config import STATE_TO_IDX
+        from prostanet.ai.tokenizer.clinical_tokenizer import ClinicalEventTokenizer
+
+        tokenizer = ClinicalEventTokenizer(max_length=256)
+        count = 0
+        for record in records:
+            state = record.get("reconciled_state") or ""
+            if state not in STATE_TO_IDX:
+                continue
+            try:
+                tokenized = tokenizer.tokenize(record)
+            except Exception:
+                continue
+            if len(tokenized.tokens) >= 2:
+                count += 1
+        return count
+    except Exception:
+        return 0
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -170,6 +214,11 @@ def evaluate_quality_gate(summary: dict[str, Any]) -> tuple[bool, list[str]]:
     if freshness is not None and freshness > 365:
         reasons.append(
             f"freshness={freshness}d > 365d (cohort too stale)"
+        )
+    trainable = summary.get("n_trainable_samples")
+    if trainable is not None and trainable < 10:
+        reasons.append(
+            f"n_trainable_samples={trainable} < 10 (insufficient state-transition labels)"
         )
     return (len(reasons) == 0, reasons)
 
@@ -220,6 +269,27 @@ def retrain_model(
             "Wait for cohort to mature (more patients with documented outcomes). "
             "Mantener mitigation actual (UI banner 'Modelo en re-entrenamiento')."
         )
+        return result
+
+    if not apply:
+        result["status"] = "dry_run_complete"
+        result["plan"] = {
+            "models_to_retrain": [model],
+            "total_records": summary.get("n_total", 0),
+            "eligible_records": summary.get("n_eligible", 0),
+            "trainable_samples": summary.get("n_trainable_samples"),
+            "dry_run_only": True,
+        }
+        result["metrics"] = {}
+        result["will_deploy_per_thresholds"] = False
+        result["deploy_block_reasons"] = [
+            "dry-run preflight only; no epochs run and no artifact written"
+        ]
+        result["recommendation"] = (
+            "Dry-run passed extraction gates. Run with --apply only after clinical "
+            "review of cohort provenance and an explicit deployment window."
+        )
+        result["completed_at"] = datetime.now(timezone.utc).isoformat()
         return result
 
     # Step 3: run training pipeline

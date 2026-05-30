@@ -1,0 +1,14 @@
+{
+  "_expected_status": "blocked_hard",
+  "_description": "Caso #4 — Ra-223 con metástasis viscerales (hepáticas). Contraindicación ALSYMPCA.",
+  "reconciled_state": "m1_crpc",
+  "baseline": {"baseline_psa": 95.0},
+  "visceral_metastasis": true,
+  "liver_mets": true,
+  "ecog_current": 1,
+  "clinical_compass": {
+    "headline": "Radium-223 (Xofigo) 55 kBq/kg cada 4 semanas x6 ciclos",
+    "rationale": "Manejo paliativo metástasis óseas sintomáticas.",
+    "evidence_summary": {"guideline_basis": ["ALSYMPCA"]}
+  }
+}

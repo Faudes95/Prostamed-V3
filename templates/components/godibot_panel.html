@@ -1,0 +1,278 @@
+{# GodiBot Panel — Segunda opinión adversarial sobre clinical_compass.
+
+   Faubot Iteración C (GodiBot v1).
+
+   Render contexto: necesita `godibot_review` dict en scope con shape:
+     {
+       status: "approved" | "warnings_only" | "blocked_hard",
+       confidence: 0.0-1.0,
+       discrepancies: [{code, severity, source, message, suggestion, ...}],
+       trial_omissions: [{trial_id, confidence, reason, citation, ...}],
+       biomarker_gaps: [{name, required_for, severity, guideline}],
+       longitudinal_concord: {drift_detected, discrepancies},
+       guideline_check: {...},
+       gates_reeval: {...},
+       llm_adversarial: null | {...},
+       override_required: bool,
+       version: "godibot-v1",
+     }
+
+   El panel renderiza 3 modos visuales según status:
+     - blocked_hard  → banner rojo bloqueante + override form
+     - warnings_only → panel lateral azul/ámbar no bloqueante
+     - approved      → banner verde minimalista (colapsado por default)
+
+   Uso típico:
+     {% include "components/godibot_panel.html" with godibot_review=bundle.godibot_review %}
+#}
+
+{% if godibot_review %}
+{% set _status = godibot_review.status or 'approved' %}
+{% set _confidence = godibot_review.confidence or 0 %}
+{% set _discrepancies = godibot_review.discrepancies or [] %}
+{% set _trial_omissions = godibot_review.trial_omissions or [] %}
+{% set _biomarker_gaps = godibot_review.biomarker_gaps or [] %}
+{% set _override_required = godibot_review.override_required or false %}
+{% set _hard_blocks = _discrepancies | selectattr('severity', 'equalto', 'hard_block') | list %}
+{% set _soft_warnings = _discrepancies | rejectattr('severity', 'equalto', 'hard_block') | list %}
+
+<section class="godibot-panel godibot-panel--{{ _status }}"
+         role="complementary"
+         aria-label="Segunda opinión GodiBot — Validador adversarial"
+         data-godibot-status="{{ _status }}"
+         data-godibot-confidence="{{ '%.2f'|format(_confidence) }}"
+         data-godibot-version="{{ godibot_review.version or 'godibot-v1' }}">
+
+  {# ── Banner header: cambia según status ─────────────────────────── #}
+  {% if _status == 'blocked_hard' %}
+  <header class="godibot-banner godibot-banner--blocked" role="alert" aria-live="assertive">
+    <div class="godibot-banner__icon" aria-hidden="true">⛔</div>
+    <div class="godibot-banner__body">
+      <h2 class="godibot-banner__title">
+        GodiBot detectó contraindicación absoluta omitida
+      </h2>
+      <p class="godibot-banner__subtitle">
+        {{ _hard_blocks | length }} hard_block(s) requiere(n) override explícito del médico
+        antes de continuar. Confianza GodiBot: {{ (_confidence * 100) | round(0) }}%.
+      </p>
+    </div>
+    <button type="button"
+            class="godibot-banner__action godibot-banner__action--override"
+            data-godibot-action="override"
+            aria-label="Firmar override y justificar continuación">
+      Override + Justificar
+    </button>
+  </header>
+  {% elif _status == 'warnings_only' %}
+  <header class="godibot-banner godibot-banner--warnings" role="region" aria-live="polite">
+    <div class="godibot-banner__icon" aria-hidden="true">⚠</div>
+    <div class="godibot-banner__body">
+      <h2 class="godibot-banner__title">Segunda opinión GodiBot — {{ _discrepancies | length }} advertencia(s)</h2>
+      <p class="godibot-banner__subtitle">
+        Confianza GodiBot: {{ (_confidence * 100) | round(0) }}%.
+        {% if _trial_omissions %}{{ _trial_omissions | length }} trial(s) elegible(s) sugerido(s).{% endif %}
+      </p>
+    </div>
+    <button type="button"
+            class="godibot-banner__action"
+            data-godibot-action="toggle-details"
+            aria-expanded="false"
+            aria-controls="godibot-details">
+      Ver detalles
+    </button>
+  </header>
+  {% else %}
+  <header class="godibot-banner godibot-banner--approved" role="status">
+    <div class="godibot-banner__icon" aria-hidden="true">✅</div>
+    <div class="godibot-banner__body">
+      <h2 class="godibot-banner__title">GodiBot: recomendación concordante con guideline</h2>
+      <p class="godibot-banner__subtitle">
+        Confianza: {{ (_confidence * 100) | round(0) }}% — sin discrepancias detectadas.
+      </p>
+    </div>
+  </header>
+  {% endif %}
+
+  {# ── Detalles colapsables (visibles cuando hay discrepancias) ───── #}
+  {% if _status != 'approved' %}
+  <div id="godibot-details"
+       class="godibot-details"
+       {% if _status == 'warnings_only' %}hidden{% endif %}>
+
+    {# Hard blocks — siempre visibles si blocked_hard #}
+    {% if _hard_blocks %}
+    <section class="godibot-section godibot-section--hard" aria-labelledby="godibot-hard-h">
+      <h3 id="godibot-hard-h" class="godibot-section__title">
+        <span aria-hidden="true">⛔</span> Hard blocks omitidos ({{ _hard_blocks | length }})
+      </h3>
+      <ul class="godibot-list">
+        {% for d in _hard_blocks %}
+        <li class="godibot-item godibot-item--hard">
+          <div class="godibot-item__header">
+            <code class="godibot-item__code">{{ d.code }}</code>
+            <span class="godibot-item__source">{{ d.source }}</span>
+          </div>
+          <p class="godibot-item__message">{{ d.message }}</p>
+          {% if d.suggestion %}
+          <p class="godibot-item__suggestion">
+            <strong>Sugerencia:</strong> {{ d.suggestion }}
+          </p>
+          {% endif %}
+          {% if d.evidence_tag or d.trial_refs %}
+          <div class="godibot-item__evidence">
+            {% if d.evidence_tag %}<span class="godibot-tag">{{ d.evidence_tag }}</span>{% endif %}
+            {% for ref in d.trial_refs or [] %}<span class="godibot-tag">{{ ref }}</span>{% endfor %}
+          </div>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {# Soft warnings #}
+    {% if _soft_warnings %}
+    <section class="godibot-section godibot-section--soft" aria-labelledby="godibot-soft-h">
+      <h3 id="godibot-soft-h" class="godibot-section__title">
+        <span aria-hidden="true">⚠</span> Advertencias ({{ _soft_warnings | length }})
+      </h3>
+      <ul class="godibot-list">
+        {% for d in _soft_warnings %}
+        <li class="godibot-item godibot-item--soft">
+          <div class="godibot-item__header">
+            <code class="godibot-item__code">{{ d.code }}</code>
+            <span class="godibot-item__severity godibot-item__severity--{{ d.severity }}">
+              {{ d.severity }}
+            </span>
+          </div>
+          <p class="godibot-item__message">{{ d.message }}</p>
+          {% if d.suggestion %}
+          <p class="godibot-item__suggestion">
+            <strong>Sugerencia:</strong> {{ d.suggestion }}
+          </p>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {# Biomarcadores omitidos #}
+    {% if _biomarker_gaps %}
+    <section class="godibot-section godibot-section--biomarkers" aria-labelledby="godibot-bio-h">
+      <h3 id="godibot-bio-h" class="godibot-section__title">
+        <span aria-hidden="true">🧬</span> Biomarcadores requeridos ({{ _biomarker_gaps | length }})
+      </h3>
+      <ul class="godibot-list">
+        {% for g in _biomarker_gaps %}
+        <li class="godibot-item godibot-item--biomarker">
+          <div class="godibot-item__header">
+            <strong>{{ g.name }}</strong>
+            <span class="godibot-item__severity godibot-item__severity--{{ g.severity }}">
+              {{ g.severity }}
+            </span>
+          </div>
+          <p class="godibot-item__detail">
+            Requerido para: <em>{{ g.required_for }}</em>
+          </p>
+          {% if g.guideline %}
+          <p class="godibot-item__guideline">{{ g.guideline }}</p>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {# Trial omissions #}
+    {% if _trial_omissions %}
+    <section class="godibot-section godibot-section--trials" aria-labelledby="godibot-trials-h">
+      <h3 id="godibot-trials-h" class="godibot-section__title">
+        <span aria-hidden="true">🔬</span> Trials elegibles no mencionados ({{ _trial_omissions | length }})
+      </h3>
+      <ul class="godibot-list">
+        {% for t in _trial_omissions %}
+        <li class="godibot-item godibot-item--trial">
+          <div class="godibot-item__header">
+            <strong>{{ t.trial_id }}</strong>
+            {% if t.confidence %}<span class="godibot-tag">conf {{ (t.confidence * 100) | round(0) }}%</span>{% endif %}
+            {% if t.subgroup %}<span class="godibot-tag">{{ t.subgroup }}</span>{% endif %}
+          </div>
+          {% if t.reason %}<p class="godibot-item__detail">{{ t.reason }}</p>{% endif %}
+          {% if t.citation %}<p class="godibot-item__citation">{{ t.citation }}</p>{% endif %}
+          <div class="godibot-item__evidence">
+            {% if t.pmid %}<span class="godibot-tag">PMID {{ t.pmid }}</span>{% endif %}
+            {% if t.nct %}<span class="godibot-tag">{{ t.nct }}</span>{% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {# LLM adversarial (si invocado) #}
+    {% if godibot_review.llm_adversarial and godibot_review.llm_adversarial.invoked %}
+    <section class="godibot-section godibot-section--llm" aria-labelledby="godibot-llm-h">
+      <h3 id="godibot-llm-h" class="godibot-section__title">
+        <span aria-hidden="true">🤖</span> Devil's advocate ({{ godibot_review.llm_adversarial.model or 'LLM' }})
+      </h3>
+      <p class="godibot-item__detail">{{ godibot_review.llm_adversarial.summary }}</p>
+    </section>
+    {% endif %}
+  </div>
+
+  {# ── Override form (solo si blocked_hard) ──────────────────────── #}
+  {% if _override_required %}
+  <form class="godibot-override-form"
+        method="POST"
+        action="/api/godibot/override/{{ patient_id or patient.id or '' }}"
+        data-godibot-form="override">
+    <fieldset>
+      <legend class="godibot-override-form__legend">
+        Override clínico requerido (FDA SaMD HITL)
+      </legend>
+      <label for="godibot-override-reason" class="godibot-override-form__label">
+        Razón clínica que justifica continuar con la recomendación a pesar
+        del hard_block detectado (mínimo 30 caracteres):
+      </label>
+      <textarea id="godibot-override-reason"
+                name="override_reason"
+                rows="4"
+                minlength="30"
+                required
+                class="godibot-override-form__textarea"
+                aria-required="true"
+                placeholder="Ej: Paciente con BRCA2 documentado en historia previa (REF_PMID 12345678), HRR formal pendiente por logística..."></textarea>
+      <label for="godibot-override-signer" class="godibot-override-form__label">
+        Cédula profesional del médico responsable:
+      </label>
+      <input id="godibot-override-signer"
+             name="override_signed_by"
+             type="text"
+             required
+             pattern="[A-Za-z0-9]{6,12}"
+             class="godibot-override-form__input"
+             aria-required="true"
+             placeholder="Ej: 7654321" />
+      <button type="submit" class="godibot-override-form__submit">
+        Firmar override y continuar
+      </button>
+    </fieldset>
+  </form>
+  {% endif %}
+  {% endif %}
+
+  {# Footer audit metadata #}
+  <footer class="godibot-footer" aria-label="Metadatos de auditoría GodiBot">
+    <small>
+      GodiBot {{ godibot_review.version or 'godibot-v1' }} ·
+      Confianza {{ (_confidence * 100) | round(1) }}% ·
+      Discrepancias {{ _discrepancies | length }} ·
+      {% if godibot_review.gates_reeval %}
+      Gates re-evaluados {{ godibot_review.gates_reeval.triggered_count or 0 }} ·
+      {% endif %}
+      Iteración C — Faubot LXC
+    </small>
+  </footer>
+</section>
+{% endif %}

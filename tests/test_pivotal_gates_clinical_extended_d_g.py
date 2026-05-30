@@ -63,6 +63,13 @@ def test_catalog_no_validation_errors():
     assert not assertion_errors, f"YAML validation errors: {assertion_errors}"
 
 
+def test_catalog_has_no_duplicate_gate_codes():
+    """Clinical Logic Hardening — duplicate YAML codes must fail loudly."""
+    from prostanet.shared.pivotal_gates_yaml_loader import find_duplicate_yaml_codes
+
+    assert find_duplicate_yaml_codes(force_reload=True) == {}
+
+
 @pytest.mark.parametrize("gate_code", [
     "arsi_in_seizure_history_grade3",
     "abiraterone_hepatotoxicity_grade3",

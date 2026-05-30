@@ -17,6 +17,55 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='logo_nav_20260510') }}">
+    <style>
+        .pm2-state-scoped-default.pm2-longitudinal-state-screening .pm2-append-section,
+        .pm2-state-scoped-default.pm2-longitudinal-state-diagnostic_workup .pm2-append-section,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_negative_biopsy_followup .pm2-append-section,
+        .pm2-state-scoped-default.pm2-longitudinal-state-localized_initial .pm2-append-section,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_prostatectomy .pm2-append-section,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_radiotherapy_followup .pm2-append-section,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_radiotherapy_or_local_salvage .pm2-append-section,
+        .pm2-state-scoped-default.pm2-longitudinal-state-recurrence_bcr .pm2-append-section,
+        .pm2-state-scoped-default.pm2-longitudinal-state-m0_crpc .pm2-append-section {
+            display: none;
+        }
+        .pm2-state-scoped-default.pm2-longitudinal-state-screening #section-psa_new,
+        .pm2-state-scoped-default.pm2-longitudinal-state-screening #section-imaging,
+        .pm2-state-scoped-default.pm2-longitudinal-state-diagnostic_workup #section-psa_new,
+        .pm2-state-scoped-default.pm2-longitudinal-state-diagnostic_workup #section-imaging,
+        .pm2-state-scoped-default.pm2-longitudinal-state-diagnostic_workup #section-mri_pirads,
+        .pm2-state-scoped-default.pm2-longitudinal-state-diagnostic_workup #section-biopsy_capture,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_negative_biopsy_followup #section-psa_new,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_negative_biopsy_followup #section-imaging,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_negative_biopsy_followup #section-mri_pirads,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_negative_biopsy_followup #section-biopsy_capture,
+        .pm2-state-scoped-default.pm2-longitudinal-state-localized_initial #section-psa_new,
+        .pm2-state-scoped-default.pm2-longitudinal-state-localized_initial #section-imaging,
+        .pm2-state-scoped-default.pm2-longitudinal-state-localized_initial #section-mri_pirads,
+        .pm2-state-scoped-default.pm2-longitudinal-state-localized_initial #section-biopsy_capture,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_prostatectomy #section-psa_new,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_prostatectomy #section-imaging,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_prostatectomy #section-event,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_radiotherapy_followup #section-psa_new,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_radiotherapy_followup #section-imaging,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_radiotherapy_followup #section-event,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_radiotherapy_or_local_salvage #section-psa_new,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_radiotherapy_or_local_salvage #section-imaging,
+        .pm2-state-scoped-default.pm2-longitudinal-state-post_radiotherapy_or_local_salvage #section-event,
+        .pm2-state-scoped-default.pm2-longitudinal-state-recurrence_bcr #section-psa_new,
+        .pm2-state-scoped-default.pm2-longitudinal-state-recurrence_bcr #section-imaging,
+        .pm2-state-scoped-default.pm2-longitudinal-state-recurrence_bcr #section-psma_pet,
+        .pm2-state-scoped-default.pm2-longitudinal-state-recurrence_bcr #section-event,
+        .pm2-state-scoped-default.pm2-longitudinal-state-m0_crpc #section-psa_new,
+        .pm2-state-scoped-default.pm2-longitudinal-state-m0_crpc #section-testosterone_history,
+        .pm2-state-scoped-default.pm2-longitudinal-state-m0_crpc #section-lab_panel,
+        .pm2-state-scoped-default.pm2-longitudinal-state-m0_crpc #section-imaging,
+        .pm2-state-scoped-default.pm2-longitudinal-state-m0_crpc #section-treatment,
+        .pm2-state-scoped-default.pm2-longitudinal-state-m0_crpc #section-ecog,
+        .pm2-state-scoped-default.pm2-longitudinal-state-m0_crpc #section-ctcae {
+            display: block;
+        }
+    </style>
     {% if readiness_lane_filter %}
     <style>
         .pm2-readiness-filter-active [data-capture-grid-wrapper] { display: none; }
@@ -74,6 +123,7 @@
         .pm2-readiness-lane-adt_arpi_safety_readiness #section-treatment,
         .pm2-readiness-lane-adt_arpi_safety_readiness #section-ecog,
         .pm2-readiness-lane-adt_arpi_safety_readiness #section-ctcae,
+        .pm2-readiness-lane-epidemiology_registry #section-epidemiology_registry,
         .pm2-readiness-lane-supportive_palliative_readiness #section-event,
         .pm2-readiness-lane-supportive_palliative_readiness #section-pro,
         .pm2-readiness-lane-supportive_palliative_readiness #section-ecog,
@@ -86,7 +136,7 @@
     </style>
     {% endif %}
 </head>
-<body class="bg-slate-950 text-slate-100 antialiased {% if readiness_lane_filter %}pm2-readiness-filter-active pm2-readiness-lane-{{ readiness_lane_filter }}{% endif %}">
+<body class="bg-slate-950 text-slate-100 antialiased pm2-longitudinal-state-{{ field_router_state_key or 'localized_initial' }} {% if readiness_lane_filter %}pm2-readiness-filter-active pm2-readiness-lane-{{ readiness_lane_filter }}{% else %}pm2-state-scoped-default{% endif %}">
 <a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
 
 <div class="pm2-longitudinal-shell">
@@ -191,6 +241,57 @@
         </section>
         {% endif %}
 
+        {% set _lfc = longitudinal_ledger_context or {} %}
+        {% set _lfc_summary = _lfc.get('summary', {}) if _lfc else {} %}
+        {% set _lfc_forms = _lfc.get('forms', []) if _lfc else [] %}
+        {% if _lfc and _lfc_forms %}
+        <section style="margin-bottom:var(--space-5);padding:var(--space-4);background:rgba(15,23,42,.72);border:1px solid rgba(94,234,212,.28);border-radius:14px"
+                 data-testid="longitudinal-ledger-context-panel"
+                 aria-label="Clinical Fact Ledger para captura longitudinal">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-3);flex-wrap:wrap">
+                <div>
+                    <div style="color:#5eead4;font-size:.7rem;font-weight:900;letter-spacing:.16em;text-transform:uppercase">Clinical Fact Ledger · captura V2</div>
+                    <h3 style="font-family:var(--pm-font-display);font-size:1.05rem;font-weight:800;color:#f8fbff;margin:5px 0 0">Contrato anti-recaptura longitudinal</h3>
+                    <p style="color:var(--pn-text-muted);font-size:.8rem;line-height:1.45;margin:6px 0 0;max-width:82ch">
+                        Las series como APE permiten nueva medición fechada; los hechos escalares ya vigentes se reutilizan y los conflictos se revisan antes de capturar.
+                    </p>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+                    <span class="pm2-state-chip pm2-state-chip--primary">{{ _lfc_summary.targeted_form_count or 0 }} dirigidos</span>
+                    <span class="pm2-state-chip pm2-state-chip--success">{{ _lfc_summary.suppressed_form_count or 0 }} sin recaptura</span>
+                    <span class="pm2-state-chip pm2-state-chip--danger">{{ _lfc_summary.conflict_form_count or 0 }} conflictos</span>
+                    <span class="pm2-state-chip">{{ _lfc_summary.suppressed_field_count or 0 }} campos Ledger</span>
+                </div>
+            </div>
+            <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px">
+                {% for form_decision in _lfc_forms %}
+                {% if form_decision.targeted or form_decision.suppress_recapture or form_decision.conflict_fact_keys or form_decision.form_key in ['psa','testosterone'] %}
+                <div style="padding:10px 12px;border-radius:10px;background:rgba(2,6,23,.36);border:1px solid {% if form_decision.tone == 'danger' %}rgba(248,113,113,.42){% elif form_decision.tone == 'warning' %}rgba(251,191,36,.38){% elif form_decision.tone == 'success' %}rgba(52,211,153,.34){% elif form_decision.tone == 'info' %}rgba(94,234,212,.28){% else %}var(--border-default){% endif %}"
+                     data-testid="longitudinal-ledger-form-{{ form_decision.form_key }}">
+                    <div class="pm2-kicker">{{ form_decision.label }}</div>
+                    <div style="font-weight:800;color:#f0fbff;font-size:.82rem">{{ form_decision.action }}</div>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted);line-height:1.42;margin-top:4px">{{ form_decision.message }}</div>
+                    <div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap">
+                        {% if form_decision.current_fact_keys %}
+                        <span class="pm2-state-chip pm2-state-chip--success">{{ form_decision.current_fact_keys | length }} vigentes</span>
+                        {% endif %}
+                        {% if form_decision.missing_fact_keys %}
+                        <span class="pm2-state-chip pm2-state-chip--warn">{{ form_decision.missing_fact_keys | length }} faltantes</span>
+                        {% endif %}
+                        {% if form_decision.conflict_fact_keys %}
+                        <span class="pm2-state-chip pm2-state-chip--danger">{{ form_decision.conflict_fact_keys | length }} conflicto</span>
+                        {% endif %}
+                        {% if form_decision.field_suppressed_count %}
+                        <span class="pm2-state-chip">{{ form_decision.field_suppressed_count }} campos protegidos</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
         <section class="pm2-voice-os-panel" data-pm2-voice-os data-patient-ref="{{ identity.nss }}" data-surface="longitudinal_capture_v2" aria-label="Cortana clínica longitudinal" style="margin:0 0 var(--space-5);">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
                 <div>
@@ -244,7 +345,7 @@
             </div>
             <div class="pm2-capture-grid">
                 {% for cap in what_can_capture %}
-                <a href="#section-{{ cap.key }}" class="pm2-capture-card">
+                <a href="#section-{{ cap.key }}" class="pm2-capture-card" data-capture-card="{{ cap.key }}">
                     <div class="pm2-capture-card-label">{{ cap.label }}</div>
                     <div class="pm2-capture-card-meta">Cadencia: {{ cap.freq }}</div>
                     <div class="pm2-capture-card-meta {% if 'Vencida' in cap.last_capture %}pm2-capture-card-overdue{% endif %}">
@@ -287,6 +388,98 @@
                 </div>
                 {% endif %}
                 {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% set epi_focus = epidemiology_capture_focus or {} %}
+        {% if decision_lane_filter == 'epidemiology_registry' %}
+        <section id="section-epidemiology_registry" class="pm2-append-section"
+                 data-testid="epidemiology-registry-capture"
+                 data-auto-open="1">
+            <div class="pm2-append-section-head">
+                <div class="pm2-append-section-icon">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h16M4 17h10"/></svg>
+                </div>
+                <div>
+                    <h2 class="pm2-append-section-title">Captura dirigida del registro epidemiológico</h2>
+                    <p class="pm2-append-section-meta">{{ epi_focus.label or 'Brecha epidemiológica' }} · {{ epi_focus.help or 'Dato estructurado para recalcular la torre de completitud.' }}</p>
+                </div>
+                <div class="pm2-append-section-action">
+                    <a href="/population/treatment-value-registry?patient_ref={{ identity.nss }}" class="pm2-btn pm2-btn--ghost" style="text-decoration:none">Volver al tablero</a>
+                </div>
+            </div>
+            <div class="pm2-append-form" data-append-form="epidemiology_gap">
+                <input type="hidden" name="gap_key" value="{{ epi_focus.gap_key or epidemiology_gap_key_filter }}">
+                <input type="hidden" name="decision_field" value="{{ decision_field_filter }}">
+                {% if decision_field_filter == 'vital_status' or (epi_focus.gap_key == 'survival_status') %}
+                    <input type="date" class="pm2-append-form-input" name="last_contact_date" required>
+                    <select class="pm2-append-form-input" name="last_contact_status" required>
+                        <option value="">Tipo de último contacto...</option>
+                        <option value="clinic_visit">Visita clínica</option>
+                        <option value="phone">Teléfono</option>
+                        <option value="lab_result">Resultado laboratorio</option>
+                        <option value="imaging">Imagen</option>
+                        <option value="document_review">Revisión documental</option>
+                    </select>
+                    <select class="pm2-append-form-input" name="vital_status" required>
+                        <option value="">Estado vital...</option>
+                        <option value="alive">Vivo</option>
+                        <option value="deceased">Fallecido</option>
+                        <option value="lost_to_followup">Perdido a seguimiento</option>
+                    </select>
+                    <input type="date" class="pm2-append-form-input" name="date_of_death" placeholder="Fecha de defunción">
+                    <select class="pm2-append-form-input" name="cause_of_death">
+                        <option value="">Causa de muerte...</option>
+                        <option value="prostate_cancer">Cáncer de próstata</option>
+                        <option value="cardiovascular">Cardiovascular</option>
+                        <option value="infection">Infección</option>
+                        <option value="treatment_related">Relacionada a tratamiento</option>
+                        <option value="other">Otra</option>
+                        <option value="unknown">Desconocida</option>
+                    </select>
+                    <input type="text" class="pm2-append-form-input" name="death_source" placeholder="Fuente del estado vital">
+                {% elif decision_field_filter in ['volume_disease', 'metastasis_site'] or (epi_focus.gap_key == 'metastatic_context') %}
+                    <input type="date" class="pm2-append-form-input" name="metastasis_assessment_date" required>
+                    <select class="pm2-append-form-input" name="metastasis_site" required>
+                        <option value="">Sitio metastásico...</option>
+                        <option value="M0">M0 / sin metástasis</option>
+                        <option value="M1a">M1a ganglios no regionales</option>
+                        <option value="M1b">M1b hueso</option>
+                        <option value="M1c">M1c visceral</option>
+                        <option value="Bone">Hueso</option>
+                        <option value="Visceral">Visceral</option>
+                    </select>
+                    <select class="pm2-append-form-input" name="volume_disease" required>
+                        <option value="">Carga metastásica...</option>
+                        <option value="low">Bajo volumen</option>
+                        <option value="high">Alto volumen</option>
+                        <option value="oligometastatic">Oligometastásico</option>
+                        <option value="not_applicable_m0">No aplica M0</option>
+                    </select>
+                    <input type="number" min="0" class="pm2-append-form-input" name="metastasis_count" placeholder="Número de lesiones documentadas">
+                    <select class="pm2-append-form-input" name="m_substage_resolved">
+                        <option value="">M substage resuelto...</option>
+                        <option value="M0">M0</option>
+                        <option value="M1a">M1a</option>
+                        <option value="M1b">M1b</option>
+                        <option value="M1c">M1c</option>
+                    </select>
+                    <input type="text" class="pm2-append-form-input" name="metastasis_document_source" placeholder="Fuente: PSMA/CT/GGO/nota">
+                {% elif decision_field_filter == 'comorbidities' or (epi_focus.gap_key == 'comorbidity') %}
+                    <textarea class="pm2-append-form-input" name="comorbidities_text" rows="3" required placeholder="Comorbilidades separadas por coma o punto y coma"></textarea>
+                    <input type="text" class="pm2-append-form-input" name="capture_note" placeholder="Nota de ajuste basal">
+                {% else %}
+                    <input type="date" class="pm2-append-form-input" name="capture_date" required>
+                    <textarea class="pm2-append-form-input" name="capture_note" rows="3" required placeholder="Documente el dato estructurado capturado"></textarea>
+                {% endif %}
+                <button type="button" class="pm2-btn pm2-btn--primary pm2-append-form-add"
+                        onclick="pm2AppendRow(this, 'epidemiology_gap')">Guardar y recalcular torre</button>
+            </div>
+            <div data-testid="epidemiology-gap-sla-after-capture"
+                 data-epidemiology-gap-sla-panel
+                 style="margin-top:12px;padding:12px;border-radius:10px;background:rgba(15,23,42,.55);border:1px solid var(--border-default);font-size:.76rem;color:var(--pn-text-muted);line-height:1.55">
+                Guarde el dato para recalcular Perfil V2, registro tratamiento-valor y Gran Tablero Epidemiologico.
             </div>
         </section>
         {% endif %}
@@ -441,6 +634,36 @@
                         {% endfor %}
                     </tbody>
                 </table>
+            </div>
+            {% set ape_snap = ape_capture_snapshot or {} %}
+            <div id="pm2-ape-impact-panel"
+                 data-testid="ape-capture-impact-panel"
+                 data-ape-status="{{ ape_snap.ape_status or 'unknown' }}"
+                 style="margin:12px 0;padding:12px;border-radius:12px;border:1px solid rgba(34,211,238,.24);background:rgba(8,13,26,.72);display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+                <div>
+                    <div class="pm2-kicker">Impacto APE</div>
+                    <strong data-ape-impact-status style="display:block;color:#f8fbff;margin-top:3px">{{ ape_snap.ape_status or 'sin estado' }}</strong>
+                    <span data-ape-impact-message style="display:block;color:var(--pn-text-muted);font-size:.74rem;margin-top:3px">
+                        Serie actual antes de nueva captura longitudinal.
+                    </span>
+                </div>
+                <div>
+                    <div class="pm2-kicker">Mediciones válidas</div>
+                    <strong data-ape-impact-points style="display:block;color:#f8fbff;margin-top:3px">{{ ape_snap.valid_psa_point_count or 0 }}</strong>
+                    <span style="display:block;color:var(--pn-text-muted);font-size:.74rem;margin-top:3px">puntos fechados/reutilizables</span>
+                </div>
+                <div>
+                    <div class="pm2-kicker">Registro epidemiológico</div>
+                    <strong data-ape-impact-registry style="display:block;color:#f8fbff;margin-top:3px">
+                        {% if ape_snap.ape_status == 'history_ready' %}listo{% else %}pendiente{% endif %}
+                    </strong>
+                    <span style="display:block;color:var(--pn-text-muted);font-size:.74rem;margin-top:3px">sin recaptura del baseline</span>
+                </div>
+                <div>
+                    <div class="pm2-kicker">Superficies</div>
+                    <strong data-ape-impact-surfaces style="display:block;color:#f8fbff;margin-top:3px">Perfil V2 · Sprint</strong>
+                    <span style="display:block;color:var(--pn-text-muted);font-size:.74rem;margin-top:3px">se recalculan tras guardar</span>
+                </div>
             </div>
             <div class="pm2-append-form" data-append-form="psa">
                 <input type="date" class="pm2-append-form-input" name="psa_date" required>
@@ -629,6 +852,37 @@
                     {% endfor %}
                 </tbody>
             </table>
+            {% set tx_impact = treatment_economic_snapshot or {} %}
+            {% set tx_impact_course = tx_impact.current_course or {} %}
+            {% set tx_impact_alert = tx_impact.dose_alert or {} %}
+            {% set tx_impact_cost = tx_impact.cost_summary or {} %}
+            <div id="pm2-treatment-impact-panel"
+                 data-testid="treatment-economic-impact-panel"
+                 data-alert-severity="{{ tx_impact_alert.severity or 'none' }}"
+                 style="margin:12px 0;padding:12px;border-radius:12px;border:1px solid rgba(34,211,238,.24);background:rgba(8,13,26,.72);display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+                <div>
+                    <div class="pm2-kicker">Impacto terapéutico</div>
+                    <strong data-treatment-impact-regimen style="display:block;color:#f8fbff;margin-top:3px">{{ tx_impact_course.regimen_label or 'Sin esquema activo' }}</strong>
+                    <span data-treatment-impact-message style="display:block;color:var(--pn-text-muted);font-size:.74rem;margin-top:3px">
+                        Línea, dosis y costo se recalculan tras guardar.
+                    </span>
+                </div>
+                <div>
+                    <div class="pm2-kicker">Dosis locales/globales</div>
+                    <strong data-treatment-impact-doses style="display:block;color:#f8fbff;margin-top:3px">{{ tx_impact_course.local_dose_count or 0 }} / {{ tx_impact_course.global_dose_count or 0 }}</strong>
+                    <span style="display:block;color:var(--pn-text-muted);font-size:.74rem;margin-top:3px">unidad actual / acumulado</span>
+                </div>
+                <div>
+                    <div class="pm2-kicker">Gasto ARPI</div>
+                    <strong data-treatment-impact-cost style="display:block;color:#f8fbff;margin-top:3px">$ {{ '%.2f'|format(tx_impact_cost.estimated_total_spend_mxn or 0) }} MXN</strong>
+                    <span style="display:block;color:var(--pn-text-muted);font-size:.74rem;margin-top:3px">dosis costeadas: {{ tx_impact_cost.priced_doses or 0 }}</span>
+                </div>
+                <div>
+                    <div class="pm2-kicker">Alerta HGZ/HGR</div>
+                    <strong data-treatment-impact-alert style="display:block;color:{% if tx_impact_alert.severity == 'critical' %}#fb7185{% elif tx_impact_alert.severity == 'warning' %}#fbbf24{% else %}#34d399{% endif %};margin-top:3px">{{ tx_impact_alert.title or 'Sin alerta' }}</strong>
+                    <span style="display:block;color:var(--pn-text-muted);font-size:.74rem;margin-top:3px">{{ tx_impact_alert.message or 'Conteo local dentro de rango.' }}</span>
+                </div>
+            </div>
             <div class="pm2-append-form" data-append-form="treatment">
                 <input type="number" min="1" max="10" class="pm2-append-form-input" placeholder="Línea #" name="tx_line" required>
                 <select class="pm2-append-form-input" name="tx_regimen" required>
@@ -1185,6 +1439,7 @@
 
 <script src="{{ url_for('static', filename='js/clinical_intelligence_v2.js') }}"></script>
 <script src="{{ url_for('static', filename='js/prostamed_voice_os.js', v='voice_os_20260511') }}"></script>
+<script id="longitudinalClinicalFactLedgerContext" type="application/json">{{ (longitudinal_ledger_context or {}) | tojson }}</script>
 <script>
 /* ─────────────────────────────────────────────────────────────────────────
  * Faubot LXXXVI #67F — Longitudinal Capture wired al endpoint REAL (Fase 2)
@@ -1198,6 +1453,106 @@
  * ──────────────────────────────────────────────────────────────────────── */
 
 const PM2_NSS = "{{ identity.nss }}";
+const PM2_LONGITUDINAL_LEDGER_CONTEXT = {{ (longitudinal_ledger_context or {}) | tojson }};
+
+(function applyStageScopedLongitudinalCapture() {
+    const scoped = document.body.classList.contains('pm2-state-scoped-default')
+        || document.body.classList.contains('pm2-readiness-filter-active');
+    if (!scoped) return;
+    document.querySelectorAll('.pm2-append-section').forEach((section) => {
+        const hiddenByClinicalScope = window.getComputedStyle(section).display === 'none';
+        section.querySelectorAll('input, select, textarea, button').forEach((control) => {
+            if (hiddenByClinicalScope) {
+                control.disabled = true;
+                control.dataset.disabledByClinicalScope = 'true';
+            } else if (control.dataset.disabledByClinicalScope === 'true' && control.dataset.disabledByLedger !== 'true') {
+                control.disabled = false;
+                delete control.dataset.disabledByClinicalScope;
+            }
+        });
+    });
+})();
+
+(function applyLongitudinalLedgerContext() {
+    const context = PM2_LONGITUDINAL_LEDGER_CONTEXT || {};
+    const forms = context.forms || [];
+    if (!forms.length) return;
+    const toneStyles = {
+        success: 'background:rgba(16,185,129,.10);border-color:rgba(52,211,153,.34);color:#bbf7d0;',
+        warning: 'background:rgba(245,158,11,.10);border-color:rgba(251,191,36,.34);color:#fde68a;',
+        danger: 'background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.38);color:#fecaca;',
+        info: 'background:rgba(34,211,238,.09);border-color:rgba(94,234,212,.30);color:#cffafe;',
+        muted: 'background:rgba(15,23,42,.48);border-color:rgba(148,163,184,.22);color:#cbd5e1;',
+    };
+    const actionLabels = {
+        append_new_measurement: 'nueva medicion',
+        reuse_existing_fact: 'Ledger vigente',
+        resolve_conflict_before_capture: 'conflicto Ledger',
+        refresh_stale_fact: 'actualizar',
+        capture_missing: 'faltante',
+        existing_fact_visible_append_if_new_event: 'ya documentado',
+        capture_if_clinically_needed: 'clinico',
+    };
+    function fieldSelector(name) {
+        const safe = String(name || '').replace(/"/g, '\\"');
+        return `[name="${safe}"]`;
+    }
+    function decorateField(form, decision, fieldDecision) {
+        const fieldName = fieldDecision.field_name;
+        if (!fieldName) return;
+        const controls = Array.from(form.querySelectorAll(fieldSelector(fieldName)));
+        controls.forEach((control) => {
+            control.dataset.ledgerFieldAction = fieldDecision.action || '';
+            control.dataset.ledgerFactKey = fieldDecision.fact_key || '';
+            control.dataset.ledgerValueKnown = fieldDecision.value_known ? 'true' : 'false';
+            control.dataset.ledgerFreshnessStatus = fieldDecision.freshness_status || '';
+            if (fieldDecision.suppress_recapture || fieldDecision.capture_allowed === false) {
+                control.disabled = true;
+                control.dataset.disabledByLedger = 'true';
+            }
+            const chipId = `longitudinal-ledger-field-${decision.form_key}-${fieldName}`;
+            if (form.querySelector(`[data-testid="${chipId}"]`)) return;
+            const chip = document.createElement('span');
+            chip.className = 'longitudinal-ledger-field-chip';
+            chip.dataset.testid = chipId;
+            chip.dataset.ledgerFieldAction = fieldDecision.action || '';
+            chip.dataset.ledgerFactKey = fieldDecision.fact_key || '';
+            chip.style.cssText = `display:inline-flex;align-items:center;max-width:100%;margin-top:5px;border:1px solid;border-radius:8px;padding:3px 7px;font-size:.66rem;line-height:1.25;overflow-wrap:anywhere;${toneStyles[fieldDecision.tone] || toneStyles.muted}`;
+            const label = actionLabels[fieldDecision.action] || fieldDecision.action || 'Ledger';
+            const value = fieldDecision.value_known && fieldDecision.current_value !== null && fieldDecision.current_value !== undefined
+                ? ` · ${fieldDecision.current_value}`
+                : '';
+            chip.textContent = `${label}${value}`;
+            const parent = control.closest('label') || control.parentElement || form;
+            if (parent === form) {
+                control.insertAdjacentElement('afterend', chip);
+            } else {
+                parent.appendChild(chip);
+            }
+        });
+    }
+    forms.forEach((decision) => {
+        const form = document.querySelector(`[data-append-form="${decision.form_key}"]`);
+        if (!form) return;
+        form.dataset.ledgerAction = decision.action || '';
+        form.dataset.ledgerSuppressed = decision.suppress_recapture ? 'true' : 'false';
+        form.dataset.ledgerCaptureAllowed = decision.capture_allowed ? 'true' : 'false';
+        Object.values(decision.field_decisions || {}).forEach((fieldDecision) => {
+            decorateField(form, decision, fieldDecision || {});
+        });
+        if (decision.suppress_recapture || decision.capture_allowed === false) {
+            form.querySelectorAll('input:not([type="hidden"]), select, textarea, button').forEach((el) => {
+                el.disabled = true;
+                el.dataset.disabledByLedger = 'true';
+            });
+            const notice = document.createElement('div');
+            notice.dataset.testid = `longitudinal-ledger-suppressed-${decision.form_key}`;
+            notice.style.cssText = 'grid-column:1/-1;padding:10px 12px;border-radius:9px;background:rgba(16,185,129,.10);border:1px solid rgba(52,211,153,.32);color:#bbf7d0;font-size:.74rem;line-height:1.45;';
+            notice.textContent = decision.message || 'Dato reutilizado desde Ledger; captura deshabilitada para evitar recaptura.';
+            form.prepend(notice);
+        }
+    });
+})();
 
 /* Toast utility — idempotente, comparte CSS con patient_profile_v2 */
 (function () {
@@ -1258,7 +1613,7 @@ function pm2BuildPayload(form, kind) {
     }
     // generic — recolecta todos los inputs no vacíos
     const out = {};
-    form.querySelectorAll('input, select').forEach((i) => {
+    form.querySelectorAll('input, select, textarea').forEach((i) => {
         if (i.name && i.value) out[i.name] = i.value;
     });
     return out;
@@ -1268,7 +1623,7 @@ function pm2BuildPayload(form, kind) {
 function pm2ValidateForm(form, kind) {
     // LXC — Validación frontend exhaustiva (Pilar 8 validation_rule_missing)
     const missing = [];
-    form.querySelectorAll('input, select').forEach((i) => {
+    form.querySelectorAll('input, select, textarea').forEach((i) => {
         if (i.required && !i.value) {
             missing.push(i.placeholder || i.name);
         }
@@ -1394,6 +1749,90 @@ function pm2InsertRowDom(btn, kind, values) {
     tbody.insertBefore(tr, tbody.firstChild);
 }
 
+function pm2RenderApeCaptureImpact(impact) {
+    if (!impact || !impact.available) return;
+    const panel = document.getElementById('pm2-ape-impact-panel');
+    if (!panel) return;
+    const after = impact.after || {};
+    panel.dataset.apeStatus = after.ape_status || 'unknown';
+    const statusNode = panel.querySelector('[data-ape-impact-status]');
+    const pointsNode = panel.querySelector('[data-ape-impact-points]');
+    const registryNode = panel.querySelector('[data-ape-impact-registry]');
+    const msgNode = panel.querySelector('[data-ape-impact-message]');
+    const surfacesNode = panel.querySelector('[data-ape-impact-surfaces]');
+    if (statusNode) statusNode.textContent = after.ape_status || 'sin estado';
+    if (pointsNode) pointsNode.textContent = String(after.valid_psa_point_count ?? after.psa_point_count ?? 0);
+    if (registryNode) registryNode.textContent = impact.registry_ready_after_capture ? 'listo' : 'pendiente';
+    if (msgNode) msgNode.textContent = impact.clinical_message || 'Impacto APE recalculado.';
+    if (surfacesNode) surfacesNode.textContent = (impact.refreshed_surfaces || ['Perfil V2', 'Sprint']).slice(0, 3).join(' · ');
+    if (impact.gap_closed) {
+        panel.style.borderColor = 'rgba(16,185,129,.55)';
+        panel.style.background = 'rgba(16,185,129,.10)';
+    } else if ((impact.point_count_delta || 0) > 0) {
+        panel.style.borderColor = 'rgba(34,211,238,.42)';
+        panel.style.background = 'rgba(34,211,238,.08)';
+    }
+}
+
+function pm2RenderTreatmentEconomicImpact(impact) {
+    if (!impact || !impact.available) return;
+    const panel = document.getElementById('pm2-treatment-impact-panel');
+    if (!panel) return;
+    const after = impact.after || {};
+    const course = after.current_course || {};
+    const cost = after.cost_summary || {};
+    const alert = after.dose_alert || {};
+    panel.dataset.alertSeverity = alert.severity || 'none';
+    const regimenNode = panel.querySelector('[data-treatment-impact-regimen]');
+    const dosesNode = panel.querySelector('[data-treatment-impact-doses]');
+    const costNode = panel.querySelector('[data-treatment-impact-cost]');
+    const alertNode = panel.querySelector('[data-treatment-impact-alert]');
+    const msgNode = panel.querySelector('[data-treatment-impact-message]');
+    if (regimenNode) regimenNode.textContent = course.regimen_label || course.regimen_code || 'Sin esquema activo';
+    if (dosesNode) dosesNode.textContent = `${course.local_dose_count || 0} / ${course.global_dose_count || 0}`;
+    if (costNode) costNode.textContent = `$ ${(cost.estimated_total_spend_mxn || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MXN`;
+    if (alertNode) {
+        alertNode.textContent = alert.title || 'Sin alerta';
+        alertNode.style.color = alert.severity === 'critical' ? '#fb7185' : alert.severity === 'warning' ? '#fbbf24' : '#34d399';
+    }
+    if (msgNode) msgNode.textContent = impact.clinical_message || 'Impacto terapéutico-económico recalculado.';
+    if (impact.critical_alert_now) {
+        panel.style.borderColor = 'rgba(251,113,133,.55)';
+        panel.style.background = 'rgba(251,113,133,.10)';
+    } else if (impact.warning_alert_now) {
+        panel.style.borderColor = 'rgba(251,191,36,.50)';
+        panel.style.background = 'rgba(251,191,36,.08)';
+    } else if ((impact.local_dose_delta || 0) > 0 || impact.regimen_changed) {
+        panel.style.borderColor = 'rgba(34,211,238,.42)';
+        panel.style.background = 'rgba(34,211,238,.08)';
+    }
+}
+
+function pm2RenderEpidemiologyGapSla(snapshot, nextSurfaces) {
+    const panel = document.querySelector('[data-epidemiology-gap-sla-panel]');
+    if (!panel || !snapshot) return;
+    const summary = snapshot.summary || {};
+    const items = snapshot.items || [];
+    const first = items[0] || {};
+    const profileUrl = (nextSurfaces && nextSurfaces.profile_v2) || (snapshot.next_surfaces && snapshot.next_surfaces.profile_v2) || `/patient_profile/${encodeURIComponent(PM2_NSS)}?v=2&refresh=1`;
+    const registryUrl = (nextSurfaces && nextSurfaces.treatment_value_registry) || (snapshot.next_surfaces && snapshot.next_surfaces.capture_registry) || `/population/treatment-value-registry?patient_ref=${encodeURIComponent(PM2_NSS)}`;
+    panel.innerHTML = `
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <div>
+                <strong style="color:#f8fbff">Torre epidemiologica recalculada</strong>
+                <div>Brechas activas: <strong>${summary.active_gap_count ?? 0}</strong> · SLA vencidas: <strong>${summary.sla_overdue_count ?? 0}</strong> · sin revisar: <strong>${summary.unreviewed_gap_count ?? 0}</strong></div>
+                <div>${first.gap_label ? `Siguiente brecha: ${first.gap_label} · ${first.sla_state || 'sla_unknown'}` : 'Sin brechas SLA activas para este paciente.'}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <a href="${profileUrl}" class="pm2-btn pm2-btn--ghost" style="font-size:.72rem;text-decoration:none">Ver Perfil V2</a>
+                <a href="${registryUrl}" class="pm2-btn pm2-btn--ghost" style="font-size:.72rem;text-decoration:none">Ver cohorte</a>
+            </div>
+        </div>
+    `;
+    panel.style.borderColor = summary.active_gap_count ? 'rgba(251,191,36,.42)' : 'rgba(52,211,153,.42)';
+    panel.style.background = summary.active_gap_count ? 'rgba(251,191,36,.08)' : 'rgba(52,211,153,.08)';
+}
+
 /* Main append handler — wired al endpoint real. */
 async function pm2AppendRow(btn, kind) {
     const form = btn.closest('.pm2-append-form');
@@ -1409,10 +1848,22 @@ async function pm2AppendRow(btn, kind) {
         const res = await fetch(`/api/longitudinal/${encodeURIComponent(PM2_NSS)}/append`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ kind, payload }),
+            body: JSON.stringify({
+                kind,
+                payload,
+                ledger_context: {
+                    decision_field: PM2_LONGITUDINAL_LEDGER_CONTEXT.decision_field || '',
+                    readiness_lane: PM2_LONGITUDINAL_LEDGER_CONTEXT.readiness_lane || '',
+                    moment: PM2_LONGITUDINAL_LEDGER_CONTEXT.moment || '',
+                },
+            }),
         });
         const body = await res.json().catch(() => ({}));
 
+        if (res.status === 409 && body.error === 'ledger_recapture_blocked') {
+            window.pm2Toast('warn', body.message || 'Clinical Fact Ledger bloqueo una recaptura dirigida.');
+            return;
+        }
         if (res.status === 409) {
             window.pm2Toast('warn', `Duplicado: ya existe ${kind} con esa fecha`);
             return;
@@ -1424,6 +1875,9 @@ async function pm2AppendRow(btn, kind) {
 
         // ÉXITO — DB write confirmado por backend
         pm2InsertRowDom(btn, kind, payload);
+        pm2RenderApeCaptureImpact(body.ape_capture_impact);
+        pm2RenderTreatmentEconomicImpact(body.treatment_economic_impact);
+        pm2RenderEpidemiologyGapSla(body.epidemiology_gap_sla, body.next_surfaces);
 
         if (body.decision_changed) {
             const newDir = body.delta?.new?.direction || 'actualizada';
@@ -1433,7 +1887,7 @@ async function pm2AppendRow(btn, kind) {
         }
 
         // Limpia inputs (excepto fecha si quiere re-capturar día siguiente — opcional)
-        form.querySelectorAll('input:not([type="hidden"]), select').forEach((i) => {
+        form.querySelectorAll('input:not([type="hidden"]), select, textarea').forEach((i) => {
             if (i.type !== 'date') i.value = '';
         });
         // Notifica a otras pestañas que tienen el perfil abierto
@@ -1441,6 +1895,9 @@ async function pm2AppendRow(btn, kind) {
             localStorage.setItem('pm2_capture_event', JSON.stringify({
                 nss: PM2_NSS, kind, ts: Date.now(),
                 decision_changed: !!body.decision_changed,
+                ape_capture_impact: body.ape_capture_impact || null,
+                treatment_economic_impact: body.treatment_economic_impact || null,
+                epidemiology_gap_sla: body.epidemiology_gap_sla || null,
             }));
         } catch (e) { /* ignore quota */ }
     } catch (err) {
@@ -1562,7 +2019,7 @@ async function pm2SaveBiopsyCapture(btn) {
             autoSec.style.boxShadow = '';
             autoSec.style.borderColor = '';
             // Focus primer input requerido
-            const firstReq = autoSec.querySelector('input[required], select[required]');
+            const firstReq = autoSec.querySelector('input[required], select[required], textarea[required]');
             if (firstReq) firstReq.focus();
         }, 2200);
     }, 250);

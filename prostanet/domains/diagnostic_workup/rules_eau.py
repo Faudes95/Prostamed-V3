@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+from prostanet.domains.diagnostic_workup.derivations import (
+    derive_dre_context,
+    derive_mri_context,
+    derive_psad_context,
+)
+
 
 def classify_diagnostic_workup_eau(payload: dict) -> dict:
-    psa = float(payload.get("psa", 0) or 0)
-    psad = float(payload.get("psad", 0) or 0)
-    if not psad:
-        prostate_volume = float(payload.get("prostate_volume_ml", 0) or 0)
-        if psa and prostate_volume:
-            psad = psa / prostate_volume
-    pirads = int(float(payload.get("pirads_score", 0) or 0))
-    dre_suspicious = _is_true(payload.get("dre_suspicious"))
-    psa_velocity = float(payload.get("psa_velocity_ng_ml_year", 0) or 0)
+    psa = _safe_float(payload.get("psa"), default=0.0)
+    psad = derive_psad_context(payload, psa_value=psa).value or 0.0
+    pirads = derive_mri_context(payload).pirads or 0
+    dre_suspicious = derive_dre_context(payload).is_suspicious
+    psa_velocity = _safe_float(payload.get("psa_velocity_ng_ml_year"), default=0.0)
 
     if pirads >= 4 or dre_suspicious or psad >= 0.15 or psa >= 10 or psa_velocity >= 0.75:
         label = "Alta sospecha diagnóstica"
@@ -23,7 +25,7 @@ def classify_diagnostic_workup_eau(payload: dict) -> dict:
     else:
         label = "Sospecha diagnóstica baja"
         risk_group = "DIAGNOSTIC_LOW"
-        recommendation = "La Asociación Europea de Urología favorece seguimiento con antígeno prostático específico, densidad del antígeno prostático específico y revaloración antes de repetir procedimientos invasivos."
+        recommendation = "La Asociación Europea de Urología favorece seguimiento con antígeno prostático específico, cálculo de densidad al disponer de volumen prostático y revaloración antes de repetir procedimientos invasivos."
 
     return {
         "label": label,
@@ -32,5 +34,10 @@ def classify_diagnostic_workup_eau(payload: dict) -> dict:
     }
 
 
-def _is_true(value) -> bool:
-    return str(value).lower() in {"1", "true", "yes", "si", "on"}
+def _safe_float(value, *, default: float = 0.0) -> float:
+    if value is None or value == "":
+        return default
+    try:
+        return float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return default

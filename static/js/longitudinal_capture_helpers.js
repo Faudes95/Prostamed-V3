@@ -23,10 +23,55 @@
         }
     }
 
-    function renderPsaHistoryRows(rows) {
+    const LINE_CONTEXT_OPTIONS = [
+        { value: "", label: "Sin línea documentada" },
+        { value: "mHSPC_initial", label: "mHSPC inicial" },
+        { value: "mHSPC_post_docetaxel", label: "mHSPC post-docetaxel" },
+        { value: "m0_CRPC_first_line", label: "m0 CRPC primera línea" },
+        { value: "mCRPC_first_line", label: "mCRPC primera línea" },
+        { value: "mCRPC_post_ARPI_pre_taxane", label: "mCRPC post-ARPI pre-taxano" },
+        { value: "mCRPC_post_taxane", label: "mCRPC post-taxano" },
+        { value: "mCRPC_post_PARP", label: "mCRPC post-PARP" },
+        { value: "mCRPC_post_Lu177", label: "mCRPC post-Lu177" },
+        { value: "later_line", label: "Líneas posteriores" },
+    ];
+
+    function currentClinicalState() {
+        const bodyClass = document.body?.className || "";
+        const match = String(bodyClass).match(/pm2-longitudinal-state-([a-zA-Z0-9_]+)/);
+        return match ? match[1] : "";
+    }
+
+    function lineContextOptionsForState(clinicalState, selectedValue = "") {
+        const state = String(clinicalState || "").trim().toLowerCase();
+        let allowedValues;
+        if (state.includes("m1_crpc") || state.includes("mcrpc")) {
+            allowedValues = LINE_CONTEXT_OPTIONS.map((option) => option.value);
+        } else if (state.includes("m0_crpc")) {
+            allowedValues = ["", "m0_CRPC_first_line"];
+        } else if (state.includes("mcspc") || state.includes("mhspc")) {
+            allowedValues = ["", "mHSPC_initial", "mHSPC_post_docetaxel"];
+        } else {
+            allowedValues = [""];
+        }
+        const options = LINE_CONTEXT_OPTIONS.filter((option) => allowedValues.includes(option.value));
+        if (selectedValue && !options.some((option) => option.value === selectedValue)) {
+            const legacy = LINE_CONTEXT_OPTIONS.find((option) => option.value === selectedValue);
+            options.push(legacy || { value: selectedValue, label: selectedValue });
+        }
+        return options;
+    }
+
+    function renderLineContextOptions(selectedValue = "", clinicalState = currentClinicalState()) {
+        return lineContextOptionsForState(clinicalState, selectedValue)
+            .map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === selectedValue ? "selected" : ""}>${escapeHtml(option.label)}</option>`)
+            .join("");
+    }
+
+    function renderPsaHistoryRows(rows, clinicalState = currentClinicalState()) {
         const initialRows = rows.length ? rows : [{}];
         return initialRows.map((row) => `
-            <div data-psa-history-row class="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]">
+            <div data-psa-history-row class="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 md:grid-cols-2 xl:grid-cols-3">
                 <label class="text-sm">
                     <span class="mb-1 block text-slate-300">Fecha de muestra</span>
                     <input type="date" data-history-key="sample_date" value="${escapeHtml(row.sample_date || "")}" class="pn-input w-full px-3 py-2">
@@ -62,16 +107,7 @@
                 <label class="text-sm lg:col-span-2">
                     <span class="mb-1 block text-slate-300">Contexto de línea (opcional)</span>
                     <select data-history-key="line_of_therapy_context" class="pn-input w-full px-3 py-2">
-                        <option value="" ${!row.line_of_therapy_context ? "selected" : ""}>Sin línea documentada</option>
-                        <option value="mHSPC_initial" ${row.line_of_therapy_context === "mHSPC_initial" ? "selected" : ""}>mHSPC inicial</option>
-                        <option value="mHSPC_post_docetaxel" ${row.line_of_therapy_context === "mHSPC_post_docetaxel" ? "selected" : ""}>mHSPC post-docetaxel</option>
-                        <option value="m0_CRPC_first_line" ${row.line_of_therapy_context === "m0_CRPC_first_line" ? "selected" : ""}>m0 CRPC primera línea</option>
-                        <option value="mCRPC_first_line" ${row.line_of_therapy_context === "mCRPC_first_line" ? "selected" : ""}>mCRPC primera línea</option>
-                        <option value="mCRPC_post_ARPI_pre_taxane" ${row.line_of_therapy_context === "mCRPC_post_ARPI_pre_taxane" ? "selected" : ""}>mCRPC post-ARPI pre-taxano</option>
-                        <option value="mCRPC_post_taxane" ${row.line_of_therapy_context === "mCRPC_post_taxane" ? "selected" : ""}>mCRPC post-taxano</option>
-                        <option value="mCRPC_post_PARP" ${row.line_of_therapy_context === "mCRPC_post_PARP" ? "selected" : ""}>mCRPC post-PARP</option>
-                        <option value="mCRPC_post_Lu177" ${row.line_of_therapy_context === "mCRPC_post_Lu177" ? "selected" : ""}>mCRPC post-Lu177</option>
-                        <option value="later_line" ${row.line_of_therapy_context === "later_line" ? "selected" : ""}>Líneas posteriores</option>
+                        ${renderLineContextOptions(row.line_of_therapy_context || "", clinicalState)}
                     </select>
                 </label>
                 <label class="text-sm lg:col-span-3">
@@ -82,10 +118,10 @@
         `).join("");
     }
 
-    function renderTestosteroneHistoryRows(rows) {
+    function renderTestosteroneHistoryRows(rows, clinicalState = currentClinicalState()) {
         const initialRows = rows.length ? rows : [{}];
         return initialRows.map((row) => `
-            <div data-testosterone-history-row class="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]">
+            <div data-testosterone-history-row class="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 md:grid-cols-2 xl:grid-cols-3">
                 <label class="text-sm">
                     <span class="mb-1 block text-slate-300">Fecha de muestra</span>
                     <input type="date" data-history-key="sample_date" value="${escapeHtml(row.sample_date || "")}" class="pn-input w-full px-3 py-2">
@@ -120,16 +156,7 @@
                 <label class="text-sm lg:col-span-2">
                     <span class="mb-1 block text-slate-300">Contexto de línea (opcional)</span>
                     <select data-history-key="line_of_therapy_context" class="pn-input w-full px-3 py-2">
-                        <option value="" ${!row.line_of_therapy_context ? "selected" : ""}>Sin línea documentada</option>
-                        <option value="mHSPC_initial" ${row.line_of_therapy_context === "mHSPC_initial" ? "selected" : ""}>mHSPC inicial</option>
-                        <option value="mHSPC_post_docetaxel" ${row.line_of_therapy_context === "mHSPC_post_docetaxel" ? "selected" : ""}>mHSPC post-docetaxel</option>
-                        <option value="m0_CRPC_first_line" ${row.line_of_therapy_context === "m0_CRPC_first_line" ? "selected" : ""}>m0 CRPC primera línea</option>
-                        <option value="mCRPC_first_line" ${row.line_of_therapy_context === "mCRPC_first_line" ? "selected" : ""}>mCRPC primera línea</option>
-                        <option value="mCRPC_post_ARPI_pre_taxane" ${row.line_of_therapy_context === "mCRPC_post_ARPI_pre_taxane" ? "selected" : ""}>mCRPC post-ARPI pre-taxano</option>
-                        <option value="mCRPC_post_taxane" ${row.line_of_therapy_context === "mCRPC_post_taxane" ? "selected" : ""}>mCRPC post-taxano</option>
-                        <option value="mCRPC_post_PARP" ${row.line_of_therapy_context === "mCRPC_post_PARP" ? "selected" : ""}>mCRPC post-PARP</option>
-                        <option value="mCRPC_post_Lu177" ${row.line_of_therapy_context === "mCRPC_post_Lu177" ? "selected" : ""}>mCRPC post-Lu177</option>
-                        <option value="later_line" ${row.line_of_therapy_context === "later_line" ? "selected" : ""}>Líneas posteriores</option>
+                        ${renderLineContextOptions(row.line_of_therapy_context || "", clinicalState)}
                     </select>
                 </label>
                 <label class="text-sm lg:col-span-3">
@@ -149,7 +176,7 @@
     function renderPriorLinesHistoryRows(rows) {
         const initialRows = rows.length ? rows : [{}];
         return initialRows.map((row) => `
-            <div data-prior-lines-history-row class="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]">
+            <div data-prior-lines-history-row class="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 md:grid-cols-2 xl:grid-cols-3">
                 <label class="text-sm">
                     <span class="mb-1 block text-slate-300">Fecha de inicio</span>
                     <input type="date" data-history-key="start_date" value="${escapeHtml(row.start_date || "")}" class="pn-input w-full px-3 py-2">

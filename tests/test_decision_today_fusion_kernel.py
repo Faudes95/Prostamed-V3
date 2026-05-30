@@ -59,6 +59,81 @@ def test_fusion_localized_incomplete_histopathology_requires_data():
     assert fusion["next_safe_action"]["cta"]["href"].startswith("/longitudinal-capture/")
 
 
+def test_decision_today_surfaces_open_ledger_conflict_quality():
+    patient = _patient("m1_crpc")
+    patient["latest_assessment"]["input_snapshot"] = {"ecog_score": 1}
+    patient["patient_clinical_facts"] = [
+        {
+            "id": 1,
+            "fact_key": "ecog_score",
+            "value": 2,
+            "is_active": 1,
+            "source_record_type": "quick_capture",
+            "source_date": "2026-05-01",
+            "observed_at": "2026-05-01T10:00:00Z",
+        }
+    ]
+
+    fusion = build_decision_today(
+        patient,
+        longitudinal_bundle=_bundle(),
+        state="m1_crpc",
+    )
+
+    quality = fusion["ledger_quality"]
+    assert quality["version"] == "clinical_fact_ledger_decision_quality_v1"
+    assert quality["status"] == "blocked_by_critical_conflict"
+    assert quality["requires_reconciliation"] is True
+    assert quality["critical_conflict_count"] >= 1
+    assert quality["open_conflicts"][0]["fact_key"] == "ecog_score"
+    assert fusion["source_alignment"]["clinical_fact_ledger"]["status"] == "blocked_by_critical_conflict"
+    assert fusion["audit"]["ledger_quality"]["critical_conflict_count"] >= 1
+    action = fusion["next_safe_action"]
+    assert action["cta"]["action_mode"] == "reconcile_clinical_fact"
+    assert action["cta"]["href"] == "/clinical-fact-reconciliation/DT-001"
+    assert action["cta"]["decision_field"] == "ecog_score"
+    assert "clinical_fact_ledger" in action["source_bundles"]
+    assert action["ledger_quality_gate"]["status"] == "blocked_by_critical_conflict"
+    assert action["source_clinical_facts_mutated"] is False
+    assert action["external_order_created"] is False
+    assert action["model_trained"] is False
+    assert quality["source_clinical_facts_mutated"] is False
+    assert quality["external_order_created"] is False
+    assert quality["model_trained"] is False
+
+
+def test_decision_today_surfaces_reconciled_ledger_watch_without_open_conflict():
+    patient = _patient("m1_crpc")
+    patient["latest_assessment"]["input_snapshot"] = {"ecog_score": 2}
+    patient["patient_clinical_facts"] = [
+        {
+            "id": 2,
+            "fact_key": "ecog_score",
+            "value": 1,
+            "is_active": 1,
+            "source_record_type": "ledger_reconciliation",
+            "source_date": "2026-05-02",
+            "observed_at": "2026-05-02T10:00:00Z",
+            "clinician_verified": 1,
+        }
+    ]
+
+    fusion = build_decision_today(
+        patient,
+        longitudinal_bundle=_bundle(),
+        state="m1_crpc",
+    )
+
+    quality = fusion["ledger_quality"]
+    assert quality["status"] == "uses_reconciled_facts"
+    assert quality["requires_reconciliation"] is False
+    assert quality["uses_reconciled_facts"] is True
+    assert quality["conflict_count"] == 0
+    assert quality["resolved_watch_count"] >= 1
+    assert quality["resolved_watch"][0]["fact_key"] == "ecog_score"
+    assert fusion["next_safe_action"]["cta"].get("action_mode") != "reconcile_clinical_fact"
+
+
 def test_fusion_bcr_excludes_crpc_parp_and_rlt():
     fusion = build_decision_today(
         _patient(
@@ -326,6 +401,10 @@ def test_decision_today_api_signals_and_ui_contracts_are_registered(app_client):
     assert decision.status_code == 200
     assert decision.get_json()["success"] is True
     assert decision.get_json()["source"] == "clinical_decision_today_fusion_kernel"
+    assert decision.get_json()["ledger_quality"]["version"] == "clinical_fact_ledger_decision_quality_v1"
+    assert decision.get_json()["ledger_quality"]["source_clinical_facts_mutated"] is False
+    assert decision.get_json()["ledger_quality"]["external_order_created"] is False
+    assert decision.get_json()["ledger_quality"]["model_trained"] is False
     assert recompute.status_code == 200
     assert recompute.get_json()["source_clinical_facts_mutated"] is False
     assert signals.status_code == 200

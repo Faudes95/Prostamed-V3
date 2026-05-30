@@ -28,6 +28,13 @@
   overflow: visible;
   min-width: 0;
 }
+.pm2-loop-main code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+@media (max-width: 768px) {
+  .pm2-loop-main { padding: 1.25rem 1rem; }
+}
 
 .pm2-loop-header {
   display: flex;
@@ -76,8 +83,16 @@
   border-radius: 1rem;
   box-shadow: 0 16px 48px rgba(8, 47, 73, 0.25);
 }
+.pm2-mission-control > * {
+  min-width: 0;
+}
 @media (max-width: 860px) {
-  .pm2-mission-control { grid-template-columns: 1fr; }
+  .pm2-mission-control {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 1rem;
+    border-left-width: 3px;
+    overflow: hidden;
+  }
 }
 
 .pm2-mission-kicker {
@@ -100,6 +115,7 @@
   display: grid;
   gap: 0.5rem;
   margin-top: 1rem;
+  min-width: 0;
 }
 
 .pm2-mission-progress-track {
@@ -121,6 +137,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 .pm2-mission-pill {
@@ -134,6 +151,8 @@
   background: rgba(15, 23, 42, 0.62);
   font-size: 0.74rem;
   font-weight: 700;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .pm2-mission-metrics {
@@ -162,6 +181,43 @@
   display: block;
   font-size: 0.72rem;
   margin-top: 0.3rem;
+}
+
+.pm2-capture-snapshot-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.pm2-capture-snapshot-chart {
+  position: relative;
+  height: 240px;
+}
+.pm2-capture-snapshot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: .78rem;
+  min-width: 0;
+}
+.pm2-capture-snapshot-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 12px;
+  background: rgba(15,23,42,.6);
+  border-radius: 6px;
+}
+.pm2-capture-snapshot-row span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 768px) {
+  .pm2-capture-snapshot-grid { grid-template-columns: minmax(0, 1fr); }
+  .pm2-capture-snapshot-chart { height: 200px; }
+  .pm2-capture-snapshot-row { align-items: flex-start; }
 }
 
 .pm2-dev-autodrive {
@@ -617,8 +673,13 @@
   box-sizing: border-box;
   max-width: 100%;
   min-width: 0;
-  overflow-x: auto;
+  overflow-x: hidden;
   width: 100%;
+}
+
+.pm2-loop-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .pm2-loop-iterations h2 {
@@ -637,7 +698,15 @@
 
 @media (max-width: 768px) {
   .pm2-loop-iterations { padding: 1rem; }
-  .pm2-loop-iter-table { display: block; }
+  .pm2-loop-iter-table {
+    min-width: 0;
+    table-layout: fixed;
+  }
+  .pm2-loop-iter-table th,
+  .pm2-loop-iter-table td {
+    overflow-wrap: anywhere;
+    padding: 0.45rem 0.35rem;
+  }
 }
 
 .pm2-loop-iter-table th {
@@ -2060,6 +2129,7 @@
     <section class="pm2-loop-iterations" aria-label="Iteraciones recientes">
       <h2>Iteraciones recientes (últimos 30 días)</h2>
       {% if iterations and iterations | length > 0 %}
+      <div class="pm2-loop-table-scroll">
       <table class="pm2-loop-iter-table">
         <thead>
           <tr>
@@ -2086,6 +2156,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
       {% else %}
       <div class="pm2-loop-empty-state">
         <p>📊 Aún no hay iteraciones registradas.</p>
@@ -2108,9 +2179,9 @@
       <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:14px;">
         <div>
           <div style="font-size:.7rem; color:#c4b5fd; font-weight:800; letter-spacing:.16em; text-transform:uppercase;">EPIC 33.C + EPIC 37 · Population Intelligence</div>
-          <h3 style="font-family:var(--pm-font-display,sans-serif); font-size:1.25rem; color:#f8fafc; margin:5px 0 0;">Cohorte Exploratoria MX · KPI Dashboard (10 KPIs activos)</h3>
+          <h3 style="font-family:var(--pm-font-display,sans-serif); font-size:1.25rem; color:#f8fafc; margin:5px 0 0;">Cohorte Exploratoria MX · KPI Dashboard (11 KPIs activos)</h3>
           <p style="margin:6px 0 0; color:#94a3b8; font-size:.82rem; line-height:1.5; max-width:78ch;">
-            KPI_REGISTRY extensible: <strong>5 KPIs core</strong> (counts ARPI, response 2/6mo, ECOG change, distribución estados) + <strong>5 KPIs EPIC 34.A</strong> (ECOG/HRR/Castration/PSMA-PET capture coverage + Trial Eligibility Funnel). Roadmap +11 KPIs adicionales en <code>mx_population_kpis_roadmap.yaml</code>.
+            KPI_REGISTRY extensible: <strong>5 KPIs core</strong> (counts ARPI, response 2/6mo, ECOG change, distribución estados) + <strong>1 KPI de valor real-world</strong> (gasto/dosis vs respuesta) + <strong>5 KPIs EPIC 34.A</strong> (ECOG/HRR/Castration/PSMA-PET capture coverage + Trial Eligibility Funnel). Roadmap +11 KPIs adicionales en <code>mx_population_kpis_roadmap.yaml</code>.
           </p>
         </div>
         <button type="button" id="cohortRefreshBtn" onclick="loadCohortDashboard()" style="padding:8px 14px; background:rgba(168,85,247,.18); border:1px solid rgba(168,85,247,.4); color:#e9d5ff; border-radius:8px; cursor:pointer; font-size:.78rem;">
@@ -2130,8 +2201,8 @@
       </div>
 
       <div style="margin-top:14px; padding:10px 14px; background:rgba(15,23,42,.5); border:1px solid rgba(148,163,184,.2); border-radius:6px; font-size:.7rem; color:#94a3b8;">
-        <strong style="color:#86efac;">✓ Shipped (10/15):</strong> patients_by_regimen · psa_response_8wk · psa_response_24wk ·
-        ecog_change_24wk · clinical_state_distribution · ecog_capture_coverage · hrr_capture_coverage ·
+        <strong style="color:#86efac;">✓ Shipped (11/16):</strong> patients_by_regimen · psa_response_8wk · psa_response_24wk ·
+        arpi_value_24wk · ecog_change_24wk · clinical_state_distribution · ecog_capture_coverage · hrr_capture_coverage ·
         castration_confirmation_coverage · psma_pet_capture_coverage · trial_eligibility_funnel.<br>
         <strong style="color:#cbd5e1;">Pending (11+):</strong> Kaplan-Meier per ARPI · germline testing rate ·
         voice intake adoption · time-from-Dx-to-treatment · comorbidity prevalence (CV/hepatic/DM) ·
@@ -2149,6 +2220,11 @@
           return pct + '% <small style="color:#94a3b8">(IC95% ' + (100*low).toFixed(1) + '–' + (100*high).toFixed(1) + '%)</small>';
         }
         return pct + '%';
+      }
+
+      function fmtMxn(value) {
+        const numberValue = Number(value || 0);
+        return '$' + numberValue.toLocaleString('es-MX', { maximumFractionDigits: 0 }) + ' MXN';
       }
 
       function renderRegimenKPI(kpi) {
@@ -2211,6 +2287,85 @@
           <div style="background:rgba(15,23,42,.4); padding:14px; border-radius:8px; border:1px solid rgba(148,163,184,.15);">
             <h4 style="color:#f8fafc; font-size:.95rem; margin:0 0 10px;">${kpi.kpi_label}</h4>
             <table style="width:100%; font-size:.78rem; border-collapse:collapse;">${rows}</table>
+          </div>
+        `;
+      }
+
+      function renderArpiValueKPI(kpi) {
+        const summary = kpi.summary || {};
+        const byArpi = kpi.by_arpi || {};
+        const priceWarnings = [];
+        if (summary.partial_cost_patient_count) priceWarnings.push(`${summary.partial_cost_patient_count} paciente(s) con costo parcial`);
+        if (summary.stale_price_patient_count) priceWarnings.push(`${summary.stale_price_patient_count} paciente(s) con fuente de precio antigua`);
+        const rows = Object.entries(byArpi).map(([label, data]) => {
+          if (data.suppressed) {
+            return `<tr><td style="padding:6px 10px;color:#cbd5e1;">${label}</td><td colspan="4" style="padding:6px 10px;color:#fbbf24;font-size:.75rem;">${data.display || 'n&lt;5 suprimido'}</td></tr>`;
+          }
+          return `<tr>
+            <td style="padding:6px 10px;color:#cbd5e1;">${label}</td>
+            <td style="padding:6px 10px;color:#f8fafc;font-size:.72rem;">n=${data.n} · ${data.total_local_doses_to_window || 0} dosis</td>
+            <td style="padding:6px 10px;color:#f8fafc;font-size:.72rem;">${fmtMxn(data.estimated_spend_to_window_mxn)}</td>
+            <td style="padding:6px 10px;color:#86efac;font-size:.72rem;">PSA50: ${data.psa50_rate?.display || '—'}</td>
+            <td style="padding:6px 10px;color:#93c5fd;font-size:.72rem;">ECOG ↓: ${data.ecog_improvement_rate?.display || '—'}</td>
+          </tr>`;
+        }).join('');
+        return `
+          <div style="background:rgba(15,23,42,.4); padding:14px; border-radius:8px; border:1px solid rgba(148,163,184,.15); grid-column:1/-1;">
+            <h4 style="color:#f8fafc; font-size:.95rem; margin:0 0 4px;">${kpi.kpi_label}</h4>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:8px; margin:10px 0;">
+              <div style="padding:10px; background:rgba(2,6,23,.45); border-radius:8px;"><div style="font-size:.64rem;color:#94a3b8;">Pacientes</div><strong style="color:#f8fafc;">${summary.n_patients || 0}</strong></div>
+              <div style="padding:10px; background:rgba(2,6,23,.45); border-radius:8px;"><div style="font-size:.64rem;color:#94a3b8;">Dosis ARPI locales</div><strong style="color:#f8fafc;">${summary.total_local_arpi_doses_to_window || 0}</strong></div>
+              <div style="padding:10px; background:rgba(2,6,23,.45); border-radius:8px;"><div style="font-size:.64rem;color:#94a3b8;">Gasto estimado</div><strong style="color:#f8fafc;">${fmtMxn(summary.estimated_spend_to_window_mxn)}</strong></div>
+              <div style="padding:10px; background:rgba(2,6,23,.45); border-radius:8px;"><div style="font-size:.64rem;color:#94a3b8;">Costo/PSA50</div><strong style="color:#86efac;">${summary.cost_per_psa50_responder_mxn ? fmtMxn(summary.cost_per_psa50_responder_mxn) : '—'}</strong></div>
+              <div style="padding:10px; background:rgba(2,6,23,.45); border-radius:8px;"><div style="font-size:.64rem;color:#94a3b8;">Costo/ECOG mejorado</div><strong style="color:#93c5fd;">${summary.cost_per_ecog_improved_patient_mxn ? fmtMxn(summary.cost_per_ecog_improved_patient_mxn) : '—'}</strong></div>
+            </div>
+            <div style="overflow-x:auto;">
+              <table style="width:100%; min-width:620px; font-size:.78rem; border-collapse:collapse;">${rows}</table>
+            </div>
+            ${priceWarnings.length ? `<div style="font-size:.68rem;color:#fbbf24;margin-top:8px;">Precio: ${priceWarnings.join(' · ')}. Validar contra compra hospitalaria vigente antes de auditoría financiera.</div>` : ''}
+            <div style="font-size:.66rem;color:#94a3b8;margin-top:8px;">${kpi.interpretation || ''}</div>
+          </div>
+        `;
+      }
+
+      function renderTreatmentValueRegistryKPI(kpi) {
+        const windows = kpi.windows || {};
+        const windowCards = Object.entries(windows).map(([weeks, payload]) => {
+          const summary = payload.summary || {};
+          const byRegimen = payload.by_regimen || {};
+          const regimenRows = Object.entries(byRegimen).slice(0, 8).map(([code, data]) => {
+            return `<tr>
+              <td style="padding:6px 10px;color:#cbd5e1;font-size:.72rem;">${data.label || code}</td>
+              <td style="padding:6px 10px;color:#f8fafc;font-size:.72rem;">n=${data.n || 0}</td>
+              <td style="padding:6px 10px;color:#86efac;font-size:.72rem;">PSA50 ${data.psa50_rate?.display || '—'}</td>
+              <td style="padding:6px 10px;color:#bbf7d0;font-size:.72rem;">PSA90 ${data.psa90_rate?.display || '—'}</td>
+              <td style="padding:6px 10px;color:#93c5fd;font-size:.72rem;">ECOG ${data.ecog_improvement_rate?.display || '—'}</td>
+              <td style="padding:6px 10px;color:#fca5a5;font-size:.72rem;">G3+ ${data.high_grade_toxicity_rate?.display || '—'}</td>
+              <td style="padding:6px 10px;color:#f8fafc;font-size:.72rem;">${data.cost_per_psa50_responder_mxn ? fmtMxn(data.cost_per_psa50_responder_mxn) : '—'}/PSA50</td>
+            </tr>`;
+          }).join('');
+          return `
+            <div style="background:rgba(2,6,23,.38);border:1px solid rgba(148,163,184,.14);border-radius:8px;padding:12px;">
+              <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+                <h5 style="margin:0;color:#f8fafc;font-size:.86rem;">${weeks} semanas</h5>
+                <span style="font-size:.68rem;color:#94a3b8;">${summary.baseline_bucket_count || 0} estratos basales</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:10px 0;">
+                <div style="padding:8px;background:rgba(15,23,42,.52);border-radius:8px;"><div style="font-size:.62rem;color:#94a3b8;">Pacientes</div><strong style="color:#f8fafc;">${summary.n_patients || 0}</strong></div>
+                <div style="padding:8px;background:rgba(15,23,42,.52);border-radius:8px;"><div style="font-size:.62rem;color:#94a3b8;">Gasto</div><strong style="color:#f8fafc;">${fmtMxn(summary.estimated_spend_to_window_mxn)}</strong></div>
+                <div style="padding:8px;background:rgba(15,23,42,.52);border-radius:8px;"><div style="font-size:.62rem;color:#94a3b8;">Costo/PSA50</div><strong style="color:#86efac;">${summary.cost_per_psa50_responder_mxn ? fmtMxn(summary.cost_per_psa50_responder_mxn) : '—'}</strong></div>
+                <div style="padding:8px;background:rgba(15,23,42,.52);border-radius:8px;"><div style="font-size:.62rem;color:#94a3b8;">Toxicidad G3+</div><strong style="color:#fca5a5;">${summary.high_grade_toxicity_count || 0}</strong></div>
+              </div>
+              <div style="overflow-x:auto;"><table style="width:100%;min-width:760px;border-collapse:collapse;">${regimenRows}</table></div>
+            </div>
+          `;
+        }).join('');
+        return `
+          <div style="background:rgba(15,23,42,.4); padding:14px; border-radius:8px; border:1px solid rgba(34,211,238,.18); grid-column:1/-1;">
+            <h4 style="color:#f8fafc; font-size:.95rem; margin:0 0 4px;">${kpi.kpi_label || 'Registro tratamiento-valor'}</h4>
+            <div style="font-size:.68rem;color:#94a3b8;margin-bottom:10px;">${kpi.baseline_adjustment_method || ''}</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:12px;">${windowCards}</div>
+            <div style="font-size:.66rem;color:#94a3b8;margin-top:8px;">${kpi.interpretation || ''}</div>
           </div>
         `;
       }
@@ -2325,14 +2480,14 @@
             <div style="font-size:.7rem; color:#94a3b8; margin-bottom:12px;">
               Cobertura de quick-capture surfaces vs target. Donut = coverage actual, líneas verticales = target NCCN-derived.
             </div>
-            <div style="display:grid; grid-template-columns: 280px 1fr; gap:18px; align-items:start;">
-              <div style="position:relative; height:240px;">
+            <div class="pm2-capture-snapshot-grid">
+              <div class="pm2-capture-snapshot-chart">
                 <canvas id="captureCoverageChart"></canvas>
               </div>
-              <div style="display:flex; flex-direction:column; gap:8px; font-size:.78rem;">
+              <div class="pm2-capture-snapshot-list">
                 ${present.map((id, i) => {
                   const k = kpis[id];
-                  return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:rgba(15,23,42,.6); border:1px solid ${colors[i]}55; border-left:4px solid ${colors[i]}; border-radius:6px;">
+                  return `<div class="pm2-capture-snapshot-row" style="border:1px solid ${colors[i]}55; border-left:4px solid ${colors[i]};">
                     <span style="color:#cbd5e1;">${labels[i]}</span>
                     <span style="font-weight:700;"><span style="color:${colors[i]}">${data[i]}%</span> <span style="color:#94a3b8; font-size:.7rem;">/ ${targets[i]}%</span></span>
                   </div>`;
@@ -2397,6 +2552,8 @@
             if (kpis.patients_by_regimen) cards.push(renderRegimenKPI(kpis.patients_by_regimen));
             if (kpis.psa_response_8wk) cards.push(renderResponseKPI(kpis.psa_response_8wk));
             if (kpis.psa_response_24wk) cards.push(renderResponseKPI(kpis.psa_response_24wk));
+            if (kpis.arpi_value_24wk) cards.push(renderArpiValueKPI(kpis.arpi_value_24wk));
+            if (kpis.treatment_value_registry_12_24wk) cards.push(renderTreatmentValueRegistryKPI(kpis.treatment_value_registry_12_24wk));
             if (kpis.ecog_change_24wk) cards.push(renderECOGKPI(kpis.ecog_change_24wk));
             if (kpis.clinical_state_distribution) cards.push(renderStateDistKPI(kpis.clinical_state_distribution));
             // EPIC 37 — 5 nuevos KPIs (EPIC 34.A Phases 2-6 capture surfaces + Trial Funnel)
@@ -2405,7 +2562,7 @@
             if (kpis.castration_confirmation_coverage) cards.push(renderCaptureCoverageKPI(kpis.castration_confirmation_coverage));
             if (kpis.psma_pet_capture_coverage) cards.push(renderCaptureCoverageKPI(kpis.psma_pet_capture_coverage));
             if (kpis.trial_eligibility_funnel) cards.push(renderTrialFunnelKPI(kpis.trial_eligibility_funnel));
-            contentEl.innerHTML = `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap:14px;">${cards.join('')}</div>`;
+            contentEl.innerHTML = `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap:14px;">${cards.join('')}</div>`;
             loadingEl.style.display = 'none';
             contentEl.style.display = 'block';
           })

@@ -1,0 +1,14 @@
+{
+  "_expected_status": "blocked_hard",
+  "_description": "Caso #2 — Lutetium-177 PSMA-617 sin PSMA-PET documentado. Debe disparar biomarker_gap:psma_pet_pre_lu177 como hard_block (VISION exclusion).",
+  "reconciled_state": "m1_crpc",
+  "baseline": {"baseline_psa": 200.0, "gleason_score": 8},
+  "ecog_current": 1,
+  "prior_chemotherapy": true,
+  "prior_arpi": true,
+  "clinical_compass": {
+    "headline": "Iniciar Lutetium-177 PSMA-617 (Pluvicto) post-ARPI + docetaxel",
+    "rationale": "VISION-eligible: progresión post-ARSI + post-docetaxel",
+    "evidence_summary": {"guideline_basis": ["VISION (Sartor NEJM 2021)"]}
+  }
+}

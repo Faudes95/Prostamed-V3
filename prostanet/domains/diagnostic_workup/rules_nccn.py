@@ -12,34 +12,15 @@ from prostanet.shared.oncologic_emergency_triage_engine import (
     emergency_triage_descriptor,
 )
 from prostanet.shared.staging_requirements_engine import staging_gap_descriptor
-
-
-def _parse_dre(payload: dict) -> tuple[bool, str | None]:
-    """Parse DRE finding — supports both new ``dre_finding`` and legacy ``dre_suspicious``.
-
-    Returns (is_suspicious, implied_tstage).
-    """
-    dre_finding = payload.get("dre_finding")
-    if dre_finding and str(dre_finding).strip() not in ("", "0", "Normal"):
-        # New field: extract T-stage from option text like "T2a - Afecta ≤50%..."
-        finding_str = str(dre_finding).strip()
-        implied = None
-        for prefix in ("T4", "T3b", "T3a", "T3", "T2c", "T2b", "T2a", "T1c", "T1"):
-            if finding_str.upper().startswith(prefix):
-                implied = prefix
-                break
-        is_suspicious = implied is not None and implied != "T1"
-        return is_suspicious, implied
-
-    # Legacy: dre_suspicious is a binary 0/1
-    legacy = payload.get("dre_suspicious")
-    if _is_true(legacy):
-        return True, "T2a"  # Conservative default for "suspicious"
-    return False, None
+from prostanet.domains.diagnostic_workup.derivations import (
+    derive_dre_context,
+    derive_mri_context,
+    derive_psad_context,
+)
 
 
 def classify_diagnostic_workup(payload: dict) -> dict:
-    psa_raw = float(payload.get("psa", 0) or 0)
+    psa_raw = _safe_float(payload.get("psa"), default=0.0)
     # EPIC 9 Group F (GAP-12) — Confundentes del PSA (EAU Diagnostic Evaluation 2026).
     # 5-ARI (finasteride/dutasteride) reduce PSA ~50% tras 6-12 meses de uso;
     # el PSA "efectivo" para scoring diagnóstico se multiplica ×2 cuando hay
@@ -56,24 +37,24 @@ def classify_diagnostic_workup(payload: dict) -> dict:
         same_lab_assay = "1"
     psa = psa_raw * 2.0 if ari_active else psa_raw
     psa_correction_applied = ari_active
-    psad = float(payload.get("psad", 0) or 0)
-    if not psad:
-        prostate_volume = float(payload.get("prostate_volume_ml", 0) or 0)
-        if psa and prostate_volume:
-            psad = psa / prostate_volume
-    pirads = int(float(payload.get("pirads_score", 0) or 0))
-    dre_suspicious, dre_implied_tstage = _parse_dre(payload)
+    psad_context = derive_psad_context(payload, psa_value=psa)
+    psad = psad_context.value or 0.0
+    mri_context = derive_mri_context(payload)
+    pirads = mri_context.pirads or 0
+    dre_context = derive_dre_context(payload)
+    dre_suspicious = dre_context.is_suspicious
+    dre_implied_tstage = dre_context.implied_tstage
     family_history = _is_true(payload.get("family_history_positive"))
     family_history_detail = str(payload.get("family_history_detail", "")).strip()
     germline_risk = _is_true(payload.get("germline_risk_mutation"))
     germline_status = str(payload.get("germline_status", "Desconocido"))
     prior_negative_biopsy = _is_true(payload.get("prior_negative_biopsy"))
-    psa_velocity = float(payload.get("psa_velocity_ng_ml_year", 0) or 0)
+    psa_velocity = _safe_float(payload.get("psa_velocity_ng_ml_year"), default=0.0)
     risk_pathway = str(payload.get("risk_calculator_pathway", "No usado"))
-    mpmri_quality = str(payload.get("mpmri_quality", "Adecuada"))
-    lesion_size = float(payload.get("index_lesion_size_mm", 0) or 0)
+    mpmri_quality = mri_context.quality
+    lesion_size = _safe_float(payload.get("index_lesion_size_mm"), default=0.0)
     planned_biopsy_route = str(payload.get("planned_biopsy_route", "No definida"))
-    ipss_score = float(payload.get("ipss_score", 0) or 0)
+    ipss_score = _safe_float(payload.get("ipss_score"), default=0.0)
 
     score = 0
     reasons: list[str] = []
@@ -158,6 +139,8 @@ def classify_diagnostic_workup(payload: dict) -> dict:
     elif psad >= 0.10:
         score += 1
         reasons.append("La densidad del antígeno prostático específico es intermedia y merece contexto adicional.")
+    elif not psad_context.calculable and "prostate_volume_ml" in psad_context.missing_inputs:
+        reasons.append("La densidad del antígeno prostático específico debe calcularse al disponer del volumen prostático; no se interpreta como cero.")
 
     if dre_suspicious:
         score += 2
@@ -202,19 +185,26 @@ def classify_diagnostic_workup(payload: dict) -> dict:
         risk_group = "DIAGNOSTIC_INTERMEDIATE"
     else:
         label = "Sospecha diagnóstica baja"
-        recommendation = "Repetir antígeno prostático específico y densidad del antígeno prostático específico, confirmar técnica de medición y reservar la biopsia para elevación persistente o nueva señal clínica."
+        recommendation = "Repetir antígeno prostático específico, calcular densidad del antígeno prostático específico al disponer de volumen prostático, confirmar técnica de medición y reservar la biopsia para elevación persistente o nueva señal clínica."
         risk_group = "DIAGNOSTIC_LOW"
 
     significant_risk_pct = min(85, max(10, 12 + score * 10))
     if prior_negative_biopsy:
         reasons.append("Existe antecedente de biopsia benigna, por lo que la decisión debe integrar el nuevo nivel de sospecha y no repetir biopsia de forma automática.")
 
+    payload_with_derivations = dict(payload)
+    if dre_implied_tstage:
+        payload_with_derivations.setdefault("clinical_tstage", dre_implied_tstage.removeprefix("c"))
+        payload_with_derivations.setdefault("clinical_tstage_dre_estimate", dre_implied_tstage.removeprefix("c"))
+    if psad_context.value is not None:
+        payload_with_derivations.setdefault("psad", psad_context.value)
+
     # Brecha M-staging gate — 2026-04-22 (§D.1):
     # Calcula descriptor de gap de estadificación para que el service emita
     # PSMA/GGO/TAC explícitos cuando PSA>20, cT2b-T4 o ISUP≥4 lo exigen
     # (NCCN PROS-2 v5.2026 cat 1; EAU 2026 §6.4.1-6.4.3). En diagnostic_workup
     # NO bloquea (no hay tratamiento curativo); informa qué falta.
-    staging_gap = staging_gap_descriptor(payload)
+    staging_gap = staging_gap_descriptor(payload_with_derivations)
 
     # ── Brecha 2026-04-23: triaje pre-biopsia (emergencia + provisional + ADT) ─
     # NCCN PROS-G v5.2026 + EAU 2026 §6.5.4 + Loblaw 2012 + Briganti.
@@ -228,7 +218,7 @@ def classify_diagnostic_workup(payload: dict) -> dict:
     # Estos descriptores los consume `service.py` para insertar 3 ramas
     # paralelas en el bundle de tratamientos sin contaminar la lógica
     # actual de scoring / staging.
-    payload_for_engines = dict(payload)
+    payload_for_engines = dict(payload_with_derivations)
     payload_for_engines["psa"] = psa  # usa PSA corregido por 5-ARI
     emergency = emergency_triage_descriptor(payload_for_engines)
     provisional = assess_provisional_diagnosis(payload_for_engines)
@@ -268,6 +258,9 @@ def classify_diagnostic_workup(payload: dict) -> dict:
         "recommendation": recommendation,
         "reasons": reasons,
         "dre_implied_tstage": dre_implied_tstage,
+        "dre_context": dre_context.to_dict(),
+        "psad_context": psad_context.to_dict(),
+        "mri_context": mri_context.to_dict(),
         # EPIC 9 Group F (GAP-12) — Propagación de la corrección PSA y los
         # confundentes al bundle clínico para que profile_compass y copilots
         # puedan surface el delta al usuario.
@@ -305,3 +298,12 @@ def classify_diagnostic_workup(payload: dict) -> dict:
 
 def _is_true(value) -> bool:
     return str(value).lower() in {"1", "true", "yes", "si", "on"}
+
+
+def _safe_float(value, *, default: float = 0.0) -> float:
+    if value is None or value == "":
+        return default
+    try:
+        return float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return default

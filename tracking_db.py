@@ -18,11 +18,6 @@ from prostanet.domains.patient_tracking.psma_imaging import (
 )
 from prostanet.domains.patient_tracking.closure_window_registry import enrich_window_with_registry
 from prostanet.domains.patient_tracking.therapy_catalog import normalize_regimen_code, regimen_label
-from prostanet.shared.clinical_fact_policies import certainty_rank, compute_freshness_status
-from prostanet.shared.clinical_fact_registry import extract_canonical_fact_candidates
-from prostanet.shared.converters import safe_bool
-from prostanet.shared.gleason_profile import apply_gleason_profile, normalize_gleason_profile
-from prostanet.shared.metastatic_profile import build_metastatic_profile, derive_legacy_metastasis
 
 DEFAULT_DB_PATH = "prostanet_tracking.db"
 DB_PATH = os.environ.get("PROSTANET_DB_PATH", DEFAULT_DB_PATH)
@@ -34,6 +29,57 @@ SQLITE_CONNECT_TIMEOUT_SEC = 30.0
 SQLITE_BUSY_TIMEOUT_MS = 30000
 SQLITE_WRITE_JOURNAL_MODE = "WAL"
 SQLITE_WRITE_SYNCHRONOUS = "NORMAL"
+
+
+# Keep tracking_db importable even when optional clinical helper modules are
+# stored as macOS/iCloud dataless files. The concrete logic is preserved and
+# loaded only by the workflows that actually need it.
+def certainty_rank(value):
+    from prostanet.shared.clinical_fact_policies import certainty_rank as _certainty_rank
+
+    return _certainty_rank(value)
+
+
+def compute_freshness_status(*args, **kwargs):
+    from prostanet.shared.clinical_fact_policies import compute_freshness_status as _compute_freshness_status
+
+    return _compute_freshness_status(*args, **kwargs)
+
+
+def extract_canonical_fact_candidates(*args, **kwargs):
+    from prostanet.shared.clinical_fact_registry import extract_canonical_fact_candidates as _extract_candidates
+
+    return _extract_candidates(*args, **kwargs)
+
+
+def safe_bool(*args, **kwargs):
+    from prostanet.shared.converters import safe_bool as _safe_bool
+
+    return _safe_bool(*args, **kwargs)
+
+
+def apply_gleason_profile(*args, **kwargs):
+    from prostanet.shared.gleason_profile import apply_gleason_profile as _apply_gleason_profile
+
+    return _apply_gleason_profile(*args, **kwargs)
+
+
+def normalize_gleason_profile(*args, **kwargs):
+    from prostanet.shared.gleason_profile import normalize_gleason_profile as _normalize_gleason_profile
+
+    return _normalize_gleason_profile(*args, **kwargs)
+
+
+def build_metastatic_profile(*args, **kwargs):
+    from prostanet.shared.metastatic_profile import build_metastatic_profile as _build_metastatic_profile
+
+    return _build_metastatic_profile(*args, **kwargs)
+
+
+def derive_legacy_metastasis(*args, **kwargs):
+    from prostanet.shared.metastatic_profile import derive_legacy_metastasis as _derive_legacy_metastasis
+
+    return _derive_legacy_metastasis(*args, **kwargs)
 
 
 _RUNTIME_DERIVED_RECORD_KEYS = {
@@ -1744,6 +1790,133 @@ def _json_blob(value):
     return json.dumps(value, ensure_ascii=False)
 
 
+def _seed_medication_price_catalog(cursor):
+    """Seed source-traceable prostate-cancer drug prices used for estimates.
+
+    The catalog is deliberately source-labelled and updateable. Estimates are
+    operational accounting aids, not prescribing rules.
+    """
+    rows = [
+        {
+            "price_key": "ABIRATERONE_500MG_60_BIRMEX_2025_FASE5",
+            "agent_code": "ABIRATERONE",
+            "agent_name": "Abiraterona",
+            "regimen_code": "ADT_ABIRATERONE",
+            "package_label": "Abiraterona 500 mg envase con 60 tabletas",
+            "unit_label": "envase mensual",
+            "unit_price_mxn": 9750.00,
+            "package_quantity": 60,
+            "source_label": "BIRMEX compra consolidada complementaria fase 5 2025",
+            "source_url": "https://reposipot.imss.gob.mx/medicamentos/CABCS/2025/Adjudicaciones/AA-12-NEF-012NEF001-I-12-2025/NLA031212L38.pdf",
+            "source_date": "2025-01-22",
+            "effective_start": "2025-01-22",
+            "confidence": "official_public_contract",
+            "notes": "Precio unitario por envase; usar como costo operativo estimado por ciclo mensual.",
+        },
+        {
+            "price_key": "ENZALUTAMIDE_40MG_120_SSA_2024",
+            "agent_code": "ENZALUTAMIDE",
+            "agent_name": "Enzalutamida",
+            "regimen_code": "ADT_ENZALUTAMIDE",
+            "package_label": "Enzalutamida 40 mg envase con 120 cápsulas",
+            "unit_label": "envase mensual",
+            "unit_price_mxn": 40673.13,
+            "package_quantity": 120,
+            "source_label": "Secretaría de Salud adquisición consolidada ejercicio 2024",
+            "source_url": "https://reposipot.imss.gob.mx/curacion/CABCS/2023/Adjudicaciones/AA-12-512-012000991-T-176-2023/AFM130819R31.pdf",
+            "source_date": "2023-12-01",
+            "effective_start": "2024-01-01",
+            "confidence": "official_public_contract",
+            "notes": "Precio unitario sin IVA por envase; conservar trazabilidad y actualizar al importar adjudicación 2025-2026.",
+        },
+        {
+            "price_key": "APALUTAMIDE_60MG_120_IMSS_CDMX_SUR_2024",
+            "agent_code": "APALUTAMIDE",
+            "agent_name": "Apalutamida",
+            "regimen_code": "ADT_APALUTAMIDE",
+            "package_label": "Apalutamida 60 mg envase con 120 tabletas",
+            "unit_label": "envase mensual",
+            "unit_price_mxn": 41225.00,
+            "package_quantity": 120,
+            "source_label": "IMSS OOAD CDMX Sur acta de asignación AA-50-GYR-050GYR025-I-141-2024",
+            "source_url": "https://reposipot.imss.gob.mx/OOAD/CDMX-SUR/AA-50-GYR-050GYR025-I-141-2024/ACTA%20DE%20ASIGNACION%20AA%20I%20141%202024.pdf",
+            "source_date": "2024",
+            "effective_start": "2024-01-01",
+            "confidence": "official_public_contract",
+            "notes": "Precio unitario por envase identificado en repositorio público IMSS; requiere refresco contra compra local vigente.",
+        },
+        {
+            "price_key": "DAROLUTAMIDE_300MG_120_IMSS_BCS_2024",
+            "agent_code": "DAROLUTAMIDE",
+            "agent_name": "Darolutamida",
+            "regimen_code": "ADT_DAROLUTAMIDE",
+            "package_label": "Darolutamida 300 mg caja con 120 tabletas",
+            "unit_label": "caja mensual",
+            "unit_price_mxn": 47500.00,
+            "package_quantity": 120,
+            "source_label": "IMSS OOAD Baja California Sur contrato AA-50-GYR-050GYR030-N-172-2024",
+            "source_url": "https://reposipot.imss.gob.mx/OOAD/BAJACALIFORNIASUR/03_TRIMESTRE_2024/AA-50-GYR-050GYR030-N-172-2024/%28PUBLICO%29%20D4P0665%20FARMACEUTICOS%20MAYPO%20SA%20DE%20CV%20C-00046032.pdf",
+            "source_date": "2024-06-05",
+            "effective_start": "2024-06-05",
+            "confidence": "official_public_contract",
+            "notes": "Precio unitario por caja; usar como estimación operativa hasta importar adjudicación institucional más reciente.",
+        },
+        {
+            "price_key": "DOCETAXEL_80MG_VIAL_BIRMEX_2025_FASE5",
+            "agent_code": "DOCETAXEL",
+            "agent_name": "Docetaxel",
+            "regimen_code": "DOCETAXEL",
+            "package_label": "Docetaxel 80 mg frasco ámpula con 4 ml",
+            "unit_label": "frasco ámpula 80 mg",
+            "unit_price_mxn": 300.43,
+            "package_quantity": 1,
+            "source_label": "BIRMEX compra consolidada complementaria fase 5 2025",
+            "source_url": "https://reposipot.imss.gob.mx/medicamentos/CABCS/2025/Adjudicaciones/AA-12-NEF-012NEF001-I-17-2025/CPH1512075J2.pdf",
+            "source_date": "2025",
+            "effective_start": "2025-01-01",
+            "confidence": "official_public_contract",
+            "notes": "Precio por frasco de 80 mg; estimación farmacológica trazable, no ajustada por superficie corporal ni merma de viales.",
+        },
+    ]
+    for row in rows:
+        cursor.execute(
+            """
+            INSERT INTO medication_price_catalog (
+                price_key, agent_code, agent_name, regimen_code, package_label,
+                unit_label, unit_price_mxn, package_quantity, source_label,
+                source_url, source_date, effective_start, confidence, active, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            ON CONFLICT(price_key) DO UPDATE SET
+                unit_price_mxn = excluded.unit_price_mxn,
+                package_label = excluded.package_label,
+                unit_label = excluded.unit_label,
+                source_label = excluded.source_label,
+                source_url = excluded.source_url,
+                source_date = excluded.source_date,
+                effective_start = excluded.effective_start,
+                confidence = excluded.confidence,
+                active = 1,
+                notes = excluded.notes
+            """,
+            (
+                row["price_key"],
+                row["agent_code"],
+                row["agent_name"],
+                row["regimen_code"],
+                row["package_label"],
+                row["unit_label"],
+                row["unit_price_mxn"],
+                row["package_quantity"],
+                row["source_label"],
+                row["source_url"],
+                row["source_date"],
+                row["effective_start"],
+                row["confidence"],
+                row["notes"],
+            ),
+        )
+
+
 _GENERIC_RECOMMENDATION_FAMILIES = {
     "",
     "observation_family",
@@ -1930,6 +2103,20 @@ def _hydrate_treatment_rows(rows):
         item["drug_scheme_label"] = hydrated_label or regimen_label(item.get("drug_scheme"))
         treatments.append(item)
     return treatments
+
+
+def _hydrate_treatment_dose_rows(rows):
+    doses = []
+    for row in rows:
+        item = dict(row)
+        item["cost_source"] = _parse_json_blob(item.pop("cost_source_json", None), {})
+        item["payload"] = _parse_json_blob(item.pop("payload_json", None), {})
+        doses.append(item)
+    return doses
+
+
+def _hydrate_medication_price_rows(rows):
+    return [dict(row) for row in rows]
 
 
 def _hydrate_agenda_rows(rows):
@@ -2228,7 +2415,17 @@ def _hydrate_signal_rows(rows):
     signals = []
     for row in rows:
         item = dict(row)
-        item["signals"] = _parse_json_blob(item.pop("signals_json", None), [])
+        signal_payload = _parse_json_blob(item.pop("signals_json", None), {})
+        if isinstance(signal_payload, dict):
+            # Newer snapshots store the full runtime signal read-model in
+            # signals_json so profile reads can avoid recomputing the whole
+            # longitudinal engine. Merge defensively, keeping explicit SQL
+            # columns below as the most recent source for scalar fields.
+            for key, value in signal_payload.items():
+                item.setdefault(key, value)
+            item["signals"] = signal_payload
+        else:
+            item["signals"] = signal_payload if isinstance(signal_payload, list) else []
         item["critical_missing"] = _parse_json_blob(item.pop("critical_missing_json", None), [])
         item["awaiting_review"] = _parse_json_blob(item.pop("awaiting_review_json", None), [])
         item["active_safety"] = _parse_json_blob(item.pop("active_safety_json", None), [])
@@ -2730,6 +2927,590 @@ def _save_survival_status_update(cursor, patient_id, data, *, source_type="stage
     )
     _upsert_patient_identity_survival_fields(cursor, patient_id, data)
     return cursor.lastrowid
+
+
+def _ensure_clinical_baseline_row(cursor, patient_id):
+    cursor.execute(
+        "SELECT id FROM clinical_baseline WHERE patient_id = ? ORDER BY id DESC LIMIT 1",
+        (patient_id,),
+    )
+    row = cursor.fetchone()
+    if row:
+        return row["id"] if isinstance(row, sqlite3.Row) else row[0]
+    cursor.execute("INSERT INTO clinical_baseline (patient_id) VALUES (?)", (patient_id,))
+    return cursor.lastrowid
+
+
+def _normalize_comorbidity_capture(value):
+    if value in (None, ""):
+        return None
+    if isinstance(value, dict):
+        return {str(k): v for k, v in value.items() if _is_present(v)}
+    if isinstance(value, list):
+        items = [str(item).strip() for item in value if str(item or "").strip()]
+    else:
+        items = [
+            item.strip()
+            for item in str(value).replace("\n", ",").replace(";", ",").split(",")
+            if item.strip()
+        ]
+    if len(items) == 1 and items[0].lower() in {
+        "ninguna",
+        "ninguno",
+        "sin comorbilidades",
+        "no comorbidities",
+        "none",
+    }:
+        return {"none_documented": False}
+    normalized = {}
+    for idx, item in enumerate(items, start=1):
+        key = re.sub(r"[^a-z0-9]+", "_", item.lower()).strip("_") or f"comorbidity_{idx}"
+        normalized[key] = item
+    return normalized
+
+
+def append_epidemiology_readiness_capture(nss_or_id, data):
+    """Persist directed epidemiology-readiness gaps into structured sources.
+
+    This is intentionally narrow: it closes registry data-quality gaps without
+    ordering treatment, training models, or rewriting historical decisions.
+    """
+    payload = dict(data or {})
+    gap_key = str(payload.get("gap_key") or "").strip()
+    decision_field = str(payload.get("decision_field") or "").strip()
+    if not gap_key:
+        gap_key = {
+            "vital_status": "survival_status",
+            "volume_disease": "metastatic_context",
+            "metastasis_site": "metastatic_context",
+            "comorbidities": "comorbidity",
+            "comorbidity": "comorbidity",
+        }.get(decision_field, "")
+    if gap_key not in {"survival_status", "metastatic_context", "comorbidity"}:
+        return {"success": False, "error": "unsupported_epidemiology_gap"}
+
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return {"success": False, "error": "patient_not_found"}
+        patient_id = int(identity["id"] if isinstance(identity, sqlite3.Row) else identity[0])
+        event_date = (
+            payload.get("capture_date")
+            or payload.get("last_contact_date")
+            or payload.get("metastasis_assessment_date")
+            or utc_today()
+        )
+        writes = []
+
+        if gap_key == "survival_status":
+            survival_payload = {
+                field: payload.get(field)
+                for field in (
+                    "vital_status",
+                    "date_of_death",
+                    "cause_of_death",
+                    "last_contact_date",
+                    "last_contact_status",
+                    "death_source",
+                )
+                if _is_present(payload.get(field))
+            }
+            if not survival_payload:
+                return {"success": False, "error": "survival_status_payload_required"}
+            if not survival_payload.get("last_contact_date"):
+                survival_payload["last_contact_date"] = event_date
+            if not survival_payload.get("last_contact_status"):
+                survival_payload["last_contact_status"] = "document_review"
+            if not survival_payload.get("vital_status"):
+                survival_payload["vital_status"] = "alive"
+            record_id = _save_survival_status_update(
+                cursor,
+                patient_id,
+                survival_payload,
+                source_type="epidemiology_registry_capture",
+            )
+            writes.append({"target": "survival_status_records", "record_id": record_id})
+            writes.append({"target": "patient_identity", "fields": sorted(survival_payload)})
+
+        elif gap_key == "metastatic_context":
+            update = {
+                "metastasis_site": payload.get("metastasis_site"),
+                "metastasis_count": _safe_int(payload.get("metastasis_count"), None),
+                "m_substage_resolved": payload.get("m_substage_resolved") or payload.get("metastasis_site"),
+                "volume_disease": payload.get("volume_disease") or payload.get("metastatic_volume"),
+                "metastasis_assessment_date": payload.get("metastasis_assessment_date") or event_date,
+                "metastasis_document_source": payload.get("metastasis_document_source") or "epidemiology_registry_capture",
+            }
+            profile = payload.get("metastatic_profile")
+            if not isinstance(profile, dict):
+                profile = {
+                    key: payload.get(key)
+                    for key in (
+                        "metastasis_site",
+                        "metastasis_count",
+                        "m_substage_resolved",
+                        "volume_disease",
+                        "metastasis_assessment_date",
+                    )
+                    if _is_present(payload.get(key))
+                }
+            if not any(_is_present(update.get(field)) for field in ("metastasis_site", "volume_disease", "m_substage_resolved")):
+                return {"success": False, "error": "metastatic_context_payload_required"}
+            baseline_id = _ensure_clinical_baseline_row(cursor, patient_id)
+            cursor.execute(
+                """
+                UPDATE clinical_baseline
+                SET metastasis_site = COALESCE(?, metastasis_site),
+                    metastasis_count = COALESCE(?, metastasis_count),
+                    m_substage_resolved = COALESCE(?, m_substage_resolved),
+                    metastatic_profile_json = COALESCE(?, metastatic_profile_json),
+                    metastasis_assessment_date = COALESCE(?, metastasis_assessment_date),
+                    metastasis_document_source = COALESCE(?, metastasis_document_source),
+                    volume_disease = COALESCE(?, volume_disease)
+                WHERE id = ?
+                """,
+                (
+                    update["metastasis_site"],
+                    update["metastasis_count"],
+                    update["m_substage_resolved"],
+                    _json_blob(profile) if profile else None,
+                    update["metastasis_assessment_date"],
+                    update["metastasis_document_source"],
+                    update["volume_disease"],
+                    baseline_id,
+                ),
+            )
+            writes.append({"target": "clinical_baseline", "record_id": baseline_id, "fields": sorted(update)})
+
+        elif gap_key == "comorbidity":
+            comorbidities = _normalize_comorbidity_capture(
+                payload.get("comorbidities")
+                or payload.get("comorbidities_text")
+                or payload.get("comorbidity_list")
+                or payload.get("comorbidity")
+            )
+            if comorbidities is None:
+                return {"success": False, "error": "comorbidity_payload_required"}
+            baseline_id = _ensure_clinical_baseline_row(cursor, patient_id)
+            cursor.execute(
+                """
+                UPDATE clinical_baseline
+                SET comorbidities_json = ?
+                WHERE id = ?
+                """,
+                (_json_blob(comorbidities), baseline_id),
+            )
+            writes.append({"target": "clinical_baseline", "record_id": baseline_id, "fields": ["comorbidities_json"]})
+
+        event_payload = {
+            "gap_key": gap_key,
+            "decision_field": decision_field,
+            "capture_payload": payload,
+            "structured_writes": writes,
+            "source_surface": "longitudinal_capture_v2",
+            "source_clinical_facts_mutated": True,
+            "external_order_created": False,
+            "model_trained": False,
+        }
+        cursor.execute(
+            """
+            INSERT INTO patient_events (
+                patient_id, event_type, event_date, state_context, management_track,
+                source_type, status, payload_json, mcode_focus_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                patient_id,
+                "epidemiology_readiness_gap_captured",
+                str(event_date)[:10],
+                "population_epidemiology_registry",
+                "treatment_value_registry",
+                "longitudinal_capture_v2",
+                "captured_structured",
+                _json_blob(event_payload),
+                _json_blob({}),
+            ),
+        )
+        event_id = cursor.lastrowid
+        conn.commit()
+        return {
+            "success": True,
+            "patient_id": patient_id,
+            "gap_key": gap_key,
+            "decision_field": decision_field,
+            "event_id": event_id,
+            "structured_writes": writes,
+            "source_clinical_facts_mutated": True,
+            "external_order_created": False,
+            "model_trained": False,
+        }
+    except Exception as exc:
+        conn.rollback()
+        logger.exception("Error appending epidemiology readiness capture: %s", exc)
+        return {"success": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
+def _research_payload_for_hash(value):
+    if isinstance(value, dict):
+        return {
+            key: _research_payload_for_hash(item)
+            for key, item in value.items()
+            if key not in {"generated_at", "computed_at"}
+        }
+    if isinstance(value, list):
+        return [_research_payload_for_hash(item) for item in value]
+    return value
+
+
+def _canonical_research_payload_json(payload):
+    stable_payload = _research_payload_for_hash(payload or {})
+    return json.dumps(stable_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _ensure_research_cohort_freeze_table(cursor):
+    cursor.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS research_cohort_freezes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            freeze_key TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            registry_type TEXT DEFAULT 'treatment_value_registry_v2',
+            cohort_label TEXT,
+            filters_json TEXT,
+            weeks_json TEXT,
+            real_only INTEGER DEFAULT 0,
+            trace_row_count INTEGER DEFAULT 0,
+            patient_count_primary_window INTEGER DEFAULT 0,
+            readiness_json TEXT,
+            methods_json TEXT,
+            bias_and_completeness_json TEXT,
+            data_dictionary_json TEXT,
+            dataset_json TEXT,
+            registry_summary_json TEXT,
+            suggested_questions_json TEXT,
+            payload_json TEXT NOT NULL,
+            payload_sha256 TEXT NOT NULL,
+            created_by TEXT DEFAULT 'clinician',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status TEXT DEFAULT 'frozen',
+            audit_note TEXT
+        )
+        '''
+    )
+
+
+def _research_cohort_freeze_from_row(row, *, include_payload=False):
+    if not row:
+        return None
+    item = dict(row)
+    hydrated = {
+        "id": item.get("id"),
+        "freeze_key": item.get("freeze_key"),
+        "title": item.get("title"),
+        "registry_type": item.get("registry_type"),
+        "cohort_label": item.get("cohort_label"),
+        "filters": _parse_json_blob(item.get("filters_json"), {}),
+        "weeks": _parse_json_blob(item.get("weeks_json"), []),
+        "real_only": bool(item.get("real_only")),
+        "trace_row_count": item.get("trace_row_count") or 0,
+        "patient_count_primary_window": item.get("patient_count_primary_window") or 0,
+        "readiness": _parse_json_blob(item.get("readiness_json"), {}),
+        "methods": _parse_json_blob(item.get("methods_json"), {}),
+        "bias_and_completeness": _parse_json_blob(item.get("bias_and_completeness_json"), {}),
+        "data_dictionary": _parse_json_blob(item.get("data_dictionary_json"), []),
+        "dataset": _parse_json_blob(item.get("dataset_json"), {}),
+        "registry_summary": _parse_json_blob(item.get("registry_summary_json"), {}),
+        "suggested_research_questions": _parse_json_blob(item.get("suggested_questions_json"), []),
+        "payload_sha256": item.get("payload_sha256"),
+        "created_by": item.get("created_by"),
+        "created_at": item.get("created_at"),
+        "status": item.get("status"),
+        "audit_note": item.get("audit_note"),
+    }
+    if include_payload:
+        hydrated["payload"] = _parse_json_blob(item.get("payload_json"), {})
+    return hydrated
+
+
+def freeze_treatment_value_research_pack(pack, *, created_by="clinician", title=None, audit_note=None):
+    """Persist a reproducible V2 research pack snapshot without mutating facts."""
+    if not isinstance(pack, dict) or pack.get("version") != "treatment_value_research_pack_v2":
+        return {"success": False, "error": "treatment_value_research_pack_v2_required"}
+    canonical_payload = _canonical_research_payload_json(pack)
+    payload_sha256 = hashlib.sha256(canonical_payload.encode("utf-8")).hexdigest()
+    freeze_key = f"tvpack_{payload_sha256[:12]}"
+    cohort = pack.get("cohort_definition") or {}
+    dataset = pack.get("dataset") or {}
+    readiness = pack.get("readiness") or {}
+    methods = pack.get("methods") or {}
+    bias = pack.get("bias_and_completeness") or {}
+    registry_summary = pack.get("registry_summary") or {}
+    freeze_title = (title or pack.get("title") or f"Research Pack V2 {freeze_key}").strip()
+    created_by_value = (created_by or "clinician").strip() or "clinician"
+    audit_note_value = audit_note or (
+        "Cohorte congelada desde Cohort Builder V2; no muta hechos clinicos, no crea ordenes externas y no entrena modelos."
+    )
+
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        _ensure_research_cohort_freeze_table(cursor)
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO research_cohort_freezes (
+                freeze_key, title, registry_type, cohort_label, filters_json, weeks_json,
+                real_only, trace_row_count, patient_count_primary_window, readiness_json,
+                methods_json, bias_and_completeness_json, data_dictionary_json, dataset_json,
+                registry_summary_json, suggested_questions_json, payload_json, payload_sha256,
+                created_by, status, audit_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                freeze_key,
+                freeze_title,
+                "treatment_value_registry_v2",
+                cohort.get("label"),
+                _json_blob(cohort.get("active_filters") or {}),
+                _json_blob(cohort.get("weeks") or []),
+                1 if cohort.get("real_only") else 0,
+                int(dataset.get("row_count") or len(dataset.get("rows") or [])),
+                int(cohort.get("patient_count_primary_window") or 0),
+                _json_blob(readiness),
+                _json_blob(methods),
+                _json_blob(bias),
+                _json_blob(pack.get("data_dictionary") or []),
+                _json_blob(dataset),
+                _json_blob(registry_summary),
+                _json_blob(pack.get("suggested_research_questions") or []),
+                _json_blob(pack),
+                payload_sha256,
+                created_by_value,
+                "frozen",
+                audit_note_value,
+            ),
+        )
+        created = cursor.rowcount == 1
+        cursor.execute(
+            "SELECT * FROM research_cohort_freezes WHERE freeze_key = ?",
+            (freeze_key,),
+        )
+        row = cursor.fetchone()
+        conn.commit()
+        freeze = _research_cohort_freeze_from_row(row, include_payload=True)
+        return {
+            "success": True,
+            "created": bool(created),
+            "freeze": freeze,
+            "freeze_key": freeze_key,
+            "payload_sha256": payload_sha256,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        }
+    except Exception as exc:
+        conn.rollback()
+        logger.exception("Error freezing treatment value research pack: %s", exc)
+        return {"success": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
+def list_research_cohort_freezes(*, limit=25):
+    conn = _connect()
+    cursor = conn.cursor()
+    try:
+        _ensure_research_cohort_freeze_table(cursor)
+        safe_limit = max(1, min(int(limit or 25), 100))
+        cursor.execute(
+            """
+            SELECT *
+            FROM research_cohort_freezes
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+        return [_research_cohort_freeze_from_row(row, include_payload=False) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_research_cohort_freeze(freeze_key):
+    conn = _connect()
+    cursor = conn.cursor()
+    try:
+        _ensure_research_cohort_freeze_table(cursor)
+        cursor.execute(
+            "SELECT * FROM research_cohort_freezes WHERE freeze_key = ?",
+            (str(freeze_key or "").strip(),),
+        )
+        return _research_cohort_freeze_from_row(cursor.fetchone(), include_payload=True)
+    finally:
+        conn.close()
+
+
+def _ensure_pilot_operational_evidence_table(cursor):
+    cursor.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS pilot_operational_evidence (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            evidence_key TEXT NOT NULL UNIQUE,
+            gate_key TEXT NOT NULL,
+            evidence_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            evidence_status TEXT DEFAULT 'draft',
+            evidence_date DATE,
+            expires_at DATE,
+            verified_by TEXT DEFAULT 'clinician',
+            reviewer_role TEXT,
+            evidence_ref TEXT,
+            evidence_hash TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            payload_sha256 TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            audit_note TEXT
+        )
+        '''
+    )
+
+
+def _pilot_operational_evidence_from_row(row, *, include_payload=True):
+    if not row:
+        return None
+    item = dict(row)
+    payload = _parse_json_blob(item.get("payload_json"), {}) if include_payload else {}
+    hydrated = {
+        "id": item.get("id"),
+        "evidence_key": item.get("evidence_key"),
+        "gate_key": item.get("gate_key"),
+        "evidence_type": item.get("evidence_type"),
+        "title": item.get("title"),
+        "evidence_status": item.get("evidence_status"),
+        "evidence_date": item.get("evidence_date"),
+        "expires_at": item.get("expires_at"),
+        "verified_by": item.get("verified_by"),
+        "reviewer_role": item.get("reviewer_role"),
+        "evidence_ref": item.get("evidence_ref"),
+        "evidence_hash": item.get("evidence_hash"),
+        "payload_sha256": item.get("payload_sha256"),
+        "created_at": item.get("created_at"),
+        "updated_at": item.get("updated_at"),
+        "audit_note": item.get("audit_note"),
+    }
+    if include_payload:
+        hydrated["payload"] = payload
+    return hydrated
+
+
+def save_pilot_operational_evidence(evidence):
+    """Persist a non-PHI operational pilot evidence attestation."""
+    if not isinstance(evidence, dict):
+        return {"success": False, "error": "evidence_required"}
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        _ensure_pilot_operational_evidence_table(cursor)
+        cursor.execute(
+            """
+            INSERT INTO pilot_operational_evidence (
+                evidence_key, gate_key, evidence_type, title, evidence_status,
+                evidence_date, expires_at, verified_by, reviewer_role, evidence_ref,
+                evidence_hash, payload_json, payload_sha256, audit_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(evidence_key) DO UPDATE SET
+                gate_key=excluded.gate_key,
+                evidence_type=excluded.evidence_type,
+                title=excluded.title,
+                evidence_status=excluded.evidence_status,
+                evidence_date=excluded.evidence_date,
+                expires_at=excluded.expires_at,
+                verified_by=excluded.verified_by,
+                reviewer_role=excluded.reviewer_role,
+                evidence_ref=excluded.evidence_ref,
+                evidence_hash=excluded.evidence_hash,
+                payload_json=excluded.payload_json,
+                payload_sha256=excluded.payload_sha256,
+                audit_note=excluded.audit_note,
+                updated_at=CURRENT_TIMESTAMP
+            """,
+            (
+                evidence.get("evidence_key"),
+                evidence.get("gate_key"),
+                evidence.get("evidence_type"),
+                evidence.get("title"),
+                evidence.get("evidence_status"),
+                evidence.get("evidence_date"),
+                evidence.get("expires_at"),
+                evidence.get("verified_by"),
+                evidence.get("reviewer_role"),
+                evidence.get("evidence_ref"),
+                evidence.get("evidence_hash"),
+                _json_blob(evidence.get("payload") or {}),
+                evidence.get("payload_sha256"),
+                evidence.get("audit_note"),
+            ),
+        )
+        cursor.execute(
+            "SELECT * FROM pilot_operational_evidence WHERE evidence_key = ?",
+            (evidence.get("evidence_key"),),
+        )
+        row = cursor.fetchone()
+        conn.commit()
+        return {
+            "success": True,
+            "evidence": _pilot_operational_evidence_from_row(row, include_payload=True),
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+            "external_transfer_performed": False,
+        }
+    except Exception as exc:
+        conn.rollback()
+        logger.exception("Error saving pilot operational evidence: %s", exc)
+        return {"success": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
+def list_pilot_operational_evidence(*, limit=100, gate_key=None, include_payload=True):
+    conn = _connect()
+    cursor = conn.cursor()
+    try:
+        _ensure_pilot_operational_evidence_table(cursor)
+        safe_limit = max(1, min(int(limit or 100), 500))
+        gate = str(gate_key or "").strip()
+        if gate:
+            cursor.execute(
+                """
+                SELECT *
+                FROM pilot_operational_evidence
+                WHERE gate_key = ?
+                ORDER BY evidence_date DESC, created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (gate, safe_limit),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT *
+                FROM pilot_operational_evidence
+                ORDER BY evidence_date DESC, created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (safe_limit,),
+            )
+        return [
+            _pilot_operational_evidence_from_row(row, include_payload=include_payload)
+            for row in cursor.fetchall()
+        ]
+    finally:
+        conn.close()
 
 
 def _save_survival_anchor_events(cursor, patient_id, data, *, source_type="stage_visit", source_record_id=None):
@@ -3563,6 +4344,53 @@ def init_tracking_db():
             c.execute(ddl)
         except sqlite3.OperationalError:
             pass
+
+    c.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS treatment_dose_administrations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL,
+            treatment_history_id INTEGER,
+            regimen_code TEXT NOT NULL,
+            dose_number_local INTEGER NOT NULL,
+            dose_number_global INTEGER,
+            dose_date DATE DEFAULT (DATE('now')),
+            unit_name TEXT,
+            administered_in_unit INTEGER DEFAULT 1,
+            referral_target TEXT,
+            estimated_cost_mxn REAL,
+            cost_source_json TEXT,
+            payload_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(patient_id) REFERENCES patient_identity(id),
+            FOREIGN KEY(treatment_history_id) REFERENCES treatment_history(id)
+        )
+        '''
+    )
+    c.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS medication_price_catalog (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            price_key TEXT NOT NULL UNIQUE,
+            agent_code TEXT NOT NULL,
+            agent_name TEXT NOT NULL,
+            regimen_code TEXT,
+            package_label TEXT,
+            unit_label TEXT,
+            unit_price_mxn REAL NOT NULL,
+            package_quantity REAL,
+            source_label TEXT,
+            source_url TEXT,
+            source_date DATE,
+            effective_start DATE,
+            confidence TEXT,
+            active INTEGER DEFAULT 1,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        '''
+    )
+    _seed_medication_price_catalog(c)
 
     # ── Legacy Table (Mantener compatibilidad) ───────────────────────────
     c.execute('''
@@ -4447,12 +5275,17 @@ def init_tracking_db():
             input_snapshot TEXT NOT NULL,
             result_snapshot TEXT NOT NULL,
             guideline_versions TEXT NOT NULL,
+            context_snapshot TEXT,
             status TEXT DEFAULT 'draft',
             patient_id INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(patient_id) REFERENCES patient_identity(id)
         )
     ''')
+    try:
+        c.execute("ALTER TABLE clinical_assessments ADD COLUMN context_snapshot TEXT")
+    except sqlite3.OperationalError:
+        pass
 
     c.execute('''
         CREATE TABLE IF NOT EXISTS patient_state_timeline (
@@ -4585,6 +5418,37 @@ def init_tracking_db():
         )
         '''
     )
+
+    c.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS research_cohort_freezes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            freeze_key TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            registry_type TEXT DEFAULT 'treatment_value_registry_v2',
+            cohort_label TEXT,
+            filters_json TEXT,
+            weeks_json TEXT,
+            real_only INTEGER DEFAULT 0,
+            trace_row_count INTEGER DEFAULT 0,
+            patient_count_primary_window INTEGER DEFAULT 0,
+            readiness_json TEXT,
+            methods_json TEXT,
+            bias_and_completeness_json TEXT,
+            data_dictionary_json TEXT,
+            dataset_json TEXT,
+            registry_summary_json TEXT,
+            suggested_questions_json TEXT,
+            payload_json TEXT NOT NULL,
+            payload_sha256 TEXT NOT NULL,
+            created_by TEXT DEFAULT 'clinician',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status TEXT DEFAULT 'frozen',
+            audit_note TEXT
+        )
+        '''
+    )
+    _ensure_pilot_operational_evidence_table(c)
 
     c.execute(
         '''
@@ -5091,8 +5955,12 @@ def init_tracking_db():
             psa50_response INTEGER,
             psa90_response INTEGER,
             actual_ecog INTEGER,
+            actual_ecog_date TEXT,
             baseline_ecog INTEGER,
+            baseline_ecog_date TEXT,
             ecog_change_from_baseline INTEGER,
+            ecog_offset_days INTEGER,
+            ecog_evidence_quality TEXT,
             window_offset_days INTEGER,
             evidence_quality TEXT,
             computed_at TEXT NOT NULL,
@@ -5107,6 +5975,16 @@ def init_tracking_db():
         ON arpi_response_windows(regimen_code, target_weeks)
         '''
     )
+    for ddl in (
+        "ALTER TABLE arpi_response_windows ADD COLUMN actual_ecog_date TEXT",
+        "ALTER TABLE arpi_response_windows ADD COLUMN baseline_ecog_date TEXT",
+        "ALTER TABLE arpi_response_windows ADD COLUMN ecog_offset_days INTEGER",
+        "ALTER TABLE arpi_response_windows ADD COLUMN ecog_evidence_quality TEXT",
+    ):
+        try:
+            c.execute(ddl)
+        except sqlite3.OperationalError:
+            pass
     c.execute(
         '''
         CREATE TABLE IF NOT EXISTS patient_fact_conflicts (
@@ -6278,7 +7156,7 @@ def _backfill_normalized_tracking_domains():
     conn.close()
 
 
-def create_clinical_assessment_draft(module_id, state, input_snapshot, result_snapshot, guideline_versions):
+def create_clinical_assessment_draft(module_id, state, input_snapshot, result_snapshot, guideline_versions, context_snapshot=None):
     conn = None
     try:
         conn = _connect(write=True)
@@ -6286,8 +7164,8 @@ def create_clinical_assessment_draft(module_id, state, input_snapshot, result_sn
         c.execute(
             '''
             INSERT INTO clinical_assessments (
-                module_id, state, input_snapshot, result_snapshot, guideline_versions, status
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                module_id, state, input_snapshot, result_snapshot, guideline_versions, context_snapshot, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             ''',
             (
                 module_id,
@@ -6295,6 +7173,7 @@ def create_clinical_assessment_draft(module_id, state, input_snapshot, result_sn
                 json.dumps(input_snapshot, ensure_ascii=False),
                 json.dumps(result_snapshot, ensure_ascii=False),
                 json.dumps(guideline_versions, ensure_ascii=False),
+                json.dumps(context_snapshot or {}, ensure_ascii=False),
                 "draft",
             ),
         )
@@ -6322,6 +7201,7 @@ def get_clinical_assessment(assessment_id):
         assessment["input_snapshot"] = _parse_json_blob(assessment.get("input_snapshot"), {})
         assessment["result_snapshot"] = _parse_json_blob(assessment.get("result_snapshot"), {})
         assessment["guideline_versions"] = _parse_json_blob(assessment.get("guideline_versions"), {})
+        assessment["context_snapshot"] = _parse_json_blob(assessment.get("context_snapshot"), {})
         return assessment
     except Exception as e:
         logger.error(f"Error getting clinical assessment: {e}")
@@ -6436,6 +7316,7 @@ def _fetch_latest_clinical_assessment(cursor, patient_id):
     assessment["input_snapshot"] = _parse_json_blob(assessment.get("input_snapshot"), {})
     assessment["result_snapshot"] = _parse_json_blob(assessment.get("result_snapshot"), {})
     assessment["guideline_versions"] = _parse_json_blob(assessment.get("guideline_versions"), {})
+    assessment["context_snapshot"] = _parse_json_blob(assessment.get("context_snapshot"), {})
     return assessment
 
 def save_patient_result(patient_data, ml_result, scores, summary):
@@ -7305,11 +8186,12 @@ def append_biomarker_longitudinal(nss_or_id, biomarker_type, sample_date,
         # llega un nuevo biomarker (PSA, testosterona, ALP, LDH, AlkPhos).
         # Pre-EPIC31: PSA nuevo via /api/longitudinal/append no invalidaba el
         # cache → forecast desactualizado hasta refresh manual del clínico.
-        try:
-            from prostanet.presentation.v2_adapters import invalidate_profile_view_cache
-            invalidate_profile_view_cache(patient_id, reason=f"biomarker_appended:{biomarker_upper}")
-        except Exception:
-            pass  # cache helper opcional, no romper write path
+        if "PYTEST_CURRENT_TEST" not in os.environ and os.environ.get("PROSTANET_DATALLESS_SAFE_START") != "1":
+            try:
+                from prostanet.presentation.v2_adapters import invalidate_profile_view_cache
+                invalidate_profile_view_cache(patient_id, reason=f"biomarker_appended:{biomarker_upper}")
+            except Exception:
+                pass  # cache helper opcional, no romper write path
         return {"success": True, "appended_id": cursor.lastrowid,
                 "source": source, "biomarker_type": biomarker_upper}
     finally:
@@ -7452,6 +8334,15 @@ def append_treatment_line_update(nss_or_id, payload):
             "current_treatment": regimen_label(scheme),
             "current_adt_context": data.get("current_adt_context"),
             "castrate_testosterone_status": data.get("castrate_testosterone_status"),
+            "doses_received_before_unit": _safe_int(data.get("doses_received_before_unit"), 0),
+            "local_doses_recorded_at_start": _safe_int(
+                data.get("local_doses_administered")
+                or data.get("doses_administered_in_unit")
+                or data.get("local_dose_count"),
+                0,
+            ),
+            "unit_name": data.get("unit_name") or data.get("treatment_unit") or "",
+            "referral_target": data.get("referral_target") or data.get("target_referral_unit") or "",
             "line_type": line_type.get("category"),
             "line_type_label": line_type.get("label"),
             "components_count": line_type.get("components_count"),
@@ -7497,6 +8388,10 @@ def append_treatment_line_update(nss_or_id, payload):
             "outcome": outcome,
             "start_date": start_date,
             "end_date": end_date,
+            "doses_received_before_unit": regimen_payload["doses_received_before_unit"],
+            "local_doses_recorded_at_start": regimen_payload["local_doses_recorded_at_start"],
+            "unit_name": regimen_payload["unit_name"],
+            "referral_target": regimen_payload["referral_target"],
             "previous_line_of_therapy_number": previous.get("line_of_therapy"),
             "previous_drug_scheme": previous.get("drug_scheme"),
             "decision": "Cambio de línea terapéutica confirmado para torre de APE por línea",
@@ -7521,6 +8416,339 @@ def append_treatment_line_update(nss_or_id, payload):
         "outcome": outcome,
         "start_date": start_date,
         "end_date": end_date,
+    }
+
+
+def get_medication_price_catalog(*, active_only=True):
+    conn = _connect()
+    try:
+        cursor = conn.cursor()
+        sql = "SELECT * FROM medication_price_catalog"
+        if active_only:
+            sql += " WHERE COALESCE(active, 1) = 1"
+        sql += " ORDER BY agent_name ASC, effective_start DESC, id DESC"
+        cursor.execute(sql)
+        return _hydrate_medication_price_rows(cursor.fetchall())
+    finally:
+        conn.close()
+
+
+def get_patient_treatment_course_summary(nss_or_id):
+    record = get_patient_full_record(nss_or_id, include_derivatives=False, include_ledger=False)
+    if not record:
+        return {"success": False, "error": "patient_not_found", "nss": nss_or_id}
+    try:
+        from prostanet.domains.patient_tracking.treatment_course_tracker import (
+            build_treatment_course_summary,
+        )
+
+        summary = build_treatment_course_summary(
+            record,
+            price_catalog_rows=record.get("medication_price_catalog") or get_medication_price_catalog(),
+        )
+    except Exception as exc:
+        return {"success": False, "error": "summary_failed", "detail": str(exc)}
+    return {"success": True, "nss": record.get("identity", {}).get("nss"), **summary}
+
+
+def start_or_update_treatment_course(nss_or_id, payload):
+    """Open a systemic treatment course and optionally import local dose count."""
+    data = dict(payload or {})
+    scheme = normalize_regimen_code(
+        data.get("regimen_code")
+        or data.get("drug_scheme")
+        or data.get("current_treatment")
+    )
+    if not _is_present(scheme):
+        return {"success": False, "error": "missing_regimen_code"}
+    line_number = _safe_int(data.get("line_of_therapy_number") or data.get("line_of_therapy"), 1)
+    start_date = str(data.get("start_date") or data.get("tx_start") or datetime.now().strftime("%Y-%m-%d"))[:10]
+    line_payload = {
+        **data,
+        "tx_line": line_number,
+        "tx_regimen": scheme,
+        "line_of_therapy_context": data.get("line_of_therapy_context") or data.get("tx_context") or "",
+        "tx_start": start_date,
+        "tx_status": data.get("outcome") or "Curso · activo",
+    }
+    line_result = append_treatment_line_update(nss_or_id, line_payload)
+    if not line_result.get("success") and line_result.get("error") == "duplicate":
+        conn = _connect()
+        try:
+            cursor = conn.cursor()
+            identity = _resolve_identity_row(cursor, nss_or_id)
+            if not identity:
+                return {"success": False, "error": "patient_not_found", "nss": nss_or_id}
+            cursor.execute(
+                """
+                SELECT id FROM treatment_history
+                WHERE patient_id = ? AND line_of_therapy = ? AND drug_scheme = ? AND start_date = ?
+                LIMIT 1
+                """,
+                (identity["id"], line_number, scheme, start_date),
+            )
+            row = cursor.fetchone()
+            line_result = {
+                "success": True,
+                "appended_id": row["id"] if row else line_result.get("existing_id"),
+                "drug_scheme": scheme,
+                "drug_scheme_label": regimen_label(scheme),
+                "line_of_therapy_number": line_number,
+                "start_date": start_date,
+                "duplicate_reused": True,
+            }
+        finally:
+            conn.close()
+    if not line_result.get("success"):
+        return line_result
+
+    existing_local_dose_count = 0
+    course_id = _safe_int(line_result.get("appended_id"), None)
+    if course_id:
+        conn = _connect()
+        try:
+            cursor = conn.cursor()
+            identity = _resolve_identity_row(cursor, nss_or_id)
+            if identity:
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) AS n
+                    FROM treatment_dose_administrations
+                    WHERE patient_id = ?
+                      AND treatment_history_id = ?
+                      AND COALESCE(administered_in_unit, 1) = 1
+                    """,
+                    (identity["id"], course_id),
+                )
+                row = cursor.fetchone()
+                existing_local_dose_count = _safe_int(row["n"] if row else 0, 0)
+        finally:
+            conn.close()
+
+    imported_local_count = _safe_int(
+        data.get("local_doses_administered")
+        or data.get("doses_administered_in_unit")
+        or data.get("local_dose_count"),
+        0,
+    )
+    dose_results = []
+    doses_to_import = max(imported_local_count - existing_local_dose_count, 0)
+    for _ in range(doses_to_import):
+        dose_results.append(
+            append_treatment_dose_administration(
+                nss_or_id,
+                {
+                    "treatment_history_id": line_result.get("appended_id"),
+                    "regimen_code": scheme,
+                    "dose_date": start_date,
+                    "unit_name": data.get("unit_name") or data.get("treatment_unit") or "",
+                    "referral_target": data.get("referral_target") or data.get("target_referral_unit") or "",
+                    "doses_received_before_unit": data.get("doses_received_before_unit") or 0,
+                    "imported_initial": True,
+                    "date_precision": "course_start_only",
+                },
+            )
+        )
+    summary = get_patient_treatment_course_summary(nss_or_id)
+    return {
+        "success": True,
+        "course": line_result,
+        "imported_local_dose_count": imported_local_count,
+        "existing_local_dose_count": existing_local_dose_count,
+        "local_doses_imported_now": doses_to_import,
+        "dose_results": dose_results,
+        "summary": summary,
+    }
+
+
+def append_treatment_dose_administration(nss_or_id, payload):
+    """Append one local dose/fill/cycle and emit 4th/6th-dose referral alerts."""
+    data = dict(payload or {})
+    conn = _connect(write=True)
+    cursor = conn.cursor()
+    try:
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return {"success": False, "error": "patient_not_found", "nss": nss_or_id}
+        patient_id = identity["id"]
+        treatment_history_id = _safe_int(data.get("treatment_history_id"), None)
+        treatment_row = None
+        if treatment_history_id:
+            cursor.execute(
+                "SELECT * FROM treatment_history WHERE id = ? AND patient_id = ?",
+                (treatment_history_id, patient_id),
+            )
+            treatment_row = cursor.fetchone()
+        if not treatment_row:
+            regimen = normalize_regimen_code(data.get("regimen_code") or data.get("drug_scheme"))
+            if regimen:
+                cursor.execute(
+                    """
+                    SELECT * FROM treatment_history
+                    WHERE patient_id = ? AND drug_scheme = ?
+                    ORDER BY CASE WHEN end_date IS NULL OR end_date = '' THEN 0 ELSE 1 END,
+                             start_date DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (patient_id, regimen),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT * FROM treatment_history
+                    WHERE patient_id = ?
+                    ORDER BY CASE WHEN end_date IS NULL OR end_date = '' THEN 0 ELSE 1 END,
+                             start_date DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (patient_id,),
+                )
+            treatment_row = cursor.fetchone()
+        if not treatment_row:
+            return {"success": False, "error": "treatment_course_not_found"}
+
+        treatment = dict(treatment_row)
+        treatment_history_id = treatment["id"]
+        regimen_code = normalize_regimen_code(data.get("regimen_code") or treatment.get("drug_scheme"))
+        regimen_json = _parse_json_blob(treatment.get("regimen_json"), {})
+        prior_external = _safe_int(
+            data.get("doses_received_before_unit")
+            or regimen_json.get("doses_received_before_unit"),
+            0,
+        )
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS n FROM treatment_dose_administrations
+            WHERE patient_id = ? AND treatment_history_id = ? AND COALESCE(administered_in_unit, 1) = 1
+            """,
+            (patient_id, treatment_history_id),
+        )
+        previous_local = int(cursor.fetchone()["n"] or 0)
+        dose_number_local = _safe_int(data.get("dose_number_local"), previous_local + 1)
+        dose_number_global = _safe_int(
+            data.get("dose_number_global"),
+            prior_external + dose_number_local,
+        )
+        dose_date = str(data.get("dose_date") or data.get("date") or datetime.now().strftime("%Y-%m-%d"))[:10]
+        unit_name = str(data.get("unit_name") or regimen_json.get("unit_name") or "Unidad actual").strip()
+        referral_target = str(data.get("referral_target") or regimen_json.get("referral_target") or "").strip()
+
+        try:
+            from prostanet.domains.patient_tracking.treatment_course_tracker import (
+                dose_alert_for_local_count,
+                estimate_regimen_cost,
+            )
+
+            cursor.execute(
+                "SELECT * FROM medication_price_catalog WHERE COALESCE(active, 1) = 1 ORDER BY agent_name ASC, effective_start DESC, id DESC"
+            )
+            price_rows = _hydrate_medication_price_rows(cursor.fetchall())
+            cost_estimate = estimate_regimen_cost(regimen_code, price_rows)
+            dose_alert = dose_alert_for_local_count(dose_number_local)
+        except Exception as exc:
+            cost_estimate = {"estimated_cost_mxn": None, "error": str(exc)}
+            dose_alert = {"severity": "none", "code": "dose_alert_unavailable", "message": ""}
+        stored_cost_mxn = (
+            cost_estimate.get("estimated_arpi_cost_mxn")
+            if cost_estimate.get("estimated_arpi_cost_mxn") is not None
+            else cost_estimate.get("estimated_cost_mxn")
+        )
+        cursor.execute(
+            """
+            INSERT INTO treatment_dose_administrations (
+                patient_id, treatment_history_id, regimen_code, dose_number_local,
+                dose_number_global, dose_date, unit_name, administered_in_unit,
+                referral_target, estimated_cost_mxn, cost_source_json, payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                patient_id,
+                treatment_history_id,
+                regimen_code,
+                dose_number_local,
+                dose_number_global,
+                dose_date,
+                unit_name,
+                0 if str(data.get("administered_in_unit")).lower() in {"0", "false", "no"} else 1,
+                referral_target,
+                stored_cost_mxn,
+                _json_blob(cost_estimate),
+                _json_blob(data),
+            ),
+        )
+        dose_id = cursor.lastrowid
+        conn.commit()
+    finally:
+        conn.close()
+
+    event_id = record_patient_event(
+        patient_id,
+        event_type="treatment_dose_administered",
+        event_date=dose_date,
+        source_type="treatment_course_tracker",
+        source_record_id=dose_id,
+        payload={
+            "treatment_history_id": treatment_history_id,
+            "regimen_code": regimen_code,
+            "regimen_label": regimen_label(regimen_code),
+            "dose_number_local": dose_number_local,
+            "dose_number_global": dose_number_global,
+            "unit_name": unit_name,
+            "referral_target": referral_target,
+            "dose_alert": dose_alert,
+            "estimated_cost_mxn": stored_cost_mxn,
+            "cost_estimate": cost_estimate,
+            "imported_initial": bool(data.get("imported_initial")),
+        },
+        mcode_focus={
+            "regimen_code": regimen_code,
+            "dose_number_local": dose_number_local,
+            "dose_number_global": dose_number_global,
+        },
+    )
+    if dose_alert.get("severity") in {"warning", "critical"}:
+        record_patient_event(
+            patient_id,
+            event_type="treatment_dose_referral_alert",
+            event_date=dose_date,
+            source_type="treatment_course_tracker",
+            source_record_id=dose_id,
+            status=dose_alert.get("severity"),
+            payload={
+                **dose_alert,
+                "regimen_code": regimen_code,
+                "dose_number_local": dose_number_local,
+                "dose_number_global": dose_number_global,
+                "unit_name": unit_name,
+                "referral_target": referral_target,
+            },
+        )
+    if "PYTEST_CURRENT_TEST" not in os.environ and os.environ.get("PROSTANET_DATALLESS_SAFE_START") != "1":
+        try:
+            from prostanet.presentation.v2_adapters import invalidate_profile_view_cache
+            from prostanet.shared.read_model_cache import invalidate_read_model_cache
+
+            invalidate_profile_view_cache(patient_id, reason="treatment_dose_appended")
+            invalidate_read_model_cache(str(patient_id))
+            invalidate_read_model_cache("autodrive_population")
+        except Exception:
+            pass
+    return {
+        "success": True,
+        "dose_id": dose_id,
+        "event_id": event_id,
+        "treatment_history_id": treatment_history_id,
+        "regimen_code": regimen_code,
+        "regimen_label": regimen_label(regimen_code),
+        "dose_number_local": dose_number_local,
+        "dose_number_global": dose_number_global,
+        "dose_date": dose_date,
+        "unit_name": unit_name,
+        "referral_target": referral_target,
+        "dose_alert": dose_alert,
+        "estimated_cost_mxn": stored_cost_mxn,
+        "cost_estimate": cost_estimate,
+        "source": "treatment_course_tracker",
     }
 
 
@@ -7758,6 +8986,26 @@ def _derive_baseline_psa_from_history(data, psa_history):
     return selected_point.get("psa_value"), selected_point
 
 
+def _matching_psa_history_point(psa_history, value):
+    target = _safe_float(value, None)
+    if target is None:
+        return None
+    matches = [
+        item
+        for item in psa_history
+        if _safe_float(item.get("psa_value"), None) is not None
+        and abs(_safe_float(item.get("psa_value"), None) - target) < 0.0001
+    ]
+    if not matches:
+        return None
+    pretreatment_matches = [
+        item
+        for item in matches
+        if item.get("context") in {"pretratamiento", "pretreatment", "baseline", "diagnostic"}
+    ]
+    return max(pretreatment_matches or matches, key=lambda item: item.get("sample_date", ""))
+
+
 def _preferred_testosterone_longitudinal_points(
     data,
     *,
@@ -7862,6 +9110,11 @@ def _persist_intake_biomarker_series(cursor, patient_id, diagnosis_date, data):
     baseline_psa_value, selected_baseline_point = _derive_baseline_psa_from_history(data, psa_history)
     if baseline_psa_value is not None and not baseline_was_explicit:
         data["baseline_psa"] = baseline_psa_value
+    matching_explicit_baseline_point = (
+        _matching_psa_history_point(psa_history, data.get("baseline_psa"))
+        if baseline_was_explicit
+        else None
+    )
     testosterone_baseline_was_explicit = _is_present(data.get("testosterone_baseline"))
     baseline_testosterone_value, selected_testosterone_baseline_point = _derive_baseline_testosterone_from_history(data, testosterone_history)
     if baseline_testosterone_value is not None and not testosterone_baseline_was_explicit:
@@ -7870,7 +9123,7 @@ def _persist_intake_biomarker_series(cursor, patient_id, diagnosis_date, data):
     persisted_points = _persist_psa_series_points(cursor, patient_id, psa_history)
     persisted_testosterone_points = _persist_testosterone_series_points(cursor, patient_id, testosterone_history)
     scalar_psa_points = []
-    if not (selected_baseline_point and not baseline_was_explicit):
+    if not (selected_baseline_point and not baseline_was_explicit) and not matching_explicit_baseline_point:
         scalar_psa_points = _preferred_psa_longitudinal_points(
             data,
             sample_date=data.get("local_therapy_date") or diagnosis_date,
@@ -7889,7 +9142,7 @@ def _persist_intake_biomarker_series(cursor, patient_id, diagnosis_date, data):
     )
     if scalar_testosterone_points:
         persisted_testosterone_points += _persist_testosterone_series_points(cursor, patient_id, scalar_testosterone_points)
-    baseline_point = dict(selected_baseline_point) if selected_baseline_point else None
+    baseline_point = dict(selected_baseline_point or matching_explicit_baseline_point) if (selected_baseline_point or matching_explicit_baseline_point) else None
     testosterone_baseline_point = dict(selected_testosterone_baseline_point) if selected_testosterone_baseline_point else None
 
     explicit_baseline = _safe_float(data.get("baseline_psa"), None)
@@ -7915,7 +9168,15 @@ def _persist_intake_biomarker_series(cursor, patient_id, diagnosis_date, data):
         "points_received": len(psa_history),
         "points_persisted": persisted_points,
         "baseline_psa": explicit_baseline if explicit_baseline is not None else baseline_psa_value,
-        "baseline_source": "explicit_field" if baseline_was_explicit and selected_baseline_point is None else "derived_from_history" if selected_baseline_point else "not_available",
+        "baseline_source": (
+            "explicit_field_with_history_point"
+            if baseline_was_explicit and matching_explicit_baseline_point
+            else "explicit_field"
+            if baseline_was_explicit and selected_baseline_point is None
+            else "derived_from_history"
+            if selected_baseline_point
+            else "not_available"
+        ),
         "baseline_point": baseline_point,
         "series_only_points": max(len(psa_history) - (1 if baseline_point and selected_baseline_point else 0), 0),
         "testosterone_points_received": len(testosterone_history),
@@ -7957,11 +9218,20 @@ def register_new_patient(data, assessment=None):
         synthetic_reason = 'register_default_conservative'
         consent_signed_at = None
         consent_actor = None
-        if _is_truthy(data.get('is_real_patient')) and _is_truthy(data.get('consent_signed')):
+        real_patient_requested = _is_truthy(data.get('is_real_patient'))
+        if real_patient_requested and not _is_truthy(data.get('consent_signed')):
+            return None, "El paciente real prospectivo requiere consentimiento firmado.", {}
+        if real_patient_requested:
+            actor_raw = data.get('actor_user_id')
+            if actor_raw in (None, ""):
+                return None, "El paciente real prospectivo requiere actor_user_id.", {}
+            try:
+                consent_actor = int(float(actor_raw))
+            except (TypeError, ValueError):
+                return None, "actor_user_id debe ser numérico para paciente real prospectivo.", {}
             is_synthetic_flag = 0
             synthetic_reason = None
             consent_signed_at = data.get('consent_signed_at') or utc_now_iso()
-            consent_actor = data.get('actor_user_id')
         diagnosis_date = datetime.now().strftime("%Y-%m-%d")
         try:
             c.execute('''
@@ -8040,20 +9310,38 @@ def register_new_patient(data, assessment=None):
         _persist_official_diagnosis_fields(c, patient_id, data)
 
         # 3. Historial Terapéutico Inicial
+        initial_treatment_id = None
         normalized_scheme = normalize_regimen_code(data.get("drug_scheme"))
-        should_persist_treatment = bool(normalized_scheme) and (not assessment_state or assessment_state in advanced_states)
+        should_persist_treatment = bool(normalized_scheme)
         if should_persist_treatment:
             line_number = _normalize_line_of_therapy_number(data)
             line_context = _normalize_line_of_therapy_context(data)
+            raw_treatment_start = (
+                data.get("current_treatment_start_date")
+                or data.get("treatment_start_date")
+                or data.get("tx_start")
+            )
+            initial_treatment_start_date = (
+                str(raw_treatment_start)[:10]
+                if _is_present(raw_treatment_start)
+                else diagnosis_date
+            )
+            local_doses_recorded_at_start = _safe_int(
+                data.get("local_doses_administered")
+                or data.get("doses_administered_in_unit")
+                or data.get("local_dose_count"),
+                0,
+            )
             c.execute('''
                 INSERT INTO treatment_history (
                     patient_id, line_of_therapy, line_of_therapy_context, drug_scheme, start_date, outcome, regimen_json
-                ) VALUES (?, ?, ?, ?, DATE('now'), 'Ongoing', ?)
+                ) VALUES (?, ?, ?, ?, ?, 'Ongoing', ?)
             ''', (
                 patient_id,
                 line_number,
                 line_context,
                 normalized_scheme,
+                initial_treatment_start_date,
                 _json_blob(
                     {
                         "line_of_therapy_number": line_number,
@@ -8063,9 +9351,15 @@ def register_new_patient(data, assessment=None):
                         "drug_scheme_label": regimen_label(normalized_scheme),
                         "current_adt_context": data.get("current_adt_context"),
                         "castrate_testosterone_status": data.get("castrate_testosterone_status"),
+                        "doses_received_before_unit": _safe_int(data.get("doses_received_before_unit"), 0),
+                        "local_doses_recorded_at_start": local_doses_recorded_at_start,
+                        "current_treatment_start_date": initial_treatment_start_date,
+                        "unit_name": data.get("unit_name") or data.get("treatment_unit") or "",
+                        "referral_target": data.get("referral_target") or data.get("target_referral_unit") or "",
                     }
                 ),
             ))
+            initial_treatment_id = c.lastrowid
 
         # 4. Historial Clínico Previo (Fase 6)
         c.execute('''
@@ -8242,6 +9536,22 @@ def register_new_patient(data, assessment=None):
         radiation_payload = _build_radiation_payload(data)
         if radiation_payload:
             save_radiation_details(patient_id, radiation_payload)
+
+        if initial_treatment_id and _safe_int(data.get("local_doses_administered") or data.get("doses_administered_in_unit") or data.get("local_dose_count"), 0) > 0:
+            for _ in range(_safe_int(data.get("local_doses_administered") or data.get("doses_administered_in_unit") or data.get("local_dose_count"), 0)):
+                append_treatment_dose_administration(
+                    data.get("nss") or patient_id,
+                    {
+                        "treatment_history_id": initial_treatment_id,
+                        "regimen_code": normalized_scheme,
+                        "dose_date": initial_treatment_start_date,
+                        "unit_name": data.get("unit_name") or data.get("treatment_unit") or "",
+                        "referral_target": data.get("referral_target") or data.get("target_referral_unit") or "",
+                        "doses_received_before_unit": data.get("doses_received_before_unit") or 0,
+                        "imported_initial": True,
+                        "date_precision": "registration_date_or_treatment_start",
+                    },
+                )
 
         logger.info(f"Paciente {data.get('nss')} registrado con éxito (ID: {patient_id})")
         return patient_id, "Registro exitoso", {"psa_history_summary": psa_history_summary}
@@ -9808,6 +11118,200 @@ def record_patient_event(
         return None
 
 
+def reconcile_patient_clinical_fact(
+    nss_or_id,
+    *,
+    fact_key,
+    selected_value,
+    selected_source=None,
+    reviewed_by="clinician",
+    clinical_note="",
+    actor_user_id=None,
+    actor_session_id=None,
+    actor_role="clinician",
+):
+    """Create a clinician-verified canonical fact that resolves Ledger conflict.
+
+    Original source rows stay intact. The new reconciliation fact becomes the
+    active row via the existing canonical fact persistence machinery, and the
+    action is mirrored in patient_events + lineage events for auditability.
+    """
+    fact_key = str(fact_key or "").strip()
+    clinical_note = str(clinical_note or "").strip()
+    selected_source = dict(selected_source or {})
+    if not fact_key:
+        return {"success": False, "error": "missing_fact_key"}
+    if selected_value in (None, "", [], {}):
+        return {"success": False, "error": "missing_selected_value"}
+    if len(clinical_note) < 4:
+        return {"success": False, "error": "clinical_note_required"}
+
+    try:
+        from prostanet.shared.clinical_fact_registry import FACT_SPECS
+        if fact_key not in FACT_SPECS:
+            return {"success": False, "error": "unknown_fact_key", "fact_key": fact_key}
+    except Exception:
+        pass
+
+    conn = None
+    try:
+        conn = _connect(write=True)
+        cursor = conn.cursor()
+        identity = _resolve_identity_row(cursor, nss_or_id)
+        if not identity:
+            return {"success": False, "error": "patient_not_found"}
+        identity_dict = _row_to_dict(identity)
+        patient_id = int(identity_dict["id"])
+
+        cursor.execute(
+            """
+            SELECT * FROM patient_clinical_facts
+            WHERE patient_id = ? AND fact_key = ? AND is_active = 1
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (patient_id, fact_key),
+        )
+        active_before = _row_to_dict(cursor.fetchone())
+        today = utc_today().isoformat()
+        source_date = (
+            selected_source.get("source_date")
+            or selected_source.get("observed_at")
+            or today
+        )
+        observed_at = utc_now_iso()
+        verification_note = (
+            f"Ledger reconciliation by {reviewed_by}: {clinical_note}"
+        )[:500]
+        persisted = _persist_patient_clinical_facts(
+            cursor,
+            patient_id,
+            [{
+                "fact_key": fact_key,
+                "value": selected_value,
+                "source_type": "clinical_fact_reconciliation",
+                "source_record_type": "ledger_reconciliation",
+                "source_record_id": selected_source.get("source_record_id"),
+                "source_date": source_date,
+                "observed_at": observed_at,
+                "state_context": selected_source.get("state_context") or "",
+                "management_track": selected_source.get("management_track") or "",
+                "certainty_tier": "clinician_verified",
+                "clinician_verified": True,
+                "verification_note": verification_note,
+            }],
+        )
+        cursor.execute(
+            """
+            SELECT * FROM patient_clinical_facts
+            WHERE patient_id = ? AND fact_key = ? AND is_active = 1
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (patient_id, fact_key),
+        )
+        active_after = _row_to_dict(cursor.fetchone())
+        target_fact_id = (active_after or {}).get("id")
+        source_fact_id = (active_before or {}).get("id")
+
+        cursor.execute(
+            """
+            UPDATE patient_fact_conflicts
+            SET resolution_status = 'resolved',
+                resolution_reason = ?,
+                resolved_by = ?,
+                resolved_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE patient_id = ?
+              AND fact_key = ?
+              AND COALESCE(resolution_status, 'open') != 'resolved'
+            """,
+            (clinical_note, str(reviewed_by or "clinician"), patient_id, fact_key),
+        )
+        conflicts_resolved = cursor.rowcount
+        _append_patient_fact_lineage_event(
+            cursor,
+            patient_id,
+            fact_key,
+            "reconciled_by_clinician",
+            source_fact_id=source_fact_id,
+            target_fact_id=target_fact_id,
+            event_note="Clinical Fact Ledger conflict reconciled by clinician.",
+            payload={
+                "reviewed_by": reviewed_by,
+                "clinical_note": clinical_note,
+                "selected_source": selected_source,
+                "active_before": {
+                    "id": (active_before or {}).get("id"),
+                    "value": (active_before or {}).get("normalized_value_text"),
+                    "source_type": (active_before or {}).get("source_type"),
+                },
+                "active_after": {
+                    "id": (active_after or {}).get("id"),
+                    "value": (active_after or {}).get("normalized_value_text"),
+                    "source_type": (active_after or {}).get("source_type"),
+                    "source_record_type": (active_after or {}).get("source_record_type"),
+                },
+            },
+            actor_user_id=actor_user_id,
+            actor_session_id=actor_session_id,
+            actor_role=actor_role,
+        )
+        cursor.execute(
+            """
+            INSERT INTO patient_events (
+                patient_id, event_type, event_date, state_context, management_track,
+                source_type, source_record_id, status, payload_json, mcode_focus_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                patient_id,
+                "clinical_fact_reconciled",
+                today,
+                selected_source.get("state_context") or "",
+                selected_source.get("management_track") or "",
+                "clinical_fact_ledger",
+                target_fact_id,
+                "recorded",
+                _json_blob({
+                    "fact_key": fact_key,
+                    "selected_value": selected_value,
+                    "reviewed_by": reviewed_by,
+                    "clinical_note": clinical_note,
+                    "selected_source": selected_source,
+                    "conflicts_resolved": conflicts_resolved,
+                }),
+                _json_blob({}),
+            ),
+        )
+        event_id = cursor.lastrowid
+        conn.commit()
+        return {
+            "success": True,
+            "patient_id": patient_id,
+            "nss": identity_dict.get("nss"),
+            "fact_key": fact_key,
+            "selected_value": selected_value,
+            "active_fact_id": target_fact_id,
+            "previous_active_fact_id": source_fact_id,
+            "persisted_fact_count": len(persisted),
+            "conflicts_resolved": conflicts_resolved,
+            "event_id": event_id,
+            "source_clinical_facts_mutated": True,
+            "original_sources_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        }
+    except Exception as e:
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        logger.error(f"Error reconciling clinical fact: {e}")
+        return {"success": False, "error": str(e)}
+    finally:
+        _close_connection_quietly(conn)
+
+
 def update_care_pathway_action_status(
     nss_or_id,
     action_key,
@@ -9987,6 +11491,7 @@ def update_care_pathway_action_status(
 def _persist_signal_snapshot(cursor, patient_id, event_id, bundle):
     signals = bundle.get("signals", {})
     next_best_action = bundle.get("next_best_action", {})
+    signal_payload = dict(signals or {}) if isinstance(signals, dict) else {"signals": list(signals or [])}
     published_state = (
         signals.get("effective_state_final")
         or signals.get("effective_state")
@@ -10021,7 +11526,7 @@ def _persist_signal_snapshot(cursor, patient_id, event_id, bundle):
             published_state,
             published_track,
             1 if signals.get("ready_to_restage") else 0,
-            _json_blob(signals.get("signals", [])),
+            _json_blob(signal_payload),
             _json_blob(signals.get("critical_missing", [])),
             _json_blob(signals.get("awaiting_review", [])),
             _json_blob(signals.get("active_safety", [])),
@@ -10916,6 +12421,163 @@ def _merge_longitudinal_runtime_record_context(patient_record, longitudinal_bund
         context["alerts"] = list(bundle.get("copilot_alerts") or [])
     context["latest_signal_snapshot"] = merged_signals
     return context
+
+
+_PROFILE_READ_BUNDLE_KEYS = (
+    "transition_resolution",
+    "care_intent_contract",
+    "decision_governance_bundle",
+    "decision_blocking_bundle",
+    "diagnostic_certainty_bundle",
+    "staging_certainty_bundle",
+    "minimum_decisive_dataset_bundle",
+    "decision_evidence_currentness_bundle",
+    "therapeutic_window_bundle",
+    "window_worklist_bundle",
+    "clinician_decision_capture_bundle",
+    "state_transition_confirmation_bundle",
+    "adherence_tracking_bundle",
+    "tumor_board_outcome_bundle",
+    "pro_decision_bundle",
+    "shared_decision_bundle",
+    "ctdna_refinement_bundle",
+    "multimodal_imaging_concordance_bundle",
+    "precision_workflow_bundle",
+    "registry_core_bundle",
+    "endpoint_adjudication_bundle",
+    "data_certainty_bundle",
+    "ichom_compliance_bundle",
+    "treatment_adverse_event_bundle",
+    "population_survival_context_bundle",
+    "cost_access_context_bundle",
+    "score_interpretation_catalog_snapshot",
+    "palliative_transition_bundle",
+    "palliative_monitoring_package",
+    "survivorship_transition_bundle",
+    "survivorship_monitoring_package",
+    "late_effects_profile",
+    "functional_recovery_profile",
+    "survivorship_schedule_overlay",
+    "survivorship_plan",
+    "symptom_burden_profile",
+    "advance_care_planning_status",
+    "hospice_eligibility",
+    "acute_palliative_alerts",
+    "recommended_supportive_referrals",
+    "guideline_followup_plan",
+    "longitudinal_truth_snapshot",
+    "decision_recalculation_trace",
+    "laboratory_intelligence_profile",
+    "latest_clinically_decisive_visit",
+    "crpc_copilot_bundle",
+    "post_rp_salvage_bundle",
+    "mhspc_copilot_bundle",
+    "diagnostic_biopsy_bundle",
+    "localized_surveillance_bundle",
+    "post_rt_salvage_bundle",
+    "post_rt_schedule_overlay",
+    "advanced_followup_bundle",
+    "staging_adjudication_bundle",
+    "advanced_release_gate",
+    "supportive_care_toxicity_readiness_bundle",
+    "therapeutic_readiness_bundle",
+    "clinical_readiness_tower",
+    "tumor_board_os",
+    "care_pathway_os",
+    "clinical_memory_os",
+    "clinical_kernel_snapshot",
+    "effective_state",
+    "effective_recommendation_family",
+    "surface_consistency_status",
+    "surface_consistency_flags",
+    "clinical_fact_bundle",
+    "fact_freshness_summary",
+    "fact_conflict_summary",
+    "contradiction_resolution_bundle",
+    "state_reclassification_bundle",
+    "clinical_ledger_bundle",
+    "psa_forecast",
+    "live_benchmark",
+)
+
+
+def build_patient_longitudinal_profile_read_bundle(patient_record):
+    """Build a fast read-only longitudinal bundle for patient_profile_v2.
+
+    Opening a profile must not execute the full longitudinal recomputation path.
+    Write events and explicit refreshes keep using refresh_longitudinal_intelligence;
+    this helper only projects the last persisted snapshot plus safe deferred
+    placeholders for heavyweight profile panels.
+    """
+    record = dict(patient_record or {})
+    raw_snapshot = dict(record.get("latest_signal_snapshot") or {})
+    payload = raw_snapshot.get("signals")
+    signal_snapshot = dict(payload or {}) if isinstance(payload, dict) else {}
+    signal_snapshot.update(raw_snapshot)
+    if isinstance(signal_snapshot.get("signals"), dict):
+        signal_snapshot.pop("signals", None)
+
+    state = (
+        signal_snapshot.get("effective_state_final")
+        or signal_snapshot.get("effective_state")
+        or signal_snapshot.get("reconciled_state")
+        or signal_snapshot.get("state")
+        or ((record.get("latest_assessment") or {}).get("state"))
+        or ((record.get("prior_history") or {}).get("current_state"))
+        or ""
+    )
+    management_track = (
+        signal_snapshot.get("effective_management_track_final")
+        or signal_snapshot.get("effective_management_track")
+        or signal_snapshot.get("reconciled_management_track")
+        or signal_snapshot.get("management_track")
+        or ((record.get("prior_history") or {}).get("management_track"))
+        or ""
+    )
+    patient_ref = str((record.get("identity") or {}).get("nss") or record.get("nss") or "")
+
+    def deferred_panel(source: str) -> dict:
+        return {
+            "available": False,
+            "deferred": True,
+            "source": "profile_v2_cached_read",
+            "panel": source,
+            "patient_ref": patient_ref,
+            "state": state,
+            "management_track": management_track,
+            "reason": "Se carga desde snapshot; use ?refresh=1 para recálculo longitudinal completo.",
+        }
+
+    signal_snapshot.setdefault("state", state)
+    signal_snapshot.setdefault("reconciled_state", state)
+    signal_snapshot.setdefault("effective_state", state)
+    signal_snapshot.setdefault("management_track", management_track)
+    signal_snapshot.setdefault("reconciled_management_track", management_track)
+    signal_snapshot.setdefault("critical_missing", [])
+    signal_snapshot.setdefault("awaiting_review", [])
+    signal_snapshot.setdefault("active_safety", [])
+    signal_snapshot.setdefault("next_best_action", raw_snapshot.get("next_best_action") or {})
+
+    bundle = {
+        "signals": signal_snapshot,
+        "next_best_action": dict(signal_snapshot.get("next_best_action") or {}),
+        "profile_read_source": "clinical_signal_snapshot",
+        "profile_read_deferred_recompute": True,
+    }
+    for key in _PROFILE_READ_BUNDLE_KEYS:
+        value = signal_snapshot.get(key) or record.get(key)
+        if value not in (None, "", [], {}):
+            bundle[key] = value
+
+    bundle.setdefault("clinical_readiness_tower", deferred_panel("clinical_readiness_tower"))
+    bundle.setdefault("tumor_board_os", deferred_panel("tumor_board_os"))
+    bundle.setdefault("care_pathway_os", deferred_panel("care_pathway_os"))
+    bundle.setdefault("clinical_memory_os", deferred_panel("clinical_memory_os"))
+    signal_snapshot.setdefault("clinical_readiness_tower", bundle["clinical_readiness_tower"])
+    signal_snapshot.setdefault("tumor_board_os", bundle["tumor_board_os"])
+    signal_snapshot.setdefault("care_pathway_os", bundle["care_pathway_os"])
+    signal_snapshot.setdefault("clinical_memory_os", bundle["clinical_memory_os"])
+    return bundle
 
 
 def refresh_longitudinal_intelligence(
@@ -15939,6 +17601,15 @@ def get_patient_full_record(nss_or_id, *, include_derivatives=True, include_ledg
         # 14. Treatment History
         c.execute("SELECT * FROM treatment_history WHERE patient_id = ? ORDER BY start_date ASC", (patient_id,))
         treatments = _hydrate_treatment_rows(c.fetchall())
+        c.execute(
+            "SELECT * FROM treatment_dose_administrations WHERE patient_id = ? ORDER BY dose_date ASC, id ASC",
+            (patient_id,),
+        )
+        treatment_doses = _hydrate_treatment_dose_rows(c.fetchall())
+        c.execute(
+            "SELECT * FROM medication_price_catalog WHERE COALESCE(active, 1) = 1 ORDER BY agent_name ASC, effective_start DESC, id DESC"
+        )
+        medication_price_catalog = _hydrate_medication_price_rows(c.fetchall())
 
         # 15. Prior Clinical History
         c.execute("SELECT * FROM prior_clinical_history WHERE patient_id = ?", (patient_id,))
@@ -16299,6 +17970,8 @@ def get_patient_full_record(nss_or_id, *, include_derivatives=True, include_ledg
             'pros': pros,
             'follow_ups': follow_ups,
             'treatments': treatments,
+            'treatment_doses': treatment_doses,
+            'medication_price_catalog': medication_price_catalog,
             'prior_history': _decorate_prior_history(prior_history),
             'alerts': alerts,
             'pivotal_matches': pivotal_matches,
@@ -16355,6 +18028,18 @@ def get_patient_full_record(nss_or_id, *, include_derivatives=True, include_ledg
             'clavien_dindo_events': clavien_events,
             'functional_recovery_snapshots': functional_recovery,
         }
+        try:
+            from prostanet.domains.patient_tracking.treatment_course_tracker import (
+                build_treatment_course_summary,
+            )
+
+            patient_record["treatment_course_summary"] = build_treatment_course_summary(
+                patient_record,
+                price_catalog_rows=medication_price_catalog,
+            )
+        except Exception as exc:
+            logger.warning("Treatment course summary unavailable: %s", exc)
+            patient_record["treatment_course_summary"] = {"available": False, "error": str(exc)}
         testosterone_series = patient_record.get("testosterone_series") or []
         testosterone_candidates = [
             point

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import math
 from typing import Any
 
 from prostanet.domains.research_intelligence.consent_repository import (
@@ -10,6 +12,72 @@ from prostanet.domains.research_intelligence.consent_repository import (
     get_patient_consent_summary,
     sign_intake_draft,
 )
+
+
+_TRUE_VALUES = {"1", "true", "yes", "si", "sí"}
+_FIRST_REAL_SOURCE_CONTEXTS = {
+    "first_real_wizard_v2",
+    "first_real_patient_dry_run_v2",
+    "first_real_institutional_launch_rehearsal_v2",
+}
+
+
+def _is_truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in _TRUE_VALUES
+
+
+def _history_rows(value: Any) -> list[dict[str, Any]]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        raw_rows = value
+    elif isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        raw_rows = parsed if isinstance(parsed, list) else []
+    else:
+        return []
+    return [row for row in raw_rows if isinstance(row, dict)]
+
+
+def _valid_psa_history_count(payload: dict[str, Any]) -> int:
+    rows = _history_rows(payload.get("psa_history")) or _history_rows(payload.get("ape_history"))
+    seen: set[tuple[str, float]] = set()
+    for row in rows:
+        raw_value = row.get("psa_value", row.get("value", row.get("psa", row.get("ape"))))
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(value) or value < 0:
+            continue
+        sample_date = str(row.get("sample_date") or row.get("date") or row.get("collected_at") or "").strip()
+        if not sample_date:
+            continue
+        seen.add((sample_date, round(value, 4)))
+    return len(seen)
+
+
+def _requires_first_real_ape_series(payload: dict[str, Any], source_context: str) -> bool:
+    if not _is_truthy(payload.get("is_real_patient")):
+        return False
+    source_key = str(source_context or "").strip()
+    return (
+        source_key in _FIRST_REAL_SOURCE_CONTEXTS
+        or str(payload.get("real_world_enrollment_mode") or "").strip() == "prospective_v2"
+    )
+
+
+def validate_first_real_ape_series(payload: dict[str, Any], *, source_context: str) -> None:
+    if not _requires_first_real_ape_series(payload, source_context):
+        return
+    valid_count = _valid_psa_history_count(payload)
+    if valid_count < 2:
+        raise ValueError(
+            "Para primer paciente real prospectivo se requieren al menos 2 mediciones APE con fecha antes de iniciar consentimiento."
+        )
 
 
 def get_current_consent_payload() -> dict[str, Any]:
@@ -26,6 +94,7 @@ def get_current_consent_payload() -> dict[str, Any]:
 
 
 def create_consent_draft(payload: dict[str, Any], *, source_context: str) -> dict[str, Any]:
+    validate_first_real_ape_series(payload, source_context=source_context)
     return create_intake_draft(payload, source_context=source_context)
 
 

@@ -1,11 +1,9 @@
 # IEC 62304 §5.5 (Unit verification)
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 import sys
-import uuid
 
 import pytest
 
@@ -14,18 +12,10 @@ import pytest
 # Ejecutar con: `pytest tests/test_matrix60_playwright_mcp_runner.py -m "slow or not slow"`
 pytestmark = pytest.mark.slow
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-MATRIX60_SCRIPT = REPO_ROOT / "output/playwright/validation/matrix60-20260410/run_mcp_matrix_validation.py"
-
-
 def _load_matrix60_module():
-    module_name = f"matrix60_playwright_runner_{uuid.uuid4().hex}"
-    spec = importlib.util.spec_from_file_location(module_name, MATRIX60_SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
+    from prostanet.domains.clinical_validation import matrix60_validation
+
+    return matrix60_validation
 
 
 def _write_fake_mcp_server(tmp_path: Path) -> Path:

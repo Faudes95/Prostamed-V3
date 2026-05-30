@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cola Ledger poblacional · ProstaMed V2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='ledger_population_v1') }}">
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+
+{% set summary = population.summary or {} %}
+{% set patients = population.patients or [] %}
+
+<div class="pm2-profile-shell">
+    {% from "components/pm2_sidebar.html" import pm2_sidebar %}
+    {{ pm2_sidebar(active='patients', identity_nss='', faubot_release='Clinical Fact Ledger Population v1') }}
+
+    <main id="main-content" class="pm2-profile-main" tabindex="-1">
+        <header class="pm2-profile-header" style="margin:var(--space-4) var(--space-6)">
+            <div>
+                <p class="pm2-kicker">Clinical Fact Ledger V2</p>
+                <h1 style="font-family:var(--pm-font-display);font-size:1.85rem;font-weight:850;color:#f8fbff;margin:4px 0 0">
+                    Cola poblacional de reconciliacion
+                </h1>
+                <p style="color:var(--pn-text-muted);font-size:.84rem;margin-top:6px;max-width:88ch">
+                    Pacientes con contradicciones Ledger que pueden bloquear DECISION HOY o generar recaptura innecesaria. La cola es read-only: abre la reconciliacion por paciente, no muta hechos clinicos, no ordena nada y no entrena modelos.
+                </p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+                <a href="/patients" class="pm2-btn pm2-btn--ghost" style="text-decoration:none">Pacientes</a>
+                <a href="/api/clinical-fact-ledger/reconciliation/today?limit={{ limit }}{% if include_clear %}&include_clear=1{% endif %}"
+                   class="pm2-btn pm2-btn--primary"
+                   style="text-decoration:none"
+                   data-testid="ledger-reconciliation-population-api-link">API poblacional</a>
+            </div>
+        </header>
+
+        <section class="pm2-tab-card"
+                 style="margin:var(--space-4) var(--space-6);border-left:4px solid {% if summary.critical_patient_count %}#fb7185{% elif summary.open_conflict_patient_count %}#fbbf24{% else %}#34d399{% endif %}"
+                 data-testid="ledger-reconciliation-population-panel"
+                 data-version="{{ population.version }}"
+                 data-contract-version="clinical_fact_reconciliation_population_v1">
+            <div class="pm2-tab-card-head">
+                <h3>Prioridad poblacional Ledger</h3>
+                <span class="pm2-head-meta">{{ population.version }} · {{ population.scan.patient_refs_scanned or 0 }} pacientes escaneados</span>
+            </div>
+            <div class="pm2-tab-card-body">
+                <div class="pm2-grid-4" style="gap:14px">
+                    <div>
+                        <div class="pm2-kicker">Pacientes visibles</div>
+                        <strong style="display:block;color:#f8fbff">{{ summary.visible_patient_count or 0 }}</strong>
+                        <span style="color:var(--pn-text-muted);font-size:.72rem">limit {{ limit }}</span>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Con conflicto</div>
+                        <strong style="display:block;color:{% if summary.open_conflict_patient_count %}#fecaca{% else %}#bbf7d0{% endif %}">{{ summary.open_conflict_patient_count or 0 }}</strong>
+                        <span style="color:var(--pn-text-muted);font-size:.72rem">requieren revision</span>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Criticos</div>
+                        <strong style="display:block;color:{% if summary.critical_patient_count %}#fecaca{% else %}#bbf7d0{% endif %}">{{ summary.critical_patient_count or 0 }}</strong>
+                        <span style="color:var(--pn-text-muted);font-size:.72rem">pueden bloquear DECISION HOY</span>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Conflictos totales</div>
+                        <strong style="display:block;color:#f8fbff">{{ summary.total_conflict_count or 0 }}</strong>
+                        <span style="color:var(--pn-text-muted);font-size:.72rem">{{ summary.total_critical_conflict_count or 0 }} criticos</span>
+                    </div>
+                </div>
+                <div style="margin-top:12px;color:var(--pn-text-muted);font-size:.78rem;line-height:1.5"
+                     data-testid="ledger-reconciliation-population-contract">
+                    {{ population.next_action }} · source_clinical_facts_mutated=false · external_order_created=false · model_trained=false
+                </div>
+            </div>
+        </section>
+
+        <section style="margin:var(--space-4) var(--space-6)" data-testid="ledger-reconciliation-population-queue">
+            {% if patients %}
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
+                    {% for row in patients %}
+                    {% set conflict = row.dominant_conflict or {} %}
+                    {% set quality = row.decision_quality or {} %}
+                    <article class="pm2-tab-card"
+                             style="border-left:4px solid {% if row.critical_conflict_count %}#fb7185{% elif row.conflict_count %}#fbbf24{% else %}#34d399{% endif %}"
+                             data-testid="ledger-reconciliation-population-row-{{ row.patient_ref }}">
+                        <div class="pm2-tab-card-head">
+                            <h3 style="overflow-wrap:anywhere">{{ row.display_name or row.patient_ref }}</h3>
+                            <span class="pm2-head-meta">{{ row.patient_ref }}</span>
+                        </div>
+                        <div class="pm2-tab-card-body">
+                            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+                                <div>
+                                    <div class="pm2-kicker">Conflictos</div>
+                                    <strong style="display:block;color:#f8fbff">{{ row.conflict_count or 0 }}</strong>
+                                </div>
+                                <div>
+                                    <div class="pm2-kicker">Criticos</div>
+                                    <strong style="display:block;color:{% if row.critical_conflict_count %}#fecaca{% else %}#bbf7d0{% endif %}">{{ row.critical_conflict_count or 0 }}</strong>
+                                </div>
+                                <div>
+                                    <div class="pm2-kicker">Prioridad</div>
+                                    <strong style="display:block;color:#f8fbff">{{ row.priority_score or 0 }}</strong>
+                                </div>
+                            </div>
+                            <div style="margin-top:12px;padding:10px;border-radius:10px;background:rgba(15,23,42,.58);border:1px solid rgba(148,163,184,.22)"
+                                 data-testid="ledger-reconciliation-dominant-fact-{{ row.patient_ref }}">
+                                <div class="pm2-kicker">Campo dominante</div>
+                                <strong style="display:block;color:#f8fbff;overflow-wrap:anywhere">{{ conflict.fact_key or 'sin conflicto abierto' }}</strong>
+                                <div style="color:var(--pn-text-muted);font-size:.74rem;line-height:1.45;margin-top:4px">
+                                    {{ conflict.domain or 'sin dominio' }} · {{ conflict.severity or quality.status or 'clear' }} · {{ conflict.source_count or 0 }} fuentes
+                                </div>
+                                {% if conflict.current_value is not none and conflict.current_value != '' %}
+                                <div style="color:#dbeafe;font-size:.78rem;margin-top:6px;overflow-wrap:anywhere">
+                                    Valor activo: {{ conflict.current_value }}
+                                </div>
+                                {% endif %}
+                            </div>
+                            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+                                <span class="pm2-state-chip {% if quality.status == 'blocked_by_critical_conflict' %}pm2-state-chip--danger{% elif quality.requires_reconciliation %}pm2-state-chip--warning{% else %}pm2-state-chip--success{% endif %}">
+                                    {{ quality.status or 'clear' }}
+                                </span>
+                                <span class="pm2-state-chip">{{ row.resolved_watch_count or 0 }} watch reconciliados</span>
+                            </div>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+                                <a class="pm2-btn pm2-btn--primary"
+                                   style="text-decoration:none"
+                                   href="{{ row.primary_action.href }}"
+                                   data-testid="ledger-reconciliation-open-{{ row.patient_ref }}">Abrir reconciliacion</a>
+                                <a class="pm2-btn pm2-btn--ghost"
+                                   style="text-decoration:none"
+                                   href="/patient_profile/{{ row.patient_ref }}?v=2&refresh=1">Perfil V2</a>
+                            </div>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="pm2-tab-card" data-testid="ledger-reconciliation-population-empty">
+                    <div class="pm2-tab-card-body">
+                        <strong style="color:#bbf7d0">Sin conflictos Ledger abiertos en el corte actual.</strong>
+                        <p style="color:var(--pn-text-muted);font-size:.82rem;margin-top:6px">
+                            El siguiente paso operativo es usar facts conocidos para prellenar captura y vigilar discordancias historicas ya reconciliadas.
+                        </p>
+                    </div>
+                </div>
+            {% endif %}
+        </section>
+    </main>
+</div>
+</body>
+</html>

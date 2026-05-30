@@ -63,6 +63,82 @@
                     <input type="hidden" name="assessment_id" id="registrationAssessmentId" value="{{ assessment_id }}">
                     <input type="hidden" name="assessment_state" id="registrationAssessmentState">
                     <div id="registrationFragments" class="space-y-5"></div>
+                    {% include "components/real_world_enrollment_panel.html" %}
+                    <div class="rounded-2xl border border-cyan-500/25 bg-slate-950/70 p-4" data-intake-treatment-panel>
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <p class="text-xs uppercase tracking-[0.22em] text-cyan-300">Tratamiento sistémico al ingreso</p>
+                                <p class="mt-2 text-sm text-slate-300">Active este bloque sólo si el paciente inicia o continúa tratamiento sistémico en esta unidad.</p>
+                            </div>
+                            <label class="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200">
+                                <input type="checkbox" id="initialTreatmentEnabled" class="h-4 w-4 rounded border-slate-600 bg-slate-950 text-cyan-400">
+                                Registrar tratamiento
+                            </label>
+                        </div>
+                        <div class="mt-4 grid gap-4 md:grid-cols-2">
+                            <label class="text-sm text-slate-300 md:col-span-2">
+                                Esquema
+                                <select name="drug_scheme" id="initialTreatmentRegimen" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" data-treatment-field disabled>
+                                    <option value="">Seleccionar esquema sistémico</option>
+                                    {% for entry in therapy_catalog_entries %}
+                                        {% set agents = entry.agents or [] %}
+                                        {% if agents and entry.therapy_class != "observation" and entry.therapy_class != "focal_ablation" %}
+                                            <option value="{{ entry.regimen_code }}"
+                                                    data-agent-count="{{ agents|length }}"
+                                                    data-agents="{{ agents|join(' + ') }}"
+                                                    data-therapy-class="{{ entry.therapy_class or '' }}">
+                                                {{ entry.label_clinico or entry.regimen_code }}
+                                            </option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                            </label>
+                            <label class="text-sm text-slate-300">
+                                Fecha de inicio del curso
+                                <input type="date" name="current_treatment_start_date" id="initialTreatmentStartDate" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" data-treatment-field disabled>
+                            </label>
+                            <label class="text-sm text-slate-300">
+                                Línea terapéutica
+                                <input type="number" min="1" step="1" name="line_of_therapy_number" value="1" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" data-treatment-field disabled>
+                            </label>
+                            <label class="text-sm text-slate-300">
+                                Contexto de línea
+                                <select name="line_of_therapy_context" id="initialTreatmentLineContext" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" data-treatment-field disabled>
+                                    <option value="">Sin contexto específico</option>
+                                    <option value="mHSPC_initial">mHSPC inicial</option>
+                                    <option value="m0_CRPC_first_line">m0 CRPC primera línea</option>
+                                    <option value="mCRPC_first_line">mCRPC primera línea</option>
+                                    <option value="mCRPC_post_ARPI_pre_taxane">mCRPC post-ARPI pre-taxano</option>
+                                    <option value="mCRPC_post_taxane">mCRPC post-taxano</option>
+                                    <option value="later_line">Línea posterior</option>
+                                </select>
+                            </label>
+                            <label class="text-sm text-slate-300">
+                                Dosis recibidas antes de esta unidad
+                                <input type="number" min="0" step="1" name="doses_received_before_unit" value="0" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" data-treatment-field disabled>
+                            </label>
+                            <label class="text-sm text-slate-300">
+                                Dosis otorgadas en esta unidad al ingreso
+                                <input type="number" min="0" step="1" name="local_doses_administered" id="initialTreatmentLocalDoses" value="0" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" data-treatment-field disabled>
+                            </label>
+                            <label class="text-sm text-slate-300">
+                                Unidad que administra
+                                <input type="text" name="unit_name" placeholder="Unidad actual" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" data-treatment-field disabled>
+                            </label>
+                            <label class="text-sm text-slate-300">
+                                Destino de referencia planeado
+                                <select name="referral_target" class="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" data-treatment-field disabled>
+                                    <option value="">No definido</option>
+                                    <option value="HGZ">HGZ</option>
+                                    <option value="HGR">HGR</option>
+                                    <option value="UMAE">UMAE</option>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300" id="initialTreatmentPreview">
+                            Sin tratamiento sistémico registrado desde este ingreso.
+                        </div>
+                    </div>
                     <div class="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
                         <p class="text-xs uppercase tracking-[0.22em] text-slate-500">Estado del registro</p>
                         <p class="mt-2 text-sm text-slate-300" id="registrationStatus">Cargando contexto del borrador clínico...</p>
@@ -82,8 +158,9 @@
 {% endblock %}
 
 {% block page_scripts %}
-    <script src="{{ url_for('static', filename='js/longitudinal_capture_helpers.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/registration_context_ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/longitudinal_capture_helpers.js') }}?v=real_world_enrollment_v2"></script>
+    <script src="{{ url_for('static', filename='js/registration_context_ui.js') }}?v=real_world_enrollment_v2"></script>
+    <script src="{{ url_for('static', filename='js/real_world_enrollment_panel.js') }}?v=real_world_enrollment_v2"></script>
     <script src="{{ url_for('static', filename='js/consent_flow.js') }}"></script>
     <script>
         const assessmentId = "{{ assessment_id }}";
@@ -103,6 +180,13 @@
         const compatibilityScopeDescription = document.getElementById("compatibilityScopeDescription");
         const compatibilityScopeBullets = document.getElementById("compatibilityScopeBullets");
         const registerPatientButton = document.getElementById("registerPatientButton");
+        const initialTreatmentEnabled = document.getElementById("initialTreatmentEnabled");
+        const initialTreatmentRegimen = document.getElementById("initialTreatmentRegimen");
+        const initialTreatmentStartDate = document.getElementById("initialTreatmentStartDate");
+        const initialTreatmentLineContext = document.getElementById("initialTreatmentLineContext");
+        const initialTreatmentLocalDoses = document.getElementById("initialTreatmentLocalDoses");
+        const initialTreatmentPreview = document.getElementById("initialTreatmentPreview");
+        const initialTreatmentFields = Array.from(document.querySelectorAll("[data-treatment-field]"));
 
         const consentFlow = new window.ProstaNetConsentFlow({
             onStatus: (message, tone) => {
@@ -117,6 +201,60 @@
 
         function escapeHtml(value) {
             return window.ProstaNetRegistrationContextUI.escapeHtml(value);
+        }
+
+        function inferTreatmentLineContext(state) {
+            const key = String(state || "").toLowerCase();
+            if (key.includes("mcspc")) {
+                return "mHSPC_initial";
+            }
+            if (key === "m0_crpc") {
+                return "m0_CRPC_first_line";
+            }
+            if (key === "m1_crpc") {
+                return "mCRPC_first_line";
+            }
+            return "";
+        }
+
+        function updateInitialTreatmentPreview() {
+            if (!initialTreatmentEnabled.checked) {
+                initialTreatmentPreview.textContent = "Sin tratamiento sistémico registrado desde este ingreso.";
+                initialTreatmentPreview.className = "mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300";
+                return;
+            }
+            const option = initialTreatmentRegimen.selectedOptions[0];
+            const label = option?.textContent?.trim() || "Esquema no seleccionado";
+            const agents = option?.dataset?.agents || "componentes no documentados";
+            const count = Number(option?.dataset?.agentCount || 0);
+            const intensity = count >= 3 ? "Triplete" : count === 2 ? "Doblete" : count === 1 ? "Monoterapia" : "No clasificado";
+            const localDoses = Number(initialTreatmentLocalDoses.value || 0);
+            let alertText = "Sin alerta de referencia por dosis locales.";
+            let alertTone = "border-slate-800 bg-slate-900/60 text-slate-300";
+            if (localDoses >= 6) {
+                alertText = "Paciente con maximo de dosis otorgadas en esta unidad. Priorizar envio a HGZ o HGR.";
+                alertTone = "border-rose-500/40 bg-rose-500/10 text-rose-100";
+            } else if (localDoses >= 4) {
+                alertText = "Realizar envio a HGZ o HGR para continuar con tratamiento establecido.";
+                alertTone = "border-amber-400/40 bg-amber-400/10 text-amber-100";
+            }
+            initialTreatmentPreview.className = `mt-4 rounded-2xl border p-4 text-sm ${alertTone}`;
+            initialTreatmentPreview.innerHTML = `
+                <p class="font-semibold">${escapeHtml(intensity)} · ${escapeHtml(label)}</p>
+                <p class="mt-1">Componentes: ${escapeHtml(agents)}.</p>
+                <p class="mt-2">${escapeHtml(alertText)}</p>
+                <p class="mt-2 text-xs opacity-80">El gasto ARPI se calculará al guardar con el catálogo auditado; ADT, docetaxel, laboratorio, aplicación y visitas no se suman todavía.</p>
+            `;
+        }
+
+        function updateInitialTreatmentFields() {
+            const enabled = initialTreatmentEnabled.checked;
+            initialTreatmentFields.forEach((field) => {
+                field.disabled = !enabled;
+            });
+            initialTreatmentRegimen.required = enabled;
+            initialTreatmentStartDate.required = enabled;
+            updateInitialTreatmentPreview();
         }
 
         async function loadAssessmentContext() {
@@ -137,6 +275,9 @@
             assessmentComparison.textContent = result.eau_comparison?.explicacion_breve || result.eau_comparison?.label || "";
             assessmentSummary.textContent = primary.resumen_del_caso || result.report_sections?.summary || "";
             assessmentHighlights.innerHTML = (primary.fundamentos_personalizados || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+            if (!initialTreatmentLineContext.value) {
+                initialTreatmentLineContext.value = inferTreatmentLineContext(assessment.state);
+            }
 
             compatibilityScopeDescription.textContent = data.scope_description || "";
             compatibilityScopeBullets.innerHTML = (data.scope_bullets || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
@@ -153,9 +294,16 @@
                 fragments: data.registration_fragments || [],
                 defaults: data.registration_defaults || {},
                 captureLayers: data.capture_layers || [],
+                ledgerContext: data.clinical_fact_ledger_registration_context || null,
             });
             registrationStatus.textContent = "Complete únicamente los datos longitudinales faltantes y firme el consentimiento para abrir el expediente.";
+            updateInitialTreatmentFields();
         }
+
+        initialTreatmentEnabled.addEventListener("change", updateInitialTreatmentFields);
+        initialTreatmentRegimen.addEventListener("change", updateInitialTreatmentPreview);
+        initialTreatmentLocalDoses.addEventListener("input", updateInitialTreatmentPreview);
+        initialTreatmentFields.forEach((field) => field.addEventListener("input", updateInitialTreatmentPreview));
 
         registrationForm.addEventListener("submit", async (event) => {
             event.preventDefault();

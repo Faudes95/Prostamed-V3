@@ -30,6 +30,13 @@ def _present(value: Any) -> bool:
     return value not in (None, "", "No aplica", "No realizado", "Desconocido", "Desconocida")
 
 
+def _dre_present(payload: dict[str, Any]) -> bool:
+    return any(
+        _present(payload.get(field))
+        for field in ("dre_suspicious", "dre_finding", "clinical_tstage_dre_estimate")
+    )
+
+
 def _algorithm_entry(
     *,
     key: str,
@@ -171,9 +178,11 @@ def _external_classifier_entry(payload: dict[str, Any], stage: str) -> dict[str,
 def _erspc_entry(module_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     missing = [
         field
-        for field in ("age", "psa", "dre_suspicious")
+        for field in ("age", "psa")
         if not _present(payload.get(field))
     ]
+    if not _dre_present(payload):
+        missing.append("dre_suspicious")
     if module_id == "post_negative_biopsy_followup" and not _present(payload.get("prior_biopsy_count")):
         missing.append("prior_biopsy_count")
     status = "listo_para_calculadora" if not missing else "faltan_datos"

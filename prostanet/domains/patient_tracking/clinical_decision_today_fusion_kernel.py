@@ -374,6 +374,7 @@ def build_decision_today(
 
     primary_lane = guardrail_lane or _primary_lane_from_missing(missing) or _first_text(top_autodrive.get("cta", {}).get("readiness_lane"))
     missing_plan = _build_missing_plan(missing, resolved_ref, fallback_lane=primary_lane)
+    ledger_quality = _build_ledger_quality_for_decision_today(patient)
     next_action = _next_safe_action(
         patient_ref=resolved_ref,
         decision_state=decision_state,
@@ -384,6 +385,7 @@ def build_decision_today(
         tumor_choice=tumor_choice,
         top_autodrive=top_autodrive,
         primary_lane=primary_lane,
+        ledger_quality=ledger_quality,
     )
 
     gates, trials = _affected_contracts(enriched, autodrive, tumor_choice, top_autodrive)
@@ -411,8 +413,19 @@ def build_decision_today(
         "unified_missing_fields": missing_plan,
         "missing_field_keys": [item["field"] for item in missing_plan],
         "conflict_resolution": conflict_resolution,
+        "ledger_quality": ledger_quality,
         "next_safe_action": next_action,
-        "source_alignment": source_alignment,
+        "source_alignment": {
+            **source_alignment,
+            "clinical_fact_ledger": {
+                "status": ledger_quality.get("status"),
+                "label": ledger_quality.get("label"),
+                "reason": ledger_quality.get("message"),
+                "conflict_count": ledger_quality.get("conflict_count"),
+                "critical_conflict_count": ledger_quality.get("critical_conflict_count"),
+                "resolved_watch_count": ledger_quality.get("resolved_watch_count"),
+            },
+        },
         "audit": {
             "deterministic_v1": True,
             "read_model_only": True,
@@ -434,6 +447,12 @@ def build_decision_today(
             "sources_used": _sources_used(enriched, patient, autodrive),
             "gates_affected": gates,
             "trials_affected": trials,
+            "ledger_quality": {
+                "status": ledger_quality.get("status"),
+                "conflict_count": ledger_quality.get("conflict_count"),
+                "critical_conflict_count": ledger_quality.get("critical_conflict_count"),
+                "resolved_watch_count": ledger_quality.get("resolved_watch_count"),
+            },
             "anti_fallback_checks": anti_fallback,
             "computed_at": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         },
@@ -448,6 +467,7 @@ def decision_today_to_autodrive_item(
     """Convert Decision Today into an Autodrive-compatible top queue item."""
     decision = dict(decision_today.get("decision_today") or {})
     action = dict(decision_today.get("next_safe_action") or {})
+    ledger_quality = dict(decision_today.get("ledger_quality") or {})
     state = str(decision_today.get("state") or "")
     status = str(decision_today.get("decision_state") or decision.get("status") or "not_actionable")
     lane = _autodrive_lane_for_decision_state(status)
@@ -470,6 +490,7 @@ def decision_today_to_autodrive_item(
         "source_bundles": _dedupe(["clinical_decision_today_fusion_kernel"] + list(action.get("source_bundles") or [])),
         "gates_affected": list((decision_today.get("audit") or {}).get("gates_affected") or []),
         "trials_affected": list((decision_today.get("audit") or {}).get("trials_affected") or []),
+        "ledger_quality": ledger_quality,
         "cta": dict(action.get("cta") or {}),
         "action_key": "decision_today:fusion_kernel",
         "due_at": str(action.get("due_at") or ""),
@@ -477,6 +498,29 @@ def decision_today_to_autodrive_item(
         "external_order_created": False,
         "write_requires_review": True,
     }
+
+
+def _build_ledger_quality_for_decision_today(patient: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        from prostanet.domains.clinical_fact_ledger import build_decision_today_ledger_quality
+
+        return build_decision_today_ledger_quality(dict(patient or {}))
+    except Exception as exc:
+        return {
+            "version": "clinical_fact_ledger_decision_quality_v1",
+            "status": "unavailable",
+            "severity": "unknown",
+            "label": "Ledger no disponible para DECISION HOY",
+            "message": str(exc)[:160],
+            "conflict_count": 0,
+            "critical_conflict_count": 0,
+            "resolved_watch_count": 0,
+            "decision_conditioned": False,
+            "requires_reconciliation": False,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        }
 
 
 def _ensure_source_bundles(patient: Mapping[str, Any], bundle: Mapping[str, Any], *, state: str, management_track: str, patient_ref: str) -> dict[str, Any]:
@@ -990,7 +1034,41 @@ def _next_safe_action(
     tumor_choice: Mapping[str, Any],
     top_autodrive: Mapping[str, Any],
     primary_lane: str,
+    ledger_quality: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    ledger_quality = dict(ledger_quality or {})
+    if int(ledger_quality.get("critical_conflict_count") or 0) > 0:
+        critical = list(ledger_quality.get("critical_conflicts") or ledger_quality.get("open_conflicts") or [])
+        primary_fact = dict(critical[0] or {}) if critical else {}
+        cta_href = (
+            (ledger_quality.get("reconciliation_cta") or {}).get("href")
+            or f"/clinical-fact-reconciliation/{quote(str(patient_ref))}"
+        )
+        return {
+            "label": "Reconciliar conflicto critico Ledger",
+            "title": "Resolver conflicto critico antes de DECISION HOY",
+            "reason": ledger_quality.get("message") or "Existe un conflicto clinico bloqueante en el Ledger.",
+            "risk_avoided": "Evita liberar o ejecutar una decision basada en hechos clinicos contradictorios.",
+            "cta": {
+                "label": "Reconciliar hechos clinicos",
+                "href": cta_href,
+                "action_mode": "reconcile_clinical_fact",
+                "patient_ref": str(patient_ref),
+                "decision_field": primary_fact.get("fact_key") or "",
+                "ledger_quality_status": ledger_quality.get("status"),
+            },
+            "ledger_quality_gate": {
+                "status": ledger_quality.get("status"),
+                "critical_conflict_count": ledger_quality.get("critical_conflict_count"),
+                "conflict_count": ledger_quality.get("conflict_count"),
+                "primary_fact_key": primary_fact.get("fact_key") or "",
+            },
+            "source_bundles": ["clinical_decision_today_fusion_kernel", "clinical_fact_ledger"],
+            "due_at": "hoy",
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        }
     if missing_plan:
         cta = dict(missing_plan[0].get("cta") or {})
         return {
@@ -1001,6 +1079,38 @@ def _next_safe_action(
             "cta": cta,
             "source_bundles": ["clinical_decision_today_fusion_kernel"],
             "due_at": "hoy / segun agenda",
+        }
+    if ledger_quality.get("requires_reconciliation"):
+        open_conflicts = list(ledger_quality.get("open_conflicts") or [])
+        primary_fact = dict(open_conflicts[0] or {}) if open_conflicts else {}
+        cta_href = (
+            (ledger_quality.get("reconciliation_cta") or {}).get("href")
+            or f"/clinical-fact-reconciliation/{quote(str(patient_ref))}"
+        )
+        return {
+            "label": "Revisar contradiccion Ledger",
+            "title": _first_text(title, "Revisar contradiccion Ledger"),
+            "reason": ledger_quality.get("message") or rationale,
+            "risk_avoided": "Evita cerrar una decision con datos discordantes no firmados.",
+            "cta": {
+                "label": "Reconciliar hechos clinicos",
+                "href": cta_href,
+                "action_mode": "reconcile_clinical_fact",
+                "patient_ref": str(patient_ref),
+                "decision_field": primary_fact.get("fact_key") or "",
+                "ledger_quality_status": ledger_quality.get("status"),
+            },
+            "ledger_quality_gate": {
+                "status": ledger_quality.get("status"),
+                "critical_conflict_count": ledger_quality.get("critical_conflict_count"),
+                "conflict_count": ledger_quality.get("conflict_count"),
+                "primary_fact_key": primary_fact.get("fact_key") or "",
+            },
+            "source_bundles": ["clinical_decision_today_fusion_kernel", "clinical_fact_ledger"],
+            "due_at": "hoy / segun agenda",
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
         }
     if decision_state in {"releaseable", "redecision_required"}:
         return {

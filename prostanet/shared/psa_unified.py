@@ -73,10 +73,25 @@ def unified_psa_timeline(patient_record: dict) -> list[dict[str, Any]]:
     if base_psa and base_psa > 0 and diagnosis_date:
         # Check if already in timeline (within 7-day window of diagnosis_date)
         already_seeded = False
+        baseline_contexts = {
+            "basal",
+            "baseline",
+            "basal dx (intake)",
+            "diagnostic",
+            "diagnostico",
+            "diagnóstico",
+            "initial",
+            "pretratamiento",
+            "pretreatment",
+        }
         try:
             dx_dt = datetime.fromisoformat(str(diagnosis_date)[:10])
             for p in psa_points:
                 if p["value"] == base_psa and p["date"]:
+                    context = str(p.get("context") or "").strip().lower()
+                    if context in baseline_contexts:
+                        already_seeded = True
+                        break
                     try:
                         p_dt = datetime.fromisoformat(str(p["date"])[:10])
                         if abs((p_dt - dx_dt).days) <= 7:

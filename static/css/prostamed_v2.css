@@ -1498,6 +1498,7 @@
     min-height: 120px;
     display: flex;
     flex-direction: column;
+    min-width: 0;
 }
 
 .pm2-kpi-card[data-variant="critical"] { border-color: var(--clinical-critical-edge); }
@@ -1520,6 +1521,9 @@
     margin-top: 6px;
     font-feature-settings: "tnum";
     line-height: 1;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .pm2-kpi-foot {
@@ -1529,6 +1533,8 @@
     align-items: flex-end;
     gap: var(--space-2);
     padding-top: var(--space-2);
+    min-width: 0;
+    flex-wrap: wrap;
 }
 
 .pm2-kpi-spark {
@@ -1537,12 +1543,22 @@
 }
 
 .pm2-kpi-trend {
-    display: inline-flex;
+    display: inline-block;
     align-items: center;
     gap: 2px;
     font-size: 0.7rem;
     font-weight: 700;
     font-feature-settings: "tnum";
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+    line-height: 1.2;
+}
+
+.pm2-kpi-foot .pm2-kpi-trend {
+    width: 100%;
 }
 
 /* ─────────────────────────────── Dashboard panels ─────────────────────────────── */
@@ -3562,6 +3578,7 @@
         grid-template-columns: minmax(0, 1fr);
         grid-template-rows: auto 64px 1fr;
         grid-template-areas: "mobile-brand" "header" "main";
+        overflow-x: hidden;
     }
     .pm2-app-shell .pm2-sidebar { display: none; }
 }
@@ -3669,6 +3686,26 @@
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+    .pm2-app-main {
+        overflow-x: hidden;
+    }
+
+    .pm2-decision-hero-head {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .pm2-decision-hero-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .pm2-decision-hero-actions > * {
+        max-width: 100%;
+    }
 }
 
 .pm2-decision-hero-title {

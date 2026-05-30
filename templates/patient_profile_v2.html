@@ -17,14 +17,14 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='tumor_board_os_20260510') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='v2_timeline_cost_20260528') }}">
     {# LXCI Fase 6 — Transitions framework + hover prefetch #}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2_transitions.css') }}">
     <script src="{{ url_for('static', filename='js/pm2_prefetch.js') }}" defer></script>
     {# EPIC 36.B-extended — Shared voice quick-capture helper para los 4 cards #}
     <script src="{{ url_for('static', filename='js/pm2_voice_quick_capture.js') }}" defer></script>
     {# EPIC 33.A — Collapsible sections + HIPAA audit log #}
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/pm2_collapsible_sections.css', v='epic33a_20260516') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/pm2_collapsible_sections.css', v='v2_timeline_cost_20260528') }}">
     <script src="{{ url_for('static', filename='js/pm2_collapsible_persistence.js', v='epic33a_20260516') }}" defer></script>
 </head>
 <body class="bg-slate-950 text-slate-100 antialiased">
@@ -38,8 +38,28 @@
 {% set pm2_psa_points = pm2_psa.get('points') or [] %}
 {% set pm2_treatment_bands = pm2_psa.get('treatment_bands') or [] %}
 {% set pm2_per_line = pm2_psa.get('per_line') or [] %}
+{% set pm2_ape_history = pm2_psa.get('ape_history_readiness') or {} %}
+{% set pm2_ape_status = pm2_ape_history.get('ape_status') or 'missing_psa' %}
+{% set pm2_ape_chip_class = 'pm2-state-chip--success' if pm2_ape_history.get('is_history_ready') else ('pm2-state-chip--danger' if pm2_ape_status in ['missing_psa','uninterpretable_series'] else 'pm2-state-chip--warn') %}
 {% set pm2_testosterone_points = testosterone_history|default([]) %}
 {% set pm2_has_tx = (pm2_treatment_bands|length > 0) or (pm2_per_line|length > 0) %}
+{% set pm2_current_band = (pm2_treatment_bands|last) if pm2_treatment_bands else {} %}
+{% set pm2_current_line = (pm2_per_line|last) if pm2_per_line else {} %}
+{% set tx_course = treatment_course_summary or {} %}
+{% set tx_current = tx_course.current_course or {} %}
+{% set tx_alert = tx_course.dose_alert or {} %}
+{% set tx_cost = tx_course.cost_summary or {} %}
+{% set tx_cost_status = tx_cost.price_coverage_status or '' %}
+{% set tx_cost_label = {
+    'priced_full': 'ARPI trazable',
+    'priced_with_stale_source': 'ARPI con fuente a revisar',
+    'partial': 'ARPI parcial',
+    'unpriced': 'ARPI sin precio',
+    'no_arpi_component': 'Sin componente ARPI'
+}.get(tx_cost_status, 'Precio no auditado') %}
+{% set epi_sla = epidemiology_gap_sla or {} %}
+{% set epi_sla_summary = epi_sla.get('summary', {}) if epi_sla else {} %}
+{% set epi_sla_items = epi_sla.get('items', []) if epi_sla else [] %}
 
 <div class="pm2-app-shell">
 
@@ -131,6 +151,201 @@
             </div>
         </section>
 
+        {% set _ledger = clinical_fact_ledger_summary or {} %}
+        {% set _ledger_summary = _ledger.get('summary', {}) if _ledger else {} %}
+        {% set _ledger_priority = _ledger.get('priority_facts', []) if _ledger else [] %}
+        {% set _ledger_governance = clinical_fact_ledger_capture_governance or {} %}
+        {% set _ledger_governance_summary = _ledger_governance.get('summary', {}) if _ledger_governance else {} %}
+        {% set _ledger_governance_gates = _ledger_governance.get('gates', []) if _ledger_governance else [] %}
+        {% if _ledger and _ledger_priority %}
+        <section class="pm2-tab-card"
+                 style="margin: var(--space-4) var(--space-6); border-left:4px solid {% if _ledger_summary.conflict_count %}var(--clinical-danger){% elif _ledger_summary.recapture_watch_count %}var(--clinical-warning){% else %}var(--clinical-success){% endif %}"
+                 data-testid="clinical-fact-ledger-v1-panel"
+                 aria-label="Clinical Fact Ledger v1">
+            <div class="pm2-tab-card-head">
+                <h3>Clinical Fact Ledger v1</h3>
+                <span class="pm2-head-meta" data-testid="clinical-fact-ledger-contract">
+                    read-only · no recaptura · {{ _ledger_summary.known_fact_count or 0 }}/{{ _ledger_summary.registered_fact_count or 0 }} facts conocidos
+                </span>
+            </div>
+            <div class="pm2-tab-card-body">
+                <div class="pm2-grid-4" style="gap:14px">
+                    <div>
+                        <div class="pm2-kicker">Facts reutilizables</div>
+                        <div style="font-weight:800;color:#f0fbff" data-testid="ledger-reusable-count">
+                            {{ _ledger_summary.reusable_priority_fact_count or 0 }}/{{ _ledger_summary.priority_fact_count or 0 }}
+                        </div>
+                        <div style="font-size:.72rem;color:var(--pn-text-muted)">prellenar sin volver a preguntar</div>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Conflictos</div>
+                        <div style="font-weight:800;color:{% if _ledger_summary.conflict_count %}#fecaca{% else %}#bbf7d0{% endif %}" data-testid="ledger-conflict-count">
+                            {{ _ledger_summary.conflict_count or 0 }}
+                        </div>
+                        <div style="font-size:.72rem;color:var(--pn-text-muted)">resolver antes de decidir</div>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Riesgo recaptura</div>
+                        <div style="font-weight:800;color:{% if _ledger_summary.recapture_watch_count %}#fde68a{% else %}#bbf7d0{% endif %}" data-testid="ledger-recapture-watch-count">
+                            {{ _ledger_summary.recapture_watch_count or 0 }}
+                        </div>
+                        <div style="font-size:.72rem;color:var(--pn-text-muted)">duplicados concordantes son watch</div>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Siguiente accion</div>
+                        <div style="font-weight:800;color:#f0fbff;font-size:.84rem" data-testid="ledger-next-action">{{ _ledger.next_action }}</div>
+                        <a href="/api/patients/{{ identity.nss }}/clinical-fact-ledger/summary"
+                           class="pm2-state-chip pm2-state-chip--primary"
+                           style="text-decoration:none;margin-top:6px;display:inline-flex"
+                           data-testid="ledger-summary-api-link">API summary</a>
+                        <a href="/clinical-fact-reconciliation"
+                           class="pm2-state-chip"
+                           style="text-decoration:none;margin-top:6px;display:inline-flex"
+                           data-testid="ledger-reconciliation-population-link">Cola poblacional</a>
+                        {% if _ledger_summary.conflict_count %}
+                        <a href="/clinical-fact-reconciliation/{{ identity.nss }}"
+                           class="pm2-state-chip pm2-state-chip--danger"
+                           style="text-decoration:none;margin-top:6px;display:inline-flex"
+                           data-testid="ledger-reconciliation-v2-link">Reconciliar V2</a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px" data-testid="clinical-fact-ledger-priority-facts">
+                    {% for fact in _ledger_priority[:12] %}
+                    <div style="padding:10px 12px;border-radius:10px;background:rgba(15,23,42,.55);border:1px solid {% if fact.status == 'conflict' %}rgba(248,113,113,.45){% elif fact.status == 'watch' %}rgba(251,191,36,.42){% elif fact.value_known %}rgba(52,211,153,.28){% else %}var(--border-default){% endif %}"
+                         data-testid="ledger-fact-{{ fact.fact_key }}">
+                        <div class="pm2-kicker">{{ fact.fact_key }}</div>
+                        <div style="font-weight:800;color:#f0fbff">
+                            {% if fact.value_known %}
+                                {{ fact.current_value }}
+                            {% else %}
+                                No documentado
+                            {% endif %}
+                        </div>
+                        <div style="font-size:.7rem;color:var(--pn-text-muted);line-height:1.45">
+                            {{ fact.current_source or 'sin fuente' }} · {{ fact.freshness_status or 'missing' }}
+                        </div>
+                        <div style="margin-top:6px">
+                            <span class="pm2-state-chip {% if fact.status == 'conflict' %}pm2-state-chip--danger{% elif fact.status == 'watch' %}pm2-state-chip--warn{% elif fact.value_known %}pm2-state-chip--success{% endif %}">
+                                {{ fact.status }}
+                            </span>
+                            <span class="pm2-state-chip">{{ fact.source_count or 0 }} fuente{{ 's' if (fact.source_count or 0) != 1 else '' }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {% if _ledger.get('conflict_queue') %}
+                <div style="margin-top:14px;padding:10px 12px;border-radius:10px;background:rgba(127,29,29,.18);border:1px solid rgba(248,113,113,.35)" data-testid="clinical-fact-ledger-conflict-queue">
+                    <strong style="color:#fecaca">Cola de contradicciones:</strong>
+                    {% for fact in _ledger.conflict_queue[:6] %}
+                    <span class="pm2-state-chip pm2-state-chip--danger">{{ fact.fact_key }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if _ledger.get('recapture_watch') %}
+                <div style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(113,63,18,.18);border:1px solid rgba(251,191,36,.35)" data-testid="clinical-fact-ledger-recapture-watch">
+                    <strong style="color:#fde68a">Evitar recaptura:</strong>
+                    {% for fact in _ledger.recapture_watch[:8] %}
+                    <span class="pm2-state-chip pm2-state-chip--warn">{{ fact.fact_key }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if _ledger_governance_gates and (_ledger_governance_summary.active_gate_count or _ledger_governance_summary.suppressed_gate_count or _ledger_governance_summary.conflict_gate_count) %}
+                <div style="margin-top:14px;padding:12px;border-radius:10px;background:rgba(15,23,42,.58);border:1px solid rgba(94,234,212,.28)"
+                     data-testid="ledger-capture-governance-panel">
+                    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
+                        <div>
+                            <strong style="color:#ccfbf1">CTAs gobernadas por Ledger</strong>
+                            <div style="font-size:.72rem;color:var(--pn-text-muted);line-height:1.45">
+                                evita recaptura si el hecho ya existe, bloquea captura ciega si hay contradiccion y deja pasar captura dirigida si falta o esta vencido.
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap">
+                            <span class="pm2-state-chip pm2-state-chip--success">{{ _ledger_governance_summary.suppressed_gate_count or 0 }} sin recaptura</span>
+                            <span class="pm2-state-chip pm2-state-chip--warn">{{ _ledger_governance_summary.refresh_gate_count or 0 }} actualizar</span>
+                            <span class="pm2-state-chip pm2-state-chip--danger">{{ _ledger_governance_summary.conflict_gate_count or 0 }} conflictos</span>
+                        </div>
+                    </div>
+                    <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px">
+                        {% for gate in _ledger_governance_gates %}
+                        {% if gate.clinical_context_active or gate.suppressed_by_ledger or gate.conflict_fact_keys %}
+                        <div style="padding:9px 10px;border-radius:9px;background:rgba(2,6,23,.35);border:1px solid {% if gate.tone == 'danger' %}rgba(248,113,113,.42){% elif gate.tone == 'warning' %}rgba(251,191,36,.38){% elif gate.tone == 'success' %}rgba(52,211,153,.32){% else %}var(--border-default){% endif %}"
+                             data-testid="ledger-governed-{{ gate.gate_key }}">
+                            <div class="pm2-kicker">{{ gate.label }}</div>
+                            <div style="font-weight:800;color:#f0fbff;font-size:.82rem">{{ gate.action }}</div>
+                            <div style="font-size:.7rem;color:var(--pn-text-muted);line-height:1.4;margin-top:4px">{{ gate.message }}</div>
+                            <div style="margin-top:6px">
+                                {% if gate.reused_fact_key %}
+                                <span class="pm2-state-chip pm2-state-chip--success">reuse {{ gate.reused_fact_key }}</span>
+                                {% endif %}
+                                {% for fact_key in gate.missing_fact_keys[:2] %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">falta {{ fact_key }}</span>
+                                {% endfor %}
+                                {% for fact_key in gate.conflict_fact_keys[:2] %}
+                                <span class="pm2-state-chip pm2-state-chip--danger">conflicto {{ fact_key }}</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+
+        <section class="pm2-tab-card" style="margin: var(--space-4) var(--space-6); border-left:4px solid var(--clinical-info-edge)" data-testid="v2-treatment-cost-topline" aria-label="Resumen farmacoeconómico V2">
+            <div class="pm2-tab-card-head">
+                <h3>Tratamiento y costo farmacológico V2</h3>
+                <span class="pm2-head-meta">curso activo · dosis otorgadas · catálogo auditable</span>
+            </div>
+            <div class="pm2-tab-card-body">
+                <div class="pm2-grid-4" style="gap:14px">
+                    <div>
+                        <div class="pm2-kicker">Régimen actual</div>
+                        <div style="font-weight:800;color:#f0fbff">{{ tx_current.regimen_label or 'Sin esquema activo' }}</div>
+                        <div style="font-size:.72rem;color:var(--pn-text-muted)">{{ tx_current.intensity.intensity_label if tx_current.intensity else 'No clasificado' }}</div>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Dosis otorgadas</div>
+                        <div style="font-weight:800;color:#f0fbff">{{ tx_current.local_dose_count if tx_course.available else 0 }} locales · {{ tx_current.global_dose_count if tx_course.available else 0 }} globales</div>
+                        <div style="font-size:.72rem;color:var(--pn-text-muted)">Costeadas: {{ tx_cost.priced_doses or 0 }}</div>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Gasto ARPI acumulado</div>
+                        <div style="font-weight:800;color:#f0fbff">$ {{ '%.2f'|format(tx_cost.estimated_total_spend_mxn or 0) }} MXN</div>
+                        <div style="font-size:.72rem;color:var(--pn-text-muted)">Fármacos trazables acumulados: $ {{ '%.2f'|format(tx_cost.estimated_total_medication_spend_mxn or tx_cost.estimated_total_spend_mxn or 0) }} MXN</div>
+                        <div style="font-size:.72rem;color:var(--pn-text-muted)">Fármacos trazables por ciclo: $ {{ '%.2f'|format(tx_cost.estimated_cost_per_dose_mxn or 0) }} MXN</div>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Cobertura de precio</div>
+                        <div style="font-weight:800;color:{% if tx_cost.medication_total_coverage_status == 'partial' %}#fbbf24{% elif tx_cost.price_coverage_status in ['priced_full','no_arpi_component'] %}#34d399{% else %}#94a3b8{% endif %}">
+                            {{ tx_cost.medication_total_coverage_status or tx_cost.price_coverage_status or 'no auditado' }}
+                        </div>
+                        <div style="font-size:.72rem;color:var(--pn-text-muted)">{{ tx_cost_label }}</div>
+                    </div>
+                </div>
+                <div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(15,23,42,.55);border:1px solid var(--border-default);font-size:.72rem;color:var(--pn-text-muted);line-height:1.55">
+                    {% if tx_cost.priced_components %}
+                    <strong style="color:#cbd5e1">Incluye:</strong>
+                    {% for component in tx_cost.priced_components %}
+                        {{ component.agent }} ${{ '%.2f'|format(component.unit_price_mxn or 0) }} MXN{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                    {% else %}
+                    <strong style="color:#cbd5e1">Incluye:</strong> sin componentes costeados.
+                    {% endif %}
+                    {% if tx_cost.unpriced_backbone_components or tx_cost.missing_non_arpi_components %}
+                    <span style="color:#fbbf24"> · Pendiente de costeo: {{ ((tx_cost.unpriced_backbone_components or []) + (tx_cost.missing_non_arpi_components or []))|join(', ') }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
         {# ── Decisión hoy hero (prominent · Faubot release stamped) ── #}
         <section class="pm2-decision-hero" aria-labelledby="decision-hoy-title">
             <div class="pm2-decision-hero-head">
@@ -150,6 +365,36 @@
             <p class="pm2-decision-hero-rationale">
                 <strong>Rationale:</strong> {{ decision_today.rationale }}
             </p>
+            {% set _decision_ledger_quality = decision_today.ledger_quality or decision_today_ledger_quality or {} %}
+            {% if _decision_ledger_quality and _decision_ledger_quality.get('status') not in ['clear', None, ''] %}
+            {% set _dq_status = _decision_ledger_quality.get('status') %}
+            {% set _dq_cta = _decision_ledger_quality.get('reconciliation_cta', {}) %}
+            <div data-testid="decision-today-ledger-quality-banner"
+                 data-ledger-quality-status="{{ _dq_status }}"
+                 data-ledger-conflict-count="{{ _decision_ledger_quality.get('conflict_count', 0) }}"
+                 style="margin:12px 0 0;padding:12px 14px;border-radius:10px;border:1px solid {% if _dq_status in ['blocked_by_critical_conflict','conditioned_by_open_conflict'] %}rgba(251,113,133,.48){% else %}rgba(251,191,36,.36){% endif %};background:{% if _dq_status in ['blocked_by_critical_conflict','conditioned_by_open_conflict'] %}rgba(127,29,29,.22){% else %}rgba(113,63,18,.18){% endif %}">
+                <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
+                    <div style="min-width:220px;flex:1">
+                        <div class="pm2-kicker">Calidad Ledger de DECISION HOY</div>
+                        <strong style="display:block;color:#f8fbff;font-size:.86rem;margin-top:3px">{{ _decision_ledger_quality.get('label') }}</strong>
+                        <p style="margin:5px 0 0;color:var(--pn-text-muted);font-size:.76rem;line-height:1.45">
+                            {{ _decision_ledger_quality.get('message') }}
+                        </p>
+                    </div>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+                        <span class="pm2-state-chip {% if _dq_status in ['blocked_by_critical_conflict','conditioned_by_open_conflict'] %}pm2-state-chip--warn{% else %}pm2-state-chip--primary{% endif %}">
+                            {{ _decision_ledger_quality.get('critical_conflict_count', 0) }} criticos · {{ _decision_ledger_quality.get('conflict_count', 0) }} abiertos
+                        </span>
+                        {% if _decision_ledger_quality.get('resolved_watch_count') %}
+                        <span class="pm2-state-chip">{{ _decision_ledger_quality.get('resolved_watch_count') }} reconciliados</span>
+                        {% endif %}
+                        {% if _dq_cta.get('href') and _decision_ledger_quality.get('requires_reconciliation') %}
+                        <a class="pm2-state-chip pm2-state-chip--warn" style="text-decoration:none" href="{{ _dq_cta.get('href') }}">Reconciliar</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
             <div class="pm2-decision-hero-tags">
                 <span class="pm2-state-chip pm2-state-chip--primary"><span class="pm2-mono">{{ decision_today.regimen_code }}</span></span>
                 {% if decision_today.decision_quality_score and decision_today.decision_quality_score > 0 %}
@@ -219,6 +464,10 @@
         {# gates + trajectory + ML predictions + GodiBot. Reemplaza la     #}
         {# fragmentación cognitiva. Drill-down via cards individuales abajo.#}
         {% set _narrative = profile_view_raw.get('decision_narrative', {}) if profile_view_raw else {} %}
+        {% set _narrative_effective_state = surface_consistency.effective_state or compass.effective_state or (profile_view_raw.get('effective_state_final', '') if profile_view_raw else '') %}
+        {% set _narrative_stage_label = identity.stage_label or '' %}
+        {% set _narrative_state_text = (_narrative_effective_state or _narrative_stage_label or '')|string|lower %}
+        {% set _narrative_has_resolved_state = _narrative_state_text and _narrative_state_text not in ['sin clasificar', 'none', 'null', '—', '-'] %}
         {% if _narrative and _narrative.available %}
         <section style="margin: var(--space-4) var(--space-6); padding: var(--space-5);
                         background: linear-gradient(135deg, rgba(16,185,129,0.10), rgba(15,23,42,0.7));
@@ -277,7 +526,7 @@
             </div>
 
             {# ── FIX #8 — Banner warning si narrative cae a fallback contextual ── #}
-            {% if _narrative.primary_recommendation and _narrative.primary_recommendation.get('is_contextual_fallback') %}
+            {% if _narrative.primary_recommendation and _narrative.primary_recommendation.get('is_contextual_fallback') and not _narrative_has_resolved_state %}
             <div data-testid="decision-narrative-fallback-banner"
                  role="alert"
                  style="background:linear-gradient(135deg, rgba(239,68,68,0.18), rgba(15,23,42,0.55));
@@ -1088,9 +1337,15 @@
                     <p style="margin:6px 0 0; color:var(--pn-text-muted); font-size:.84rem; line-height:1.45; max-width:82ch;">
                         {{ _traj.summary.n_visits }} observaciones PSA ·
                         {{ _traj.summary.n_treatment_lines }} línea{{ 's' if _traj.summary.n_treatment_lines != 1 else '' }} de tratamiento ·
-                        {{ _traj.summary.earliest_date[:10] }} → {{ _traj.summary.latest_date[:10] }}
+                        {{ (_traj.summary.earliest_date[:10] if _traj.summary.earliest_date else 'sin fecha inicial') }} → {{ (_traj.summary.latest_date[:10] if _traj.summary.latest_date else 'sin fecha final') }}
                     </p>
+                    {% if _traj.lazy %}
+                    <div id="trajectoryLazyStatus" style="margin-top:6px;color:var(--pn-text-muted);font-size:.74rem;">Vista liviana en perfil. La trayectoria completa se carga bajo demanda para no bloquear V2.</div>
+                    {% endif %}
                 </div>
+                {% if _traj.lazy and _traj.endpoint %}
+                <button id="pm2LoadTrajectoryBtn" type="button" class="pm2-btn pm2-btn--primary" data-endpoint="{{ _traj.endpoint }}">Cargar trayectoria completa</button>
+                {% endif %}
                 {% if _traj.alerts %}
                 <div style="text-align:right;">
                     <span data-testid="trajectory-alerts-badge"
@@ -1142,22 +1397,18 @@
 
             {# ─── Charts (PSA + ECOG + ALP/LDH) ─── #}
             <div style="display:grid; grid-template-columns: 1fr; gap:14px;">
-                <div data-testid="trajectory-chart-psa" style="background:rgba(15,23,42,0.4); padding:.625rem; border-radius:8px;">
+                <div data-testid="trajectory-chart-psa" style="background:rgba(15,23,42,0.4); padding:.625rem; border-radius:8px; height:210px; max-height:210px; overflow:hidden;">
                     <div style="font-size:.72rem; color:rgb(186,230,253); font-weight:700; margin-bottom:6px;">PSA over time (ng/mL)</div>
-                    <canvas id="trajChartPSA" height="160" aria-label="PSA trajectory chart"></canvas>
+                    <canvas id="trajChartPSA" height="160" style="width:100%;height:160px;max-height:160px;" aria-label="PSA trajectory chart"></canvas>
                 </div>
-                {% if _traj.series.ecog %}
-                <div data-testid="trajectory-chart-ecog" style="background:rgba(15,23,42,0.4); padding:.625rem; border-radius:8px;">
+                <div data-testid="trajectory-chart-ecog" style="background:rgba(15,23,42,0.4); padding:.625rem; border-radius:8px; height:150px; max-height:150px; overflow:hidden;">
                     <div style="font-size:.72rem; color:rgb(186,230,253); font-weight:700; margin-bottom:6px;">ECOG performance over time</div>
-                    <canvas id="trajChartECOG" height="100" aria-label="ECOG trajectory chart"></canvas>
+                    <canvas id="trajChartECOG" height="100" style="width:100%;height:100px;max-height:100px;" aria-label="ECOG trajectory chart"></canvas>
                 </div>
-                {% endif %}
-                {% if _traj.series.alp or _traj.series.ldh %}
-                <div data-testid="trajectory-chart-labs" style="background:rgba(15,23,42,0.4); padding:.625rem; border-radius:8px;">
+                <div data-testid="trajectory-chart-labs" style="background:rgba(15,23,42,0.4); padding:.625rem; border-radius:8px; height:180px; max-height:180px; overflow:hidden;">
                     <div style="font-size:.72rem; color:rgb(186,230,253); font-weight:700; margin-bottom:6px;">Lab biomarkers (ALP / LDH)</div>
-                    <canvas id="trajChartLabs" height="140" aria-label="Lab biomarkers chart"></canvas>
+                    <canvas id="trajChartLabs" height="140" style="width:100%;height:140px;max-height:140px;" aria-label="Lab biomarkers chart"></canvas>
                 </div>
-                {% endif %}
             </div>
 
             {# ─── Alerts list (priorizado severity desc) ─── #}
@@ -1294,6 +1545,77 @@
                             options: baseOpts
                         });
                     }
+                })();
+            </script>
+            <script>
+                (function() {
+                    const loadBtn = document.getElementById('pm2LoadTrajectoryBtn');
+                    const status = document.getElementById('trajectoryLazyStatus');
+                    const charts = {};
+                    const normalizePoint = (point) => ({
+                        x: point.date || point.sample_date || point.observed_at || '',
+                        y: Number(point.value ?? point.psa ?? point.psa_value ?? point.y),
+                    });
+	                    const renderChart = (canvasId, label, rows, color, extraOptions = {}) => {
+	                        const canvas = document.getElementById(canvasId);
+	                        if (!canvas || !window.Chart) return;
+	                        const data = (rows || []).map(normalizePoint).filter(p => p.x && Number.isFinite(p.y));
+	                        if (!data.length) {
+	                            canvas.style.display = 'none';
+	                            return;
+	                        }
+	                        canvas.style.display = 'block';
+	                        const fixedHeight = Number(extraOptions.height || canvas.getAttribute('height') || 160);
+	                        canvas.style.height = `${fixedHeight}px`;
+	                        canvas.style.maxHeight = `${fixedHeight}px`;
+	                        canvas.style.width = '100%';
+	                        if (canvas.parentElement) {
+	                            canvas.parentElement.style.height = `${fixedHeight + 50}px`;
+	                            canvas.parentElement.style.maxHeight = `${fixedHeight + 50}px`;
+	                            canvas.parentElement.style.overflow = 'hidden';
+	                        }
+	                        if (charts[canvasId]) charts[canvasId].destroy();
+	                        charts[canvasId] = new Chart(canvas, {
+	                            type: 'line',
+                            data: { datasets: [{ label, data, borderColor: color, backgroundColor: color.replace('rgb', 'rgba').replace(')', ',0.18)'), tension: 0.2, pointRadius: 4, stepped: !!extraOptions.stepped }] },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: { legend: { labels: { color: '#cbd5e1', font: { size: 11 } } }, tooltip: { mode: 'index', intersect: false } },
+                                scales: {
+                                    x: { type: 'time', time: { unit: 'month', tooltipFormat: 'yyyy-MM-dd' }, ticks: { color: '#94a3b8', font: { size: 10 } }, grid: { color: 'rgba(148,163,184,0.1)' } },
+                                    y: { min: extraOptions.yMin, max: extraOptions.yMax, ticks: { stepSize: extraOptions.stepSize, color: '#94a3b8', font: { size: 10 } }, grid: { color: 'rgba(148,163,184,0.1)' } },
+                                },
+                            },
+                        });
+                    };
+                    const loadTrajectory = async () => {
+                        if (!loadBtn || loadBtn.dataset.loaded === '1') return;
+                        const endpoint = loadBtn.dataset.endpoint;
+                        if (!endpoint) return;
+                        loadBtn.disabled = true;
+                        if (status) status.textContent = 'Cargando trayectoria longitudinal completa...';
+                        try {
+                            const resp = await fetch(endpoint, { headers: { Accept: 'application/json' } });
+                            const body = await resp.json();
+                            if (!resp.ok || !body.success) throw new Error(body.message || body.error || 'trajectory_unavailable');
+                            const traj = body.trajectory || {};
+                            const series = traj.series || {};
+	                            renderChart('trajChartPSA', 'PSA paciente (ng/mL)', series.psa, 'rgb(56,189,248)', { height: 160 });
+	                            renderChart('trajChartECOG', 'ECOG', series.ecog, 'rgb(251,191,36)', { yMin: 0, yMax: 4, stepSize: 1, stepped: true, height: 100 });
+	                            renderChart('trajChartLabs', 'ALP / LDH', [...(series.alp || []), ...(series.ldh || [])], 'rgb(168,85,247)', { height: 140 });
+                            loadBtn.dataset.loaded = '1';
+                            loadBtn.textContent = 'Trayectoria cargada';
+                            if (status) {
+                                const summary = traj.summary || {};
+                                status.textContent = `${summary.n_visits || 0} PSA · ${summary.n_treatment_lines || 0} lineas · ${(traj.alerts || []).length} alertas`;
+                            }
+                        } catch (err) {
+                            loadBtn.disabled = false;
+                            if (status) status.textContent = 'No se pudo cargar la trayectoria completa. Verifique sesion/API.';
+                        }
+                    };
+                    if (loadBtn) loadBtn.addEventListener('click', loadTrajectory);
                 })();
             </script>
         </section>
@@ -3943,6 +4265,16 @@
                     <div style="font-size:.66rem;color:var(--pn-text-soft);font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Riesgo evitado</div>
                     <div style="font-size:.8rem;color:#e0f2fe;margin-top:4px">{{ _fusion_decision.get('risk_avoided') or _fusion_action.get('risk_avoided') or _ad_summary.get('risk_avoided') or _ad_top.get('risk_avoided') or '—' }}</div>
                 </div>
+                {% if _fusion_action.get('ledger_quality_gate') %}
+                <div data-testid="autodrive-ledger-quality-gate"
+                     style="padding:10px;background:rgba(127,29,29,.22);border:1px solid rgba(251,113,133,.38);border-radius:8px;">
+                    <div style="font-size:.66rem;color:#fecaca;font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Gate Ledger</div>
+                    <div style="font-size:.8rem;color:#fee2e2;margin-top:4px">
+                        {{ _fusion_action.get('ledger_quality_gate', {}).get('primary_fact_key') or 'conflicto clinico' }} ·
+                        {{ _fusion_action.get('ledger_quality_gate', {}).get('critical_conflict_count', 0) }} criticos
+                    </div>
+                </div>
+                {% endif %}
                 <div style="padding:10px;background:var(--surface-3);border:1px solid var(--border-default);border-radius:8px;">
                     <div style="font-size:.66rem;color:var(--pn-text-soft);font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Dato requerido</div>
                     <div style="font-size:.8rem;color:#e0f2fe;margin-top:4px">
@@ -3956,6 +4288,9 @@
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:var(--space-3);">
                 {% set _ad_cta = _fusion_action.get('cta', {}) or (_ad_top.get('cta', {}) if _ad_top else _ad_summary.get('top_cta', {})) %}
+                {% if _fusion.get('decision_state') == 'redecision_required' %}
+                <a href="/redecision-workbench/{{ identity.nss }}" class="pm2-btn pm2-btn--primary" style="text-decoration:none">Cerrar re-decisión</a>
+                {% endif %}
                 <a href="{{ _ad_cta.get('href', '/patient_profile/' ~ identity.nss ~ '?v=2') }}" class="pm2-btn pm2-btn--primary" style="text-decoration:none">{{ _ad_cta.get('label', 'Abrir acción') }}</a>
                 <a href="/api/patients/{{ identity.nss }}/decision-today" class="pm2-btn pm2-btn--ghost" style="text-decoration:none">Ver Decisión Hoy JSON</a>
                 <a href="/api/patients/{{ identity.nss }}/autodrive" class="pm2-btn pm2-btn--ghost" style="text-decoration:none">Ver JSON auditable</a>
@@ -4232,6 +4567,58 @@
                             {% endif %}
                             <span><span class="pm2-legend-swatch" style="background:#dc2626"></span>Umbrales clínicos</span>
                         </div>
+                        <div data-testid="profile-v2-ape-history-readiness"
+                             data-ape-status="{{ pm2_ape_status }}"
+                             data-valid-psa-point-count="{{ pm2_ape_history.get('valid_psa_point_count') or 0 }}"
+                             data-minimum-required-points="{{ pm2_ape_history.get('minimum_required_points') or 2 }}"
+                             data-current-treatment-line="{{ tx_current.line_of_therapy_number or pm2_current_band.line_of_therapy_number or pm2_current_line.line or '' }}"
+                             style="margin-top:12px;padding:12px;border-radius:10px;border:1px solid var(--border-default);background:rgba(15,23,42,.62);display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
+                            <div style="min-width:220px;flex:1">
+                                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+                                    <span class="pm2-state-chip {{ pm2_ape_chip_class }}">{{ pm2_ape_history.get('status_label_es') or 'Sin APE' }}</span>
+                                    <span class="pm2-kicker">{{ pm2_ape_history.get('valid_psa_point_count') or 0 }}/{{ pm2_ape_history.get('minimum_required_points') or 2 }} mediciones válidas</span>
+                                </div>
+                                <div style="font-size:.8rem;color:#cbd5e1;line-height:1.45">{{ pm2_ape_history.get('profile_message') or 'La torre APE espera mediciones longitudinales persistidas.' }}</div>
+                                <div style="font-size:.72rem;color:var(--pn-text-muted);margin-top:5px">Política: {{ pm2_ape_history.get('no_duplicate_capture_policy') or 'reutilizar APE existente y anexar sólo puntos faltantes' }}</div>
+                                {% if pm2_ape_history.get('auto_seed_duplicate_count') %}
+                                <div style="font-size:.72rem;color:#fde68a;margin-top:5px">{{ pm2_ape_history.get('auto_seed_duplicate_count') }} APE basal auto-seed duplicado excluido del conteo longitudinal.</div>
+                                {% endif %}
+                            </div>
+                            {% if not pm2_ape_history.get('is_history_ready') and pm2_ape_history.get('capture_url') %}
+                            <a class="pm2-btn pm2-btn--ghost"
+                               data-testid="profile-v2-ape-history-capture-cta"
+                               style="text-decoration:none;white-space:nowrap"
+                               href="{{ pm2_ape_history.get('capture_url') }}">Completar historia APE</a>
+                            {% endif %}
+                        </div>
+                        <div data-testid="v2-psa-current-treatment-line" style="margin-top:14px;padding:12px;border-radius:10px;border:1px solid var(--border-default);background:rgba(15,23,42,.55);display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+                            <div>
+                                <div class="pm2-kicker">Linea actual</div>
+                                <div style="font-weight:800;color:#f0fbff">
+                                    {% if tx_current.line_of_therapy_number or pm2_current_band.line_of_therapy_number or pm2_current_line.line %}
+                                    L{{ tx_current.line_of_therapy_number or pm2_current_band.line_of_therapy_number or pm2_current_line.line }}
+                                    {% else %}
+                                    Sin linea
+                                    {% endif %}
+                                </div>
+                                <div style="font-size:.72rem;color:var(--pn-text-muted)">{{ tx_current.line_of_therapy_context or pm2_current_band.line_of_therapy_context or 'Contexto no documentado' }}</div>
+                            </div>
+                            <div>
+                                <div class="pm2-kicker">Regimen activo</div>
+                                <div style="font-weight:800;color:#f0fbff">{{ tx_current.regimen_label or pm2_current_band.drug_scheme_label or pm2_current_band.drug_scheme or pm2_current_line.regimen or 'Sin esquema activo' }}</div>
+                                <div style="font-size:.72rem;color:var(--pn-text-muted)">{{ tx_current.intensity.intensity_label if tx_current.intensity else (pm2_current_band.line_type_label or 'No clasificado') }}</div>
+                            </div>
+                            <div>
+                                <div class="pm2-kicker">Ventana de tratamiento</div>
+                                <div style="font-weight:800;color:#f0fbff">{{ tx_current.start_date or pm2_current_band.start_date or 'Sin inicio' }}</div>
+                                <div style="font-size:.72rem;color:var(--pn-text-muted)">Fin: {{ pm2_current_band.end_date or 'activa/no cerrada' }}</div>
+                            </div>
+                            <div>
+                                <div class="pm2-kicker">Dosis y APE</div>
+                                <div style="font-weight:800;color:#f0fbff">{{ tx_current.local_dose_count if tx_course.available else 0 }} locales · {{ tx_current.global_dose_count if tx_course.available else 0 }} globales</div>
+                                <div style="font-size:.72rem;color:var(--pn-text-muted)">{{ pm2_psa_points|length }} mediciones APE renderizadas</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -4289,6 +4676,162 @@
                             </div>
                         {% endif %}
                     </div>
+                </div>
+            </div>
+
+            <div class="pm2-tab-card" style="margin-top:18px;border-left:4px solid var(--clinical-info-edge)" data-testid="v2-treatment-value-summary">
+                <div class="pm2-tab-card-head">
+                    <h3>
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--pn-accent)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-2.21 0-4 1.12-4 2.5S9.79 13 12 13s4-1.12 4-2.5S14.21 8 12 8zM4 6v9c0 2.2 3.58 4 8 4s8-1.8 8-4V6M4 6c0 2.2 3.58 4 8 4s8-1.8 8-4-3.58-4-8-4-8 1.8-8 4z"/></svg>
+                        Valor clinico-economico V2
+                    </h3>
+                    <span class="pm2-head-meta">curso real · dosis locales · respuesta APE/ECOG</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <div class="pm2-grid-4" style="gap:14px">
+                        <div>
+                            <div class="pm2-kicker">Regimen actual</div>
+                            <div style="font-weight:800;color:#f0fbff">{{ tx_current.regimen_label or 'Sin esquema activo' }}</div>
+                            <div style="font-size:.72rem;color:var(--pn-text-muted)">{{ tx_current.intensity.intensity_label if tx_current.intensity else 'No clasificado' }}</div>
+                        </div>
+                        <div>
+                            <div class="pm2-kicker">Gasto ARPI acumulado</div>
+                            <div style="font-weight:800;color:#f0fbff">$ {{ '%.2f'|format(tx_cost.estimated_total_spend_mxn or 0) }} MXN</div>
+                            <div style="font-size:.72rem;color:var(--pn-text-muted)">Dosis costeadas: {{ tx_cost.priced_doses or 0 }} · {{ tx_cost_label }}</div>
+                            <div style="font-size:.68rem;color:var(--pn-text-muted);margin-top:3px">Fármacos trazables acumulados: $ {{ '%.2f'|format(tx_cost.estimated_total_medication_spend_mxn or tx_cost.estimated_total_spend_mxn or 0) }} MXN</div>
+                            <div style="font-size:.68rem;color:var(--pn-text-muted);margin-top:3px">Fármacos trazables por ciclo: $ {{ '%.2f'|format(tx_cost.estimated_cost_per_dose_mxn or 0) }} MXN</div>
+                        </div>
+                        <div>
+                            <div class="pm2-kicker">Respuesta APE @ 24 sem</div>
+                            {% if arpi_response_6mo and arpi_response_6mo.available %}
+                            <div style="font-weight:800;color:{% if arpi_response_6mo.psa50_response %}var(--clinical-success){% else %}#fbbf24{% endif %}">{{ arpi_response_6mo.psa_decline_pct if arpi_response_6mo.psa_decline_pct is not none else '—' }}%</div>
+                            <div style="font-size:.72rem;color:var(--pn-text-muted)">{% if arpi_response_6mo.psa90_response %}PSA90{% elif arpi_response_6mo.psa50_response %}PSA50{% else %}Sin PSA50{% endif %} · {{ arpi_response_6mo.evidence_quality or 'evidencia no documentada' }}</div>
+                            {% else %}
+                            <div style="font-weight:800;color:#94a3b8">No calculable</div>
+                            <div style="font-size:.72rem;color:var(--pn-text-muted)">{{ arpi_response_6mo.reason if arpi_response_6mo else 'Faltan ventana ARPI y APE seriado' }}</div>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <div class="pm2-kicker">ECOG / alerta operativa</div>
+                            {% if arpi_response_6mo and arpi_response_6mo.available and arpi_response_6mo.ecog_change_from_baseline is not none %}
+                            <div style="font-weight:800;color:{% if arpi_response_6mo.ecog_change_from_baseline < 0 %}var(--clinical-success){% elif arpi_response_6mo.ecog_change_from_baseline > 0 %}#fbbf24{% else %}#cbd5e1{% endif %}">
+                                {{ arpi_response_6mo.baseline_ecog }} → {{ arpi_response_6mo.actual_ecog }}
+                                ({{ '+' if arpi_response_6mo.ecog_change_from_baseline > 0 else '' }}{{ arpi_response_6mo.ecog_change_from_baseline }})
+                            </div>
+                            {% else %}
+                            <div style="font-weight:800;color:{% if tx_alert.severity == 'critical' %}#fb7185{% elif tx_alert.severity == 'warning' %}#fbbf24{% else %}#34d399{% endif %}">{{ tx_alert.title or 'Sin alerta' }}</div>
+                            {% endif %}
+                            <div style="font-size:.72rem;color:var(--pn-text-muted)">{{ tx_alert.message or 'Dosis locales y respuesta se recalculan desde datos persistidos.' }}</div>
+                        </div>
+                    </div>
+                    {% if tx_cost.missing_arpi_components or tx_cost.missing_non_arpi_components or tx_cost.unpriced_backbone_components or tx_cost.stale_price_components or tx_cost.cost_scope %}
+                    <div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(15,23,42,.55);border:1px solid var(--border-default);font-size:.72rem;color:var(--pn-text-muted);line-height:1.55">
+                        {% if tx_cost.cost_scope %}<strong style="color:#cbd5e1">Alcance:</strong> {{ tx_cost.cost_scope }}{% endif %}
+                        {% if tx_cost.priced_components %}<span style="color:#cbd5e1"> · Componentes costeados: {% for component in tx_cost.priced_components %}{{ component.agent }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+                        {% if tx_cost.missing_arpi_components %}<span style="color:#fbbf24"> · Faltan precios: {{ tx_cost.missing_arpi_components|join(', ') }}</span>{% endif %}
+                        {% if tx_cost.missing_non_arpi_components or tx_cost.unpriced_backbone_components %}<span style="color:#fbbf24"> · Otros pendientes: {{ ((tx_cost.unpriced_backbone_components or []) + (tx_cost.missing_non_arpi_components or []))|join(', ') }}</span>{% endif %}
+                        {% if tx_cost.stale_price_components %}<span style="color:#fbbf24"> · Fuente a revisar: {{ tx_cost.stale_price_components|join(', ') }}</span>{% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="pm2-tab-card" style="margin-top:18px;border-left:4px solid var(--clinical-success)" data-testid="v2-treatment-value-registry-panel">
+                <div class="pm2-tab-card-head">
+                    <h3>
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--clinical-success)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 19V5m0 14h16M8 16V9m4 7V7m4 9v-5"/></svg>
+                        Registro comparativo 12/24 semanas
+                    </h3>
+                    <span class="pm2-head-meta">PSA50/PSA90 · ECOG · toxicidad · costo por respuesta</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <div id="treatmentValueRegistryStatus" style="font-size:.78rem;color:var(--pn-text-muted);line-height:1.55">
+                        Registro epidemiologico disponible como analitica poblacional. Cargar resumen bajo demanda para no bloquear el perfil V2.
+                    </div>
+                    <div id="treatmentValueRegistryGrid" class="pm2-grid-4" style="gap:14px;margin-top:12px;display:none"></div>
+                    <button type="button" id="loadTreatmentValueRegistryBtn" class="pm2-btn pm2-btn--ghost" style="margin-top:12px;font-size:.78rem">
+                        Cargar registro comparativo
+                    </button>
+                    <a href="/population/treatment-value-registry" class="pm2-btn pm2-btn--primary" style="margin-top:12px;font-size:.78rem">
+                        Abrir vista poblacional V2
+                    </a>
+                </div>
+            </div>
+
+            <div class="pm2-tab-card" style="margin-top:18px;border-left:4px solid {% if epi_sla_summary.sla_overdue_count %}var(--clinical-danger){% elif epi_sla_summary.sla_due_soon_count %}var(--clinical-warning){% else %}var(--clinical-info-edge){% endif %}" data-testid="v2-epidemiology-gap-sla-panel">
+                <div class="pm2-tab-card-head">
+                    <h3>
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:#fbbf24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                        Brechas epidemiologicas SLA
+                    </h3>
+                    <span class="pm2-head-meta">paciente → cohorte · responsable · vencimiento</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <div class="pm2-grid-4" style="gap:14px">
+                        <div>
+                            <div class="pm2-kicker">Brechas activas</div>
+                            <div style="font-weight:800;color:#f0fbff" data-testid="profile-epi-sla-active-count">{{ epi_sla_summary.active_gap_count or 0 }}</div>
+                            <div style="font-size:.72rem;color:var(--pn-text-muted)">ventanas {{ (epi_sla.weeks_list or [12,24])|join(' / ') }} sem</div>
+                        </div>
+                        <div>
+                            <div class="pm2-kicker">SLA vencidas</div>
+                            <div style="font-weight:800;color:{% if epi_sla_summary.sla_overdue_count %}#fecaca{% else %}#bbf7d0{% endif %}" data-testid="profile-epi-sla-overdue-count">{{ epi_sla_summary.sla_overdue_count or 0 }}</div>
+                            <div style="font-size:.72rem;color:var(--pn-text-muted)">{{ epi_sla_summary.sla_due_soon_count or 0 }} por vencer</div>
+                        </div>
+                        <div>
+                            <div class="pm2-kicker">Sin revisar</div>
+                            <div style="font-weight:800;color:{% if epi_sla_summary.unreviewed_gap_count %}#fde68a{% else %}#bbf7d0{% endif %}">{{ epi_sla_summary.unreviewed_gap_count or 0 }}</div>
+                            <div style="font-size:.72rem;color:var(--pn-text-muted)">{{ epi_sla_summary.reviewed_still_missing_count or 0 }} revisadas aun faltantes</div>
+                        </div>
+                        <div>
+                            <div class="pm2-kicker">Responsables</div>
+                            <div style="font-weight:800;color:#f0fbff">{{ epi_sla_summary.owner_count or 0 }}</div>
+                            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+                                <a href="{{ epi_sla.next_surfaces.capture_registry if epi_sla.next_surfaces else '/population/treatment-value-registry' }}" class="pm2-state-chip pm2-state-chip--primary" style="text-decoration:none">Cola poblacional</a>
+                                <a href="{{ epi_sla.next_surfaces.api if epi_sla.next_surfaces else '/api/patients/' ~ identity.nss ~ '/epidemiology-gap-sla' }}" class="pm2-state-chip" style="text-decoration:none">API SLA</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if epi_sla_items %}
+                    <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px" data-testid="profile-epi-sla-items">
+                        {% for item in epi_sla_items[:6] %}
+                        <div style="padding:10px 12px;border-radius:10px;background:rgba(15,23,42,.55);border:1px solid {% if item.sla_state.startswith('overdue') %}rgba(248,113,113,.45){% elif item.sla_state.startswith('due_soon') %}rgba(251,191,36,.42){% else %}var(--border-default){% endif %}">
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                                <div>
+                                    <div class="pm2-kicker">{{ item.gap_label }}</div>
+                                    <div style="font-weight:800;color:#f0fbff">{{ item.owner_role or item.assigned_to or 'registro_clinico' }}</div>
+                                </div>
+                                <span class="pm2-state-chip {% if item.priority == 'high' %}pm2-state-chip--danger{% else %}pm2-state-chip--warn{% endif %}">{{ item.priority }}</span>
+                            </div>
+                            <div style="font-size:.72rem;color:var(--pn-text-muted);line-height:1.45;margin-top:6px">
+                                Vence {{ item.due_date or 'sin fecha' }} · {{ item.sla_state or 'sla_unknown' }}<br>
+                                {{ item.rationale }}
+                            </div>
+                            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+                                <a href="{{ item.capture_url }}" class="pm2-btn pm2-btn--ghost" style="font-size:.7rem">Capturar dato</a>
+                                <button type="button" class="pm2-btn pm2-btn--ghost pm2-profile-gap-review-btn" style="font-size:.7rem"
+                                    data-patient-ref="{{ item.patient_ref }}"
+                                    data-gap-key="{{ item.gap_key }}"
+                                    data-detected-at="{{ item.detected_at }}"
+                                    data-target-weeks="{{ item.target_weeks or item.week }}"
+                                    data-regimen-code="{{ item.regimen_code }}"
+                                    data-molecule="{{ item.molecule }}"
+                                    data-detection-anchor="{{ item.detection_anchor }}"
+                                    data-owner-role="{{ item.owner_role }}"
+                                    data-assigned-to="{{ item.assigned_to or item.owner_role }}"
+                                    data-due-date="{{ item.due_date }}"
+                                    data-sla-days="{{ item.sla_days }}"
+                                    data-sla-policy="{{ item.sla_policy }}">Revisar SLA</button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div style="margin-top:12px;padding:12px;border-radius:10px;background:rgba(15,23,42,.55);border:1px solid var(--border-default);color:var(--pn-text-muted);font-size:.78rem" data-testid="profile-epi-sla-empty">
+                        Sin brechas epidemiologicas SLA para las ventanas activas del registro tratamiento-valor.
+                    </div>
+                    {% endif %}
                 </div>
             </div>
 
@@ -4502,7 +5045,7 @@
                         <div style="padding:14px;border-top:1px solid var(--border-default);background:rgba(15,23,42,0.6)">
                             <div class="pm2-kicker" style="margin-bottom:6px">Confidence reasons (forecast_reliability)</div>
                             <ul style="margin:0;padding-left:18px;font-size:.78rem;color:var(--pn-text-muted);line-height:1.6">
-                                <li><strong style="color:#cbd5e1">minimum_data</strong>: {{ pm2_psa_points|length }} puntos APE reales</li>
+                                <li><strong style="color:#cbd5e1">minimum_data</strong>: {{ pm2_psa_points|length }} puntos APE reales · {{ pm2_ape_history.get('status_label_es') or 'Sin APE' }}</li>
                                 <li><strong style="color:#cbd5e1">line_stability</strong>: {{ pm2_treatment_bands|length }} líneas terapéuticas documentadas</li>
                                 <li><strong style="color:#cbd5e1">model_fit_quality</strong>: {{ 'calculable' if psa_forecast_per_line and psa_forecast_per_line.points else 'no calculable' }}</li>
                                 <li><strong style="color:#cbd5e1">data_source</strong>: biomarker_longitudinal + baseline real auto-seeded</li>
@@ -4519,6 +5062,26 @@
                             <span style="color:var(--pn-text-muted);font-size:.78rem">Sin bandas terapéuticas capturadas.</span>
                             {% endif %}
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pm2-tab-card" style="margin-top:18px" data-testid="v2-psa-treatment-timeline-card">
+                <div class="pm2-tab-card-head">
+                    <h3>Timeline APE-tratamiento · lineas activas</h3>
+                    <span class="pm2-head-meta">psaTreatmentTimelineChart · datos reales V2</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <div class="pm2-chart-shell" style="height:320px">
+                        <canvas id="psaTreatmentTimelineChart" aria-label="Timeline terapéutico integrado con mediciones de APE"></canvas>
+                    </div>
+                    <div id="psaTreatmentTimelineEmpty" style="display:none;margin-top:10px;padding:12px;border-radius:10px;background:rgba(15,23,42,.55);border:1px solid var(--border-default);color:var(--pn-text-muted);font-size:.82rem">
+                        Sin líneas terapéuticas persistidas. El perfil V2 no inventa ADT, ARPI, taxano ni otras líneas; capture el curso longitudinal para correlacionarlo con el APE.
+                    </div>
+                    <div class="pm2-chart-legend">
+                        <span><span class="pm2-legend-swatch" style="background:#1FB8FF"></span>Mediciones APE asignadas por fecha</span>
+                        <span><span class="pm2-legend-swatch" style="background:#7C5CFF"></span>Barras de tratamiento persistidas</span>
+                        <span><span class="pm2-legend-swatch" style="background:#f59e0b"></span>APE fuera de línea documentada</span>
                     </div>
                 </div>
             </div>
@@ -4721,8 +5284,14 @@
                 <span class="pm2-sub">PSA + tratamientos + imaging + biopsy + clinical events · auto-asignados a la línea de terapia activa por fecha</span>
             </div>
 
-            {# Faubot LXXXIV — Brecha #64B fix — Combined Timeline Chart real (data backend) #}
-            {% if psa_combined_timeline and psa_combined_timeline.psa_series %}
+            {# Faubot LXXXIV — Brecha #64B fix — Combined Timeline Chart real (data backend)
+               V2 fallback: si el bundle combinado no fue precalculado, el JS renderiza
+               desde psa_obs.points + psa_obs.treatment_bands persistidos. #}
+            {% set _combined_summary = psa_combined_timeline.summary if psa_combined_timeline and psa_combined_timeline.summary else {} %}
+            {% set _combined_psa_count = _combined_summary.get('total_psa_points') if _combined_summary.get('total_psa_points') is not none else (pm2_psa_points|length) %}
+            {% set _combined_lane_count = _combined_summary.get('total_treatment_lanes') if _combined_summary.get('total_treatment_lanes') is not none else (pm2_treatment_bands|length) %}
+            {% set _combined_event_count = _combined_summary.get('total_clinical_events') if _combined_summary.get('total_clinical_events') is not none else 0 %}
+            {% if (psa_combined_timeline and psa_combined_timeline.psa_series) or pm2_psa_points or pm2_treatment_bands %}
             <div class="pm2-tab-card" style="margin-bottom: var(--space-4)">
                 <div class="pm2-tab-card-head">
                     <h3>📊 Combined Timeline Chart (data real backend #64A)</h3>
@@ -4731,10 +5300,10 @@
                 <div class="pm2-tab-card-body">
                     <canvas id="psaCombinedTimelineChart" style="max-height:400px"></canvas>
                     <div style="display:flex;gap:16px;margin-top:12px;font-size:12px;color:var(--pn-text-muted)">
-                        <span>📈 PSA points: <strong style="color:#cbd5e1">{{ psa_combined_timeline.summary.total_psa_points or 0 }}</strong></span>
-                        <span>💊 Treatment lanes: <strong style="color:#cbd5e1">{{ psa_combined_timeline.summary.total_treatment_lanes or 0 }}</strong></span>
-                        <span>🔬 Clinical events: <strong style="color:#cbd5e1">{{ psa_combined_timeline.summary.total_clinical_events or 0 }}</strong></span>
-                        <span>📅 Range: <strong style="color:#cbd5e1">{{ psa_combined_timeline.summary.earliest_date or '—' }} → {{ psa_combined_timeline.summary.latest_date or '—' }}</strong></span>
+                        <span>📈 PSA points: <strong style="color:#cbd5e1">{{ _combined_psa_count or 0 }}</strong></span>
+                        <span>💊 Treatment lanes: <strong style="color:#cbd5e1">{{ _combined_lane_count or 0 }}</strong></span>
+                        <span>🔬 Clinical events: <strong style="color:#cbd5e1">{{ _combined_event_count or 0 }}</strong></span>
+                        <span>📅 Range: <strong style="color:#cbd5e1">{{ _combined_summary.get('earliest_date') or '—' }} → {{ _combined_summary.get('latest_date') or '—' }}</strong></span>
                     </div>
                 </div>
             </div>
@@ -4945,6 +5514,7 @@
   "current_state_reconciled": "{{ compass.effective_state if compass else '' }}",
   "treatment_line_count": {{ pm2_treatment_bands|length }},
   "psa_history_count": {{ pm2_psa_points|length }},
+  "ape_history_status": "{{ pm2_ape_status }}",
   "testosterone_history_count": {{ pm2_testosterone_points|length }},
   "_audit": {
     "phi_scrubbed": true,
@@ -5113,6 +5683,144 @@
                     </div>
                 </div>
 
+                {% set tx_course = treatment_course_summary or {} %}
+                {% set tx_current = tx_course.current_course or {} %}
+                {% set tx_alert = tx_course.dose_alert or {} %}
+                {% set tx_cost = tx_course.cost_summary or {} %}
+                {% set tx_cost_status = tx_cost.price_coverage_status or '' %}
+                {% set tx_cost_label = {
+                    'priced_full': 'ARPI trazable',
+                    'priced_with_stale_source': 'ARPI con fuente a revisar',
+                    'partial': 'ARPI parcial',
+                    'unpriced': 'ARPI sin precio',
+                    'no_arpi_component': 'Sin componente ARPI'
+                }.get(tx_cost_status, 'Precio no auditado') %}
+                <div class="pm2-tab-card" style="grid-column:1/-1" data-testid="treatment-course-unit-card">
+                    <div class="pm2-tab-card-head">
+                        <h3>Tratamiento en esta unidad</h3>
+                        <span class="pm2-head-meta">doblete/triplete · dosis locales · alerta HGZ/HGR</span>
+                    </div>
+                    <div class="pm2-tab-card-body">
+                        <div class="pm2-grid-4" style="margin-bottom:14px">
+                            <div>
+                                <div class="pm2-kicker">Régimen actual</div>
+                                <div style="font-weight:800;color:#f0fbff">{{ tx_current.regimen_label or 'Sin esquema activo' }}</div>
+                                <div style="font-size:.72rem;color:var(--pn-text-muted)">{{ tx_current.intensity.intensity_label if tx_current.intensity else 'No clasificado' }}</div>
+                            </div>
+                            <div>
+                                <div class="pm2-kicker">Dosis en esta unidad</div>
+                                <div style="font-weight:800;color:#f0fbff">{{ tx_current.local_dose_count if tx_course.available else 0 }}</div>
+                                <div style="font-size:.72rem;color:var(--pn-text-muted)">Global: {{ tx_current.global_dose_count if tx_course.available else 0 }}</div>
+                            </div>
+                            <div>
+                                <div class="pm2-kicker">Gasto ARPI acumulado</div>
+                                <div style="font-weight:800;color:#f0fbff">$ {{ '%.2f'|format(tx_cost.estimated_total_spend_mxn or 0) }} MXN</div>
+                                <div style="font-size:.72rem;color:var(--pn-text-muted)">Dosis costeadas: {{ tx_cost.priced_doses or 0 }} · {{ tx_cost_label }}</div>
+                                <div style="font-size:.68rem;color:var(--pn-text-muted);margin-top:3px">Fármacos trazables acumulados: $ {{ '%.2f'|format(tx_cost.estimated_total_medication_spend_mxn or tx_cost.estimated_total_spend_mxn or 0) }} MXN</div>
+                                <div style="font-size:.68rem;color:var(--pn-text-muted);margin-top:3px">Fármacos trazables por ciclo: $ {{ '%.2f'|format(tx_cost.estimated_cost_per_dose_mxn or 0) }} MXN</div>
+                                {% if tx_cost.missing_arpi_components or tx_cost.missing_non_arpi_components or tx_cost.unpriced_backbone_components or tx_cost.stale_price_components %}
+                                <div style="font-size:.68rem;color:#fbbf24;margin-top:3px">
+                                    Validar precio{% if tx_cost.missing_arpi_components %}: faltan ARPI {{ tx_cost.missing_arpi_components|join(', ') }}{% endif %}{% if tx_cost.missing_non_arpi_components or tx_cost.unpriced_backbone_components %}: otros pendientes {{ ((tx_cost.unpriced_backbone_components or []) + (tx_cost.missing_non_arpi_components or []))|join(', ') }}{% endif %}{% if tx_cost.stale_price_components %}: fuente a revisar {{ tx_cost.stale_price_components|join(', ') }}{% endif %}
+                                </div>
+                                {% endif %}
+                            </div>
+                            <div>
+                                <div class="pm2-kicker">Alerta operativa</div>
+                                <div style="font-weight:800;color:{% if tx_alert.severity == 'critical' %}#fb7185{% elif tx_alert.severity == 'warning' %}#fbbf24{% else %}#34d399{% endif %}">
+                                    {{ tx_alert.title or 'Sin alerta' }}
+                                </div>
+                                <div style="font-size:.72rem;color:var(--pn-text-muted)">{{ tx_alert.message or 'Conteo local dentro de rango operativo.' }}</div>
+                            </div>
+                        </div>
+
+                        <div class="pm2-grid-4" style="gap:10px;align-items:end">
+                            <label style="font-size:.74rem;color:var(--pn-text-muted)">Régimen
+                                <select id="pm2TreatmentRegimenSelect" class="pm2-select" style="width:100%;margin-top:4px">
+                                    {% for opt in profile_view_raw.therapy_catalog_options or [] %}
+                                    <option value="{{ opt.value }}" {% if opt.value == tx_current.regimen_code %}selected{% endif %}>{{ opt.label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+                            <label style="font-size:.74rem;color:var(--pn-text-muted)">Fecha inicio
+                                <input id="pm2TreatmentStartDate" type="date" class="pm2-input" value="{{ tx_current.start_date or '' }}" style="width:100%;margin-top:4px">
+                            </label>
+                            <label style="font-size:.74rem;color:var(--pn-text-muted)">Dosis previas fuera
+                                <input id="pm2PriorExternalDoses" type="number" min="0" step="1" class="pm2-input" value="{{ tx_current.doses_received_before_unit or 0 }}" style="width:100%;margin-top:4px">
+                            </label>
+                            <label style="font-size:.74rem;color:var(--pn-text-muted)">Dosis locales al ingreso
+                                <input id="pm2LocalDosesAtStart" type="number" min="0" step="1" class="pm2-input" value="0" style="width:100%;margin-top:4px">
+                            </label>
+                            <label style="font-size:.74rem;color:var(--pn-text-muted)">Unidad
+                                <input id="pm2TreatmentUnitName" type="text" class="pm2-input" value="{{ tx_current.unit_name or '' }}" placeholder="Unidad actual" style="width:100%;margin-top:4px">
+                            </label>
+                            <label style="font-size:.74rem;color:var(--pn-text-muted)">Referencia
+                                <select id="pm2ReferralTarget" class="pm2-select" style="width:100%;margin-top:4px">
+                                    {% for target in ['', 'HGZ', 'HGR', 'UMAE', 'Otra unidad'] %}
+                                    <option value="{{ target }}" {% if target == tx_current.referral_target %}selected{% endif %}>{{ target or 'Sin destino' }}</option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+                            <button type="button" id="pm2SaveTreatmentCourseBtn" class="pm2-btn pm2-btn--primary" data-patient-nss="{{ identity.nss }}">Guardar curso</button>
+                            <button type="button" id="pm2AppendTreatmentDoseBtn" class="pm2-btn pm2-btn--ghost" data-patient-nss="{{ identity.nss }}" data-course-id="{{ tx_current.treatment_history_id or '' }}" {% if not tx_current.treatment_history_id %}disabled{% endif %}>Registrar nueva dosis</button>
+                        </div>
+                        <div id="pm2TreatmentCourseFeedback" style="margin-top:10px;font-size:.74rem;color:var(--pn-text-muted);min-height:18px"></div>
+                    </div>
+                </div>
+                <script>
+                (() => {
+                    const saveBtn = document.getElementById('pm2SaveTreatmentCourseBtn');
+                    const doseBtn = document.getElementById('pm2AppendTreatmentDoseBtn');
+                    const feedback = document.getElementById('pm2TreatmentCourseFeedback');
+                    const readValue = (id) => document.getElementById(id)?.value || '';
+                    if (saveBtn) {
+                        saveBtn.addEventListener('click', async () => {
+                            const nss = saveBtn.dataset.patientNss;
+                            const payload = {
+                                regimen_code: readValue('pm2TreatmentRegimenSelect'),
+                                start_date: readValue('pm2TreatmentStartDate'),
+                                doses_received_before_unit: readValue('pm2PriorExternalDoses'),
+                                local_doses_administered: readValue('pm2LocalDosesAtStart'),
+                                unit_name: readValue('pm2TreatmentUnitName'),
+                                referral_target: readValue('pm2ReferralTarget'),
+                                line_of_therapy_number: {{ (tx_current.line_of_therapy_number or 1)|tojson }},
+                                line_of_therapy_context: {{ (tx_current.line_of_therapy_context or '')|tojson }}
+                            };
+                            feedback.textContent = 'Guardando curso terapéutico...';
+                            const resp = await fetch(`/api/patients/${encodeURIComponent(nss)}/treatment-course`, {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify(payload)
+                            });
+                            const data = await resp.json();
+                            if (!resp.ok || !data.success) throw new Error(data.error || 'No se pudo guardar el curso');
+                            feedback.textContent = 'Curso guardado. Actualizando perfil...';
+                            setTimeout(() => window.location.reload(), 700);
+                        });
+                    }
+                    if (doseBtn) {
+                        doseBtn.addEventListener('click', async () => {
+                            const nss = doseBtn.dataset.patientNss;
+                            const courseId = doseBtn.dataset.courseId;
+                            if (!courseId) return;
+                            feedback.textContent = 'Registrando nueva dosis...';
+                            const resp = await fetch(`/api/patients/${encodeURIComponent(nss)}/treatment-course/${encodeURIComponent(courseId)}/dose`, {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({
+                                    dose_date: new Date().toISOString().slice(0, 10),
+                                    unit_name: readValue('pm2TreatmentUnitName'),
+                                    referral_target: readValue('pm2ReferralTarget')
+                                })
+                            });
+                            const data = await resp.json();
+                            if (!resp.ok || !data.success) throw new Error(data.error || 'No se pudo registrar la dosis');
+                            feedback.textContent = data.dose_alert && data.dose_alert.message ? data.dose_alert.message : 'Dosis registrada.';
+                            setTimeout(() => window.location.reload(), 900);
+                        });
+                    }
+                })();
+                </script>
+
                 <div class="pm2-tab-card" style="grid-column:1/-1">
                     <div class="pm2-tab-card-head">
                         <h3>Treatment lines · {{ intake_widgets.tx_rows | length }} líneas</h3>
@@ -5156,30 +5864,30 @@
         {# ============ TAB 9 — CONSENTIMIENTO & FIRMA ============ #}
         <section class="pm2-tab-panel" id="tab-consent" role="tabpanel">
             <div class="pm2-section-h">
-                <h2>Consentimiento informado &amp; firma electrónica</h2>
+                <h2>Consentimiento de uso secundario de datos &amp; firma electrónica</h2>
                 <span class="pm2-sub">Backend: <span class="pm2-mono">consent_versions</span> · <span class="pm2-mono">patient_consents</span> · <span class="pm2-mono">consent_signature_evidence</span> · alineado con HIPAA + GDPR + LFPDPPP MX</span>
             </div>
 
             <div class="pm2-grid-4" style="margin-bottom:18px">
                 <div class="pm2-tab-card" style="border-top:3px solid var(--clinical-success)"><div class="pm2-tab-card-body">
                     <div class="pm2-kicker">status</div>
-                    <div style="font-size:1.4rem;font-weight:800;color:var(--clinical-success);margin:6px 0">signed ✓</div>
-                    <div style="font-size:.7rem;color:var(--pn-text-muted)">vigente · vence 2027-02-12 (287 d)</div>
+                    <div style="font-size:1.4rem;font-weight:800;color:var(--clinical-success);margin:6px 0">{{ 'signed ✓' if consent.is_signed else 'pending' }}</div>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted)">{{ 'vigente' if consent.is_signed else 'pendiente de firma' }}</div>
                 </div></div>
                 <div class="pm2-tab-card"><div class="pm2-tab-card-body">
                     <div class="pm2-kicker">consent_version_code</div>
-                    <div class="pm2-mono" style="font-size:1.05rem;font-weight:700;color:#f0fbff;margin:6px 0">PROSTAMED_CONSENT_v3.2</div>
-                    <div style="font-size:.7rem;color:var(--pn-text-muted)">effective_at 2026-03-01 · active=true</div>
+                    <div class="pm2-mono" style="font-size:1.05rem;font-weight:700;color:#f0fbff;margin:6px 0">{{ consent.version_code }}</div>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted)">versión vigente del consentimiento institucional</div>
                 </div></div>
                 <div class="pm2-tab-card"><div class="pm2-tab-card-body">
-                    <div class="pm2-kicker">content_hash (SHA-256)</div>
-                    <div class="pm2-mono" style="font-size:.78rem;font-weight:700;color:#f0fbff;margin:6px 0;word-break:break-all">4f3c91d8b27af04c…a7e2b85f019c</div>
+                    <div class="pm2-kicker">Hash de evidencia (SHA-256)</div>
+                    <div class="pm2-mono" style="font-size:.78rem;font-weight:700;color:#f0fbff;margin:6px 0;word-break:break-all">{{ consent.content_hash[:16] ~ '…' if consent.content_hash else 'pendiente' }}</div>
                     <div style="font-size:.7rem;color:var(--pn-text-muted)">verificable contra evidence_html</div>
                 </div></div>
                 <div class="pm2-tab-card"><div class="pm2-tab-card-body">
                     <div class="pm2-kicker">signed_at</div>
-                    <div style="font-size:1.05rem;font-weight:700;margin:6px 0;color:#f0fbff">2026-03-12 14:32</div>
-                    <div style="font-size:.7rem;color:var(--pn-text-muted)">CST · FAUBOT_RELEASE LXVIII</div>
+                    <div style="font-size:1.05rem;font-weight:700;margin:6px 0;color:#f0fbff">{{ consent.signed_at or 'Pendiente' }}</div>
+                    <div style="font-size:.7rem;color:var(--pn-text-muted)">FAUBOT_RELEASE · evidencia firmada</div>
                 </div></div>
             </div>
 
@@ -5253,7 +5961,7 @@
 
                         <div>
                             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-                                <div class="pm2-kicker">Firma del paciente</div>
+                            <div class="pm2-kicker">Firma electrónica del paciente</div>
                                 <button class="pm2-btn pm2-btn--ghost" style="font-size:.7rem;padding:4px 10px;min-height:28px" onclick="pm2ClearSignature()">Limpiar</button>
                             </div>
                             <div style="background:#f4f7fa;border:2px dashed var(--clinical-info-edge);border-radius:10px;padding:8px">
@@ -5442,6 +6150,8 @@ function pm2ShowTab(name) {
     document.querySelectorAll('.pm2-tab').forEach(t => t.classList.toggle('is-active', t.dataset.tab === name));
     document.querySelectorAll('.pm2-tab-panel').forEach(p => p.classList.toggle('is-active', p.id === 'tab-' + name));
     if (name === 'psa' && !window._pm2FullPsa) { renderFullPSA(); window._pm2FullPsa = true; }
+    if (name === 'psa' && !window._pm2TreatmentTimeline) { renderTreatmentTimeline(); window._pm2TreatmentTimeline = true; }
+    if (name === 'timeline' && !window._pm2CombinedTimeline) { renderCombinedTimeline(); window._pm2CombinedTimeline = true; }
 }
 document.querySelectorAll('.pm2-tab').forEach(b => b.addEventListener('click', () => pm2ShowTab(b.dataset.tab)));
 document.addEventListener('keydown', e => {
@@ -5483,6 +6193,7 @@ function pm2OpenDrill(line) {
 const psaObsBundle = {{ (psa_obs or {}) | tojson | safe }};
 const psaForecastBundle = {{ (psa_forecast_per_line or {}) | tojson | safe }};
 const psaCohortBundle = {{ (psa_cohort_reference or {}) | tojson | safe }};
+const psaCombinedBundle = {{ (psa_combined_timeline or {}) | tojson | safe }};
 
 // LXC fix B1: PSA from unified source (biomarker_longitudinal authoritative)
 const _bundlePoints = (psaObsBundle && psaObsBundle.points) || [];
@@ -5534,7 +6245,12 @@ const forecastMean = _forecastPoints.length
 
 console.log('LXC PSA tower:', psaDates.length + ' PSA points', testoDates.length + ' testo', _bundleBands.length + ' tx bands');
 
-if (window['chartjs-plugin-annotation']) Chart.register(window['chartjs-plugin-annotation']);
+try {
+    const annotationPlugin = window.ChartAnnotation || window['chartjs-plugin-annotation'];
+    if (annotationPlugin && window.Chart) Chart.register(annotationPlugin);
+} catch (err) {
+    console.warn('Chart annotation plugin not registered:', err);
+}
 
 function buildDataSets() {
     const datasets = [];
@@ -5714,7 +6430,284 @@ if (document.getElementById('psaMini')) {
     new Chart(document.getElementById('psaMini'), { type: 'line', data: { datasets: buildDataSets() }, options: commonOpts() });
 }
 function renderFullPSA() {
-    new Chart(document.getElementById('psaFull'), { type: 'line', data: { datasets: buildDataSets() }, options: commonOpts() });
+    const canvas = document.getElementById('psaFull');
+    if (!canvas) return;
+    new Chart(canvas, { type: 'line', data: { datasets: buildDataSets() }, options: commonOpts() });
+}
+
+function cleanTimelineDate(value) {
+    if (!value) return '';
+    const text = String(value).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
+}
+
+function sortedUniqueDates(values) {
+    return [...new Set((values || []).map(cleanTimelineDate).filter(Boolean))].sort();
+}
+
+function normalizeTreatmentLanes() {
+    const combinedLanes = (psaCombinedBundle && psaCombinedBundle.treatment_lanes) || [];
+    const rawLanes = _bundleBands.length ? _bundleBands : combinedLanes;
+    return (rawLanes || [])
+        .map((lane, index) => {
+            const lineNumber = String(lane.line_of_therapy_number || lane.line_number || index + 1);
+            const label = lane.label || lane.drug_scheme_label || lane.drug_scheme || `Línea ${lineNumber}`;
+            return {
+                line_number: lineNumber,
+                label,
+                start_date: cleanTimelineDate(lane.start_date),
+                end_date: cleanTimelineDate(lane.end_date),
+                color: lane.color || _lineColorsList[index % _lineColorsList.length],
+                drug_scheme: lane.drug_scheme || lane.drug_scheme_label || '',
+                line_type_label: lane.line_type_label || '',
+            };
+        })
+        .filter(lane => lane.start_date);
+}
+
+function treatmentTimelineAxisEnd(lanes) {
+    const axisDates = sortedUniqueDates([
+        ...psaDates,
+        ...((psaCombinedBundle && psaCombinedBundle.axis_dates) || []),
+        ...lanes.flatMap(lane => [lane.start_date, lane.end_date]),
+    ]);
+    return axisDates[axisDates.length - 1] || new Date().toISOString().slice(0, 10);
+}
+
+function renderTreatmentTimeline() {
+    const canvas = document.getElementById('psaTreatmentTimelineChart');
+    const empty = document.getElementById('psaTreatmentTimelineEmpty');
+    if (!canvas) return;
+    const lanes = normalizeTreatmentLanes();
+    if (!lanes.length) {
+        canvas.style.display = 'none';
+        if (empty) empty.style.display = 'block';
+        return;
+    }
+    canvas.style.display = 'block';
+    if (empty) empty.style.display = 'none';
+
+    const axisEnd = treatmentTimelineAxisEnd(lanes);
+    const laneLabels = lanes.map(lane => lane.label);
+    const unassignedIndex = lanes.length;
+    const laneIndexByNumber = new Map(lanes.map((lane, index) => [String(lane.line_number), index]));
+    const laneDatasets = lanes.map((lane, index) => ({
+        type: 'line',
+        label: lane.label,
+        data: [
+            { x: lane.start_date, y: index, lane },
+            { x: lane.end_date || axisEnd, y: index, lane },
+        ],
+        borderColor: lane.color,
+        backgroundColor: lane.color + '33',
+        borderWidth: 12,
+        pointRadius: 0,
+        pointHoverRadius: 0,
+        tension: 0,
+    }));
+    const psaMarkers = _bundlePoints
+        .filter(point => cleanTimelineDate(point.date || point.sample_date))
+        .map((point) => {
+            const lineKey = point.line || point.treatment_line_number || '';
+            const laneIndex = laneIndexByNumber.has(String(lineKey)) ? laneIndexByNumber.get(String(lineKey)) : unassignedIndex;
+            return {
+                x: cleanTimelineDate(point.date || point.sample_date),
+                y: laneIndex,
+                psa: point.value || point.psa || point.psa_value,
+                lineLabel: point.context || point.treatment_line_label || laneLabels[laneIndex] || 'Sin línea documentada',
+            };
+        });
+    new Chart(canvas, {
+        type: 'line',
+        data: {
+            datasets: [
+                ...laneDatasets,
+                {
+                    type: 'scatter',
+                    label: 'APE documentado',
+                    data: psaMarkers,
+                    backgroundColor: '#1FB8FF',
+                    borderColor: '#020617',
+                    borderWidth: 1.5,
+                    pointRadius: 5,
+                    pointHoverRadius: 8,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'nearest', intersect: false },
+            plugins: {
+                legend: { labels: { color: '#94a3b8' } },
+                tooltip: {
+                    backgroundColor: 'rgba(2, 6, 23, 0.95)',
+                    borderColor: 'rgba(6, 182, 212, 0.4)',
+                    borderWidth: 1,
+                    callbacks: {
+                        title: items => items[0]?.raw?.x || items[0]?.label || '',
+                        label: ctx => {
+                            const raw = ctx.raw || {};
+                            if (ctx.dataset.type === 'scatter') {
+                                return `APE ${raw.psa ?? '—'} ng/mL · ${raw.lineLabel || 'sin línea'}`;
+                            }
+                            const lane = raw.lane || {};
+                            return `${lane.label || ctx.dataset.label}: ${lane.start_date || '—'} → ${lane.end_date || axisEnd}`;
+                        },
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: { unit: 'month', displayFormats: { month: 'MMM yy' } },
+                    grid: { color: 'rgba(30, 41, 59, 0.5)' },
+                    ticks: { color: '#94a3b8', font: { size: 11 } },
+                },
+                y: {
+                    type: 'linear',
+                    min: -0.5,
+                    max: lanes.length - 0.5 + (psaMarkers.some(point => point.y === unassignedIndex) ? 1 : 0),
+                    grid: { color: 'rgba(30, 41, 59, 0.35)' },
+                    ticks: {
+                        color: '#94a3b8',
+                        stepSize: 1,
+                        callback: value => laneLabels[value] || 'APE sin línea',
+                    },
+                },
+            },
+        },
+    });
+}
+
+function renderCombinedTimeline() {
+    const canvas = document.getElementById('psaCombinedTimelineChart');
+    if (!canvas) return;
+    const combinedPsa = ((psaCombinedBundle && psaCombinedBundle.psa_series) || []).length
+        ? psaCombinedBundle.psa_series
+        : _bundlePoints.map(point => ({
+            date: point.date || point.sample_date,
+            psa: point.value || point.psa || point.psa_value,
+            treatment_line: point.line || point.treatment_line_number,
+            treatment_line_label: point.context || point.treatment_line_label,
+            treatment_color: point.treatment_color,
+        }));
+    const lanes = normalizeTreatmentLanes();
+    const eventMarkers = (psaCombinedBundle && psaCombinedBundle.clinical_event_markers) || [];
+    if (!combinedPsa.length && !lanes.length && !eventMarkers.length) {
+        canvas.style.display = 'none';
+        return;
+    }
+    const laneLabels = lanes.map(lane => lane.label);
+    const laneIndexByNumber = new Map(lanes.map((lane, index) => [String(lane.line_number), index]));
+    const unassignedIndex = lanes.length;
+    const axisEnd = treatmentTimelineAxisEnd(lanes);
+    const laneDatasets = lanes.map((lane, index) => ({
+        type: 'line',
+        yAxisID: 'yLane',
+        label: lane.label,
+        data: [
+            { x: lane.start_date, y: index, lane },
+            { x: lane.end_date || axisEnd, y: index, lane },
+        ],
+        borderColor: lane.color,
+        backgroundColor: lane.color + '2b',
+        borderWidth: 10,
+        pointRadius: 0,
+        tension: 0,
+    }));
+    const eventData = eventMarkers
+        .filter(marker => cleanTimelineDate(marker.date))
+        .map(marker => ({
+            x: cleanTimelineDate(marker.date),
+            y: laneIndexByNumber.has(String(marker.treatment_line)) ? laneIndexByNumber.get(String(marker.treatment_line)) : unassignedIndex,
+            label: marker.label || marker.type || 'Evento',
+            type: marker.type || 'event',
+        }));
+    new Chart(canvas, {
+        type: 'line',
+        data: {
+            datasets: [
+                {
+                    type: 'line',
+                    yAxisID: 'yPsa',
+                    label: 'APE paciente',
+                    data: combinedPsa
+                        .filter(point => cleanTimelineDate(point.date))
+                        .map(point => ({ x: cleanTimelineDate(point.date), y: Number(point.psa), line: point.treatment_line_label || point.treatment_line }))
+                        .filter(point => Number.isFinite(point.y) && point.y > 0),
+                    borderColor: 'rgba(31,184,255,.85)',
+                    backgroundColor: 'rgba(31,184,255,.18)',
+                    pointBackgroundColor: '#1FB8FF',
+                    pointBorderColor: '#020617',
+                    pointRadius: 4,
+                    tension: 0.25,
+                },
+                ...laneDatasets,
+                {
+                    type: 'scatter',
+                    yAxisID: 'yLane',
+                    label: 'Eventos clínicos',
+                    data: eventData,
+                    backgroundColor: '#f59e0b',
+                    borderColor: '#020617',
+                    borderWidth: 1,
+                    pointRadius: 5,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'nearest', intersect: false },
+            plugins: {
+                legend: { labels: { color: '#94a3b8' } },
+                tooltip: {
+                    backgroundColor: 'rgba(2, 6, 23, 0.95)',
+                    borderColor: 'rgba(6, 182, 212, 0.4)',
+                    borderWidth: 1,
+                    callbacks: {
+                        title: items => items[0]?.raw?.x || items[0]?.label || '',
+                        label: ctx => {
+                            const raw = ctx.raw || {};
+                            if (ctx.dataset.label === 'APE paciente') return `APE ${raw.y ?? '—'} ng/mL · ${raw.line || 'sin línea'}`;
+                            if (ctx.dataset.label === 'Eventos clínicos') return `${raw.label || 'Evento'} · ${raw.type || ''}`;
+                            const lane = raw.lane || {};
+                            return `${lane.label || ctx.dataset.label}: ${lane.start_date || '—'} → ${lane.end_date || axisEnd}`;
+                        },
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: { unit: 'month', displayFormats: { month: 'MMM yy' } },
+                    grid: { color: 'rgba(30, 41, 59, 0.5)' },
+                    ticks: { color: '#94a3b8', font: { size: 11 } },
+                },
+                yPsa: {
+                    type: 'logarithmic',
+                    min: 0.05,
+                    position: 'left',
+                    title: { display: true, text: 'APE (ng/mL log)', color: '#67e8f9' },
+                    grid: { color: 'rgba(30, 41, 59, 0.35)' },
+                    ticks: { color: '#94a3b8' },
+                },
+                yLane: {
+                    type: 'linear',
+                    position: 'right',
+                    min: -0.5,
+                    max: lanes.length - 0.5 + (eventData.some(point => point.y === unassignedIndex) ? 1 : 0),
+                    grid: { drawOnChartArea: false },
+                    ticks: {
+                        color: '#cbd5e1',
+                        stepSize: 1,
+                        callback: value => laneLabels[value] || 'Eventos',
+                    },
+                },
+            },
+        },
+    });
 }
 
 /* ===== Signature pad ===== */
@@ -6183,6 +7176,94 @@ function renderFullPSA() {
 </div>
 
 <script>
+(() => {
+    document.querySelectorAll('.pm2-profile-gap-review-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            const dataset = btn.dataset || {};
+            const closureStatus = window.prompt('Estado: captured_structured, captured_elsewhere, followup_scheduled, not_applicable, still_blocked', 'followup_scheduled');
+            if (!closureStatus) return;
+            const clinicalNote = window.prompt('Nota clínica breve obligatoria', 'Revision SLA desde Perfil V2');
+            if (!clinicalNote) return;
+            const assignedTo = window.prompt('Responsable operativo', dataset.assignedTo || dataset.ownerRole || 'registro_clinico');
+            if (!assignedTo) return;
+            const dueDate = window.prompt('Fecha compromiso YYYY-MM-DD', dataset.dueDate || '');
+            try {
+                const res = await fetch('/api/analytics/treatment-value-registry/gap-review', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        patient_ref: dataset.patientRef,
+                        gap_key: dataset.gapKey,
+                        closure_status: closureStatus,
+                        clinical_note: clinicalNote,
+                        reviewed_by: 'clinician_profile_v2',
+                        detected_at: dataset.detectedAt || '',
+                        detection_anchor: dataset.detectionAnchor || '',
+                        target_weeks: dataset.targetWeeks || '',
+                        regimen_code: dataset.regimenCode || '',
+                        molecule: dataset.molecule || '',
+                        selected_action_key: 'profile_v2_gap_sla_review',
+                        assigned_to: assignedTo,
+                        owner_role: dataset.ownerRole || assignedTo,
+                        due_date: dueDate || dataset.dueDate || '',
+                        sla_days: dataset.slaDays || '',
+                        sla_policy: dataset.slaPolicy || '',
+                        acknowledged_missing_fields: [dataset.gapKey],
+                    }),
+                });
+                const body = await res.json();
+                if (!res.ok || body.success === false) throw new Error(body.error || res.status);
+                window.location.href = `/patient_profile/${encodeURIComponent(dataset.patientRef)}?v=2&refresh=1`;
+            } catch (err) {
+                window.alert(`No se pudo registrar revision SLA: ${err && err.message ? err.message : err}`);
+            }
+        });
+    });
+
+    const btn = document.getElementById('loadTreatmentValueRegistryBtn');
+    const status = document.getElementById('treatmentValueRegistryStatus');
+    const grid = document.getElementById('treatmentValueRegistryGrid');
+    if (!btn || !status || !grid) return;
+    function fmtPct(value) {
+        if (value === null || value === undefined || value === '') return 'No calculable';
+        const n = Number(value);
+        return Number.isFinite(n) ? `${n.toFixed(1)}%` : String(value);
+    }
+    function fmtMoney(value) {
+        const n = Number(value || 0);
+        return Number.isFinite(n) && n > 0 ? `$ ${n.toLocaleString('es-MX', {maximumFractionDigits: 0})} MXN` : 'No calculable';
+    }
+    btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        status.textContent = 'Cargando registro comparativo...';
+        try {
+            const res = await fetch('/api/analytics/treatment-value-registry?trace_limit=5&real_only=0');
+            const body = await res.json();
+            if (!res.ok || body.success === false) throw new Error(body.error || 'registry_unavailable');
+            const windows = body.windows || {};
+            const w24 = windows['24'] || windows[24] || {};
+            const summary = w24.summary || body.summary || {};
+            grid.style.display = 'grid';
+            grid.innerHTML = [
+                ['Ventanas', (body.weeks_list || [12, 24]).join(' / ') + ' sem', body.baseline_adjustment_method || 'Ajuste basal pendiente'],
+                ['Regimenes', summary.regimen_count || Object.keys(w24.by_regimen || {}).length || 0, 'Comparacion por molecula/regimen'],
+                ['PSA50 / PSA90', `${fmtPct(summary.psa50_rate_pct)} · ${fmtPct(summary.psa90_rate_pct)}`, 'Respuesta a 24 semanas'],
+                ['Costo por respuesta', fmtMoney(summary.cost_per_psa50_responder_mxn), 'Usa dosis y catalogo real disponible'],
+            ].map(([label, value, sub]) => `
+                <div>
+                    <div class="pm2-kicker">${label}</div>
+                    <div style="font-weight:800;color:#f0fbff">${value}</div>
+                    <div style="font-size:.72rem;color:var(--pn-text-muted)">${sub}</div>
+                </div>
+            `).join('');
+            status.textContent = body.kpi_label || 'Registro longitudinal comparativo tratamiento-valor @ 12/24 semanas';
+        } catch (err) {
+            status.textContent = `No se pudo cargar el registro comparativo: ${err && err.message ? err.message : err}`;
+            btn.disabled = false;
+        }
+    });
+})();
+
 window.pm2OpenPreferencesCapture = function(nss) {
     if (!nss) return;
     document.getElementById('pm2PrefNss').value = nss;

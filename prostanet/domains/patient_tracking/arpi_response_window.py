@@ -61,14 +61,14 @@ def _classify_arpi(drug_scheme: str) -> str | None:
 
 
 def _resolve_ecog_at_date(patient: dict[str, Any], target_date: date,
-                          tolerance_days: int) -> tuple[int | None, int | None, str]:
-    """Find closest ECOG within ±tolerance_days. Returns (value, offset_days, quality_tag).
+                          tolerance_days: int) -> tuple[int | None, str | None, int | None, str]:
+    """Find closest ECOG within ±tolerance_days.
 
     Reads from `patient_clinical_facts` history (NOT just is_active) so ECOG values
     set previously can be found. Falls back to follow_ups[].ecog_performance_status
     if no clinical_fact rows.
 
-    Returns: (ecog_value, offset_days_from_target, quality_tag)
+    Returns: (ecog_value, ecog_date, offset_days_from_target, quality_tag)
         quality_tag ∈ {'in_window', 'closest_outside_window', 'no_data'}
     """
     candidates: list[tuple[date, int]] = []
@@ -78,10 +78,10 @@ def _resolve_ecog_at_date(patient: dict[str, Any], target_date: date,
     for f in facts:
         if not isinstance(f, dict):
             continue
-        if str(f.get("fact_key") or "") != "ecog_performance_status":
+        if str(f.get("fact_key") or "") not in {"ecog_performance_status", "ecog_score"}:
             continue
-        # Use observed_at or source_date
-        d_str = f.get("observed_at") or f.get("source_date") or f.get("updated_at")
+        # Use clinical sample/source date first; observed_at is ingestion time.
+        d_str = f.get("source_date") or f.get("observed_at") or f.get("updated_at")
         if not d_str:
             continue
         try:
@@ -112,24 +112,24 @@ def _resolve_ecog_at_date(patient: dict[str, Any], target_date: date,
             continue
 
     if not candidates:
-        return (None, None, "no_data")
+        return (None, None, None, "no_data")
 
     # Find closest
     closest = min(candidates, key=lambda c: abs((c[0] - target_date).days))
     offset = (closest[0] - target_date).days
     quality = "in_window" if abs(offset) <= tolerance_days else "closest_outside_window"
-    return (closest[1], offset, quality)
+    return (closest[1], closest[0].isoformat(), offset, quality)
 
 
 def _resolve_baseline_ecog(patient: dict[str, Any], line_start_date: date,
-                            window_back_days: int = 30) -> int | None:
+                            window_back_days: int = 30) -> tuple[int | None, str | None]:
     """ECOG at/before line start (within window_back_days)."""
     candidates: list[tuple[date, int]] = []
     facts = patient.get("clinical_facts") or patient.get("patient_clinical_facts") or []
     for f in facts:
-        if not isinstance(f, dict) or str(f.get("fact_key") or "") != "ecog_performance_status":
+        if not isinstance(f, dict) or str(f.get("fact_key") or "") not in {"ecog_performance_status", "ecog_score"}:
             continue
-        d_str = f.get("observed_at") or f.get("source_date") or f.get("updated_at")
+        d_str = f.get("source_date") or f.get("observed_at") or f.get("updated_at")
         if not d_str:
             continue
         try:
@@ -141,9 +141,9 @@ def _resolve_baseline_ecog(patient: dict[str, Any], line_start_date: date,
         except (TypeError, ValueError):
             continue
     if not candidates:
-        return None
+        return (None, None)
     closest = max(candidates, key=lambda c: c[0])  # most recent before/at line_start
-    return closest[1]
+    return (closest[1], closest[0].isoformat())
 
 
 def compute_arpi_response_at_window(
@@ -301,8 +301,8 @@ def compute_arpi_response_at_window(
         psa90_response = psa_decline_pct >= 90.0
 
     # ECOG
-    baseline_ecog = _resolve_baseline_ecog(patient, line_start_date)
-    actual_ecog, ecog_offset_days, ecog_quality = _resolve_ecog_at_date(
+    baseline_ecog, baseline_ecog_date = _resolve_baseline_ecog(patient, line_start_date)
+    actual_ecog, actual_ecog_date, ecog_offset_days, ecog_quality = _resolve_ecog_at_date(
         patient, target_date, tolerance_days,
     )
     ecog_change = None
@@ -324,7 +324,9 @@ def compute_arpi_response_at_window(
         "psa50_response": psa50_response,
         "psa90_response": psa90_response,
         "baseline_ecog": baseline_ecog,
+        "baseline_ecog_date": baseline_ecog_date,
         "actual_ecog": actual_ecog,
+        "actual_ecog_date": actual_ecog_date,
         "ecog_change_from_baseline": ecog_change,
         "ecog_evidence_quality": ecog_quality,
         "ecog_offset_days": ecog_offset_days,

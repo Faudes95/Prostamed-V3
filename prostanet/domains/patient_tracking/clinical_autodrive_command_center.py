@@ -67,6 +67,64 @@ STATE_LABELS = {
 CRPC_OPTION_TOKENS = ("crpc", "mcrpc", "parp", "psma_rlt", "rlt", "lutetium", "lu177", "lu-177", "pluvicto")
 
 
+def _build_decision_operability(
+    decision_today: Mapping[str, Any] | None,
+    queue: list[dict[str, Any]],
+    summary: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Explain the boundary between a clinical recommendation and ops queue."""
+    decision_today = dict(decision_today or {})
+    decision = dict(decision_today.get("decision_today") or {})
+    next_action = dict(decision_today.get("next_safe_action") or {})
+    summary = dict(summary or {})
+    clinical_title = _first_text(
+        decision.get("title"),
+        decision_today.get("title"),
+        next_action.get("title"),
+        summary.get("top_action_title"),
+    )
+    decision_state = str(decision_today.get("decision_state") or decision.get("status") or "").strip().lower()
+    queue_count = len(queue or [])
+    if queue_count > 0:
+        top = dict((queue or [{}])[0] or {})
+        return {
+            "clinical_recommendation_title": clinical_title,
+            "operational_queue_state": "queued",
+            "queue_count": queue_count,
+            "why_no_queue": "",
+            "next_operational_trigger": _first_text(
+                top.get("title"),
+                top.get("action_key"),
+                "Accion operativa priorizada en cola hoy.",
+            ),
+        }
+    if clinical_title and decision_state not in {"", "none", "not_actionable"}:
+        return {
+            "clinical_recommendation_title": clinical_title,
+            "operational_queue_state": "clinical_recommendation_only",
+            "queue_count": 0,
+            "why_no_queue": (
+                "Decision Today expresa una recomendacion clinica, pero Autodrive "
+                "solo encola tareas operativas cuando hay accion ejecutable hoy, "
+                "brecha vencida o redecision requerida."
+            ),
+            "next_operational_trigger": (
+                "Nueva brecha de datos, vigilancia vencida, alerta clinica activa "
+                "o redecision documentada."
+            ),
+        }
+    return {
+        "clinical_recommendation_title": clinical_title,
+        "operational_queue_state": "not_actionable",
+        "queue_count": 0,
+        "why_no_queue": "Sin recomendacion clinica accionable ni tarea operativa para hoy.",
+        "next_operational_trigger": (
+            "Cambio longitudinal, nueva alerta clinica, vigilancia vencida o dato "
+            "decisivo documentado."
+        ),
+    }
+
+
 def build_patient_autodrive(
     patient_record: Mapping[str, Any] | None,
     *,
@@ -159,6 +217,7 @@ def build_patient_autodrive(
         decision_today = {}
     lanes = _build_lanes(queue)
     summary = _build_summary(queue, lanes, state=effective_state, management_track=effective_track)
+    decision_operability = _build_decision_operability(decision_today, queue, summary)
     contracts = build_autodrive_contract_matrix()
     contract_summary = summarize_autodrive_contracts(contracts)
 
@@ -172,6 +231,7 @@ def build_patient_autodrive(
         "state_label": STATE_LABELS.get(effective_state, effective_state or "Sin clasificar"),
         "management_track": effective_track,
         "decision_today": decision_today,
+        "decision_operability": decision_operability,
         "summary": summary,
         "today_queue": queue[:12],
         "lanes": lanes,
@@ -229,6 +289,7 @@ def build_population_autodrive(
             "dominant_blocker": (autodrive.get("summary") or {}).get("dominant_blocker"),
             "next_action": (autodrive.get("today_queue") or [{}])[0],
             "decision_today": autodrive.get("decision_today") or {},
+            "decision_operability": autodrive.get("decision_operability") or {},
             "queue_count": len(autodrive.get("today_queue") or []),
         }
         patients.append(patient_row)

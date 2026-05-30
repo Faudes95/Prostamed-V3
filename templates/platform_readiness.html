@@ -1,0 +1,2278 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platform Readiness · ProstaMed v2</title>
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='platform_readiness_v3') }}">
+    <style>
+    .pr-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:var(--space-3); }
+    .pr-band { padding:var(--space-5) var(--space-6); }
+    .pr-table-wrap {
+        margin-top:var(--space-4); border:1px solid var(--border-default);
+        border-radius:8px; overflow:auto; background:rgba(15,23,42,.78);
+    }
+    .pr-table { width:100%; border-collapse:collapse; min-width:900px; font-size:.82rem; }
+    .pr-table th {
+        text-align:left; padding:12px 14px; color:var(--pn-text-muted);
+        font-size:.68rem; letter-spacing:.1em; text-transform:uppercase;
+        border-bottom:1px solid var(--border-default); background:rgba(2,6,23,.42);
+    }
+    .pr-table td { padding:12px 14px; border-bottom:1px solid var(--border-subtle); color:#e2e8f0; vertical-align:top; }
+    .pr-code { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; color:#cffafe; font-size:.75rem; }
+    .pr-muted { color:var(--pn-text-muted); font-size:.78rem; line-height:1.45; }
+    .pr-muted,
+    .pr-pill,
+    .pr-band .pm2-kpi-label,
+    .pr-band .pm2-kpi-value,
+    .pr-band .pm2-kpi-foot,
+    .pr-band .pm2-kpi-trend,
+    .pr-band .pm2-field {
+        max-width:100%;
+        min-width:0;
+        overflow-wrap:anywhere;
+        word-break:break-word;
+    }
+    .pr-band .pm2-input {
+        max-width:100%;
+        min-width:0;
+        text-overflow:ellipsis;
+    }
+    .pr-pill {
+        display:inline-flex; align-items:center; min-height:24px; border:1px solid var(--border-default);
+        border-radius:999px; padding:2px 8px; margin:2px 4px 2px 0; color:#e2e8f0;
+        background:rgba(15,23,42,.72); font-size:.72rem;
+    }
+    .pr-gap-high { color:#fecaca; }
+    .pr-gap-moderate { color:#fed7aa; }
+    .pm2-app-shell {
+        grid-template-rows:auto minmax(0, 1fr);
+    }
+    .pm2-app-header { align-items:flex-start; gap:var(--space-3); }
+    .pm2-app-shell > .pm2-app-header {
+        height:auto;
+        min-height:64px;
+        padding-top:var(--space-3);
+        padding-bottom:var(--space-3);
+    }
+    .pm2-header-tools {
+        flex-wrap:wrap;
+        max-width:min(100%, 980px);
+        justify-content:flex-end;
+    }
+    @media (max-width: 1023px) {
+        .pm2-app-shell {
+            grid-template-rows:auto auto minmax(0, 1fr);
+        }
+    }
+    @media (max-width: 760px) {
+        .pr-band { padding:var(--space-4); }
+        .pm2-header-tools {
+            width:100%;
+            min-width:0;
+            display:flex;
+            flex-wrap:nowrap;
+            justify-content:flex-start;
+            gap:var(--space-2);
+            overflow-x:auto;
+            padding-bottom:4px;
+            -webkit-overflow-scrolling:touch;
+        }
+        .pm2-header-tools .pm2-btn {
+            flex:0 0 auto;
+            width:auto;
+            min-width:0;
+            justify-content:center;
+            text-align:center;
+            white-space:nowrap;
+            line-height:1.2;
+        }
+        .pr-table { min-width:720px; font-size:.78rem; }
+    }
+    @media (max-width: 460px) {
+        .pr-table { min-width:640px; font-size:.76rem; }
+    }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+{% from "components/pm2_sidebar.html" import pm2_sidebar %}
+{% set summary = audit.summary or {} %}
+{% set route_contracts = audit.route_contracts or {} %}
+{% set db_snapshot = audit.database_snapshot or {} %}
+{% set capture_integrity = capture_integrity or {} %}
+{% set capture_summary = capture_integrity.summary or {} %}
+{% set v2_persistence_closure = v2_persistence_closure or {} %}
+{% set v2_persistence_summary = v2_persistence_closure.summary or {} %}
+{% set v2_treatment_value_closure = v2_treatment_value_closure or {} %}
+{% set v2_treatment_value_summary = v2_treatment_value_closure.summary or {} %}
+{% set ledger_gate = ledger_gate or {} %}
+{% set ledger_summary = ledger_gate.summary or {} %}
+{% set ledger_persistence_matrix = ledger_persistence_matrix or {} %}
+{% set flow_matrix_summary = ledger_persistence_matrix.summary or {} %}
+{% set interoperability_map = interoperability_map or {} %}
+{% set interop_summary = interoperability_map.summary or {} %}
+{% set deidentified_export_contract = deidentified_export_contract or {} %}
+{% set export_summary = (deidentified_export_contract.summary or {}) %}
+{% set export_quality = (deidentified_export_contract.export_quality or {}) %}
+{% set research_pack_materializer = research_pack_materializer or {} %}
+{% set pack_summary = (research_pack_materializer.summary or {}) %}
+{% set research_pack_freeze_library = research_pack_freeze_library or {} %}
+{% set freeze_library_summary = (research_pack_freeze_library.summary or {}) %}
+{% set nas_pilot_evidence_vault = nas_pilot_evidence_vault or {} %}
+{% set nas_vault_summary = (nas_pilot_evidence_vault.summary or {}) %}
+{% set prospective_pilot_governance = prospective_pilot_governance or {} %}
+{% set pilot_summary = (prospective_pilot_governance.summary or {}) %}
+{% set pilot_adoption_command_center = pilot_adoption_command_center or {} %}
+{% set pilot_adoption_summary = (pilot_adoption_command_center.summary or {}) %}
+{% set prospective_gap_closure_huddle = prospective_gap_closure_huddle or {} %}
+{% set gap_huddle_summary = (prospective_gap_closure_huddle.summary or {}) %}
+{% set ape_longitudinal_completion_sprint = ape_longitudinal_completion_sprint or {} %}
+{% set ape_sprint_summary = (ape_longitudinal_completion_sprint.summary or {}) %}
+{% set real_world_sample_maturity = real_world_sample_maturity or {} %}
+{% set real_sample_summary = (real_world_sample_maturity.summary or {}) %}
+{% set prospective_real_world_completion_queue = prospective_real_world_completion_queue or {} %}
+{% set real_completion_summary = (prospective_real_world_completion_queue.summary or {}) %}
+{% set real_world_pilot_packet = real_world_pilot_packet or {} %}
+{% set real_pilot_summary = (real_world_pilot_packet.summary or {}) %}
+{% set real_world_pilot_execution_log = real_world_pilot_execution_log or {} %}
+{% set real_execution_summary = (real_world_pilot_execution_log.summary or {}) %}
+{% set real_world_first_patient_launch_mode = real_world_first_patient_launch_mode or {} %}
+{% set real_launch_summary = (real_world_first_patient_launch_mode.summary or {}) %}
+{% set real_world_launch_flow_verifier = real_world_launch_flow_verifier or {} %}
+{% set real_flow_summary = (real_world_launch_flow_verifier.summary or {}) %}
+{% set world_class_benchmark = world_class_benchmark or {} %}
+{% set world_class_summary = (world_class_benchmark.summary or {}) %}
+{% set external_validation_worklist = external_validation_worklist or {} %}
+{% set external_validation_summary = (external_validation_worklist.summary or {}) %}
+
+<div class="pm2-app-shell">
+    {{ pm2_sidebar(active='dashboard') }}
+
+    <header class="pm2-app-header">
+        <div>
+            <div class="pm2-kicker">PROSTAMED · READINESS</div>
+            <div style="font-family:var(--pm-font-display);font-size:1.05rem;color:#f8fbff;font-weight:700;">Clinical Platform Readiness Audit</div>
+        </div>
+        <div class="pm2-header-tools">
+            <a class="pm2-btn pm2-btn--ghost" href="/clinical-hub">Centro clinico</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/ledger-persistence-matrix?scope=full">Matriz flujos JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/ledger-release-gate?scope=full">Ledger gate JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/interoperability-map?scope=full">Interop JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/deidentified-export-contract?scope=full">Export JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/research-pack-materializer?scope=full">Pack JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/research-pack-materializer/freezes">Freezes JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/prospective-pilot-governance?scope=full">Piloto JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/nas-pilot-evidence-vault?scope=full">Vault NAS JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/pilot-adoption-command-center?scope=full">Adopcion JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/prospective-gap-closure-huddle?scope=full">Huddle JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/ape-longitudinal-completion-sprint?scope=full">Sprint APE JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/real-world-sample-maturity?scope=full">Muestra real JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/prospective-real-world-completion-queue?scope=full">Cola real-only JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/real-world-pilot-packet?scope=full">Paquete real JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/real-world-pilot-execution-log?scope=full">Bitacora real JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/real-world-first-patient-launch-mode?scope=full">Lanzamiento real JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/real-world-launch-flow-verifier?scope=full">Verificador real JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/world-class-benchmark?scope=full">Benchmark JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/external-validation-worklist?scope=full">Validacion externa JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/capture-integrity?scope=full">Integridad captura JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/v2-persistence-closure?scope=full">Persistencia V2 JSON</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/v2-treatment-value-closure?scope=full">Valor V2 JSON</a>
+            <a class="pm2-btn pm2-btn--primary" href="/api/platform-readiness/audit?scope=full">JSON auditable</a>
+        </div>
+    </header>
+
+    <main id="main-content" class="pm2-app-main" tabindex="-1" data-testid="platform-readiness">
+        <section class="pr-band" style="padding-bottom:0">
+            <div class="pm2-kicker">BASELINE ANTES DE CRECER</div>
+            <h1 style="font-family:var(--pm-font-display);font-size:2rem;font-weight:700;color:#f8fbff;margin:6px 0 4px">Readiness clinico de plataforma</h1>
+            <p style="color:var(--pn-text-muted);font-size:.92rem;max-width:88ch;line-height:1.5;margin:0">
+                Auditoria de solo lectura para detectar brechas de captura, persistencia, aliases, recaptura, rutas criticas y conexion UI/API antes de agregar mas logica.
+            </p>
+        </section>
+
+        <section class="pr-band pr-grid">
+            <article class="pm2-kpi-card" data-variant="{% if summary.readiness_status == 'release_blocked' %}critical{% elif summary.readiness_status == 'needs_hardening' %}warn{% else %}success{% endif %}">
+                <div class="pm2-kpi-label">Readiness score</div>
+                <div class="pm2-kpi-value">{{ summary.readiness_score }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ summary.readiness_status }}</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="info">
+                <div class="pm2-kpi-label">Modulos auditados</div>
+                <div class="pm2-kpi-value">{{ summary.modules_scanned }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ summary.module_fields_total }} campos</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="success">
+                <div class="pm2-kpi-label">Cobertura canonica</div>
+                <div class="pm2-kpi-value">{{ summary.canonical_schema_coverage_pct }}%</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ summary.canonical_facts_seen_in_schemas }}/{{ summary.fact_specs_total }} facts</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="warn">
+                <div class="pm2-kpi-label">Recaptura / aliases</div>
+                <div class="pm2-kpi-value">{{ summary.recapture_alias_count }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ summary.same_module_recapture_count }} en mismo modulo</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if capture_summary.critical_failure_count %}critical{% elif capture_summary.watch_failure_count %}warn{% else %}success{% endif %}" data-testid="capture-integrity-kpi">
+                <div class="pm2-kpi-label">Integridad captura</div>
+                <div class="pm2-kpi-value">{{ capture_summary.pass_rate_pct or 0 }}%</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ capture_summary.capture_integrity_status or 'no disponible' }} · {{ capture_summary.critical_failure_count or 0 }} blocks</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if v2_persistence_summary.critical_failure_count %}critical{% elif v2_persistence_summary.watch_count %}warn{% else %}success{% endif %}" data-testid="v2-persistence-closure-kpi">
+                <div class="pm2-kpi-label">Persistencia V2</div>
+                <div class="pm2-kpi-value">{{ v2_persistence_summary.pass_rate_pct or 0 }}%</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ v2_persistence_summary.v2_persistence_closure_status or 'no disponible' }} · {{ v2_persistence_summary.critical_failure_count or 0 }} blocks</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if v2_treatment_value_summary.critical_failure_count %}critical{% elif v2_treatment_value_summary.watch_count %}warn{% else %}success{% endif %}" data-testid="v2-treatment-value-closure-kpi">
+                <div class="pm2-kpi-label">Valor terapéutico V2</div>
+                <div class="pm2-kpi-value">{{ v2_treatment_value_summary.pass_rate_pct or 0 }}%</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ v2_treatment_value_summary.v2_treatment_value_closure_status or 'no disponible' }} · {{ v2_treatment_value_summary.critical_failure_count or 0 }} blocks</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if summary.critical_routes_missing_count %}critical{% else %}success{% endif %}">
+                <div class="pm2-kpi-label">Rutas criticas faltantes</div>
+                <div class="pm2-kpi-value">{{ summary.critical_routes_missing_count }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ route_contracts.registered_count }}/{{ route_contracts.critical_route_count }} registradas</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if ledger_summary.release_gate_status == 'release_blocked' %}critical{% elif ledger_summary.release_gate_status == 'needs_hardening' %}warn{% else %}success{% endif %}" data-testid="ledger-release-gate-kpi">
+                <div class="pm2-kpi-label">Ledger release gate</div>
+                <div class="pm2-kpi-value">{{ ledger_summary.block_count or 0 }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ ledger_summary.release_gate_status or 'no disponible' }} · {{ ledger_summary.watch_count or 0 }} watch</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if flow_matrix_summary.matrix_status == 'release_blocked' %}critical{% elif flow_matrix_summary.matrix_status == 'needs_hardening' %}warn{% else %}success{% endif %}" data-testid="ledger-persistence-matrix-kpi">
+                <div class="pm2-kpi-label">QA flujos V2</div>
+                <div class="pm2-kpi-value">{{ flow_matrix_summary.flow_block_count or 0 }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ flow_matrix_summary.matrix_status or 'no disponible' }} · {{ flow_matrix_summary.flow_watch_count or 0 }} watch</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if interop_summary.critical_block_count %}critical{% elif interop_summary.watch_count %}warn{% else %}success{% endif %}" data-testid="interoperability-map-kpi">
+                <div class="pm2-kpi-label">Interop mCODE / OMOP</div>
+                <div class="pm2-kpi-value">{{ interop_summary.critical_mapping_coverage_pct or 0 }}%</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ interop_summary.interoperability_status or 'no disponible' }} · {{ interop_summary.critical_block_count or 0 }} bloqueantes</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if export_summary.next_layer_allowed %}success{% else %}critical{% endif %}" data-testid="deidentified-export-contract-kpi">
+                <div class="pm2-kpi-label">Export desidentificado</div>
+                <div class="pm2-kpi-value">{{ export_summary.direct_identifier_key_count or 0 }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ export_summary.export_contract_status or 'no disponible' }} · {{ export_summary.cohort_subject_count or 0 }} sujetos</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if pack_summary.next_layer_allowed %}success{% else %}critical{% endif %}" data-testid="research-pack-materializer-kpi">
+                <div class="pm2-kpi-label">Research pack</div>
+                <div class="pm2-kpi-value">{{ pack_summary.file_count or 0 }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ pack_summary.materializer_status or 'no disponible' }} · {{ pack_summary.total_data_rows or 0 }} filas</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if freeze_library_summary.quality_block_count %}critical{% elif freeze_library_summary.freeze_count %}success{% else %}info{% endif %}" data-testid="research-pack-freeze-library-kpi">
+                <div class="pm2-kpi-label">Freezes gobernados</div>
+                <div class="pm2-kpi-value">{{ freeze_library_summary.freeze_count or 0 }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ freeze_library_summary.download_ready_count or 0 }} descargables · {{ freeze_library_summary.quality_block_count or 0 }} bloqueados</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if pilot_summary.pilot_block_count %}critical{% elif pilot_summary.watch_count %}warn{% else %}success{% endif %}" data-testid="prospective-pilot-governance-kpi">
+                <div class="pm2-kpi-label">Piloto prospectivo</div>
+                <div class="pm2-kpi-value">{{ pilot_summary.pilot_gate_score or 0 }}%</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ pilot_summary.pilot_status or 'no disponible' }} · {{ pilot_summary.watch_count or 0 }} watch</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if nas_vault_summary.block_count %}critical{% elif nas_vault_summary.watch_count %}warn{% else %}success{% endif %}" data-testid="nas-pilot-evidence-vault-kpi">
+                <div class="pm2-kpi-label">Vault operacional NAS</div>
+                <div class="pm2-kpi-value">{{ nas_vault_summary.completion_pct or 0 }}%</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ nas_vault_summary.verified_gate_count or 0 }}/{{ nas_vault_summary.gate_count or 0 }} gates verificados</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if pilot_adoption_summary.command_status == 'pilot_adoption_ready' %}success{% elif pilot_adoption_summary.command_status == 'no_patients_captured' %}warn{% else %}warn{% endif %}" data-testid="pilot-adoption-command-center-kpi">
+                <div class="pm2-kpi-label">Adopcion prospectiva</div>
+                <div class="pm2-kpi-value">{{ pilot_adoption_summary.registry_ready_pct or 0 }}%</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ pilot_adoption_summary.registry_ready_patient_count or 0 }}/{{ pilot_adoption_summary.patient_count or 0 }} listos · {{ pilot_adoption_summary.high_priority_gap_count or 0 }} gaps</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if gap_huddle_summary.open_gap_count %}warn{% else %}success{% endif %}" data-testid="prospective-gap-closure-huddle-kpi">
+                <div class="pm2-kpi-label">Huddle de brechas</div>
+                <div class="pm2-kpi-value">{{ gap_huddle_summary.open_gap_count or 0 }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ gap_huddle_summary.reviewed_gap_count or 0 }} revisadas · {{ gap_huddle_summary.high_priority_gap_count or 0 }} alta prioridad</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if ape_sprint_summary.ape_gap_patient_count %}warn{% else %}success{% endif %}" data-testid="ape-longitudinal-completion-sprint-kpi">
+                <div class="pm2-kpi-label">Sprint APE longitudinal</div>
+                <div class="pm2-kpi-value">{{ ape_sprint_summary.psa_history_coverage_pct or 0 }}%</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ ape_sprint_summary.ape_gap_patient_count or 0 }} gaps · {{ ape_sprint_summary.potential_registry_unlock_count or 0 }} desbloqueos</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if real_sample_summary.external_validation_claim_allowed %}success{% elif real_sample_summary.real_patient_count %}warn{% else %}critical{% endif %}" data-testid="real-world-sample-maturity-kpi">
+                <div class="pm2-kpi-label">Muestra real</div>
+                <div class="pm2-kpi-value">{{ real_sample_summary.real_patient_count or 0 }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ real_sample_summary.evidence_grade or 'qa_only' }} · {{ real_sample_summary.synthetic_patient_count or 0 }} QA</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if real_completion_summary.queue_status == 'real_registry_ready' %}success{% elif real_completion_summary.real_patient_count %}warn{% else %}critical{% endif %}" data-testid="prospective-real-world-completion-queue-kpi">
+                <div class="pm2-kpi-label">Completitud real-only</div>
+                <div class="pm2-kpi-value">{{ real_completion_summary.registry_ready_real_count or 0 }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ real_completion_summary.queue_status or 'no_real_patients_enrolled' }} · {{ real_completion_summary.blocked_real_patient_count or 0 }} bloqueados</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if real_pilot_summary.packet_status == 'first_real_patient_ready_for_internal_signal_review' %}success{% elif real_pilot_summary.packet_status == 'ready_to_capture_first_real_patient' %}critical{% else %}warn{% endif %}" data-testid="real-world-pilot-packet-kpi">
+                <div class="pm2-kpi-label">Paquete primer real</div>
+                <div class="pm2-kpi-value">{{ real_pilot_summary.launch_block_count or 0 }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ real_pilot_summary.packet_status or 'no disponible' }} · {{ real_pilot_summary.launch_watch_count or 0 }} watch</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if real_execution_summary.log_status == 'first_real_ready_for_method_review' %}success{% elif real_execution_summary.log_status == 'dry_run_verified_waiting_first_real_patient' %}warn{% else %}critical{% endif %}" data-testid="real-world-pilot-execution-log-kpi">
+                <div class="pm2-kpi-label">Bitacora piloto real</div>
+                <div class="pm2-kpi-value">{{ real_execution_summary.pass_count or 0 }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ real_execution_summary.log_status or 'no disponible' }} · {{ real_execution_summary.block_count or 0 }} blocks</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if real_launch_summary.launch_mode_status == 'first_real_ready_for_method_review' %}success{% elif real_launch_summary.launch_mode_status == 'ready_for_institutional_first_real_capture' %}warn{% else %}critical{% endif %}" data-testid="real-world-first-patient-launch-mode-kpi">
+                <div class="pm2-kpi-label">Modo primer real</div>
+                <div class="pm2-kpi-value">{{ real_launch_summary.pass_count or 0 }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ real_launch_summary.launch_mode_status or 'no disponible' }} · {{ real_launch_summary.watch_count or 0 }} watch</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if real_flow_summary.flow_verifier_status == 'first_real_flow_ready_for_method_review' %}success{% elif real_flow_summary.flow_verifier_status == 'launch_flow_verified_waiting_first_real' %}warn{% else %}critical{% endif %}" data-testid="real-world-launch-flow-verifier-kpi">
+                <div class="pm2-kpi-label">Flujo primer real</div>
+                <div class="pm2-kpi-value">{{ real_flow_summary.pass_count or 0 }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ real_flow_summary.flow_verifier_status or 'no disponible' }} · {{ real_flow_summary.block_count or 0 }} blocks</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if (world_class_summary.world_class_readiness_score or 0) >= 75 %}success{% elif (world_class_summary.world_class_readiness_score or 0) >= 55 %}warn{% else %}critical{% endif %}" data-testid="world-class-benchmark-kpi">
+                <div class="pm2-kpi-label">Benchmark mundial</div>
+                <div class="pm2-kpi-value">{{ world_class_summary.world_class_readiness_score or 0 }}%</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ world_class_summary.strength_count or 0 }} fortalezas · {{ world_class_summary.opportunity_count or 0 }} gaps</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="{% if external_validation_summary.multicenter_block_count %}critical{% elif external_validation_summary.watch_count %}warn{% else %}success{% endif %}" data-testid="external-validation-worklist-kpi">
+                <div class="pm2-kpi-label">Validacion externa</div>
+                <div class="pm2-kpi-value">{{ external_validation_summary.external_validation_score_pct or 0 }}%</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ external_validation_summary.block_count or 0 }} blocks · {{ external_validation_summary.watch_count or 0 }} watch</span></div>
+            </article>
+        </section>
+
+        <section class="pr-band" data-testid="capture-integrity-readiness">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">CAPTURA V2 · SIN RECAPTURA</div>
+                    <h2>Compuerta de integridad por etapa</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ capture_summary.pass_count or 0 }}/{{ capture_summary.check_count or 0 }} checks · {{ capture_summary.capture_integrity_status or 'no disponible' }}
+                </div>
+            </div>
+            <p class="pr-muted" style="max-width:96ch;margin:0 0 14px">
+                Verifica que el APE se capture una sola vez y viaje como historial longitudinal, que PSAD sea derivado, que TR T2a-T4 sea sospechoso, y que estadificacion localizada no solicite seguridad sistemica, VA o RT detallada sin disparador clinico.
+            </p>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if capture_summary.critical_failure_count %}critical{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Bloqueantes</div>
+                    <div class="pm2-kpi-value">{{ capture_summary.critical_failure_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ capture_summary.next_operator_action or 'Listo para validar en UI.' }}</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Superficies</div>
+                    <div class="pm2-kpi-value">{{ (capture_integrity.surfaces or []) | length }}</div>
+                    <p class="pr-muted" style="margin-top:8px">Wizard, evaluar modulo y registro longitudinal.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if capture_integrity.next_layer_allowed %}success{% else %}critical{% endif %}">
+                    <div class="pm2-kpi-label">Siguiente capa</div>
+                    <div class="pm2-kpi-value" style="font-size:1.1rem">{{ 'permitida' if capture_integrity.next_layer_allowed else 'bloqueada' }}</div>
+                    <p class="pr-muted" style="margin-top:8px">Solo lectura · no muta hechos clinicos ni crea ordenes.</p>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Check</th><th>Superficie</th><th>Estado</th><th>Accion si falla</th></tr></thead>
+                    <tbody>
+                    {% for check in (capture_integrity.checks or [])[:12] %}
+                        <tr data-testid="capture-integrity-check-{{ check.key }}">
+                            <td><strong>{{ check.message }}</strong><div class="pr-code">{{ check.key }}</div></td>
+                            <td>{{ check.surface }}</td>
+                            <td><span class="pr-pill">{{ check.status }} · {{ check.severity }}</span></td>
+                            <td>{{ check.recommended_action }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top:8px"><a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/capture-integrity?scope=full">Abrir evidencia JSON</a></div>
+        </section>
+
+        <section class="pr-band" data-testid="v2-persistence-closure">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">PERSISTENCIA V2 · WIZARD A PERFIL</div>
+                    <h2>Cierre end-to-end de estadificación inicial</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ v2_persistence_summary.pass_count or 0 }}/{{ v2_persistence_summary.contract_count or 0 }} contratos · {{ v2_persistence_summary.v2_persistence_closure_status or 'no disponible' }}
+                </div>
+            </div>
+            <p class="pr-muted" style="max-width:96ch;margin:0 0 14px">
+                Verifica, sin escribir en la base clínica local, que el flujo V2 de estadificación inicial crea draft, registra paciente, persiste historial APE, liga latest_assessment y reusa esos datos en Ledger, DECISION HOY, agenda y perfil V2.
+            </p>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if v2_persistence_summary.critical_failure_count %}critical{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Bloqueantes</div>
+                    <div class="pm2-kpi-value">{{ v2_persistence_summary.critical_failure_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ v2_persistence_summary.next_operator_action or 'Listo para expansion controlada.' }}</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Superficies probadas</div>
+                    <div class="pm2-kpi-value">{{ (v2_persistence_summary.proven_surfaces or []) | length }}</div>
+                    <p class="pr-muted" style="margin-top:8px">Wizard, draft, registro, biomarcadores, Ledger, Decision Hoy y perfil V2.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if v2_persistence_closure.next_layer_allowed %}success{% else %}critical{% endif %}">
+                    <div class="pm2-kpi-label">Base real local</div>
+                    <div class="pm2-kpi-value" style="font-size:1.1rem">{{ 'intacta' if not v2_persistence_closure.real_database_mutated else 'mutada' }}</div>
+                    <p class="pr-muted" style="margin-top:8px">La evidencia ejecutable usa SQLite temporal aislado.</p>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Contrato</th><th>Superficie</th><th>Estado</th><th>Evidencia</th></tr></thead>
+                    <tbody>
+                    {% for check in (v2_persistence_closure.verification_matrix or v2_persistence_closure.verification_preview or [])[:14] %}
+                        <tr data-testid="v2-persistence-check-{{ check.key }}">
+                            <td><strong>{{ check.key }}</strong><div class="pr-code">{{ check.family }}</div></td>
+                            <td>{{ check.surface }}</td>
+                            <td><span class="pr-pill">{{ check.status }} · {{ check.severity }}</span></td>
+                            <td>{{ check.evidence }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top:8px"><a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/v2-persistence-closure?scope=full">Abrir evidencia JSON</a></div>
+        </section>
+
+        <section class="pr-band" data-testid="v2-treatment-value-closure">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">VALOR TERAPÉUTICO V2 · PERFIL A COHORTE</div>
+                    <h2>Cierre de costos, dosis y registro poblacional</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ v2_treatment_value_summary.pass_count or 0 }}/{{ v2_treatment_value_summary.contract_count or 0 }} contratos · {{ v2_treatment_value_summary.v2_treatment_value_closure_status or 'no disponible' }}
+                </div>
+            </div>
+            <p class="pr-muted" style="max-width:96ch;margin:0 0 14px">
+                Verifica que el perfil V2 oficial muestra triplete ADT + docetaxel + darolutamida, dosis locales, alerta HGZ/HGR, gasto ARPI, fármacos trazables, timelines APE-tratamiento y enlace al registro poblacional V2. Legacy no cuenta como cierre.
+            </p>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if v2_treatment_value_summary.critical_failure_count %}critical{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Bloqueantes</div>
+                    <div class="pm2-kpi-value">{{ v2_treatment_value_summary.critical_failure_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ v2_treatment_value_summary.next_operator_action or 'Listo para tablero epidemiológico.' }}</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Escenario centinela</div>
+                    <div style="font-weight:800;color:#f8fbff;font-size:.9rem;line-height:1.35">
+                        {{ v2_treatment_value_summary.triplet_reference_scenario.regimen or 'ADT_DOCETAXEL_DAROLUTAMIDE' }}
+                    </div>
+                    <p class="pr-muted" style="margin-top:8px">4 locales + 2 previas → warning · local 6 → critical.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if v2_treatment_value_closure.next_layer_allowed %}success{% else %}critical{% endif %}">
+                    <div class="pm2-kpi-label">Base real local</div>
+                    <div class="pm2-kpi-value" style="font-size:1.1rem">{{ 'intacta' if not v2_treatment_value_closure.real_database_mutated else 'mutada' }}</div>
+                    <p class="pr-muted" style="margin-top:8px">La prueba ejecutable usa SQLite temporal aislado.</p>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Contrato</th><th>Superficie</th><th>Estado</th><th>Evidencia</th></tr></thead>
+                    <tbody>
+                    {% for check in (v2_treatment_value_closure.verification_matrix or v2_treatment_value_closure.verification_preview or [])[:14] %}
+                        <tr data-testid="v2-treatment-value-check-{{ check.key }}">
+                            <td><strong>{{ check.key }}</strong><div class="pr-code">{{ check.family }}</div></td>
+                            <td>{{ check.surface }}</td>
+                            <td><span class="pr-pill">{{ check.status }} · {{ check.severity }}</span></td>
+                            <td>{{ check.evidence }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top:8px"><a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/v2-treatment-value-closure?scope=full">Abrir evidencia JSON</a></div>
+        </section>
+
+        <section class="pr-band" data-testid="world-class-benchmark-radar">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">BENCHMARKING · RUTA MUNDIAL</div>
+                    <h2>Radar ProstaMed frente a plataformas lideres</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ world_class_summary.benchmark_class_count or 0 }} clases comparadas · {{ world_class_summary.source_count or 0 }} fuentes
+                </div>
+            </div>
+            <p class="pr-muted" style="max-width:94ch;margin:0 0 14px">
+                {{ world_class_summary.strategic_position or 'ProstaMed debe crecer como capa prostate-specific de inteligencia clinica, valor, auditoria y research OS.' }}
+            </p>
+            <p class="pr-muted" style="max-width:94ch;margin:0 0 14px">
+                {{ world_class_summary.direction_of_travel or 'De recomendador clinico modular hacia learning-health-system prostate-specific.' }}
+            </p>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="success">
+                    <div class="pm2-kpi-label">Fortalezas actuales</div>
+                    <div class="pm2-kpi-value">{{ world_class_summary.strength_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">Ledger, V2, investigacion y valor cuando el gate esta verde</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="warn">
+                    <div class="pm2-kpi-label">Mayor brecha</div>
+                    <div class="pm2-kpi-value" style="font-size:1.2rem">{{ world_class_summary.top_gap_label or 'Sin brecha' }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ world_class_summary.top_gap_key or 'clear' }}</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Siguiente movimiento</div>
+                    <div style="font-weight:800;color:#f8fbff;font-size:.9rem;line-height:1.35">{{ world_class_summary.recommended_next_move or 'Cerrar piloto prospectivo NAS antes de mas logica.' }}</div>
+                </article>
+            </div>
+            <div class="pr-grid" style="margin-top:12px" data-testid="world-class-achievements">
+                {% for item in (world_class_benchmark.achievements or [])[:5] %}
+                <article class="pm2-kpi-card" data-variant="success">
+                    <div class="pm2-kpi-label">{{ item.label }}</div>
+                    <div class="pr-code" style="margin-top:4px">{{ item.proof_surface }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ item.why_it_matters }}</p>
+                </article>
+                {% endfor %}
+            </div>
+            <div class="pr-grid" style="margin-top:12px" data-testid="world-class-operating-principles">
+                {% for item in (world_class_benchmark.operating_principles or [])[:4] %}
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">{{ item.principle }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ item.benefit }}</p>
+                </article>
+                {% endfor %}
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Capacidad</th><th>ProstaMed</th><th>Meta mundial</th><th>Estado</th></tr></thead>
+                    <tbody>
+                    {% for row in (world_class_benchmark.capability_radar or [])[:9] %}
+                        <tr data-testid="world-class-capability-{{ row.key }}">
+                            <td><strong>{{ row.label }}</strong><div class="pr-code">{{ row.key }}</div></td>
+                            <td>{{ row.prostanet_score }}/5</td>
+                            <td>{{ row.world_class_target }}/5</td>
+                            <td><span class="pr-pill">{{ row.status }}</span></td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Clase comparada</th><th>Fortaleza del mercado</th><th>Nuestra ventaja</th><th>Brecha a cerrar</th><th>Respuesta</th></tr></thead>
+                    <tbody>
+                    {% for row in (world_class_benchmark.benchmark_matrix or [])[:7] %}
+                        <tr data-testid="world-class-benchmark-row-{{ loop.index }}">
+                            <td><strong>{{ row.platform_class }}</strong><div class="pr-muted">{{ (row.examples or []) | join(', ') }}</div></td>
+                            <td>{{ row.market_strength }}</td>
+                            <td>{{ row.prostanet_strength }}</td>
+                            <td>{{ row.gap_to_world_class }}</td>
+                            <td>{{ row.strategic_response }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="real-world-sample-maturity">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">EVIDENCIA REAL · QA SEPARADO</div>
+                    <h2>Compuerta de madurez de muestra real</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ real_sample_summary.real_patient_count or 0 }} reales · {{ real_sample_summary.synthetic_patient_count or 0 }} QA · {{ real_sample_summary.sample_maturity_status or 'no disponible' }}
+                </div>
+            </div>
+            <p class="pr-muted" style="max-width:96ch;margin:0 0 14px">
+                Esta compuerta impide que pacientes sinteticos, smoke tests o demos entren en evidencia hospitalaria. Los datos QA siguen sirviendo para validar UI/API, pero los claims clinicos, economicos o epidemiologicos deben salir solo de pacientes reales consentidos y completos.
+            </p>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if real_sample_summary.real_patient_count %}success{% else %}critical{% endif %}">
+                    <div class="pm2-kpi-label">Pacientes reales</div>
+                    <div class="pm2-kpi-value">{{ real_sample_summary.real_patient_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_sample_summary.real_ratio_pct or 0 }}% de la cohorte visible · minimo {{ real_sample_summary.min_real_for_internal_signal or 30 }} para señal interna.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if real_sample_summary.synthetic_patient_count %}warn{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">QA / sinteticos</div>
+                    <div class="pm2-kpi-value">{{ real_sample_summary.synthetic_patient_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">Excluidos de inferencia, claims externos y evidencia hospitalaria.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if real_sample_summary.real_without_identity_consent_count or real_sample_summary.real_without_actor_count %}critical{% elif real_sample_summary.real_patient_count %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Consentimiento real</div>
+                    <div class="pm2-kpi-value">{{ real_sample_summary.real_with_identity_consent_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_sample_summary.real_without_identity_consent_count or 0 }} sin consentimiento · {{ real_sample_summary.real_without_actor_count or 0 }} sin actor.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Export muestra</div>
+                    <div class="pm2-kpi-value">CSV</div>
+                    <div style="margin-top:8px"><a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/real-world-sample-maturity/export">Descargar no-PHI</a></div>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Gate</th><th>Estado</th><th>Evidencia</th><th>Accion</th></tr></thead>
+                    <tbody>
+                    {% for item in real_world_sample_maturity.readiness_checklist or [] %}
+                        <tr data-testid="real-world-sample-check-{{ item.key }}">
+                            <td><span class="pr-code">{{ item.key }}</span><div class="pr-muted">{{ item.title }}</div></td>
+                            <td>{% if item.status == 'pass' %}<span class="pm2-state-chip pm2-state-chip--primary">pass</span>{% else %}<span class="pm2-state-chip pm2-state-chip--warn">block</span>{% endif %}</td>
+                            <td>{{ item.evidence }}</td>
+                            <td>{{ item.action }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="4" class="pr-muted">Sin checklist de muestra real disponible.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Sujeto</th><th>Lane</th><th>Consentimiento</th><th>Mes</th><th>Uso permitido</th></tr></thead>
+                    <tbody>
+                    {% for row in real_world_sample_maturity.recent_cohort_rows[:12] if real_world_sample_maturity.recent_cohort_rows %}
+                        <tr>
+                            <td><span class="pr-code">{{ row.subject_id }}</span></td>
+                            <td>{{ row.evidence_lane }}<div class="pr-muted">{{ row.cohort_status }}</div></td>
+                            <td>{{ row.consent_status }}</td>
+                            <td>{{ row.created_month }}<div class="pr-muted">{{ row.diagnosis_month }}</div></td>
+                            <td>{{ row.evidence_usage }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Sin pacientes en la cohorte visible.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-grid" style="margin-top:var(--space-4)">
+                {% for action in real_world_sample_maturity.recommended_next_actions or [] %}
+                <article class="pm2-kpi-card" data-variant="{% if action.priority == 'critical' %}critical{% elif action.priority == 'high' %}warn{% else %}info{% endif %}">
+                    <div class="pm2-kpi-label">{{ action.priority }}</div>
+                    <div style="font-size:.95rem;color:#f8fbff;font-weight:700;margin-top:8px;line-height:1.35">{{ action.title }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ action.action }}</p>
+                    <a class="pm2-btn pm2-btn--ghost" href="{{ action.route }}">Abrir</a>
+                </article>
+                {% else %}
+                <article class="pm2-kpi-card" data-variant="success">
+                    <div class="pm2-kpi-label">Muestra real</div>
+                    <div class="pm2-kpi-value">OK</div>
+                    <p class="pr-muted" style="margin-top:8px">La muestra real cumple los gates actuales.</p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="prospective-real-world-completion-queue">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">REAL-WORLD · COMPLETITUD PROSPECTIVA</div>
+                    <h2>Cola real-only de completitud prospectiva</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ real_completion_summary.registry_ready_real_count or 0 }} listos · {{ real_completion_summary.blocked_real_patient_count or 0 }} bloqueados · {{ real_completion_summary.queue_status or 'no disponible' }}
+                </div>
+            </div>
+            <p class="pr-muted" style="max-width:96ch;margin:0 0 14px">
+                Esta cola traduce la captura real prospectiva en accion: consentimiento, actor clinico, evaluacion vinculada, APE longitudinal y completitud registry-ready. No modifica hechos clinicos; solo muestra por que un paciente real puede o no alimentar evidencia hospitalaria.
+            </p>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if real_completion_summary.real_patient_count %}success{% else %}critical{% endif %}">
+                    <div class="pm2-kpi-label">Pacientes reales</div>
+                    <div class="pm2-kpi-value">{{ real_completion_summary.real_patient_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_completion_summary.queued_real_patient_count or 0 }} en cola operacional real-only.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if real_completion_summary.registry_ready_real_count %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Registry-ready real</div>
+                    <div class="pm2-kpi-value">{{ real_completion_summary.registry_ready_real_pct or 0 }}%</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_completion_summary.registry_ready_real_count or 0 }}/{{ real_completion_summary.real_patient_count or 0 }} candidatos internos.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if real_completion_summary.blocked_real_patient_count %}critical{% elif real_completion_summary.high_priority_real_patient_count %}warn{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Bloqueantes</div>
+                    <div class="pm2-kpi-value">{{ real_completion_summary.blocked_real_patient_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_completion_summary.high_priority_real_patient_count or 0 }} alta prioridad · completitud media {{ real_completion_summary.mean_real_completeness_pct or 0 }}%.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Export real-only</div>
+                    <div class="pm2-kpi-value">CSV</div>
+                    <div style="margin-top:8px"><a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/prospective-real-world-completion-queue/export">Descargar no-PHI</a></div>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Sujeto</th><th>Estado uso evidencia</th><th>Etapa</th><th>Completitud</th><th>Brecha dominante</th><th>Accion V2</th></tr></thead>
+                    <tbody>
+                    {% for row in prospective_real_world_completion_queue.real_patient_queue[:12] if prospective_real_world_completion_queue.real_patient_queue %}
+                        <tr>
+                            <td><span class="pr-code">{{ row.subject_id }}</span></td>
+                            <td>
+                                {% if row.priority == 'critical' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">critical</span>
+                                {% elif row.priority in ['high', 'medium'] %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">{{ row.priority }}</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">{{ row.priority }}</span>
+                                {% endif %}
+                                <div class="pr-muted">{{ row.evidence_use_status }}</div>
+                            </td>
+                            <td>{{ row.effective_state or 'sin etapa' }}<div class="pr-muted">{{ row.latest_assessment_module or 'sin evaluacion' }}</div></td>
+                            <td>{{ row.completeness_pct or 0 }}%<div class="pr-muted">{{ row.fact_count or 0 }} facts · {{ row.psa_point_count or 0 }} APE · {{ row.treatment_count or 0 }} tx</div></td>
+                            <td>
+                                <span class="pr-pill">{{ row.dominant_gap_family or 'none' }}</span>
+                                <div class="pr-muted">{{ row.top_missing_label or row.ape_status or 'Sin faltante dominante' }}</div>
+                                {% for blocker in row.blockers[:2] %}
+                                <div class="pr-code">{{ blocker.key }}</div>
+                                {% endfor %}
+                            </td>
+                            <td>
+                                <a class="pm2-btn pm2-btn--ghost" href="{{ row.top_capture_route or row.ape_capture_url or row.profile_url }}">Cerrar brecha</a>
+                                <div style="margin-top:6px"><a class="pm2-btn pm2-btn--ghost" href="{{ row.profile_url }}">Perfil V2</a></div>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="6" class="pr-muted">Sin pacientes reales en cola. El siguiente paso es registrar el primer paciente real con consentimiento, actor clinico y APE longitudinal desde V2.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-grid" style="margin-top:var(--space-4)">
+                {% for action in prospective_real_world_completion_queue.recommended_next_actions or [] %}
+                <article class="pm2-kpi-card" data-variant="{% if action.priority == 'critical' %}critical{% elif action.priority == 'high' %}warn{% else %}info{% endif %}">
+                    <div class="pm2-kpi-label">{{ action.priority }}</div>
+                    <div style="font-size:.95rem;color:#f8fbff;font-weight:700;margin-top:8px;line-height:1.35">{{ action.title }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ action.action }}</p>
+                    <a class="pm2-btn pm2-btn--ghost" href="{{ action.route }}">Abrir</a>
+                </article>
+                {% else %}
+                <article class="pm2-kpi-card" data-variant="success">
+                    <div class="pm2-kpi-label">Cola real-only</div>
+                    <div class="pm2-kpi-value">OK</div>
+                    <p class="pr-muted" style="margin-top:8px">No hay bloqueos en pacientes reales visibles.</p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="real-world-pilot-packet">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">PILOTO REAL · PRIMER PACIENTE</div>
+                    <h2>Paquete operativo de primer paciente real</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ real_pilot_summary.packet_status or 'no disponible' }} · {{ real_pilot_summary.launch_block_count or 0 }} blocks · {{ real_pilot_summary.launch_watch_count or 0 }} watch
+                </div>
+            </div>
+            <p class="pr-muted" style="max-width:96ch;margin:0 0 14px">
+                Este paquete convierte la estrategia real-world en una secuencia verificable: ingreso V2, consentimiento, actor clinico, APE longitudinal, perfil V2 y cola real-only. No captura datos ni muta facts; prepara al equipo para hacerlo bien desde el primer paciente real.
+            </p>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if real_pilot_summary.real_patient_count %}success{% else %}critical{% endif %}">
+                    <div class="pm2-kpi-label">Reales actuales</div>
+                    <div class="pm2-kpi-value">{{ real_pilot_summary.real_patient_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_pilot_summary.synthetic_patient_count or 0 }} QA/sinteticos permanecen fuera de evidencia.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if real_pilot_summary.registry_ready_real_count %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Listos para senal interna</div>
+                    <div class="pm2-kpi-value">{{ real_pilot_summary.registry_ready_real_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_pilot_summary.evidence_claim_policy or 'Sin claims hasta cerrar gates.' }}</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Siguiente paso</div>
+                    <div style="font-weight:800;color:#f8fbff;font-size:.9rem;line-height:1.35">{{ real_pilot_summary.operational_next_step or 'Capturar primer paciente real prospectivo.' }}</div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Runbook</div>
+                    <div class="pm2-kpi-value">MD</div>
+                    <div style="margin-top:8px"><a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/real-world-pilot-packet/download">Descargar no-PHI</a></div>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Gate operativo</th><th>Estado</th><th>Evidencia</th><th>Accion</th></tr></thead>
+                    <tbody>
+                    {% for item in real_world_pilot_packet.launch_checklist or [] %}
+                        <tr data-testid="real-world-pilot-check-{{ item.key }}">
+                            <td><span class="pr-code">{{ item.key }}</span><div class="pr-muted">{{ item.title }}</div></td>
+                            <td>
+                                {% if item.status == 'pass' %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">pass</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">{{ item.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ item.evidence }}</td>
+                            <td>{{ item.action }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="4" class="pr-muted">Sin checklist operativo disponible.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Paso</th><th>Superficie</th><th>Accion</th></tr></thead>
+                    <tbody>
+                    {% for step in real_world_pilot_packet.capture_workflow or [] %}
+                        <tr>
+                            <td><span class="pr-code">{{ step.step }}</span><div class="pr-muted">{{ step.title }}</div></td>
+                            <td>{{ step.surface }}</td>
+                            <td>{{ step.action }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="3" class="pr-muted">Sin flujo operativo disponible.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-grid" style="margin-top:var(--space-4)">
+                {% for action in real_world_pilot_packet.recommended_next_actions or [] %}
+                <article class="pm2-kpi-card" data-variant="{% if action.priority == 'critical' %}critical{% elif action.priority == 'high' %}warn{% else %}info{% endif %}">
+                    <div class="pm2-kpi-label">{{ action.priority }}</div>
+                    <div style="font-size:.95rem;color:#f8fbff;font-weight:700;margin-top:8px;line-height:1.35">{{ action.title }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ action.action }}</p>
+                    <a class="pm2-btn pm2-btn--ghost" href="{{ action.route }}">Abrir</a>
+                </article>
+                {% else %}
+                <article class="pm2-kpi-card" data-variant="success">
+                    <div class="pm2-kpi-label">Paquete real</div>
+                    <div class="pm2-kpi-value">OK</div>
+                    <p class="pr-muted" style="margin-top:8px">No hay acciones operativas pendientes.</p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="real-world-pilot-execution-log">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">PILOTO REAL · BITACORA</div>
+                    <h2>Bitacora operacional del piloto real</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ real_execution_summary.log_status or 'no disponible' }} · {{ real_execution_summary.pass_count or 0 }} pass · {{ real_execution_summary.block_count or 0 }} blocks
+                </div>
+            </div>
+            <p class="pr-muted" style="max-width:96ch;margin:0 0 14px">
+                Esta bitacora separa evidencia de operabilidad y evidencia clinica real. Puede demostrar que el circuito V2 esta probado, pero no autoriza claims clinicos, economicos ni epidemiologicos hasta tener pacientes reales consentidos, completos y revisados.
+            </p>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if real_execution_summary.dry_run_contract_status == 'pass' %}success{% else %}critical{% endif %}">
+                    <div class="pm2-kpi-label">Dry-run V2</div>
+                    <div class="pm2-kpi-value">{{ real_execution_summary.dry_run_contract_status or 'block' }}</div>
+                    <p class="pr-muted" style="margin-top:8px">Contrato e2e: consentimiento, actor, APE, Perfil V2 y gates real-only.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if real_execution_summary.real_patient_count %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Reales institucionales</div>
+                    <div class="pm2-kpi-value">{{ real_execution_summary.real_patient_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_execution_summary.synthetic_patient_count or 0 }} QA/sinteticos excluidos de evidencia.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if real_execution_summary.registry_ready_real_count %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Registry-ready real</div>
+                    <div class="pm2-kpi-value">{{ real_execution_summary.registry_ready_real_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_execution_summary.evidence_claim_policy or 'Sin claims hasta cohorte real suficiente.' }}</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Bitacora</div>
+                    <div class="pm2-kpi-value">MD</div>
+                    <div style="margin-top:8px"><a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/real-world-pilot-execution-log/download">Descargar no-PHI</a></div>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Evidencia</th><th>Estado</th><th>Prueba actual</th><th>Beneficio</th><th>Accion</th></tr></thead>
+                    <tbody>
+                    {% for item in real_world_pilot_execution_log.execution_log or real_world_pilot_execution_log.execution_log_preview or [] %}
+                        <tr data-testid="real-world-pilot-log-{{ item.evidence_key }}">
+                            <td><span class="pr-code">{{ item.evidence_key }}</span><div class="pr-muted">{{ item.title }}</div></td>
+                            <td>
+                                {% if item.status == 'pass' %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">pass</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">{{ item.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ item.evidence }}<div class="pr-muted">{{ item.surface }}</div></td>
+                            <td>{{ item.benefit }}</td>
+                            <td>{{ item.action }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Sin entradas de bitacora disponibles.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-grid" style="margin-top:var(--space-4)">
+                {% for action in real_world_pilot_execution_log.recommended_next_actions or [] %}
+                <article class="pm2-kpi-card" data-variant="{% if action.priority == 'critical' %}critical{% elif action.priority == 'high' %}warn{% else %}info{% endif %}">
+                    <div class="pm2-kpi-label">{{ action.priority }}</div>
+                    <div style="font-size:.95rem;color:#f8fbff;font-weight:700;margin-top:8px;line-height:1.35">{{ action.title }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ action.action }}</p>
+                    <a class="pm2-btn pm2-btn--ghost" href="{{ action.route }}">Abrir</a>
+                </article>
+                {% else %}
+                <article class="pm2-kpi-card" data-variant="success">
+                    <div class="pm2-kpi-label">Bitacora real</div>
+                    <div class="pm2-kpi-value">OK</div>
+                    <p class="pr-muted" style="margin-top:8px">No hay acciones operativas pendientes.</p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="pr-band" id="real-world-first-patient-launch-mode" data-testid="real-world-first-patient-launch-mode">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">PILOTO REAL · MODO GUIADO V2</div>
+                    <h2>Modo de ejecucion institucional del primer real</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ real_launch_summary.launch_mode_status or 'no disponible' }} · {{ real_launch_summary.pass_count or 0 }} pass · {{ real_launch_summary.block_count or 0 }} blocks
+                </div>
+            </div>
+            <p class="pr-muted" style="max-width:96ch;margin:0 0 14px">
+                Este modo no captura datos: ordena la ejecucion del primer paciente real, exige V2, consentimiento, actor, historia APE y verificaciones posteriores. Es la lista viva para que el primer real nazca auditable y sin mezclar QA.
+            </p>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if real_launch_summary.dry_run_contract_status == 'pass' %}success{% else %}critical{% endif %}">
+                    <div class="pm2-kpi-label">Contrato dry-run</div>
+                    <div class="pm2-kpi-value">{{ real_launch_summary.dry_run_contract_status or 'block' }}</div>
+                    <p class="pr-muted" style="margin-top:8px">Prueba V2 antes de tocar muestra real.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if real_launch_summary.real_patient_count %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Reales actuales</div>
+                    <div class="pm2-kpi-value">{{ real_launch_summary.real_patient_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_launch_summary.synthetic_patient_count or 0 }} QA/sinteticos fuera de evidencia.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if real_launch_summary.registry_ready_real_count %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Registry-ready</div>
+                    <div class="pm2-kpi-value">{{ real_launch_summary.registry_ready_real_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_launch_summary.evidence_claim_policy or 'Sin claims hasta cierre metodologico.' }}</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Guia launch</div>
+                    <div class="pm2-kpi-value">MD</div>
+                    <div style="margin-top:8px"><a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/real-world-first-patient-launch-mode/download">Descargar no-PHI</a></div>
+                </article>
+            </div>
+            <article class="pm2-kpi-card" data-variant="info" style="margin-top:var(--space-4)">
+                <div class="pm2-kpi-label">Siguiente accion del operador</div>
+                <div style="font-size:1rem;color:#f8fbff;font-weight:800;margin-top:8px;line-height:1.35">{{ real_launch_summary.next_operator_action or 'Abrir Centro clinico V2 y ejecutar primer real institucional.' }}</div>
+            </article>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Paso</th><th>Estado</th><th>Superficie</th><th>Accion</th><th>Evidencia esperada</th></tr></thead>
+                    <tbody>
+                    {% for step in real_world_first_patient_launch_mode.guided_steps or real_world_first_patient_launch_mode.guided_steps_preview or [] %}
+                        <tr data-testid="first-real-launch-step-{{ step.step_key }}">
+                            <td><span class="pr-code">{{ step.step_key }}</span><div class="pr-muted">{{ step.title }}</div></td>
+                            <td>
+                                {% if step.status == 'pass' %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">pass</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">{{ step.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ step.surface }}</td>
+                            <td>{{ step.operator_action }}</td>
+                            <td>{{ step.expected_evidence }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Sin pasos de lanzamiento disponibles.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Verificacion post-captura</th><th>Estado</th><th>Evidencia esperada</th><th>Fuente</th></tr></thead>
+                    <tbody>
+                    {% for check in real_world_first_patient_launch_mode.post_capture_auto_checks or [] %}
+                        <tr data-testid="first-real-post-check-{{ check.check_key }}">
+                            <td><span class="pr-code">{{ check.check_key }}</span></td>
+                            <td>
+                                {% if check.status == 'pass' %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">pass</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">{{ check.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ check.expected_evidence }}</td>
+                            <td>{{ check.source }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="4" class="pr-muted">Sin verificaciones post-captura disponibles.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-grid" style="margin-top:var(--space-4)">
+                {% for action in real_world_first_patient_launch_mode.recommended_next_actions or [] %}
+                <article class="pm2-kpi-card" data-variant="{% if action.priority == 'critical' %}critical{% elif action.priority == 'high' %}warn{% else %}info{% endif %}">
+                    <div class="pm2-kpi-label">{{ action.priority }}</div>
+                    <div style="font-size:.95rem;color:#f8fbff;font-weight:700;margin-top:8px;line-height:1.35">{{ action.title }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ action.action }}</p>
+                    <a class="pm2-btn pm2-btn--ghost" href="{{ action.route }}">Abrir</a>
+                </article>
+                {% else %}
+                <article class="pm2-kpi-card" data-variant="success">
+                    <div class="pm2-kpi-label">Lanzamiento real</div>
+                    <div class="pm2-kpi-value">OK</div>
+                    <p class="pr-muted" style="margin-top:8px">No hay acciones de lanzamiento pendientes.</p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="pr-band" id="real-world-launch-flow-verifier" data-testid="real-world-launch-flow-verifier">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">PILOTO REAL · VERIFICADOR HANDOFF</div>
+                    <h2>Verificador del flujo V2 del primer real</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ real_flow_summary.flow_verifier_status or 'no disponible' }} · {{ real_flow_summary.pass_count or 0 }} pass · {{ real_flow_summary.block_count or 0 }} blocks
+                </div>
+            </div>
+            <p class="pr-muted" style="max-width:96ch;margin:0 0 14px">
+                Este verificador comprueba que el handoff V2 esta conectado antes de capturar muestra real: entrada V2, wizard, consentimiento/actor, historia APE, Perfil V2, cola real-only y claims gobernados. No crea pacientes ni escribe hechos clinicos.
+            </p>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if real_flow_summary.ui_backend_sync_status == 'pass' %}success{% else %}critical{% endif %}">
+                    <div class="pm2-kpi-label">UI/backend</div>
+                    <div class="pm2-kpi-value">{{ real_flow_summary.ui_backend_sync_status or 'block' }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_flow_summary.verification_scope or 'V2 completo antes de crecer.' }}</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if real_flow_summary.real_patient_count %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Reales actuales</div>
+                    <div class="pm2-kpi-value">{{ real_flow_summary.real_patient_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_flow_summary.synthetic_patient_count or 0 }} QA/sinteticos separados.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if real_flow_summary.block_count %}critical{% elif real_flow_summary.watch_count %}warn{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Contratos</div>
+                    <div class="pm2-kpi-value">{{ real_flow_summary.contract_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ real_flow_summary.watch_count or 0 }} watch · {{ real_flow_summary.block_count or 0 }} blocks.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Verifier</div>
+                    <div class="pm2-kpi-value">MD</div>
+                    <div style="margin-top:8px"><a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/real-world-launch-flow-verifier/download">Descargar no-PHI</a></div>
+                </article>
+            </div>
+            <article class="pm2-kpi-card" data-variant="info" style="margin-top:var(--space-4)">
+                <div class="pm2-kpi-label">Siguiente accion segura</div>
+                <div style="font-size:1rem;color:#f8fbff;font-weight:800;margin-top:8px;line-height:1.35">{{ real_flow_summary.next_operator_action or 'Ejecutar primer real desde V2 cuando los contratos esten verdes.' }}</div>
+            </article>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Contrato</th><th>Familia</th><th>Estado</th><th>Evidencia</th><th>Accion</th></tr></thead>
+                    <tbody>
+                    {% for item in real_world_launch_flow_verifier.verification_matrix or real_world_launch_flow_verifier.verification_preview or [] %}
+                        <tr data-testid="first-real-flow-contract-{{ item.key }}">
+                            <td><span class="pr-code">{{ item.key }}</span><div class="pr-muted">{{ item.title }}</div></td>
+                            <td>{{ item.family }}</td>
+                            <td>
+                                {% if item.status == 'pass' %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">pass</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">{{ item.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ item.evidence }}</td>
+                            <td>{{ item.action }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Sin contratos de handoff disponibles.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-grid" style="margin-top:var(--space-4)">
+                {% for action in real_world_launch_flow_verifier.recommended_next_actions or [] %}
+                <article class="pm2-kpi-card" data-variant="{% if action.priority == 'critical' %}critical{% elif action.priority == 'high' %}warn{% else %}info{% endif %}">
+                    <div class="pm2-kpi-label">{{ action.priority }}</div>
+                    <div style="font-size:.95rem;color:#f8fbff;font-weight:700;margin-top:8px;line-height:1.35">{{ action.title }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ action.action }}</p>
+                    <a class="pm2-btn pm2-btn--ghost" href="{{ action.route }}">Abrir</a>
+                </article>
+                {% else %}
+                <article class="pm2-kpi-card" data-variant="success">
+                    <div class="pm2-kpi-label">Handoff real</div>
+                    <div class="pm2-kpi-value">OK</div>
+                    <p class="pr-muted" style="margin-top:8px">No hay acciones de handoff pendientes.</p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="external-validation-worklist">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">VALIDACION EXTERNA · PREFLIGHT</div>
+                    <h2>Worklist para cerrar la brecha multicentro</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ external_validation_summary.pass_count or 0 }} pass · {{ external_validation_summary.watch_count or 0 }} watch · {{ external_validation_summary.block_count or 0 }} block
+                </div>
+            </div>
+            <p class="pr-muted" style="max-width:96ch;margin:0 0 14px">
+                Esta cola convierte el gap del benchmark en acciones verificables: primero piloto interno confiable, despues paquete no-PHI auditable y finalmente preparacion multicentro. No declara validacion externa hasta que exista revision firmada.
+            </p>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if external_validation_summary.multicenter_block_count %}critical{% elif external_validation_summary.watch_count %}warn{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Estado preflight</div>
+                    <div class="pm2-kpi-value" style="font-size:1rem">{{ external_validation_summary.external_validation_status or 'no disponible' }}</div>
+                    <p class="pr-muted" style="margin-top:8px">No se hace claim externo; esto es readiness operativo y de evidencia.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="warn">
+                    <div class="pm2-kpi-label">Principal bloqueo</div>
+                    <div class="pm2-kpi-value" style="font-size:1rem">{{ external_validation_summary.top_blocker_title or 'Sin bloqueo' }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ external_validation_summary.top_blocker_key or 'clear' }}</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Muestra real</div>
+                    <div class="pm2-kpi-value">{{ external_validation_summary.real_patient_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ external_validation_summary.registry_ready_pct or 0 }}% registry-ready · NAS {{ external_validation_summary.nas_evidence_completion_pct or 0 }}%</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Export worklist</div>
+                    <div class="pm2-kpi-value">CSV</div>
+                    <div style="margin-top:8px"><a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/external-validation-worklist/export">Descargar no-PHI</a></div>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Requisito</th><th>Nivel</th><th>Estado</th><th>Evidencia actual</th><th>Accion</th></tr></thead>
+                    <tbody>
+                    {% for item in external_validation_worklist.worklist[:12] if external_validation_worklist.worklist %}
+                        <tr data-testid="external-validation-item-{{ item.key }}">
+                            <td><span class="pr-code">{{ item.key }}</span><div class="pr-muted">{{ item.title }} · {{ item.owner }}</div></td>
+                            <td>{{ item.target_level }}<div class="pr-muted">{{ item.benefit }}</div></td>
+                            <td>
+                                {% if item.status == 'block' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">block</span>
+                                {% elif item.status == 'watch' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">watch</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">pass</span>
+                                {% endif %}
+                                <div class="pr-muted">{{ item.priority }}{% if item.blocking_for_multicenter %} · bloquea multicentro{% endif %}</div>
+                            </td>
+                            <td>{{ item.evidence }}<div class="pr-muted">{{ item.why }}</div></td>
+                            <td>{{ item.action }}<div style="margin-top:6px"><a class="pm2-btn pm2-btn--ghost" href="{{ item.route }}">Abrir evidencia</a></div></td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Sin worklist de validacion externa disponible.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Componente de paquete</th><th>Tipo</th><th>Requerido</th><th>Ruta</th></tr></thead>
+                    <tbody>
+                    {% for component in external_validation_worklist.evidence_bundle_manifest[:10] if external_validation_worklist.evidence_bundle_manifest %}
+                        <tr>
+                            <td>{{ component.component }}</td>
+                            <td>{{ component.kind }}</td>
+                            <td>{% if component.required %}<span class="pm2-state-chip pm2-state-chip--warn">si</span>{% else %}<span class="pm2-state-chip pm2-state-chip--primary">no</span>{% endif %}</td>
+                            <td><a class="pm2-btn pm2-btn--ghost" href="{{ component.url }}">Abrir</a></td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="4" class="pr-muted">Sin manifest de paquete externo.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="prospective-pilot-governance">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">PILOTO LOCAL NAS</div>
+                    <h2>Governance pack prospectivo</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ pilot_summary.pass_count or 0 }} pass · {{ pilot_summary.watch_count or 0 }} watch · {{ pilot_summary.pilot_block_count or 0 }} bloqueos de piloto
+                </div>
+            </div>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if pilot_summary.ready_for_internal_prospective_pilot %}success{% else %}critical{% endif %}">
+                    <div class="pm2-kpi-label">Piloto interno</div>
+                    <div class="pm2-kpi-value">{% if pilot_summary.ready_for_internal_prospective_pilot %}LISTO{% else %}BLOQUEADO{% endif %}</div>
+                    <p class="pr-muted" style="margin-top:8px">Lee la cadena Ledger, persistencia V2, export no-PHI, freezes, snapshots y requisitos operativos NAS.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="warn">
+                    <div class="pm2-kpi-label">Despliegue externo</div>
+                    <div class="pm2-kpi-value">{% if pilot_summary.ready_for_external_deployment %}SI{% else %}NO{% endif %}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">requiere seguridad, contrato y aprobacion formal</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if pilot_summary.nas_operations_watch_count %}warn{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Watch NAS</div>
+                    <div class="pm2-kpi-value">{{ pilot_summary.nas_operations_watch_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">Docker, backup, restore, UPS, RAID/SMART</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if pilot_summary.security_watch_count %}warn{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Watch seguridad</div>
+                    <div class="pm2-kpi-value">{{ pilot_summary.security_watch_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">roles, consentimiento, incidente, protocolo</span></div>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Gate</th><th>Familia</th><th>Owner</th><th>Evidencia</th><th>Estado</th></tr></thead>
+                    <tbody>
+                    {% for gate in prospective_pilot_governance.gate_matrix or [] %}
+                        <tr>
+                            <td><span class="pr-code">{{ gate.gate_key }}</span><div class="pr-muted">{{ gate.label }}</div></td>
+                            <td>{{ gate.family }}</td>
+                            <td>{{ gate.owner }}</td>
+                            <td>{{ gate.evidence }}<div class="pr-muted">{{ gate.next_action }}</div></td>
+                            <td>
+                                {% if gate.status == 'block' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">block</span>
+                                {% elif gate.status == 'watch' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">watch</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">pass</span>
+                                {% endif %}
+                                {% if gate.pilot_blocking %}<div class="pr-muted">bloquea piloto</div>{% endif %}
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Sin governance pack disponible.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-grid" style="margin-top:var(--space-4)">
+                {% for item in prospective_pilot_governance.required_actions[:6] if prospective_pilot_governance.required_actions %}
+                <article class="pm2-kpi-card" data-variant="{% if item.priority == 'critical' %}critical{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">{{ item.priority }} · {{ item.owner }}</div>
+                    <div style="font-size:.95rem;color:#f8fbff;font-weight:700;margin-top:8px;line-height:1.35">{{ item.title }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ item.action }}</p>
+                    <a class="pm2-btn pm2-btn--ghost" href="{{ item.route }}">Abrir evidencia</a>
+                </article>
+                {% else %}
+                <article class="pm2-kpi-card" data-variant="success">
+                    <div class="pm2-kpi-label">Sin acciones bloqueantes</div>
+                    <div class="pm2-kpi-value">OK</div>
+                    <p class="pr-muted" style="margin-top:8px">El piloto interno no tiene bloqueos; mantener auditoria semanal.</p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="nas-pilot-evidence-vault">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">NAS PILOT OPERATIONS</div>
+                    <h2>Evidence vault operacional</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ nas_vault_summary.pass_count or 0 }} pass · {{ nas_vault_summary.watch_count or 0 }} watch · {{ nas_vault_summary.evidence_record_count or 0 }} evidencias
+                </div>
+            </div>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if nas_vault_summary.ready_for_internal_pilot_without_watches %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Completitud operacional</div>
+                    <div class="pm2-kpi-value">{{ nas_vault_summary.completion_pct or 0 }}%</div>
+                    <p class="pr-muted" style="margin-top:8px">Convierte los watches del piloto en evidencias verificadas: NAS, backup/restore, roles, consentimiento, capacitacion, incidente y protocolo.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Registros de evidencia</div>
+                    <div class="pm2-kpi-value">{{ nas_vault_summary.evidence_record_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">no-PHI, hasheados, auditables</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if nas_vault_summary.block_count %}critical{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Bloqueos vault</div>
+                    <div class="pm2-kpi-value">{{ nas_vault_summary.block_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ nas_vault_summary.vault_status or 'no disponible' }}</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Paquete comite</div>
+                    <div class="pm2-kpi-value">ZIP</div>
+                    <div style="margin-top:8px"><a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/nas-pilot-evidence-vault/download">Descargar vault</a></div>
+                </article>
+            </div>
+            <form data-testid="nas-pilot-evidence-form" class="pm2-panel" style="padding:var(--space-4);margin:var(--space-4) 0;border-radius:8px;border:1px solid var(--border-default);background:rgba(15,23,42,.72)">
+                <div class="pr-grid">
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Gate operacional</span>
+                        <select class="pm2-input" name="gate_key">
+                            {% for gate_key, gate in nas_pilot_evidence_vault.gate_statuses.items() if nas_pilot_evidence_vault.gate_statuses %}
+                            <option value="{{ gate_key }}">{{ gate.label }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Titulo evidencia</span>
+                        <input class="pm2-input" name="title" value="Evidencia operacional piloto NAS">
+                    </label>
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Responsable</span>
+                        <input class="pm2-input" name="verified_by" value="clinician">
+                    </label>
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Rol revisor</span>
+                        <input class="pm2-input" name="reviewer_role" value="it_nas_owner">
+                    </label>
+                </div>
+                <div class="pr-grid" style="margin-top:var(--space-3)">
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Fecha evidencia</span>
+                        <input class="pm2-input" name="evidence_date" type="date">
+                    </label>
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Referencia/hash externo</span>
+                        <input class="pm2-input" name="evidence_ref" placeholder="runbook, acta, hash, ticket interno">
+                    </label>
+                </div>
+                <label class="pm2-field" style="display:block;margin-top:var(--space-3)">
+                    <span class="pm2-field-label">Nota operacional sin PHI</span>
+                    <textarea class="pm2-input" name="audit_note" rows="2">Evidencia operacional no-PHI para piloto local ProstaMed en NAS.</textarea>
+                </label>
+                <input type="hidden" name="evidence_status" value="verified">
+                <div style="display:flex;align-items:center;gap:var(--space-3);margin-top:var(--space-3);flex-wrap:wrap">
+                    <button class="pm2-btn pm2-btn--primary" type="submit">Verificar evidencia</button>
+                    <span class="pr-muted" data-testid="nas-pilot-evidence-status">El vault no almacena datos de pacientes.</span>
+                </div>
+            </form>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Gate</th><th>Owner</th><th>Ultima evidencia</th><th>Requerido</th><th>Estado</th></tr></thead>
+                    <tbody>
+                    {% for gate_key, gate in nas_pilot_evidence_vault.gate_statuses.items() if nas_pilot_evidence_vault.gate_statuses %}
+                        <tr>
+                            <td><span class="pr-code">{{ gate_key }}</span><div class="pr-muted">{{ gate.label }}</div></td>
+                            <td>{{ gate.owner }}<div class="pr-muted">{{ gate.reviewer_role }}</div></td>
+                            <td>
+                                {% if gate.latest_evidence_key %}
+                                <span class="pr-code">{{ gate.latest_evidence_key }}</span><div class="pr-muted">{{ gate.evidence_date }} · expira {{ gate.expires_at }}</div>
+                                {% else %}
+                                <span class="pr-muted">{{ gate.missing_reason }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% for item in gate.required_evidence[:3] %}
+                                <span class="pr-pill">{{ item }}</span>
+                                {% endfor %}
+                            </td>
+                            <td>
+                                {% if gate.gate_status == 'block' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">block</span>
+                                {% elif gate.gate_status == 'watch' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">watch</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">pass</span>
+                                {% endif %}
+                                <div class="pr-muted">{{ gate.latest_status }}</div>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Sin gates operacionales disponibles.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="pilot-adoption-command-center">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">PILOT ADOPTION V2</div>
+                    <h2>Torre de adopcion y completitud prospectiva</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ pilot_adoption_summary.patient_count or 0 }} pacientes · {{ pilot_adoption_summary.mean_completeness_pct or 0 }}% completitud media · {{ pilot_adoption_summary.command_status or 'no disponible' }}
+                </div>
+            </div>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if pilot_adoption_summary.patient_count %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Captura prospectiva</div>
+                    <div class="pm2-kpi-value">{{ pilot_adoption_summary.patient_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ pilot_adoption_summary.assessment_linkage_pct or 0 }}% con evaluacion vinculada · {{ pilot_adoption_summary.real_patient_count or 0 }} reales</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if (pilot_adoption_summary.psa_history_coverage_pct or 0) >= 80 %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Historial APE</div>
+                    <div class="pm2-kpi-value">{{ pilot_adoption_summary.psa_history_coverage_pct or 0 }}%</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ pilot_adoption_summary.psa_any_coverage_pct or 0 }}% con APE documentado · mediana {{ pilot_adoption_summary.median_psa_points_per_patient or 0 }} puntos</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if (pilot_adoption_summary.mean_completeness_pct or 0) >= 80 %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Completitud Ledger</div>
+                    <div class="pm2-kpi-value">{{ pilot_adoption_summary.mean_completeness_pct or 0 }}%</div>
+                    <p class="pr-muted" style="margin-top:8px">Mediana {{ pilot_adoption_summary.median_facts_per_patient or 0 }} facts por paciente · {{ pilot_adoption_summary.high_priority_gap_count or 0 }} gaps prioritarios</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if (pilot_adoption_summary.treatment_context_coverage_pct or 0) >= 70 %}success{% else %}info{% endif %}">
+                    <div class="pm2-kpi-label">Contexto tratamiento</div>
+                    <div class="pm2-kpi-value">{{ pilot_adoption_summary.treatment_context_coverage_pct or 0 }}%</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ pilot_adoption_summary.freeze_count or 0 }} freezes · {{ pilot_adoption_summary.download_ready_freeze_count or 0 }} descargables</p>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Brecha dominante</th><th>Familia</th><th>Pacientes</th><th>Ruta de cierre</th></tr></thead>
+                    <tbody>
+                    {% for gap in pilot_adoption_command_center.capture_gap_summary[:8] if pilot_adoption_command_center.capture_gap_summary %}
+                        <tr>
+                            <td><span class="pr-code">{{ gap.field_key }}</span><div class="pr-muted">{{ gap.label }}</div></td>
+                            <td>{{ gap.family }}</td>
+                            <td>{{ gap.patient_count }}</td>
+                            <td><a class="pm2-btn pm2-btn--ghost" href="{{ gap.capture_route }}">Abrir captura</a></td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="4" class="pr-muted">Sin brechas de captura en la cohorte visible.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Semana</th><th>Pacientes</th><th>Listos registro</th><th>Completitud</th><th>Facts mediana</th></tr></thead>
+                    <tbody>
+                    {% for week in pilot_adoption_command_center.weekly_adoption or [] %}
+                        <tr>
+                            <td><span class="pr-code">{{ week.week }}</span></td>
+                            <td>{{ week.patient_count }}</td>
+                            <td>{{ week.registry_ready_count }}</td>
+                            <td>{{ week.mean_completeness_pct }}%</td>
+                            <td>{{ week.median_facts_per_patient }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Sin serie semanal disponible.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Paciente</th><th>Estado</th><th>Completitud</th><th>APE / tx</th><th>Faltantes y accion</th></tr></thead>
+                    <tbody>
+                    {% for row in pilot_adoption_command_center.patient_worklist[:12] if pilot_adoption_command_center.patient_worklist %}
+                        <tr>
+                            <td><span class="pr-code">{{ row.subject_id }}</span><div style="margin-top:6px"><a class="pm2-btn pm2-btn--ghost" href="{{ row.profile_url }}">Perfil V2</a></div></td>
+                            <td>{{ row.effective_state }}<div class="pr-muted">{{ row.latest_assessment_module or 'sin modulo' }}</div></td>
+                            <td>{{ row.completeness_pct }}%<div class="pr-muted">{{ row.fact_count }} facts · {{ row.missing_fact_count }} faltantes</div></td>
+                            <td>{{ row.psa_point_count }} APE<div class="pr-muted">{{ row.treatment_count }} tratamientos · {{ row.event_count }} eventos</div></td>
+                            <td>
+                                {% for missing in row.missing_fields[:3] %}
+                                <a class="pr-pill" href="{{ missing.capture_route }}">{{ missing.label }}</a>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">registry ready</span>
+                                {% endfor %}
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Sin worklist de pacientes en el scope actual.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-grid" style="margin-top:var(--space-4)">
+                {% for action in pilot_adoption_command_center.recommended_next_actions or [] %}
+                <article class="pm2-kpi-card" data-variant="{% if action.priority == 'high' %}warn{% else %}info{% endif %}">
+                    <div class="pm2-kpi-label">{{ action.priority }}</div>
+                    <div style="font-size:.95rem;color:#f8fbff;font-weight:700;margin-top:8px;line-height:1.35">{{ action.title }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ action.action }}</p>
+                    <a class="pm2-btn pm2-btn--ghost" href="{{ action.route }}">Abrir</a>
+                </article>
+                {% else %}
+                <article class="pm2-kpi-card" data-variant="success">
+                    <div class="pm2-kpi-label">Sin acciones inmediatas</div>
+                    <div class="pm2-kpi-value">OK</div>
+                    <p class="pr-muted" style="margin-top:8px">La cohorte visible no muestra brechas prioritarias.</p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section id="ape-longitudinal-completion-sprint" class="pr-band" data-testid="ape-longitudinal-completion-sprint">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">APE LONGITUDINAL V1</div>
+                    <h2>Sprint de completitud APE longitudinal</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ ape_sprint_summary.ape_gap_patient_count or 0 }} pacientes con brecha · {{ ape_sprint_summary.psa_history_coverage_pct or 0 }}% con serie lista · {{ ape_sprint_summary.sprint_status or 'no disponible' }}
+                </div>
+            </div>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if (ape_sprint_summary.psa_history_coverage_pct or 0) >= 80 %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Cobertura serie APE</div>
+                    <div class="pm2-kpi-value">{{ ape_sprint_summary.psa_history_coverage_pct or 0 }}%</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ ape_sprint_summary.history_ready_patient_count or 0 }}/{{ ape_sprint_summary.patient_count or 0 }} pacientes tienen al menos 2 puntos APE reutilizables.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if ape_sprint_summary.missing_psa_patient_count %}critical{% elif ape_sprint_summary.single_psa_patient_count %}warn{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">APE no longitudinal</div>
+                    <div class="pm2-kpi-value">{{ (ape_sprint_summary.missing_psa_patient_count or 0) + (ape_sprint_summary.single_psa_patient_count or 0) + (ape_sprint_summary.isolated_psa_snapshot_patient_count or 0) }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ ape_sprint_summary.missing_psa_patient_count or 0 }} sin APE · {{ ape_sprint_summary.single_psa_patient_count or 0 }} con punto unico · {{ ape_sprint_summary.isolated_psa_snapshot_patient_count or 0 }} snapshot aislado.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if ape_sprint_summary.potential_registry_unlock_count %}warn{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Desbloqueo registry-ready</div>
+                    <div class="pm2-kpi-value">{{ ape_sprint_summary.potential_registry_unlock_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">Cerrar APE puede liberar Decision Today, Perfil V2, ARPI value y tablero epidemiologico con el mismo dato.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Export sprint</div>
+                    <div class="pm2-kpi-value">CSV</div>
+                    <div style="margin-top:8px"><a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/ape-longitudinal-completion-sprint/export">Descargar no-PHI</a></div>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Paciente</th><th>Estado APE</th><th>Serie / baseline</th><th>Lineage Ledger</th><th>Accion V2</th></tr></thead>
+                    <tbody>
+                    {% for row in ape_longitudinal_completion_sprint.ape_worklist[:16] if ape_longitudinal_completion_sprint.ape_worklist %}
+                        <tr>
+                            <td><span class="pr-code">{{ row.subject_id }}</span><div style="margin-top:6px"><a class="pm2-btn pm2-btn--ghost" href="{{ row.profile_url }}">Perfil V2</a></div></td>
+                            <td>
+                                {% if row.priority == 'critical' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">critical</span>
+                                {% elif row.priority == 'high' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">high</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">{{ row.priority }}</span>
+                                {% endif %}
+                                <div class="pr-muted">{{ row.ape_status }} · {{ row.effective_state }}</div>
+                            </td>
+                            <td>{{ row.psa_point_count }} puntos APE<div class="pr-muted">{{ row.valid_psa_point_count }} validos · baseline {{ row.baseline_value or 'pendiente' }} {{ row.baseline_sample_date or '' }}</div></td>
+                            <td>
+                                {% for fact in row.ledger_lineage[:2] %}
+                                <span class="pr-pill">{{ fact.fact_key }} · {{ fact.source_type or fact.source_record_type or 'source' }}</span>
+                                {% else %}
+                                <span class="pr-muted">Sin fact APE activo en Ledger; cerrar en captura longitudinal oficial.</span>
+                                {% endfor %}
+                            </td>
+                            <td>
+                                <a class="pm2-btn pm2-btn--ghost" href="{{ row.capture_url }}">Capturar historial APE</a>
+                                <div class="pr-muted" style="margin-top:6px">No duplica baseline; agrega puntos faltantes y fechas.</div>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Sin brechas APE longitudinales en la cohorte visible.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-grid" style="margin-top:var(--space-4)">
+                {% for action in ape_longitudinal_completion_sprint.recommended_next_actions or [] %}
+                <article class="pm2-kpi-card" data-variant="{% if action.priority == 'critical' %}critical{% elif action.priority == 'high' %}warn{% else %}info{% endif %}">
+                    <div class="pm2-kpi-label">{{ action.priority }}</div>
+                    <div style="font-size:.95rem;color:#f8fbff;font-weight:700;margin-top:8px;line-height:1.35">{{ action.title }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ action.action }}</p>
+                    <a class="pm2-btn pm2-btn--ghost" href="{{ action.route }}">Abrir</a>
+                </article>
+                {% else %}
+                <article class="pm2-kpi-card" data-variant="success">
+                    <div class="pm2-kpi-label">APE longitudinal</div>
+                    <div class="pm2-kpi-value">OK</div>
+                    <p class="pr-muted" style="margin-top:8px">La cohorte visible ya tiene serie APE suficiente para analitica longitudinal.</p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section id="pilot-gap-huddle-workbench" class="pr-band" data-testid="prospective-gap-closure-huddle">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">WEEKLY HUDDLE V1</div>
+                    <h2>Workbench de cierre prospectivo de brechas</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ gap_huddle_summary.huddle_item_count or 0 }} brechas · {{ gap_huddle_summary.open_gap_count or 0 }} abiertas · {{ gap_huddle_summary.reviewed_gap_count or 0 }} revisadas
+                </div>
+            </div>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if gap_huddle_summary.open_gap_count %}warn{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Brechas abiertas</div>
+                    <div class="pm2-kpi-value">{{ gap_huddle_summary.open_gap_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">Cada brecha sigue visible mientras el dato falte; el cierre documenta revision, no inventa valores.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Pacientes con brecha</div>
+                    <div class="pm2-kpi-value">{{ gap_huddle_summary.patient_with_gap_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ gap_huddle_summary.adoption_registry_ready_pct or 0 }}% registry-ready en la cohorte visible.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if gap_huddle_summary.high_priority_gap_count %}warn{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Alta prioridad</div>
+                    <div class="pm2-kpi-value">{{ gap_huddle_summary.high_priority_gap_count or 0 }}</div>
+                    <p class="pr-muted" style="margin-top:8px">APE, completitud menor a 60% o datos que bloquean registro longitudinal.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Export huddle</div>
+                    <div class="pm2-kpi-value">CSV</div>
+                    <div style="margin-top:8px"><a class="pm2-btn pm2-btn--ghost" href="/api/platform-readiness/prospective-gap-closure-huddle/export">Descargar no-PHI</a></div>
+                </article>
+            </div>
+            <form data-testid="prospective-gap-huddle-close-form" class="pm2-panel" style="padding:var(--space-4);margin:var(--space-4) 0;border-radius:8px;border:1px solid var(--border-default);background:rgba(15,23,42,.72)">
+                <div class="pr-grid">
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Brecha a revisar</span>
+                        <select class="pm2-input" name="huddle_item">
+                            {% for item in prospective_gap_closure_huddle.huddle_items[:30] if prospective_gap_closure_huddle.huddle_items %}
+                            <option value="{{ item.patient_ref }}|{{ item.gap_key }}">{{ item.subject_id }} · {{ item.gap_label }} · {{ item.effective_state }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Estado cierre</span>
+                        <select class="pm2-input" name="closure_status">
+                            <option value="reviewed_still_missing">Revisado · sigue faltante</option>
+                            <option value="capture_completed_elsewhere">Captura completada en otra superficie</option>
+                            <option value="not_applicable">No aplica</option>
+                            <option value="deferred">Diferido</option>
+                        </select>
+                    </label>
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Revisado por</span>
+                        <input class="pm2-input" name="reviewed_by" value="clinician">
+                    </label>
+                </div>
+                <label class="pm2-field" style="display:block;margin-top:var(--space-3)">
+                    <span class="pm2-field-label">Nota breve sin PHI</span>
+                    <textarea class="pm2-input" name="clinical_note" rows="2">Brecha revisada en huddle prospectivo; pendiente cierre en superficie V2 oficial.</textarea>
+                </label>
+                <div style="display:flex;align-items:center;gap:var(--space-3);margin-top:var(--space-3);flex-wrap:wrap">
+                    <button class="pm2-btn pm2-btn--primary" type="submit" {% if not prospective_gap_closure_huddle.huddle_items %}disabled{% endif %}>Documentar revision</button>
+                    <span class="pr-muted" data-testid="prospective-gap-huddle-status">El cierre escribe solo eventos de auditoria.</span>
+                </div>
+            </form>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Paciente</th><th>Brecha</th><th>Prioridad</th><th>Estado huddle</th><th>Accion V2</th></tr></thead>
+                    <tbody>
+                    {% for item in prospective_gap_closure_huddle.huddle_items[:16] if prospective_gap_closure_huddle.huddle_items %}
+                        <tr>
+                            <td><span class="pr-code">{{ item.subject_id }}</span><div style="margin-top:6px"><a class="pm2-btn pm2-btn--ghost" href="{{ item.profile_url }}">Perfil V2</a></div></td>
+                            <td><span class="pr-code">{{ item.gap_key }}</span><div class="pr-muted">{{ item.gap_label }} · {{ item.gap_family }}</div></td>
+                            <td>{{ item.priority }}<div class="pr-muted">{{ item.completeness_pct }}% completitud</div></td>
+                            <td>
+                                {% if item.huddle_status == 'open' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">open</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">reviewed</span>
+                                {% endif %}
+                                <div class="pr-muted">{{ item.closure_status or 'sin revision' }}</div>
+                            </td>
+                            <td><a class="pm2-btn pm2-btn--ghost" href="{{ item.capture_route }}">Abrir captura</a></td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Sin brechas accionables en la cohorte visible.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="deidentified-export-contract">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">RESEARCH EXPORT READINESS</div>
+                    <h2>Contrato de export desidentificado</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ export_summary.fact_row_count or 0 }} facts · {{ export_summary.event_row_count or 0 }} eventos · {{ export_summary.treatment_row_count or 0 }} tratamientos
+                </div>
+            </div>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if export_summary.next_layer_allowed %}success{% else %}critical{% endif %}">
+                    <div class="pm2-kpi-label">Paquete local</div>
+                    <div class="pm2-kpi-value">{% if export_summary.next_layer_allowed %}LISTO{% else %}BLOQUEADO{% endif %}</div>
+                    <p class="pr-muted" style="margin-top:8px">Read-only, sin transferencia externa, con subject_id hash y fechas clínicas a precisión mensual.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if export_summary.direct_identifier_key_count or export_summary.exact_phi_hit_count %}critical{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">PHI directo detectado</div>
+                    <div class="pm2-kpi-value">{{ (export_summary.direct_identifier_key_count or 0) + (export_summary.exact_phi_hit_count or 0) }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">NSS, nombre, DOB, patient_id local</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Diccionario</div>
+                    <div class="pm2-kpi-value">{{ export_summary.data_dictionary_field_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">Ledger + mCODE/OMOP</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if export_summary.unmapped_dictionary_count %}critical{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Variables sin mapa</div>
+                    <div class="pm2-kpi-value">{{ export_summary.unmapped_dictionary_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ export_summary.lineage_row_count or 0 }} lineage rows</span></div>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Componente</th><th>Conteo</th><th>Politica</th><th>Estado</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="pr-code">cohort_manifest</span><div class="pr-muted">{{ deidentified_export_contract.cohort_manifest.cohort_label }}</div></td>
+                            <td>{{ export_summary.cohort_subject_count or 0 }}</td>
+                            <td>{{ deidentified_export_contract.subject_id_policy }}</td>
+                            <td><span class="pm2-state-chip pm2-state-chip--primary">{{ export_summary.export_contract_status or 'no disponible' }}</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="pr-code">fact_rows + lineage_rows</span></td>
+                            <td>{{ export_summary.fact_row_count or 0 }} + {{ export_summary.lineage_row_count or 0 }}</td>
+                            <td>source type, source ref hash, freshness, mCODE/OMOP</td>
+                            <td><span class="pm2-state-chip pm2-state-chip--primary">read-only</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="pr-code">event_rows + treatment_rows + biomarker_rows</span></td>
+                            <td>{{ (export_summary.event_row_count or 0) + (export_summary.treatment_row_count or 0) + (export_summary.biomarker_row_count or 0) }}</td>
+                            <td>{{ deidentified_export_contract.date_policy }}</td>
+                            <td><span class="pm2-state-chip pm2-state-chip--primary">PHI-suppressed</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="pr-code">export_quality</span></td>
+                            <td>{{ export_summary.direct_identifier_key_count or 0 }} keys · {{ export_summary.exact_phi_hit_count or 0 }} exact hits</td>
+                            <td>{{ export_quality.phi_scan_policy }}</td>
+                            <td>{% if export_summary.next_layer_allowed %}<span class="pm2-state-chip pm2-state-chip--primary">pass</span>{% else %}<span class="pm2-state-chip pm2-state-chip--warn">block</span>{% endif %}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="research-pack-materializer">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">RESEARCH PACK MATERIALIZER</div>
+                    <h2>Pack CSV/JSON congelable</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ pack_summary.file_count or 0 }} archivos · {{ pack_summary.total_data_rows or 0 }} filas · freeze {% if pack_summary.freeze_allowed %}permitido{% else %}bloqueado{% endif %}
+                </div>
+            </div>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if pack_summary.next_layer_allowed %}success{% else %}critical{% endif %}">
+                    <div class="pm2-kpi-label">Materializacion</div>
+                    <div class="pm2-kpi-value">{% if pack_summary.next_layer_allowed %}LISTA{% else %}BLOQUEADA{% endif %}</div>
+                    <p class="pr-muted" style="margin-top:8px">Genera manifest, bundle JSON y CSVs desde el contrato desidentificado; no escribe ni descarga hasta congelar.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Bundle hash</div>
+                    <div class="pm2-kpi-value" style="font-size:1rem">{{ (pack_summary.bundle_sha256 or '')[:12] }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">SHA256 reproducible</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if pack_summary.direct_identifier_key_count or pack_summary.exact_phi_hit_count %}critical{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Bloqueo PHI</div>
+                    <div class="pm2-kpi-value">{{ (pack_summary.direct_identifier_key_count or 0) + (pack_summary.exact_phi_hit_count or 0) }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">debe permanecer en 0</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if pack_summary.download_allowed %}success{% else %}critical{% endif %}">
+                    <div class="pm2-kpi-label">Download local</div>
+                    <div class="pm2-kpi-value">{% if pack_summary.download_allowed %}SI{% else %}NO{% endif %}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">solo tras freeze auditado</span></div>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Archivo</th><th>Filas</th><th>Bytes</th><th>SHA256</th></tr></thead>
+                    <tbody>
+                    {% for file in research_pack_materializer.file_manifest or [] %}
+                        <tr>
+                            <td><span class="pr-code">{{ file.file_name }}</span><div class="pr-muted">{{ file.content_type }}</div></td>
+                            <td>{{ file.row_count }}</td>
+                            <td>{{ file.byte_count }}</td>
+                            <td><span class="pr-code">{{ file.sha256[:20] }}</span></td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="4" class="pr-muted">Sin manifest de pack disponible.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="research-pack-freeze-library">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">COHORT FREEZE LIBRARY</div>
+                    <h2>Biblioteca gobernada de freezes</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ freeze_library_summary.freeze_count or 0 }} freezes · {{ freeze_library_summary.download_ready_count or 0 }} listos para descarga local
+                </div>
+            </div>
+            <form data-testid="research-pack-freeze-form" class="pm2-panel" style="padding:var(--space-4);margin-bottom:var(--space-4);border-radius:8px;border:1px solid var(--border-default);background:rgba(15,23,42,.72)">
+                <div class="pr-grid">
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Titulo</span>
+                        <input class="pm2-input" name="title" value="Research pack institucional {{ freeze_library_summary.freeze_count + 1 if freeze_library_summary.freeze_count is not none else 1 }}" {% if not pack_summary.freeze_allowed %}disabled{% endif %}>
+                    </label>
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Responsable</span>
+                        <input class="pm2-input" name="responsible" value="clinician" {% if not pack_summary.freeze_allowed %}disabled{% endif %}>
+                    </label>
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Estado</span>
+                        <select class="pm2-input" name="governance_status" {% if not pack_summary.freeze_allowed %}disabled{% endif %}>
+                            <option value="exploratory">Exploratoria</option>
+                            <option value="audit_ready" selected>Auditable</option>
+                            <option value="poster_ready">Lista para poster</option>
+                            <option value="publication_ready">Lista para articulo</option>
+                            <option value="insufficient_quality">Calidad insuficiente</option>
+                        </select>
+                    </label>
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Limite</span>
+                        <input class="pm2-input" name="limit" value="80" inputmode="numeric" {% if not pack_summary.freeze_allowed %}disabled{% endif %}>
+                    </label>
+                </div>
+                <div class="pr-grid" style="margin-top:var(--space-3)">
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Objetivo clinico</span>
+                        <input class="pm2-input" name="clinical_objective" value="Auditoria institucional desidentificada de cancer de prostata" {% if not pack_summary.freeze_allowed %}disabled{% endif %}>
+                    </label>
+                    <label class="pm2-field">
+                        <span class="pm2-field-label">Pregunta de investigacion</span>
+                        <input class="pm2-input" name="research_question" value="Que patrones longitudinales y economicos emergen en esta cohorte?" {% if not pack_summary.freeze_allowed %}disabled{% endif %}>
+                    </label>
+                </div>
+                <label class="pm2-field" style="display:block;margin-top:var(--space-3)">
+                    <span class="pm2-field-label">Nota metodologica</span>
+                    <textarea class="pm2-input" name="methodology_note" rows="2" {% if not pack_summary.freeze_allowed %}disabled{% endif %}>Pack local desidentificado con lineage Ledger y revision humana antes de uso externo.</textarea>
+                </label>
+                <input type="hidden" name="created_by" value="clinician">
+                <div style="display:flex;align-items:center;gap:var(--space-3);margin-top:var(--space-3);flex-wrap:wrap">
+                    <button class="pm2-btn pm2-btn--primary" type="submit" {% if not pack_summary.freeze_allowed %}disabled{% endif %}>Congelar pack</button>
+                    <span class="pr-muted" data-testid="research-pack-freeze-status">
+                        {% if pack_summary.freeze_allowed %}Materializer listo: {{ pack_summary.total_data_rows or 0 }} filas disponibles.{% else %}Freeze bloqueado por PHI/interoperabilidad.{% endif %}
+                    </span>
+                </div>
+            </form>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Freeze</th><th>Gobernanza</th><th>Cohorte</th><th>Calidad</th><th>Hashes y acciones</th></tr></thead>
+                    <tbody>
+                    {% for freeze in research_pack_freeze_library.freezes or [] %}
+                        <tr>
+                            <td><span class="pr-code">{{ freeze.freeze_key }}</span><div class="pr-muted">{{ freeze.title }} · {{ freeze.created_at }}</div></td>
+                            <td>
+                                <span class="pm2-state-chip pm2-state-chip--primary">{{ freeze.governance.governance_status }}</span>
+                                <div class="pr-muted">{{ freeze.governance.research_question }}</div>
+                            </td>
+                            <td>{{ freeze.cohort_subject_count }} sujetos<div class="pr-muted">{{ freeze.total_data_rows }} filas · {{ freeze.file_count }} archivos</div></td>
+                            <td>
+                                {% if freeze.quality_status == 'pass' %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">pass</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">block</span>
+                                {% endif %}
+                                <div class="pr-muted">{{ freeze.direct_identifier_key_count }} identifiers · {{ freeze.exact_phi_hit_count }} PHI</div>
+                            </td>
+                            <td>
+                                <span class="pr-code">{{ freeze.payload_sha256[:16] }}</span>
+                                <div style="margin-top:6px">
+                                    <a class="pm2-btn pm2-btn--ghost" href="{{ freeze.detail_url }}">Detalle</a>
+                                    <a class="pm2-btn pm2-btn--ghost" href="{{ freeze.download_url }}">ZIP</a>
+                                </div>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Aun no hay freezes desidentificados gobernados.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="interoperability-map">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">FHIR / OMOP READINESS</div>
+                    <h2>Mapa interoperable mCODE / OMOP</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ interop_summary.pass_count or 0 }} pass · {{ interop_summary.watch_count or 0 }} watch · {{ interop_summary.block_count or 0 }} block
+                </div>
+            </div>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if interop_summary.next_layer_allowed %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Export inicial</div>
+                    <div class="pm2-kpi-value">{% if interop_summary.next_layer_allowed %}LISTO{% else %}PENDIENTE{% endif %}</div>
+                    <p class="pr-muted" style="margin-top:8px">No exporta pacientes; valida que los facts criticos tengan destino semantico antes de FHIR/OMOP real.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Facts mapeados</div>
+                    <div class="pm2-kpi-value">{{ interop_summary.mapped_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ interop_summary.facts_total or 0 }} facts Ledger</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if interop_summary.critical_block_count %}critical{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Facts criticos sin decision</div>
+                    <div class="pm2-kpi-value">{{ interop_summary.critical_block_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ interop_summary.critical_ready_count or 0 }}/{{ interop_summary.critical_fact_count or 0 }} listos</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="warn">
+                    <div class="pm2-kpi-label">Hardening semantico</div>
+                    <div class="pm2-kpi-value">{{ interop_summary.partial_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">codigos LOINC/SNOMED/RxNorm pendientes</span></div>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Fact</th><th>mCODE / FHIR</th><th>OMOP</th><th>Vocabulario</th><th>Estado</th></tr></thead>
+                    <tbody>
+                    {% for row in interoperability_map.mapping[:60] if interoperability_map.mapping %}
+                        <tr>
+                            <td><span class="pr-code">{{ row.fact_key }}</span><div class="pr-muted">{{ row.domain }} · {{ row.owner }}</div></td>
+                            <td>{{ row.mcode_profile }}<div class="pr-muted">{{ row.fhir_target }}</div></td>
+                            <td>{{ row.omop_target }}<div class="pr-muted">{{ row.cardinality }}</div></td>
+                            <td>{{ row.vocabulary }}</td>
+                            <td>
+                                {% if row.interoperability_status == 'block' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">block</span>
+                                {% elif row.interoperability_status == 'watch' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">watch</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">pass</span>
+                                {% endif %}
+                                <div class="pr-muted">{{ row.mapping_status }}{% if row.warnings %} · {{ row.warnings[0] }}{% endif %}</div>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Sin mapa interoperable en el scope actual.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="ledger-persistence-matrix">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">LEDGER QA POR FLUJO V2</div>
+                    <h2>Matriz de persistencia paciente-a-fact</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ flow_matrix_summary.flow_pass_count or 0 }} flujos pass · {{ flow_matrix_summary.flow_watch_count or 0 }} watch · {{ flow_matrix_summary.flow_block_count or 0 }} block
+                </div>
+            </div>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if flow_matrix_summary.next_layer_allowed %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Capa avanzada</div>
+                    <div class="pm2-kpi-value">{% if flow_matrix_summary.next_layer_allowed %}LISTA{% else %}PENDIENTE{% endif %}</div>
+                    <p class="pr-muted" style="margin-top:8px">FHIR/OMOP, genomica externa y gran tablero dependen de lineage completo por flujo.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Flujos oficiales V2</div>
+                    <div class="pm2-kpi-value">{{ flow_matrix_summary.flow_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ flow_matrix_summary.facts_flow_rows_total or 0 }} checks fact-flujo</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if flow_matrix_summary.route_missing_count %}critical{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Rutas de flujo faltantes</div>
+                    <div class="pm2-kpi-value">{{ flow_matrix_summary.route_missing_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">wizard → cohortes</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="warn">
+                    <div class="pm2-kpi-label">Checks en vigilancia</div>
+                    <div class="pm2-kpi-value">{{ flow_matrix_summary.fact_watch_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">aliases, extractores o persistencia parcial</span></div>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Flujo</th><th>Ruta</th><th>Facts</th><th>Pass</th><th>Watch</th><th>Block</th><th>Estado</th></tr></thead>
+                    <tbody>
+                    {% for flow in ledger_persistence_matrix.flow_summary or [] %}
+                        <tr>
+                            <td><span class="pr-code">{{ flow.flow_key }}</span><div class="pr-muted">{{ flow.label }}</div></td>
+                            <td><span class="pr-code">{{ flow.route }}</span><div class="pr-muted">{{ flow.method }} · {% if flow.registered %}registrada{% else %}faltante{% endif %}</div></td>
+                            <td>{{ flow.facts_evaluated }}</td>
+                            <td>{{ flow.pass_count }}</td>
+                            <td>{{ flow.watch_count }}</td>
+                            <td>{{ flow.block_count }}</td>
+                            <td>
+                                {% if flow.flow_status == 'block' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">block</span>
+                                {% elif flow.flow_status == 'watch' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">watch</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">pass</span>
+                                {% endif %}
+                                <div class="pr-muted">{{ flow.purpose }}</div>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="7" class="pr-muted">Sin matriz por flujo en el scope actual.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Flujo</th><th>Fact</th><th>Owner</th><th>Persistencia</th><th>Recaptura</th><th>Estado</th></tr></thead>
+                    <tbody>
+                    {% for row in ledger_persistence_matrix.matrix[:60] if ledger_persistence_matrix.matrix %}
+                        <tr>
+                            <td><span class="pr-code">{{ row.flow_key }}</span></td>
+                            <td><span class="pr-code">{{ row.fact_key }}</span><div class="pr-muted">{{ row.domain }}</div></td>
+                            <td>{{ row.owner }}</td>
+                            <td>{{ row.persistence_status }}<div class="pr-muted">{{ row.capture_status }}</div></td>
+                            <td>{{ row.recapture_status }}</td>
+                            <td>
+                                {% if row.flow_status == 'block' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">block</span>
+                                {% elif row.flow_status == 'watch' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">watch</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">pass</span>
+                                {% endif %}
+                                {% if row.warnings %}<div class="pr-muted">{{ row.warnings[0] }}</div>{% endif %}
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="6" class="pr-muted">Abra el scope full para ver checks fact-flujo.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="pr-band" data-testid="ledger-release-gate">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">CLINICAL FACT LEDGER V1</div>
+                    <h2>Compuerta de liberacion anti-recaptura</h2>
+                </div>
+                <div class="pr-muted">
+                    {{ ledger_summary.pass_count or 0 }} pass · {{ ledger_summary.watch_count or 0 }} watch · {{ ledger_summary.block_count or 0 }} block
+                </div>
+            </div>
+            <div class="pr-grid">
+                <article class="pm2-kpi-card" data-variant="{% if ledger_summary.next_layer_allowed %}success{% else %}warn{% endif %}">
+                    <div class="pm2-kpi-label">Siguiente capa permitida</div>
+                    <div class="pm2-kpi-value">{% if ledger_summary.next_layer_allowed %}SI{% else %}NO{% endif %}</div>
+                    <p class="pr-muted" style="margin-top:8px">Interoperabilidad, genomica, FHIR/OMOP y analitica avanzada dependen de esta compuerta.</p>
+                </article>
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">Facts criticos</div>
+                    <div class="pm2-kpi-value">{{ ledger_summary.critical_fact_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">{{ ledger_summary.critical_block_count or 0 }} bloqueantes</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="warn">
+                    <div class="pm2-kpi-label">Alias / recaptura</div>
+                    <div class="pm2-kpi-value">{{ ledger_summary.recapture_watch_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">requieren hardening</span></div>
+                </article>
+                <article class="pm2-kpi-card" data-variant="{% if ledger_summary.surface_missing_count %}critical{% else %}success{% endif %}">
+                    <div class="pm2-kpi-label">Superficies Ledger faltantes</div>
+                    <div class="pm2-kpi-value">{{ ledger_summary.surface_missing_count or 0 }}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">perfil V2 + wizard + intake + API</span></div>
+                </article>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Fact</th><th>Owner</th><th>Persistencia</th><th>Frescura</th><th>Recaptura</th><th>Estado</th></tr></thead>
+                    <tbody>
+                    {% for row in ledger_gate.matrix[:50] if ledger_gate.matrix %}
+                        <tr>
+                            <td><span class="pr-code">{{ row.fact_key }}</span><div class="pr-muted">{{ row.domain }} · {{ row.value_type }}</div></td>
+                            <td>{{ row.owner }}</td>
+                            <td>
+                                <span class="pm2-state-chip pm2-state-chip--primary">{{ row.persistence_status }}</span>
+                                <div class="pr-muted">
+                                    {% for target in row.persistence_targets[:3] %}{{ target }}{% if not loop.last %}, {% endif %}{% endfor %}
+                                </div>
+                            </td>
+                            <td>{{ row.freshness_status }}<div class="pr-muted">{% if row.freshness_policy.expires %}{{ row.freshness_policy.current_days }} dias{% else %}no expira{% endif %}</div></td>
+                            <td>{{ row.recapture_status }}</td>
+                            <td>
+                                {% if row.release_status == 'block' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">block</span>
+                                {% elif row.release_status == 'watch' %}
+                                <span class="pm2-state-chip pm2-state-chip--warn">watch</span>
+                                {% else %}
+                                <span class="pm2-state-chip pm2-state-chip--primary">pass</span>
+                                {% endif %}
+                                {% if row.warnings %}<div class="pr-muted">{{ row.warnings[0] }}</div>{% endif %}
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="6" class="pr-muted">Sin matriz Ledger en el scope actual.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="pr-band" style="padding-top:0">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">Siguiente accion</div>
+                    <h2>Recomendaciones de hardening</h2>
+                </div>
+            </div>
+            <div class="pr-grid">
+                {% for item in audit.recommendations or [] %}
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">{{ item.priority }}</div>
+                    <div style="font-size:.95rem;color:#f8fbff;font-weight:700;margin-top:8px;line-height:1.35">{{ item.title }}</div>
+                    <p class="pr-muted" style="margin-top:8px">{{ item.benefit }}</p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="pr-band">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">Contratos</div>
+                    <h2>Rutas clinicas criticas</h2>
+                </div>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Ruta</th><th>Metodo</th><th>Surface</th><th>Estado</th></tr></thead>
+                    <tbody>
+                    {% for route in route_contracts.routes or [] %}
+                        <tr>
+                            <td class="pr-code">{{ route.rule }}</td>
+                            <td>{{ route.method }}</td>
+                            <td>{{ route.surface }}</td>
+                            <td>{% if route.registered %}<span class="pm2-state-chip pm2-state-chip--primary">registrada</span>{% else %}<span class="pm2-state-chip pm2-state-chip--warn">faltante</span>{% endif %}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="pr-band">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">Brechas</div>
+                    <h2>Hallazgos de datos y persistencia</h2>
+                </div>
+                <div class="pr-muted">DB: {% if db_snapshot.available %}{{ db_snapshot.db_path }}{% else %}no disponible{% endif %}</div>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Severidad</th><th>Categoria</th><th>Campo/modulo</th><th>Accion recomendada</th></tr></thead>
+                    <tbody>
+                    {% for gap in audit.gaps[:40] if audit.gaps %}
+                        <tr>
+                            <td class="{% if gap.severity == 'high' %}pr-gap-high{% elif gap.severity == 'moderate' %}pr-gap-moderate{% endif %}">{{ gap.severity }}</td>
+                            <td>{{ gap.category }}</td>
+                            <td><span class="pr-code">{{ gap.field or gap.module }}</span></td>
+                            <td class="pr-muted">{{ gap.recommended_action }}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="4" class="pr-muted">Sin brechas en el scope actual.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="pr-band">
+            <div class="pm2-section-heading">
+                <div>
+                    <div class="pm2-kicker">Campo canonico</div>
+                    <h2>Matriz de facts y superficies</h2>
+                </div>
+            </div>
+            <div class="pr-table-wrap">
+                <table class="pr-table">
+                    <thead><tr><th>Fact</th><th>Dominio</th><th>Bloqueante</th><th>Modulos</th><th>Aliases visibles</th></tr></thead>
+                    <tbody>
+                    {% for row in audit.field_matrix[:80] if audit.field_matrix %}
+                        <tr>
+                            <td><span class="pr-code">{{ row.fact_key }}</span><div class="pr-muted">{{ row.value_type }}</div></td>
+                            <td>{{ row.domain }}</td>
+                            <td>{% if row.blocking %}<span class="pm2-state-chip pm2-state-chip--warn">si</span>{% else %}<span class="pm2-state-chip pm2-state-chip--primary">no</span>{% endif %}</td>
+                            <td>
+                                {% for module in row.modules[:6] %}
+                                <span class="pr-pill">{{ module }}</span>
+                                {% endfor %}
+                                {% if row.modules_count > 6 %}<span class="pr-pill">+{{ row.modules_count - 6 }}</span>{% endif %}
+                            </td>
+                            <td>
+                                {% for alias in row.legacy_alias_schema_fields %}
+                                <span class="pr-pill">{{ alias }}</span>
+                                {% else %}
+                                <span class="pr-muted">sin alias visible</span>
+                                {% endfor %}
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="pr-muted">Abra el scope full para ver matriz de facts.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const vaultForm = document.querySelector('[data-testid="nas-pilot-evidence-form"]');
+    const vaultStatus = document.querySelector('[data-testid="nas-pilot-evidence-status"]');
+    if (vaultForm && vaultStatus) {
+        vaultForm.addEventListener('submit', async function (event) {
+            event.preventDefault();
+            const payload = Object.fromEntries(new FormData(vaultForm).entries());
+            vaultStatus.textContent = 'Verificando evidencia operacional...';
+            try {
+                const response = await fetch('/api/platform-readiness/nas-pilot-evidence-vault/attest', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    vaultStatus.textContent = 'Vault bloqueado: ' + (data.error || 'verifique que no incluya PHI');
+                    return;
+                }
+                const gateStatus = data.gate_status && data.gate_status.gate_status ? data.gate_status.gate_status : 'actualizado';
+                vaultStatus.textContent = 'Evidencia verificada: ' + gateStatus + '. Recargue para ver la matriz actualizada.';
+            } catch (error) {
+                vaultStatus.textContent = 'No fue posible verificar la evidencia operacional.';
+            }
+        });
+    }
+
+    const huddleForm = document.querySelector('[data-testid="prospective-gap-huddle-close-form"]');
+    const huddleStatus = document.querySelector('[data-testid="prospective-gap-huddle-status"]');
+    if (huddleForm && huddleStatus) {
+        huddleForm.addEventListener('submit', async function (event) {
+            event.preventDefault();
+            const formData = new FormData(huddleForm);
+            const selected = String(formData.get('huddle_item') || '');
+            const parts = selected.split('|');
+            const payload = {
+                patient_ref: parts[0] || '',
+                gap_key: parts[1] || '',
+                closure_status: formData.get('closure_status') || '',
+                reviewed_by: formData.get('reviewed_by') || 'clinician',
+                clinical_note: formData.get('clinical_note') || '',
+            };
+            huddleStatus.textContent = 'Documentando revision de huddle...';
+            try {
+                const response = await fetch('/api/platform-readiness/prospective-gap-closure-huddle/close', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload),
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    huddleStatus.textContent = 'Cierre bloqueado: ' + (data.error || 'verifique nota y brecha');
+                    return;
+                }
+                huddleStatus.textContent = 'Revision documentada: evento ' + data.event_id + '. Recargue para ver estado actualizado.';
+            } catch (error) {
+                huddleStatus.textContent = 'No fue posible documentar la revision.';
+            }
+        });
+    }
+
+    const form = document.querySelector('[data-testid="research-pack-freeze-form"]');
+    const status = document.querySelector('[data-testid="research-pack-freeze-status"]');
+    if (!form || !status) return;
+    form.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const payload = Object.fromEntries(new FormData(form).entries());
+        payload.limit = Number.parseInt(payload.limit || '80', 10) || 80;
+        status.textContent = 'Creando freeze auditado...';
+        try {
+            const response = await fetch('/api/platform-readiness/research-pack-materializer/freeze', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                status.textContent = 'Freeze bloqueado: ' + (data.error || 'verifique PHI/interoperabilidad');
+                return;
+            }
+            status.innerHTML = 'Freeze listo: <a class="pr-code" href="/api/platform-readiness/research-pack-materializer/freezes/' + data.freeze_key + '">' + data.freeze_key + '</a>';
+        } catch (error) {
+            status.textContent = 'No fue posible crear el freeze local.';
+        }
+    });
+});
+</script>
+</body>
+</html>

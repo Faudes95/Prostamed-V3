@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workbench re-decisión · {{ redecision.patient_ref }}</title>
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='redecision_patient_v1') }}">
+    <style>
+    .rd-grid { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(320px,.65fr); gap:var(--space-4); }
+    .rd-panel {
+        border:1px solid var(--border-default); border-radius:8px;
+        background:rgba(15,23,42,.72); padding:var(--space-4);
+    }
+    .rd-panel h2 {
+        font-family:var(--pm-font-display); font-size:1.05rem; color:#f8fbff;
+        font-weight:700; margin:0 0 12px; letter-spacing:-.01em;
+    }
+    .rd-fact-row {
+        display:flex; justify-content:space-between; gap:14px; align-items:flex-start;
+        padding:10px 0; border-bottom:1px solid var(--border-subtle);
+    }
+    .rd-fact-row:last-child { border-bottom:0; }
+    .rd-fact-label { color:var(--pn-text-muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.12em; font-weight:800; }
+    .rd-fact-value { color:#f8fbff; font-size:.88rem; text-align:right; max-width:60%; }
+    .rd-missing-item {
+        display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:center;
+        padding:12px; border:1px solid var(--border-default); border-radius:8px;
+        background:rgba(2,6,23,.36); margin-bottom:10px;
+    }
+    .rd-form-field { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+    .rd-form-field label { color:var(--pn-text-muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.12em; font-weight:800; }
+    .rd-input, .rd-select, .rd-textarea {
+        width:100%; border:1px solid var(--border-strong); border-radius:8px;
+        background:var(--surface-1); color:#f8fbff; padding:10px 12px;
+        font-size:.86rem; font-family:inherit;
+    }
+    .rd-textarea { min-height:112px; resize:vertical; line-height:1.45; }
+    .rd-checkbox-row { display:flex; gap:8px; align-items:center; color:#e2e8f0; font-size:.84rem; margin:8px 0; }
+    .rd-result {
+        margin-top:12px; border-radius:8px; padding:10px 12px; font-size:.82rem;
+        background:rgba(2,6,23,.42); color:var(--pn-text-muted); border:1px solid var(--border-default);
+        white-space:pre-wrap;
+    }
+    .rd-result.is-ok { border-color:var(--clinical-success-edge); color:#bbf7d0; }
+    .rd-result.is-error { border-color:var(--clinical-critical-edge); color:#fecaca; }
+    @media (max-width: 980px) {
+        .rd-grid { grid-template-columns:1fr; }
+        .rd-fact-row { flex-direction:column; gap:4px; }
+        .rd-fact-value { text-align:left; max-width:100%; }
+        .rd-missing-item { grid-template-columns:1fr; }
+    }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+{% from "components/pm2_sidebar.html" import pm2_sidebar %}
+{% set dt = decision_today.get('decision_today', {}) if decision_today else {} %}
+{% set closure = redecision.closure_state or {} %}
+
+<div class="pm2-app-shell">
+    {{ pm2_sidebar(active='profile', identity_nss=redecision.patient_ref) }}
+
+    <header class="pm2-app-header">
+        <div>
+            <div class="pm2-kicker">RE-DECISION CLOSURE LOOP</div>
+            <div style="font-family:var(--pm-font-display);font-size:1.05rem;color:#f8fbff;font-weight:700;">{{ redecision.patient_name or 'Paciente' }}</div>
+        </div>
+        <div class="pm2-header-tools">
+            <a class="pm2-btn pm2-btn--ghost" href="/redecision-workbench">Cola</a>
+            <a class="pm2-btn pm2-btn--ghost" href="/patient_profile/{{ redecision.patient_ref }}?v=2">Perfil</a>
+            <a class="pm2-btn pm2-btn--primary" href="/api/patients/{{ redecision.patient_ref }}/redecision">JSON auditable</a>
+        </div>
+    </header>
+
+    <main id="main-content" class="pm2-app-main" tabindex="-1" data-testid="redecision-patient-workbench">
+        <section style="padding:var(--space-6) var(--space-6) 0">
+            <div style="display:flex;justify-content:space-between;gap:var(--space-3);align-items:flex-start;flex-wrap:wrap">
+                <div style="min-width:260px;flex:1">
+                    <div class="pm2-kicker">DECISION HOY · {{ redecision.state_label or redecision.state }}</div>
+                    <h1 style="font-family:var(--pm-font-display);font-size:2rem;font-weight:700;letter-spacing:-.03em;color:#f8fbff;margin:6px 0 4px">{{ redecision.decision_title or dt.title or 'Reabrir decisión clínica' }}</h1>
+                    <p style="color:var(--pn-text-muted);font-size:.92rem;max-width:82ch;line-height:1.5;margin:0">
+                        {{ redecision.clinical_rationale or decision_today.get('clinical_rationale') or 'Expediente en re-decisión clínica.' }}
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+                    <span class="pm2-state-chip pm2-state-chip--warn">{{ redecision.decision_state }}</span>
+                    <span class="pm2-state-chip">{{ redecision.support_level }}</span>
+                    <span class="pm2-state-chip {% if closure.closure_status == 'open' %}pm2-state-chip--warn{% else %}pm2-state-chip--primary{% endif %}" id="rdClosureChip">{{ closure.closure_label or 'Abierta' }}</span>
+                </div>
+            </div>
+        </section>
+
+        <section style="padding:var(--space-5) var(--space-6)">
+            <div class="rd-grid">
+                <div style="display:flex;flex-direction:column;gap:var(--space-4)">
+                    <section class="rd-panel">
+                        <h2>Datos requeridos</h2>
+                        {% if redecision.missing_fields %}
+                            {% for item in redecision.missing_fields %}
+                            <div class="rd-missing-item" data-testid="redecision-missing-field">
+                                <div>
+                                    <div style="font-weight:800;color:#f8fbff">{{ item.label or item.field }}</div>
+                                    <div style="font-size:.76rem;color:var(--pn-text-soft);margin-top:4px">{{ item.field }} · {{ item.readiness_lane }}</div>
+                                </div>
+                                {% if item.cta and item.cta.href %}
+                                <a class="pm2-btn pm2-btn--primary" href="{{ item.cta.href }}">{{ item.cta.label or 'Capturar dato' }}</a>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                        <div style="color:var(--pn-text-muted);font-size:.88rem">No hay campos faltantes estructurados en el bundle actual.</div>
+                        {% endif %}
+                    </section>
+
+                    <section class="rd-panel">
+                        <h2>Decision Today</h2>
+                        <div class="rd-fact-row">
+                            <div class="rd-fact-label">Estado de decisión</div>
+                            <div class="rd-fact-value">{{ redecision.decision_state or decision_today.get('decision_state') }}</div>
+                        </div>
+                        <div class="rd-fact-row">
+                            <div class="rd-fact-label">Riesgo evitado</div>
+                            <div class="rd-fact-value">{{ redecision.risk_avoided or dt.risk_avoided or '—' }}</div>
+                        </div>
+                        <div class="rd-fact-row">
+                            <div class="rd-fact-label">Siguiente acción segura</div>
+                            <div class="rd-fact-value">{{ (redecision.next_safe_action or {}).get('title') or 'Revisión clínica' }}</div>
+                        </div>
+                        <div class="rd-fact-row">
+                            <div class="rd-fact-label">Auditoría</div>
+                            <div class="rd-fact-value">sin mutación clínica · sin orden externa · sin entrenamiento</div>
+                        </div>
+                    </section>
+                </div>
+
+                <aside style="display:flex;flex-direction:column;gap:var(--space-4)">
+                    <section class="rd-panel">
+                        <h2>Cierre auditable</h2>
+                        <form id="rdCloseForm">
+                            <div class="rd-form-field">
+                                <label for="closure_status">Estado de cierre</label>
+                                <select class="rd-select" id="closure_status" name="closure_status" required>
+                                    <option value="still_blocked">Sigue bloqueada</option>
+                                    <option value="followup_scheduled">Seguimiento programado</option>
+                                    <option value="tumor_board_required">Requiere Tumor Board</option>
+                                    <option value="resolved_after_recompute">Resuelta tras recálculo</option>
+                                </select>
+                            </div>
+                            <div class="rd-form-field">
+                                <label for="reviewed_by">Revisado por</label>
+                                <input class="rd-input" id="reviewed_by" name="reviewed_by" value="clinician" required>
+                            </div>
+                            <div class="rd-form-field">
+                                <label for="clinical_note">Nota clínica</label>
+                                <textarea class="rd-textarea" id="clinical_note" name="clinical_note" required placeholder="Resumen breve de la revisión clínica"></textarea>
+                            </div>
+                            <div class="rd-form-field">
+                                <label for="next_followup_date">Próximo seguimiento</label>
+                                <input class="rd-input" id="next_followup_date" name="next_followup_date" type="date">
+                            </div>
+                            {% if redecision.missing_fields %}
+                            <div class="rd-form-field">
+                                <label>Campos reconocidos</label>
+                                {% for item in redecision.missing_fields %}
+                                <label class="rd-checkbox-row">
+                                    <input type="checkbox" name="acknowledged_missing_fields" value="{{ item.field }}" checked>
+                                    <span>{{ item.label or item.field }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            <input type="hidden" name="selected_action_key" value="{{ (redecision.next_safe_action or {}).get('action_key', '') }}">
+                            <button class="pm2-btn pm2-btn--primary" type="submit" style="width:100%;justify-content:center">Registrar cierre</button>
+                            <div class="rd-result" id="rdCloseResult">Evento pendiente de registro.</div>
+                        </form>
+                    </section>
+
+                    <section class="rd-panel">
+                        <h2>Último cierre</h2>
+                        <div class="rd-fact-row">
+                            <div class="rd-fact-label">Estado</div>
+                            <div class="rd-fact-value">{{ closure.closure_label or closure.closure_status or 'Abierta' }}</div>
+                        </div>
+                        <div class="rd-fact-row">
+                            <div class="rd-fact-label">Fecha</div>
+                            <div class="rd-fact-value">{{ closure.created_at or closure.event_date or '—' }}</div>
+                        </div>
+                        <div class="rd-fact-row">
+                            <div class="rd-fact-label">Revisor</div>
+                            <div class="rd-fact-value">{{ closure.reviewed_by or '—' }}</div>
+                        </div>
+                    </section>
+                </aside>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script>
+(() => {
+    const patientRef = {{ redecision.patient_ref|tojson }};
+    const form = document.getElementById('rdCloseForm');
+    const result = document.getElementById('rdCloseResult');
+    const chip = document.getElementById('rdClosureChip');
+    if (!form) return;
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        result.className = 'rd-result';
+        result.textContent = 'Registrando cierre...';
+        const fields = Array.from(form.querySelectorAll('input[name="acknowledged_missing_fields"]:checked'))
+            .map((input) => input.value)
+            .filter(Boolean);
+        const payload = {
+            closure_status: form.closure_status.value,
+            reviewed_by: form.reviewed_by.value,
+            clinical_note: form.clinical_note.value,
+            selected_action_key: form.selected_action_key.value,
+            acknowledged_missing_fields: fields,
+            next_followup_date: form.next_followup_date.value
+        };
+        try {
+            const response = await fetch(`/api/patients/${encodeURIComponent(patientRef)}/redecision/close`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                result.className = 'rd-result is-error';
+                result.textContent = data.error || 'No se pudo registrar el cierre.';
+                return;
+            }
+            result.className = 'rd-result is-ok';
+            result.textContent = `Evento ${data.event_id} registrado. Hechos clínicos mutados: ${data.source_clinical_facts_mutated}.`;
+            if (chip && data.redecision && data.redecision.closure_state) {
+                chip.textContent = data.redecision.closure_state.closure_label || data.redecision.closure_state.closure_status;
+            }
+        } catch (error) {
+            result.className = 'rd-result is-error';
+            result.textContent = error.message || 'Error de red.';
+        }
+    });
+})();
+</script>
+</body>
+</html>

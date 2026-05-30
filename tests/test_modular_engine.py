@@ -1,4 +1,5 @@
 # IEC 62304 §5.5 (Unit verification)
+import json
 import re
 import sqlite3
 from datetime import date, timedelta
@@ -1511,7 +1512,7 @@ def test_psma_structured_fields_are_conditional_in_module_schemas(app_client):
 
 
 def test_boolean_option_label_resolver_supports_explicit_contextual_and_fallback_labels():
-    assert resolve_option_label("psma_positive", "0", ["0", "1"]) == "No"
+    assert resolve_option_label("psma_positive", "0", ["0", "1"]) == "Sin enfermedad PSMA-avid"
     assert resolve_option_label("cv_risk_documented", "1", ["0", "1"]) == "Documentado"
     assert resolve_option_label("docetaxel_fit", "1", ["1", "0"]) == "Sí"
 
@@ -2769,13 +2770,11 @@ def test_rich_longitudinal_tables_persist_from_integrated_registration(app_clien
     cursor.execute("SELECT COUNT(*) FROM active_surveillance")
     assert cursor.fetchone()[0] == 0
     conn.close()
-    # Faubot LXXXIV.b: opt-out v=legacy para preservar contrato v1 templates.
-    profile_html = client.get("/patient_profile/55555555555?v=legacy").get_data(as_text=True)
-    assert "Benchmarking operativo del estado actual" in profile_html
-    assert "Torre de control del antígeno prostático específico" in profile_html
+    profile_html = client.get("/patient_profile/55555555555?v=2").get_data(as_text=True)
+    assert "patient_profile_v2_real_context" in profile_html
+    assert "PSA Observability — torre de vigilancia" in profile_html
     assert "psaTreatmentTimelineChart" in profile_html
-    assert "Gráfico de nadador" not in profile_html
-    assert "Línea 1" not in profile_html
+    assert "Valor clinico-economico V2" in profile_html
     patient_response = client.get("/api/patient/55555555555")
     assert patient_response.status_code == 200
     assert patient_response.get_json()["patient"]["active_surveillance"] == {}
@@ -2820,10 +2819,15 @@ def test_clinical_assessment_draft_and_patient_registration_flow(app_client):
     imported_names = {item["name"] for item in draft_data["imported_clinical_fields"]}
     assert "psa" in imported_names
     assert "clinical_tstage" in imported_names
+    visible_names = {item["name"] for item in draft_data["deduped_visible_fields"]}
+    assert "baseline_psa" not in visible_names
+    assert "psa_history" in visible_names
+    assert draft_data["registration_defaults"]["psa_history"][0]["psa_value"] == 8.5
+    assert "positive_cores" not in visible_names
 
     intake_redirect = client.get("/patient_intake", follow_redirects=False)
     assert intake_redirect.status_code == 302
-    assert intake_redirect.headers["Location"].endswith("/clinical-hub")
+    assert intake_redirect.headers["Location"].endswith("/clinical-hub#pm2OfficialClassifier")
 
     intake_page = client.get(f"/patient_intake?assessment_id={assessment_id}")
     assert intake_page.status_code == 200
@@ -2868,6 +2872,15 @@ def test_clinical_assessment_draft_and_patient_registration_flow(app_client):
     assert patient_data["pros"]
     assert patient_data["treatments"] == []
 
+    patients_html = client.get("/patients?refresh=1").get_data(as_text=True)
+    assert "Paciente Wizard" in patients_html
+    assert "11111111111" in patients_html
+    assert "Localizado" in patients_html
+
+    profile_v2_html = client.get("/patient_profile/11111111111?v=2").get_data(as_text=True)
+    assert "Clasificación incompleta" not in profile_v2_html
+    assert "Paciente Wizard" in profile_v2_html
+
     timeline_response = client.get("/api/patients/11111111111/state-timeline")
     assert timeline_response.status_code == 200
     timeline_data = timeline_response.get_json()["state_timeline"]
@@ -2880,13 +2893,739 @@ def test_clinical_assessment_draft_and_patient_registration_flow(app_client):
     recompute_data = recompute_response.get_json()
     assert recompute_data["assessment"]["display_result"]["monitoring_plan"]["cadence"]
 
-    # Faubot LXXXIV.b: opt-out v=legacy para preservar contrato v1 templates.
-    profile_html = client.get("/patient_profile/11111111111?v=legacy").get_data(as_text=True)
-    assert "Última evaluación clínica modular" in profile_html
-    assert "Línea de estados clínicos persistidos" not in profile_html
-    assert "Plan maestro de seguimiento protocolizado" in profile_html
-    assert "Siguiente mejor acción" in profile_html
+    profile_html = client.get("/patient_profile/11111111111?v=2").get_data(as_text=True)
+    assert "patient_profile_v2_real_context" in profile_html
+    assert "PSA Observability — torre de vigilancia" in profile_html
+    assert "Valor clinico-economico V2" in profile_html
+    assert "psaTreatmentTimelineChart" in profile_html
     assert "Motor de Decisión Clínica" not in profile_html
+
+
+def test_intake_asks_ape_once_and_persists_history_to_psa_tower(app_client):
+    client, db_path = app_client
+    payload = {
+        "age": 65,
+        "psa": 8.5,
+        "prostate_volume_ml": 47.2,
+        "psad": 0.18,
+        "clinical_tstage": "T2a",
+        "gleason_primary": 4,
+        "gleason_secondary": 3,
+        "isup_grade": 3,
+        "num_cores_positive": 4,
+        "total_cores": 12,
+        "max_core_involvement": 0.35,
+        "percent_pattern_4": 55,
+        "life_expectancy_years": 15,
+        "nodal_status": "N0",
+        "metastasis_site": "M0",
+        "ipss_score": 7,
+        "iief5_score": 18,
+    }
+
+    draft_response = client.post(
+        "/api/clinical-assessments/draft",
+        json={"module_id": "localized_initial", "payload": payload},
+    )
+    assert draft_response.status_code == 200
+    draft_data = draft_response.get_json()
+    imported_names = [item["name"] for item in draft_data["imported_clinical_fields"]]
+    visible_names = {item["name"] for item in draft_data["deduped_visible_fields"]}
+
+    assert imported_names.count("psa") == 1
+    assert imported_names.count("prostate_volume_ml") == 1
+    assert draft_data["registration_defaults"]["psa_history"][0]["psa_value"] == 8.5
+    assert draft_data["registration_defaults"]["psa_history"][0]["source"] == "wizard_imported_psa"
+    assert "baseline_psa" not in visible_names
+    assert "psa_history" in visible_names
+    assert "positive_cores" not in visible_names
+    field_names = {
+        field["name"]
+        for fragment in draft_data["registration_fragments"]
+        for field in fragment["fields"]
+    }
+    fragment_ids = {fragment["id"] for fragment in draft_data["registration_fragments"]}
+    assert "baseline_psa" not in field_names
+    assert "psa_history" in field_names
+    assert not {
+        "testosterone_baseline",
+        "testosterone_history",
+        "hemoglobin",
+        "alp",
+        "ldh",
+        "albumin",
+        "dxa_baseline_done",
+    } & field_names
+    assert "fragment_active_surveillance_operational" not in fragment_ids
+    assert "fragment_radiotherapy_detailed" not in fragment_ids
+
+    assessment_id = draft_data["assessment_id"]
+    register_response = client.post(
+        "/api/register_patient",
+        json={
+            "assessment_id": assessment_id,
+            "assessment_state": "localized_initial",
+            "nss": "22222229991",
+            "full_name": "Paciente APE Unico",
+            "dob": "1961-05-27",
+            "estado_residencia": "Jalisco",
+            # Deliberately no baseline_psa: it must be derived from the single
+            # imported APE and still feed the longitudinal PSA tower.
+            "psa_history": [
+                {
+                    "sample_date": "2025-11-01",
+                    "psa_value": 7.6,
+                    "assay_type": "estándar",
+                    "context": "pretratamiento",
+                    "source": "laboratorio_previo",
+                },
+                {
+                    "sample_date": "2026-05-01",
+                    "psa_value": 8.5,
+                    "assay_type": "estándar",
+                    "context": "pretratamiento",
+                    "source": "ingreso_inicial",
+                },
+            ],
+        },
+    )
+    assert register_response.status_code == 200
+    register_data = register_response.get_json()
+    assert register_data["registration_metadata"]["psa_history_summary"]["points_received"] == 2
+
+    patient_response = client.get("/api/patient/22222229991")
+    assert patient_response.status_code == 200
+    patient_data = patient_response.get_json()["patient"]
+    assert patient_data["baseline"]["baseline_psa"] == 8.5
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT bl.sample_date, bl.value
+        FROM biomarker_longitudinal bl
+        JOIN patient_identity pi ON pi.id = bl.patient_id
+        WHERE pi.nss = ? AND bl.biomarker_type = 'PSA'
+        ORDER BY bl.sample_date, bl.value
+        """,
+        ("22222229991",),
+    )
+    points = cursor.fetchall()
+    conn.close()
+    assert ("2025-11-01", 7.6) in points
+    assert ("2026-05-01", 8.5) in points
+    assert len(points) == 2
+
+    psa_unified_response = client.get("/api/patient/22222229991/psa-unified")
+    assert psa_unified_response.status_code == 200
+    psa_unified = psa_unified_response.get_json()
+    assert psa_unified["n_points"] == 2
+    assert [point["value"] for point in psa_unified["timeline"]] == [7.6, 8.5]
+
+    profile_html = client.get("/patient_profile/22222229991?v=2").get_data(as_text=True)
+    assert "patient_profile_v2_real_context" in profile_html
+    assert "PSA Observability — torre de vigilancia" in profile_html
+    assert "psaTreatmentTimelineChart" in profile_html
+
+
+def test_clinical_fact_ledger_exposes_ape_lineage_without_source_mutation(app_client):
+    client, _db_path = app_client
+    payload = {
+        "age": 65,
+        "psa": 8.5,
+        "prostate_volume_ml": 47.2,
+        "clinical_tstage": "T2a",
+        "gleason_primary": 4,
+        "gleason_secondary": 3,
+        "isup_grade": 3,
+        "total_cores": 12,
+        "ipss_score": 7,
+        "iief5_score": 18,
+    }
+    draft_response = client.post(
+        "/api/clinical-assessments/draft",
+        json={"module_id": "localized_initial", "payload": payload},
+    )
+    assert draft_response.status_code == 200
+    assessment_id = draft_response.get_json()["assessment_id"]
+
+    register_response = client.post(
+        "/api/register_patient",
+        json={
+            "assessment_id": assessment_id,
+            "assessment_state": "localized_initial",
+            "nss": "22222229992",
+            "full_name": "Paciente Ledger APE",
+            "dob": "1961-05-27",
+            "psa_history": [
+                {"sample_date": "2025-11-01", "psa_value": 7.6, "context": "pretratamiento"},
+                {"sample_date": "2026-05-01", "psa_value": 8.5, "context": "pretratamiento"},
+            ],
+        },
+    )
+    assert register_response.status_code == 200
+
+    ledger_response = client.get("/api/patients/22222229992/clinical-fact-ledger")
+    assert ledger_response.status_code == 200
+    ledger_data = ledger_response.get_json()
+    assert ledger_data["source_clinical_facts_mutated"] is False
+    assert ledger_data["external_order_created"] is False
+    assert ledger_data["model_trained"] is False
+    assert ledger_data["summary"]["psa_history_points"] == 2
+
+    facts = {item["fact_key"]: item for item in ledger_data["facts"]}
+    baseline_psa = facts["baseline_psa"]
+    assert baseline_psa["value_known"] is True
+    assert float(baseline_psa["current_value"]) == 8.5
+    assert baseline_psa["has_conflict"] is False
+    baseline_sources = {source["source_type"] for source in baseline_psa["sources"]}
+    assert {"clinical_baseline", "biomarker_longitudinal"} <= baseline_sources
+    observed_keys = {source["observed_key"] for source in baseline_psa["sources"]}
+    assert "psa_history" in observed_keys
+
+    current_psa = facts["current_psa"]
+    assert float(current_psa["current_value"]) == 8.5
+    assert any(source["observed_key"] == "psa_history" for source in current_psa["sources"])
+
+    summary_response = client.get("/api/patients/22222229992/clinical-fact-ledger/summary")
+    assert summary_response.status_code == 200
+    summary_data = summary_response.get_json()
+    assert summary_data["source_clinical_facts_mutated"] is False
+    assert summary_data["external_order_created"] is False
+    assert summary_data["model_trained"] is False
+    assert summary_data["version"] == "clinical_fact_ledger_summary_v1"
+    assert summary_data["ui_contract"]["read_only"] is True
+    assert summary_data["ui_contract"]["pre_fill_known_facts"] is True
+    assert summary_data["ui_contract"]["hide_known_non_conflicting_fields"] is True
+    priority = {item["fact_key"]: item for item in summary_data["priority_facts"]}
+    assert priority["baseline_psa"]["value_known"] is True
+    assert priority["baseline_psa"]["status"] in {"known", "watch"}
+    assert priority["current_psa"]["value_known"] is True
+    assert summary_data["summary"]["reusable_priority_fact_count"] >= 2
+
+    profile_html = client.get("/patient_profile/22222229992?v=2").get_data(as_text=True)
+    assert 'data-testid="clinical-fact-ledger-v1-panel"' in profile_html
+    assert 'data-testid="ledger-fact-baseline_psa"' in profile_html
+    assert 'data-testid="ledger-summary-api-link"' in profile_html
+    assert "Clinical Fact Ledger v1" in profile_html
+    assert "prellenar sin volver a preguntar" in profile_html
+
+    wizard_html = client.get("/wizard/localized_initial?patient_ref=22222229992").get_data(as_text=True)
+    assert 'data-testid="wizard-ledger-prefill-panel"' in wizard_html
+    assert 'data-testid="wizard-ledger-contract"' in wizard_html
+    assert 'id="wizardClinicalFactLedgerContext"' in wizard_html
+    context_match = re.search(
+        r'<script id="wizardClinicalFactLedgerContext" type="application/json">(.*?)</script>',
+        wizard_html,
+    )
+    assert context_match
+    wizard_context = json.loads(context_match.group(1))
+    assert wizard_context["version"] == "clinical_fact_ledger_wizard_context_v1"
+    assert wizard_context["source_clinical_facts_mutated"] is False
+    assert wizard_context["external_order_created"] is False
+    assert wizard_context["model_trained"] is False
+    assert wizard_context["ui_contract"]["pre_fill_known_facts"] is True
+    assert wizard_context["ui_contract"]["hide_known_non_conflicting_fields"] is True
+    assert wizard_context["field_prefills"]["psa"]["action"] == "reuse_prefill_hide"
+    assert float(wizard_context["field_prefills"]["psa"]["current_value"]) == 8.5
+    assert wizard_context["summary"]["reusable_field_count"] >= 1
+
+    ledger_draft_response = client.post(
+        "/api/clinical-assessments/draft",
+        json={
+            "module_id": "localized_initial",
+            "payload": payload,
+            "patient_ref": "22222229992",
+            "clinical_fact_ledger_wizard_context": wizard_context,
+        },
+    )
+    assert ledger_draft_response.status_code == 200
+    ledger_draft_data = ledger_draft_response.get_json()
+    stored_assessment = ledger_draft_data["assessment"] or {}
+    assert "patient_ref" not in (stored_assessment.get("input_snapshot") or {})
+    assert "clinical_fact_ledger_wizard_context" not in (stored_assessment.get("input_snapshot") or {})
+    registration_ledger = ledger_draft_data["clinical_fact_ledger_registration_context"]
+    assert registration_ledger["version"] == "clinical_fact_ledger_registration_context_v1"
+    assert registration_ledger["source_clinical_facts_mutated"] is False
+    assert registration_ledger["external_order_created"] is False
+    assert registration_ledger["model_trained"] is False
+    assert registration_ledger["ui_contract"]["read_only"] is True
+    assert registration_ledger["ui_contract"]["hide_known_non_conflicting_fields"] is True
+    assert registration_ledger["summary"]["reused_imported_field_count"] >= 1
+    assert any(item["field_name"] == "psa" for item in registration_ledger["reused_imported_fields"])
+    imported_by_name = {item["name"]: item for item in ledger_draft_data["imported_clinical_fields"]}
+    assert imported_by_name["psa"]["ledger_action"] == "reuse_prefill_hide"
+    assert imported_by_name["psa"]["ledger_fact_key"] in {"baseline_psa", "current_psa"}
+
+    reopened_response = client.get(f"/api/clinical-assessments/{ledger_draft_data['assessment_id']}")
+    assert reopened_response.status_code == 200
+    reopened_data = reopened_response.get_json()
+    reopened_ledger = reopened_data["clinical_fact_ledger_registration_context"]
+    assert reopened_ledger["version"] == "clinical_fact_ledger_registration_context_v1"
+    assert reopened_ledger["source_clinical_facts_mutated"] is False
+    assert reopened_ledger["summary"]["reused_imported_field_count"] >= 1
+    reopened_imported = {item["name"]: item for item in reopened_data["imported_clinical_fields"]}
+    assert reopened_imported["psa"]["ledger_action"] == "reuse_prefill_hide"
+
+    dictionary_response = client.get("/api/clinical-fact-ledger/dictionary?scope=full")
+    assert dictionary_response.status_code == 200
+    dictionary_facts = {item["fact_key"]: item for item in dictionary_response.get_json()["facts"]}
+    assert "psa" in dictionary_facts["baseline_psa"]["legacy_aliases"]
+    assert "total_cores" in dictionary_facts["total_cores_biopsied"]["legacy_aliases"]
+
+
+def test_patient_profile_v2_capture_governance_reuses_ledger_ecog_without_source_mutation():
+    from prostanet.domains.clinical_fact_ledger import (
+        build_longitudinal_capture_ledger_context,
+        build_patient_clinical_fact_ledger,
+        build_patient_profile_v2_capture_governance,
+    )
+
+    today = date.today().isoformat()
+    patient_record = {
+        "identity": {"id": 9001, "nss": "LEDGER-ECOG-GOV-001", "full_name": "Ledger ECOG"},
+        "latest_assessment": {
+            "id": 501,
+            "state": "m1_crpc",
+            "assessment_date": today,
+            "created_at": f"{today}T10:00:00",
+            "input_snapshot": {"ecog_score": 1},
+        },
+        "treatments": [
+            {
+                "line_of_therapy": 1,
+                "drug_scheme": "ADT_ABIRATERONE",
+                "start_date": today,
+                "outcome": "ongoing",
+            }
+        ],
+    }
+    ledger = build_patient_clinical_fact_ledger(patient_record)
+    governance = build_patient_profile_v2_capture_governance(
+        patient_record,
+        ledger=ledger,
+        cta_context={"ecog_capture_cta": {"available": True, "arpi_active": True}},
+    )
+
+    ecog_gate = governance["gates_by_key"]["ecog_quick_capture"]
+    assert governance["version"] == "patient_profile_v2_capture_governance_v1"
+    assert ecog_gate["action"] == "reuse_existing_fact"
+    assert ecog_gate["suppressed_by_ledger"] is True
+    assert ecog_gate["capture_allowed"] is False
+    assert ecog_gate["reused_fact_key"] == "ecog_score"
+    assert ecog_gate["source_clinical_facts_mutated"] is False
+    assert governance["source_clinical_facts_mutated"] is False
+    assert governance["external_order_created"] is False
+    assert governance["model_trained"] is False
+
+    longitudinal_context = build_longitudinal_capture_ledger_context(
+        patient_record,
+        ledger=ledger,
+        decision_field="ecog",
+        readiness_lane="adt_arpi_safety_readiness",
+    )
+    ecog_form = longitudinal_context["forms_by_key"]["ecog"]
+    psa_form = longitudinal_context["forms_by_key"]["psa"]
+    assert longitudinal_context["version"] == "longitudinal_capture_ledger_context_v1"
+    assert longitudinal_context["ui_contract"]["append_only_surface"] is True
+    assert longitudinal_context["ui_contract"]["prevent_targeted_recapture"] is True
+    assert longitudinal_context["ui_contract"]["allow_new_time_series_measurements"] is True
+    assert ecog_form["action"] == "reuse_existing_fact"
+    assert ecog_form["suppress_recapture"] is True
+    assert ecog_form["capture_allowed"] is False
+    assert ecog_form["current_fact_keys"] == ["ecog_score"]
+    assert ecog_form["field_decisions"]["score"]["action"] == "reuse_existing_fact"
+    assert ecog_form["field_decisions"]["score"]["suppress_recapture"] is True
+    assert ecog_form["field_decisions"]["score"]["capture_allowed"] is False
+    assert psa_form["action"] == "append_longitudinal_measurement"
+    assert psa_form["capture_allowed"] is True
+    assert psa_form["field_decisions"]["psa_value"]["action"] == "append_new_measurement"
+    assert psa_form["field_decisions"]["psa_value"]["suppress_recapture"] is False
+    assert psa_form["field_decisions"]["psa_value"]["capture_allowed"] is True
+    assert longitudinal_context["summary"]["field_decision_count"] >= 2
+    assert longitudinal_context["source_clinical_facts_mutated"] is False
+    assert longitudinal_context["external_order_created"] is False
+    assert longitudinal_context["model_trained"] is False
+
+
+def test_patient_profile_v2_ledger_suppresses_ecog_quick_capture_card(app_client):
+    client, db_path = app_client
+    import tracking_db
+
+    nss = "22222229993"
+    today = date.today().isoformat()
+    payload = {
+        "age": 66,
+        "psa": 12.0,
+        "prostate_volume_ml": 40.0,
+        "clinical_tstage": "T3a",
+        "gleason_primary": 4,
+        "gleason_secondary": 4,
+        "isup_grade": 4,
+        "total_cores": 12,
+        "positive_cores": 8,
+    }
+    draft_response = client.post(
+        "/api/clinical-assessments/draft",
+        json={"module_id": "localized_initial", "payload": payload},
+    )
+    assert draft_response.status_code == 200
+    assessment_id = draft_response.get_json()["assessment_id"]
+    register_response = client.post(
+        "/api/register_patient",
+        json={
+            "assessment_id": assessment_id,
+            "assessment_state": "localized_initial",
+            "nss": nss,
+            "full_name": "Paciente Ledger CTA ECOG",
+            "dob": "1960-01-01",
+        },
+    )
+    assert register_response.status_code == 200
+
+    with sqlite3.connect(str(db_path)) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id FROM patient_identity WHERE nss = ?",
+            (nss,),
+        )
+        patient_id = cursor.fetchone()[0]
+        payload_with_ecog = dict(payload)
+        payload_with_ecog["ecog_score"] = 1
+        cursor.execute(
+            """
+            UPDATE clinical_assessments
+            SET state = ?, input_snapshot = ?, created_at = ?
+            WHERE patient_id = ?
+            """,
+            (
+                "m1_crpc",
+                json.dumps(payload_with_ecog),
+                f"{today} 10:00:00",
+                patient_id,
+            ),
+        )
+        cursor.execute(
+            "DELETE FROM patient_clinical_facts WHERE patient_id = ? AND fact_key IN ('ecog_score', 'ecog_performance_status')",
+            (patient_id,),
+        )
+        conn.commit()
+
+    started = tracking_db.start_or_update_treatment_course(
+        nss,
+        {
+            "regimen_code": "ADT_ABIRATERONE",
+            "line_of_therapy_number": 1,
+            "line_of_therapy_context": "mCRPC",
+            "start_date": today,
+            "local_doses_administered": 0,
+            "unit_name": "Unidad local",
+        },
+    )
+    assert started["success"] is True
+    assert tracking_db.get_latest_ecog_for_patient(nss) is None
+
+    response = client.get(f"/patient_profile/{nss}?v=2&refresh=1")
+    assert response.status_code == 200
+    profile_html = response.get_data(as_text=True)
+    assert 'data-testid="clinical-fact-ledger-v1-panel"' in profile_html
+    assert 'data-testid="ledger-capture-governance-panel"' in profile_html
+    assert 'data-testid="ledger-governed-ecog_quick_capture"' in profile_html
+    assert "ECOG reutilizado desde Ledger" in profile_html
+    assert 'data-testid="ecog-quick-capture-card"' not in profile_html
+
+    longitudinal_response = client.get(
+        f"/longitudinal-capture/{nss}?decision_field=ecog&readiness_lane=adt_arpi_safety_readiness"
+    )
+    assert longitudinal_response.status_code == 200
+    longitudinal_html = longitudinal_response.get_data(as_text=True)
+    assert 'data-testid="longitudinal-ledger-context-panel"' in longitudinal_html
+    assert 'data-testid="longitudinal-ledger-form-ecog"' in longitudinal_html
+    assert 'id="longitudinalClinicalFactLedgerContext"' in longitudinal_html
+    context_match = re.search(
+        r'<script id="longitudinalClinicalFactLedgerContext" type="application/json">(.*?)</script>',
+        longitudinal_html,
+    )
+    assert context_match
+    longitudinal_context = json.loads(context_match.group(1))
+    assert longitudinal_context["version"] == "longitudinal_capture_ledger_context_v1"
+    assert longitudinal_context["source_clinical_facts_mutated"] is False
+    assert longitudinal_context["external_order_created"] is False
+    assert longitudinal_context["model_trained"] is False
+    assert longitudinal_context["forms_by_key"]["ecog"]["action"] == "reuse_existing_fact"
+    assert longitudinal_context["forms_by_key"]["ecog"]["suppress_recapture"] is True
+    assert longitudinal_context["forms_by_key"]["ecog"]["capture_allowed"] is False
+    assert longitudinal_context["forms_by_key"]["ecog"]["field_decisions"]["score"]["action"] == "reuse_existing_fact"
+    assert longitudinal_context["forms_by_key"]["ecog"]["field_decisions"]["score"]["suppress_recapture"] is True
+    assert longitudinal_context["forms_by_key"]["psa"]["action"] == "append_longitudinal_measurement"
+    assert longitudinal_context["forms_by_key"]["psa"]["field_decisions"]["psa_value"]["action"] == "append_new_measurement"
+
+    blocked_write = client.post(
+        f"/api/longitudinal/{nss}/append",
+        json={
+            "kind": "ecog",
+            "payload": {"date": today, "score": 1},
+            "ledger_context": {
+                "decision_field": "ecog",
+                "readiness_lane": "adt_arpi_safety_readiness",
+            },
+        },
+    )
+    assert blocked_write.status_code == 409
+    blocked_payload = blocked_write.get_json()
+    assert blocked_payload["success"] is False
+    assert blocked_payload["error"] == "ledger_recapture_blocked"
+    assert blocked_payload["source_clinical_facts_mutated"] is False
+    assert blocked_payload["external_order_created"] is False
+    assert blocked_payload["model_trained"] is False
+    guard = blocked_payload["ledger_guard"]
+    assert guard["form_action"] == "reuse_existing_fact"
+    assert guard["form_capture_allowed"] is False
+    assert guard["source_clinical_facts_mutated"] is False
+    assert guard["external_order_created"] is False
+    assert guard["model_trained"] is False
+    assert any(item["field_name"] == "score" for item in guard["blocked_fields"])
+    assert tracking_db.get_latest_ecog_for_patient(nss) is None
+
+
+def test_clinical_fact_reconciliation_v2_resolves_conflict_without_original_source_mutation(app_client):
+    client, db_path = app_client
+    import tracking_db
+
+    nss = "22222229994"
+    today = date.today().isoformat()
+    payload = {
+        "age": 69,
+        "psa": 18.2,
+        "clinical_tstage": "T3a",
+        "gleason_primary": 4,
+        "gleason_secondary": 4,
+        "isup_grade": 4,
+    }
+    draft_response = client.post(
+        "/api/clinical-assessments/draft",
+        json={"module_id": "localized_initial", "payload": payload},
+    )
+    assert draft_response.status_code == 200
+    assessment_id = draft_response.get_json()["assessment_id"]
+    register_response = client.post(
+        "/api/register_patient",
+        json={
+            "assessment_id": assessment_id,
+            "assessment_state": "localized_initial",
+            "nss": nss,
+            "full_name": "Paciente Ledger Reconciliacion",
+            "dob": "1957-01-01",
+        },
+    )
+    assert register_response.status_code == 200
+
+    with sqlite3.connect(str(db_path)) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM patient_identity WHERE nss = ?", (nss,))
+        patient_id = cursor.fetchone()[0]
+        conflicting_snapshot = dict(payload)
+        conflicting_snapshot["ecog_score"] = 1
+        cursor.execute(
+            """
+            UPDATE clinical_assessments
+            SET state = ?, input_snapshot = ?, created_at = ?
+            WHERE patient_id = ?
+            """,
+            (
+                "m1_crpc",
+                json.dumps(conflicting_snapshot),
+                f"{today} 09:00:00",
+                patient_id,
+            ),
+        )
+        cursor.execute(
+            "DELETE FROM patient_clinical_facts WHERE patient_id = ? AND fact_key = 'ecog_score'",
+            (patient_id,),
+        )
+        conn.commit()
+
+    quick_capture = tracking_db.record_ecog_capture(
+        nss,
+        2,
+        sample_date=today,
+        notes="Conflicto intencional para reconciliacion Ledger V2",
+    )
+    assert quick_capture["success"] is True
+
+    bundle_response = client.get(f"/api/patients/{nss}/clinical-fact-ledger/reconciliation")
+    assert bundle_response.status_code == 200
+    bundle = bundle_response.get_json()["bundle"]
+    assert bundle["version"] == "clinical_fact_reconciliation_bundle_v1"
+    ecog_conflict = next(item for item in bundle["queue"] if item["fact_key"] == "ecog_score")
+    source_for_ecog_one = next(
+        item for item in ecog_conflict["source_options"]
+        if str(item["value"]) in {"1", "1.0"}
+    )
+
+    page_response = client.get(f"/clinical-fact-reconciliation/{nss}")
+    assert page_response.status_code == 200
+    page_html = page_response.get_data(as_text=True)
+    assert 'data-testid="clinical-fact-reconciliation-panel"' in page_html
+    assert 'data-testid="ledger-reconciliation-conflict-ecog_score"' in page_html
+
+    reconcile_response = client.post(
+        f"/api/patients/{nss}/clinical-fact-ledger/reconcile",
+        json={
+            "fact_key": "ecog_score",
+            "selected_source_index": source_for_ecog_one["source_index"],
+            "reviewed_by": "clinician",
+            "clinical_note": "Se valida ECOG 1 contra nota clinica actual.",
+        },
+    )
+    assert reconcile_response.status_code == 200
+    reconcile_payload = reconcile_response.get_json()
+    assert reconcile_payload["success"] is True
+    assert reconcile_payload["source_clinical_facts_mutated"] is True
+    assert reconcile_payload["original_sources_mutated"] is False
+    assert reconcile_payload["external_order_created"] is False
+    assert reconcile_payload["model_trained"] is False
+    assert reconcile_payload["fact_key"] == "ecog_score"
+    assert reconcile_payload["selected_value"] == 1
+    impact = reconcile_payload["reconciliation_impact"]
+    assert impact["version"] == "clinical_fact_reconciliation_decision_refresh_v1"
+    assert impact["fact_key"] == "ecog_score"
+    assert impact["before"]["ledger"]["conflict_count"] >= 1
+    assert impact["after"]["ledger"]["conflict_count"] < impact["before"]["ledger"]["conflict_count"]
+    assert impact["after"]["queue"]["count"] < impact["before"]["queue"]["count"]
+    assert impact["delta"]["closed_fact_key"] is True
+    assert impact["before"]["decision_today"]["ledger_quality"]["status"] == "blocked_by_critical_conflict"
+    assert impact["before"]["decision_today"]["next_action"]["action_mode"] == "reconcile_clinical_fact"
+    assert impact["before"]["decision_today"]["next_action"]["decision_field"] == "ecog_score"
+    assert impact["after"]["decision_today"]["ledger_quality"]["status"] in {"clear", "uses_reconciled_facts"}
+    assert impact["after"]["decision_today"]["ledger_quality"]["critical_conflict_count"] == 0
+    assert impact["after"]["decision_today"]["next_action"]["action_mode"] != "reconcile_clinical_fact"
+    assert impact["delta"]["ledger_gate_was_active"] is True
+    assert impact["delta"]["ledger_gate_is_active"] is False
+    assert impact["delta"]["ledger_gate_cleared"] is True
+    assert impact["delta"]["next_action_before"]["action_mode"] == "reconcile_clinical_fact"
+    assert impact["delta"]["next_action_after"]["action_mode"] != "reconcile_clinical_fact"
+    assert impact["recompute"]["success"] is True
+    assert impact["source_clinical_facts_mutated"] is True
+    assert impact["original_sources_mutated"] is False
+    assert impact["external_order_created"] is False
+    assert impact["model_trained"] is False
+    assert impact["refreshed_surfaces"]["profile_v2"] == f"/patient_profile/{nss}?v=2&refresh=1"
+    assert impact["refreshed_surfaces"]["decision_today_api"] == f"/api/patients/{nss}/decision-today?refresh=1"
+
+    ledger_response = client.get(f"/api/patients/{nss}/clinical-fact-ledger")
+    assert ledger_response.status_code == 200
+    ledger = ledger_response.get_json()["ledger"]
+    facts = {item["fact_key"]: item for item in ledger["facts"]}
+    ecog_fact = facts["ecog_score"]
+    assert ecog_fact["has_conflict"] is False
+    assert ecog_fact["current_value"] == 1
+    assert (ecog_fact["sources"][0] or {})["source_record_type"] == "ledger_reconciliation"
+    assert (ecog_fact["sources"][0] or {})["clinician_verified"] is True
+
+    refreshed_bundle = client.get(f"/api/patients/{nss}/clinical-fact-ledger/reconciliation").get_json()["bundle"]
+    assert all(item["fact_key"] != "ecog_score" for item in refreshed_bundle["queue"])
+
+    with sqlite3.connect(str(db_path)) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) FROM patient_events WHERE patient_id = ? AND event_type = 'clinical_fact_reconciled'",
+            (patient_id,),
+        )
+        assert cursor.fetchone()[0] >= 1
+
+
+def test_clinical_fact_reconciliation_population_queue_surfaces_blocking_conflicts(app_client):
+    client, db_path = app_client
+    import tracking_db
+
+    nss = "22222229995"
+    today = date.today().isoformat()
+    payload = {
+        "age": 70,
+        "psa": 22.0,
+        "clinical_tstage": "T3a",
+        "gleason_primary": 4,
+        "gleason_secondary": 4,
+        "isup_grade": 4,
+    }
+    draft_response = client.post(
+        "/api/clinical-assessments/draft",
+        json={"module_id": "localized_initial", "payload": payload},
+    )
+    assert draft_response.status_code == 200
+    assessment_id = draft_response.get_json()["assessment_id"]
+    register_response = client.post(
+        "/api/register_patient",
+        json={
+            "assessment_id": assessment_id,
+            "assessment_state": "localized_initial",
+            "nss": nss,
+            "full_name": "Paciente Ledger Cola Poblacional",
+            "dob": "1956-02-01",
+        },
+    )
+    assert register_response.status_code == 200
+
+    with sqlite3.connect(str(db_path)) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM patient_identity WHERE nss = ?", (nss,))
+        patient_id = cursor.fetchone()[0]
+        conflicting_snapshot = dict(payload)
+        conflicting_snapshot["ecog_score"] = 1
+        cursor.execute(
+            """
+            UPDATE clinical_assessments
+            SET state = ?, input_snapshot = ?, created_at = ?
+            WHERE patient_id = ?
+            """,
+            (
+                "m1_crpc",
+                json.dumps(conflicting_snapshot),
+                f"{today} 10:00:00",
+                patient_id,
+            ),
+        )
+        cursor.execute(
+            "DELETE FROM patient_clinical_facts WHERE patient_id = ? AND fact_key = 'ecog_score'",
+            (patient_id,),
+        )
+        conn.commit()
+
+    quick_capture = tracking_db.record_ecog_capture(
+        nss,
+        2,
+        sample_date=today,
+        notes="Conflicto para cola poblacional Ledger",
+    )
+    assert quick_capture["success"] is True
+
+    api_response = client.get("/api/clinical-fact-ledger/reconciliation/today?limit=20")
+    assert api_response.status_code == 200
+    payload = api_response.get_json()
+    assert payload["success"] is True
+    assert payload["version"] == "clinical_fact_reconciliation_population_v1"
+    assert payload["source_clinical_facts_mutated"] is False
+    assert payload["external_order_created"] is False
+    assert payload["model_trained"] is False
+    population = payload["population"]
+    row = next(item for item in population["patients"] if item["patient_ref"] == nss)
+    assert row["version"] == "clinical_fact_reconciliation_population_row_v1"
+    assert row["critical_conflict_count"] >= 1
+    assert row["dominant_conflict"]["fact_key"] == "ecog_score"
+    assert row["decision_quality"]["status"] == "blocked_by_critical_conflict"
+    assert row["primary_action"]["href"] == f"/clinical-fact-reconciliation/{nss}"
+    assert row["source_clinical_facts_mutated"] is False
+    assert row["external_order_created"] is False
+    assert row["model_trained"] is False
+
+    page_response = client.get("/clinical-fact-reconciliation?limit=20")
+    assert page_response.status_code == 200
+    page_html = page_response.get_data(as_text=True)
+    assert 'data-testid="ledger-reconciliation-population-panel"' in page_html
+    assert 'data-testid="ledger-reconciliation-population-contract"' in page_html
+    assert f'data-testid="ledger-reconciliation-population-row-{nss}"' in page_html
+    assert f'data-testid="ledger-reconciliation-open-{nss}"' in page_html
 
 
 def test_legacy_results_are_normalized_to_enriched_spanish_output():

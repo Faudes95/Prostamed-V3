@@ -1,0 +1,14 @@
+{
+  "_expected_status": "blocked_hard",
+  "_description": "Caso #5 — Sipuleucel-T con CD4=150 (inmunosuprimido). Inmunoterapia ineficaz.",
+  "reconciled_state": "m1_crpc",
+  "baseline": {"baseline_psa": 25.0},
+  "cd4_count": 150,
+  "ecog_current": 0,
+  "asymptomatic": true,
+  "clinical_compass": {
+    "headline": "Sipuleucel-T (Provenge) inmunoterapia activa",
+    "rationale": "mCRPC asintomático ECOG 0-1 candidato a inmunoterapia.",
+    "evidence_summary": {"guideline_basis": ["IMPACT (Kantoff NEJM 2010)"]}
+  }
+}

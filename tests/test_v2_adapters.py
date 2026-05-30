@@ -13,6 +13,7 @@ Run:
 
 
 import sys, os
+from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Stub APFS-locked modules antes del import (CLAUDE.md §12.2)
@@ -162,6 +163,101 @@ def test_bundle_full_psa_obs_no_data_safe():
     assert full["psa_obs"]["has_data"] is False
     assert full["psa_obs"]["points"] == []
     assert full["psa_obs"]["per_line"] == []
+    assert full["psa_obs"]["ape_history_readiness"]["ape_status"] == "missing_psa"
+
+
+def test_bundle_full_psa_obs_marks_single_point_as_ape_aislado():
+    profile_view = {
+        "effective_state": "localized_initial",
+        "psa_observability": {
+            "has_data": True,
+            "points": [{"sample_date": "2026-05-01", "psa": 8.5}],
+            "treatment_bands": [],
+            "line_segments": [],
+            "metrics": {},
+        },
+    }
+    full = bundle_to_v2_profile_full(profile_view, {"nss": "33333330001"})
+    readiness = full["psa_obs"]["ape_history_readiness"]
+
+    assert readiness["ape_status"] == "single_psa_point"
+    assert readiness["status_label_es"] == "APE aislado"
+    assert readiness["is_history_ready"] is False
+    assert readiness["valid_psa_point_count"] == 1
+    assert readiness["capture_url"] == "/longitudinal-capture/33333330001?decision_field=psa_history&decision_lane=localized_initial"
+    assert readiness["source_clinical_facts_mutated"] is False
+    assert readiness["external_order_created"] is False
+    assert readiness["model_trained"] is False
+
+
+def test_bundle_full_psa_obs_does_not_count_auto_seed_baseline_as_history():
+    profile_view = {
+        "effective_state": "localized_initial",
+        "psa_observability": {
+            "has_data": True,
+            "points": [
+                {"sample_date": "2026-05-01", "psa": 8.5, "source": "ingreso_inicial"},
+                {"sample_date": "2026-05-29", "psa": 8.5, "source": "intake_baseline (auto-seed unified)", "locked": True},
+            ],
+            "treatment_bands": [],
+            "line_segments": [],
+            "metrics": {},
+        },
+    }
+    full = bundle_to_v2_profile_full(profile_view, {"nss": "33333330004"})
+    readiness = full["psa_obs"]["ape_history_readiness"]
+
+    assert readiness["ape_status"] == "single_psa_point"
+    assert readiness["raw_valid_psa_point_count"] == 2
+    assert readiness["valid_psa_point_count"] == 1
+    assert readiness["auto_seed_duplicate_count"] == 1
+
+
+def test_bundle_full_psa_obs_marks_two_dated_points_as_history_ready():
+    profile_view = {
+        "psa_observability": {
+            "has_data": True,
+            "points": [
+                {"sample_date": "2026-05-01", "psa": 8.5},
+                {"sample_date": "2026-06-01", "psa": 7.1},
+            ],
+            "treatment_bands": [],
+            "line_segments": [],
+            "metrics": {},
+        },
+    }
+    full = bundle_to_v2_profile_full(profile_view, {"identity": {"nss": "33333330002"}})
+    readiness = full["psa_obs"]["ape_history_readiness"]
+
+    assert readiness["ape_status"] == "history_ready"
+    assert readiness["status_label_es"] == "Historia APE lista"
+    assert readiness["is_history_ready"] is True
+    assert readiness["valid_psa_point_count"] == 2
+
+
+def test_bundle_full_psa_obs_ignores_no_disponible_as_numeric_psa():
+    profile_view = {
+        "psa_observability": {
+            "has_data": True,
+            "points": [{"sample_date": "2026-05-01", "psa": "No disponible"}],
+            "treatment_bands": [],
+            "line_segments": [],
+            "metrics": {},
+        },
+    }
+    full = bundle_to_v2_profile_full(profile_view, {"nss": "33333330003"})
+    readiness = full["psa_obs"]["ape_history_readiness"]
+
+    assert readiness["ape_status"] == "uninterpretable_series"
+    assert readiness["valid_psa_point_count"] == 0
+
+
+def test_patient_profile_v2_surfaces_ape_history_readiness_banner():
+    template = Path("templates/patient_profile_v2.html").read_text(encoding="utf-8")
+    assert 'data-testid="profile-v2-ape-history-readiness"' in template
+    assert 'data-ape-status="{{ pm2_ape_status }}"' in template
+    assert 'data-testid="profile-v2-ape-history-capture-cta"' in template
+    assert '"ape_history_status": "{{ pm2_ape_status }}"' in template
 
 
 # ── dashboard_summary_to_v2 ─────────────────────────────────────────────────

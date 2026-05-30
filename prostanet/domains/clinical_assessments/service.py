@@ -16,6 +16,7 @@ class ClinicalAssessmentService:
         input_snapshot: dict,
         result_snapshot: dict,
         guideline_versions: dict,
+        context_snapshot: dict | None = None,
     ) -> int | None:
         return create_clinical_assessment_draft(
             module_id,
@@ -23,6 +24,7 @@ class ClinicalAssessmentService:
             input_snapshot,
             result_snapshot,
             guideline_versions,
+            context_snapshot,
         )
 
     def get_draft(self, assessment_id: int) -> dict | None:

@@ -19,6 +19,7 @@ import json
 import time
 from datetime import datetime
 from typing import Any, Callable, Mapping, Sequence
+from urllib.parse import urlencode
 
 # ─── EPIC 10D — TTL cache for expensive dashboard summary subcalls ─────
 # Baseline p95 (cProfile 5x): ~67s/request, of which:
@@ -78,7 +79,10 @@ def invalidate_profile_view_cache(patient_id: Any, reason: str = "data_change") 
             _DASHBOARD_CACHE.clear()
             return
         # Limpia keys que contengan el patient_id
-        to_drop = [k for k in list(_DASHBOARD_CACHE.keys()) if pid_str in str(k)]
+        to_drop = [
+            k for k in list(_DASHBOARD_CACHE.keys())
+            if pid_str in str(k) or str(k).startswith("profile_v2_html:")
+        ]
         for k in to_drop:
             _DASHBOARD_CACHE.pop(k, None)
         # También invalida decision_fusion_cache si existe (EPIC 28)
@@ -92,6 +96,21 @@ def invalidate_profile_view_cache(patient_id: Any, reason: str = "data_change") 
             pass  # decision_fusion_cache defined later in module
     except Exception:
         pass  # No bloquear write path por fallo de cache
+
+
+def get_cached_profile_html(cache_key: str, ttl_sec: int = 300) -> str | None:
+    entry = _DASHBOARD_CACHE.get(cache_key)
+    if entry is None:
+        return None
+    if (time.time() - float(entry.get("t", 0))) >= ttl_sec:
+        _DASHBOARD_CACHE.pop(cache_key, None)
+        return None
+    value = entry.get("v")
+    return value if isinstance(value, str) else None
+
+
+def set_cached_profile_html(cache_key: str, html: str) -> None:
+    _DASHBOARD_CACHE[cache_key] = {"t": time.time(), "v": html}
 
 
 def _safe_get(obj: Any, *keys: str, default: Any = None) -> Any:
@@ -119,6 +138,168 @@ def _format_date(d: Any) -> str:
     if isinstance(d, datetime):
         return d.strftime("%Y-%m-%d")
     return str(d)
+
+
+MIN_VALID_PSA_HISTORY_POINTS = 2
+
+
+def _as_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    try:
+        text = str(value).strip().replace(",", ".")
+        if not text or text.lower() in {"no disponible", "n/a", "na", "none", "null", "—", "-"}:
+            return None
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _psa_point_value(point: Mapping[str, Any]) -> float | None:
+    for key in ("value", "psa", "psa_value", "psa_ng_ml", "baseline_psa"):
+        parsed = _as_float(point.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _psa_point_date(point: Mapping[str, Any]) -> str:
+    raw = point.get("sample_date") or point.get("date") or point.get("observed_at") or ""
+    text = str(raw or "").strip()
+    return text[:10] if text else ""
+
+
+def _is_auto_seed_baseline_psa(point: Mapping[str, Any]) -> bool:
+    haystack = " ".join(
+        str(point.get(key) or "")
+        for key in ("source", "context", "clinical_context", "treatment_assignment_origin")
+    ).lower()
+    return bool(
+        point.get("locked") is True
+        or "auto-seed" in haystack
+        or "intake_baseline" in haystack
+        or "basal dx" in haystack
+    )
+
+
+def _independent_psa_history_points(points: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Do not count an auto-seeded baseline as a second longitudinal sample.
+
+    Registration may materialize the same PSA twice: once as the row entered by
+    the clinician and once as a locked intake baseline. The PSA tower can render
+    both for auditability, but longitudinal readiness must not treat that as
+    two independent APE measurements.
+    """
+    valid_points = [point for point in points if _psa_point_value(point) is not None]
+    clinician_points = [point for point in valid_points if not _is_auto_seed_baseline_psa(point)]
+    if not clinician_points:
+        return valid_points
+    clinician_values = [_psa_point_value(point) for point in clinician_points]
+    independent: list[Mapping[str, Any]] = []
+    for point in valid_points:
+        value = _psa_point_value(point)
+        if (
+            _is_auto_seed_baseline_psa(point)
+            and value is not None
+            and any(other is not None and abs(float(value) - float(other)) < 1e-9 for other in clinician_values)
+        ):
+            continue
+        independent.append(point)
+    return independent
+
+
+def _patient_ref(patient: Mapping[str, Any] | None) -> str:
+    pt = patient or {}
+    identity = _safe_get(pt, "identity", default={}) or {}
+    return str(identity.get("nss") or pt.get("nss") or pt.get("patient_ref") or "").strip()
+
+
+def _ape_capture_url(patient_ref: str, decision_lane: str = "") -> str:
+    if not patient_ref:
+        return ""
+    query = {"decision_field": "psa_history"}
+    if decision_lane:
+        query["decision_lane"] = decision_lane
+    return f"/longitudinal-capture/{patient_ref}?{urlencode(query)}"
+
+
+def _ape_history_readiness(
+    *,
+    points: Sequence[Mapping[str, Any]],
+    patient_ref: str,
+    decision_lane: str = "",
+) -> dict[str, Any]:
+    raw_points = [point for point in points if isinstance(point, Mapping)]
+    valid_points = [point for point in raw_points if _psa_point_value(point) is not None]
+    dated_points = [point for point in valid_points if _psa_point_date(point)]
+    independent_valid_points = _independent_psa_history_points(valid_points)
+    independent_dated_points = [point for point in independent_valid_points if _psa_point_date(point)]
+    unique_dated_rows = {
+        (_psa_point_date(point), _psa_point_value(point))
+        for point in independent_dated_points
+    }
+
+    if not raw_points:
+        status = "missing_psa"
+    elif not valid_points:
+        status = "uninterpretable_series"
+    elif len(dated_points) < len(valid_points):
+        status = "missing_sample_date"
+    elif len(independent_valid_points) == 1:
+        status = "single_psa_point"
+    elif len(independent_valid_points) < MIN_VALID_PSA_HISTORY_POINTS:
+        status = "insufficient_history"
+    else:
+        status = "history_ready"
+
+    is_ready = status == "history_ready"
+    labels = {
+        "missing_psa": "Sin APE",
+        "uninterpretable_series": "APE no interpretable",
+        "missing_sample_date": "APE sin fecha",
+        "single_psa_point": "APE aislado",
+        "insufficient_history": "Historia APE insuficiente",
+        "history_ready": "Historia APE lista",
+    }
+    tones = {
+        "history_ready": "success",
+        "missing_psa": "danger",
+        "uninterpretable_series": "danger",
+        "missing_sample_date": "warn",
+        "single_psa_point": "warn",
+        "insufficient_history": "warn",
+    }
+    messages = {
+        "missing_psa": "No hay APE persistido para la torre; capture la serie longitudinal antes de usar métricas de respuesta.",
+        "uninterpretable_series": "Existe registro APE, pero el valor no es numérico; no se usa para tendencia ni respuesta.",
+        "missing_sample_date": "Existe APE con valor, pero falta fecha en al menos una medición; complete fecha para análisis longitudinal.",
+        "single_psa_point": "Hay una sola medición APE con fecha; se muestra en la torre, pero no desbloquea tendencia, PSA50/PSA90 ni evidencia epidemiológica.",
+        "insufficient_history": "La historia APE aún no alcanza el mínimo longitudinal requerido.",
+        "history_ready": "La torre APE tiene historia suficiente para vigilancia longitudinal y métricas poblacionales.",
+    }
+
+    return {
+        "version": "profile_v2_ape_history_readiness_v1",
+        "ape_status": status,
+        "status_label_es": labels.get(status, status),
+        "status_tone": tones.get(status, "warn"),
+        "is_history_ready": is_ready,
+        "minimum_required_points": MIN_VALID_PSA_HISTORY_POINTS,
+        "psa_point_count": len(raw_points),
+        "raw_valid_psa_point_count": len(valid_points),
+        "valid_psa_point_count": len(independent_valid_points),
+        "dated_psa_point_count": len(independent_dated_points),
+        "unique_dated_psa_point_count": len(unique_dated_rows),
+        "auto_seed_duplicate_count": max(len(valid_points) - len(independent_valid_points), 0),
+        "profile_message": messages.get(status, ""),
+        "capture_url": _ape_capture_url(patient_ref, decision_lane),
+        "no_duplicate_capture_policy": "reutilizar APE basal/actual existente y anexar solo puntos longitudinales faltantes",
+        "source_clinical_facts_mutated": False,
+        "external_order_created": False,
+        "model_trained": False,
+    }
 
 
 def _stage_key(state_label: str | None) -> str:
@@ -152,6 +333,7 @@ def _decision_today(profile_view: Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(fusion, Mapping) and fusion.get("source") == "clinical_decision_today_fusion_kernel":
         decision = dict(fusion.get("decision_today") or {})
         action = dict(fusion.get("next_safe_action") or {})
+        ledger_quality = dict(fusion.get("ledger_quality") or {})
         return {
             "release": fusion.get("version") or "decision_today_fusion_kernel_v1",
             "headline": decision.get("title") or action.get("title") or "Sin decisión clínica activa",
@@ -166,6 +348,8 @@ def _decision_today(profile_view: Mapping[str, Any]) -> dict[str, Any]:
             "risk_avoided": decision.get("risk_avoided") or action.get("risk_avoided") or "",
             "missing_fields": fusion.get("unified_missing_fields") or [],
             "next_safe_action": action,
+            "ledger_quality": ledger_quality,
+            "ledger_quality_status": ledger_quality.get("status") or "unknown",
         }
 
     cc = _safe_get(profile_view, "clinical_compass", default={})
@@ -407,11 +591,14 @@ def _audit_dimensions(profile_view: Mapping[str, Any]) -> dict[str, Any]:
 def _consent_status(patient: Mapping[str, Any]) -> dict[str, Any]:
     """Estado consentimiento informado para badge en perfil."""
     consent = _safe_get(patient, "consent", default={}) or {}
+    evidence = consent.get("evidence") or {}
     status = consent.get("status") or "pending"
     return {
         "status": status,
         "version_code": consent.get("version_code") or "PROSTAMED_CONSENT_v3.2",
         "signed_at": _format_date(consent.get("signed_at")),
+        "content_hash": consent.get("content_hash") or evidence.get("content_hash") or "",
+        "signer_name": consent.get("signer_name") or "",
         "is_signed": status == "signed",
         "badge_text": "Consent v3.2 ✓ uso datos autorizado" if status == "signed"
                       else "⚠ Consentimiento pendiente",
@@ -1469,7 +1656,10 @@ def _surface_consistency(profile_view: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _psa_observability(profile_view: Mapping[str, Any]) -> dict[str, Any]:
+def _psa_observability(
+    profile_view: Mapping[str, Any],
+    patient: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """PSA history + per-line + forecast desde psa_observability.
 
     EPIC 31.F (Explore EXP-14 HIGH) — Mapeo documentado:
@@ -1491,6 +1681,17 @@ def _psa_observability(profile_view: Mapping[str, Any]) -> dict[str, Any]:
     points = _safe_get(psa, "points", default=[]) or []
     bands = _safe_get(psa, "treatment_bands", default=[]) or []
     metrics = _safe_get(psa, "metrics", default={}) or {}
+    decision_lane = str(
+        _safe_get(profile_view, "effective_state")
+        or _safe_get(profile_view, "clinical_compass", "effective_state")
+        or _safe_get(profile_view, "clinical_compass", "current_stage_label")
+        or ""
+    ).strip()
+    ape_history_readiness = _ape_history_readiness(
+        points=[p for p in points if isinstance(p, Mapping)],
+        patient_ref=_patient_ref(patient),
+        decision_lane=decision_lane,
+    )
 
     series = []
     for p in points:
@@ -1543,6 +1744,7 @@ def _psa_observability(profile_view: Mapping[str, Any]) -> dict[str, Any]:
             "psadt": metrics.get("psadt") or metrics.get("psadt_months") or "—",
             "velocity": metrics.get("psa_velocity") or "—",
         },
+        "ape_history_readiness": ape_history_readiness,
         "n_points": len(series),
         "n_lines": len(bands) or len(per_line),
     }
@@ -2728,6 +2930,7 @@ def versioning_dashboard_to_v2() -> dict[str, Any]:
 def patients_list_to_v2(
     patients_raw: Sequence[Mapping[str, Any]] | None = None,
     *,
+    db_path: str | None = None,
     include_autodrive: bool = False,
 ) -> dict[str, Any]:
     """Mapea SELECT pacientes (api_list_patients query) → shape v2 cohort table.
@@ -2751,11 +2954,19 @@ def patients_list_to_v2(
     """
     if patients_raw is None:
         try:
-            import sqlite3, os
-            db_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                "prostanet_tracking.db",
-            )
+            import sqlite3
+            if not db_path:
+                try:
+                    import tracking_db
+
+                    db_path = tracking_db.DB_PATH
+                except Exception:
+                    import os
+
+                    db_path = os.path.join(
+                        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                        "prostanet_tracking.db",
+                    )
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
@@ -2763,6 +2974,11 @@ def patients_list_to_v2(
                 SELECT pi.id, pi.nss, pi.full_name, pi.dob, pi.diagnosis_date,
                        pi.vital_status, pi.created_at,
                        cb.baseline_psa, cb.metastasis_site, cb.volume_disease, cb.ecog_score,
+                       pch.current_state as prior_current_state,
+                       pch.assessment_state as prior_assessment_state,
+                       (SELECT ca.state FROM clinical_assessments ca
+                        WHERE ca.patient_id = pi.id
+                        ORDER BY ca.created_at DESC, ca.id DESC LIMIT 1) as latest_assessment_state,
                        (SELECT COUNT(*) FROM follow_up_visits fv WHERE fv.patient_id = pi.id) as visit_count,
                        (SELECT COUNT(*) FROM smart_alerts sa
                         WHERE sa.patient_id = pi.id AND sa.acknowledged = 0
@@ -2798,6 +3014,7 @@ def patients_list_to_v2(
                           AND COALESCE(tae.ctcae_grade, 0) >= 3) as memory_grade3_toxicity_count
                 FROM patient_identity pi
                 LEFT JOIN clinical_baseline cb ON cb.patient_id = pi.id
+                LEFT JOIN prior_clinical_history pch ON pch.patient_id = pi.id
                 ORDER BY pi.created_at DESC
             """)
             patients_raw = [dict(r) for r in c.fetchall()]
@@ -2816,21 +3033,50 @@ def patients_list_to_v2(
     for p in (patients_raw or []):
         if not isinstance(p, Mapping):
             continue
-        # Derivar estadio heurístico desde metastasis_site
-        mets = (p.get("metastasis_site") or "").lower()
-        vol = (p.get("volume_disease") or "").lower()
-        if "m1" in mets or "metasta" in mets or "bone" in mets or "visceral" in mets:
-            stage_key = "m1crpc" if "crpc" in mets else "mcspc"
-            stage_label = "m1CRPC" if "crpc" in mets else f"mCSPC{' HV' if 'high' in vol else ''}"
-        elif "m0" in mets or "non" in mets:
-            stage_key = "m0crpc"
-            stage_label = "m0CRPC"
-        elif "loc" in mets:
+        clinical_state = str(
+            p.get("latest_assessment_state")
+            or p.get("prior_current_state")
+            or p.get("prior_assessment_state")
+            or ""
+        ).strip()
+        state_norm = clinical_state.lower()
+        if state_norm in {"localized_initial", "localized_low", "localized_intermediate", "localized_high"}:
             stage_key = "localized"
             stage_label = "Localizado"
-        else:
+        elif state_norm == "diagnostic_workup":
             stage_key = "diagnostic"
-            stage_label = "Sin clasificar"
+            stage_label = "Diagnóstico"
+        elif state_norm == "post_negative_biopsy_followup":
+            stage_key = "diagnostic"
+            stage_label = "Biopsia negativa"
+        elif state_norm in {"post_prostatectomy", "recurrence_bcr", "post_radiotherapy_or_local_salvage"}:
+            stage_key = "localized"
+            stage_label = "Post-local / BCR"
+        elif state_norm.startswith("mcspc"):
+            stage_key = "mcspc"
+            stage_label = "mCSPC"
+        elif state_norm == "m0_crpc":
+            stage_key = "m0crpc"
+            stage_label = "m0CRPC"
+        elif state_norm == "m1_crpc":
+            stage_key = "m1crpc"
+            stage_label = "m1CRPC"
+        else:
+            # Fallback only when no reconciled clinical state is persisted.
+            mets = (p.get("metastasis_site") or "").lower()
+            vol = (p.get("volume_disease") or "").lower()
+            if "m1" in mets or "metasta" in mets or "bone" in mets or "visceral" in mets:
+                stage_key = "m1crpc" if "crpc" in mets else "mcspc"
+                stage_label = "m1CRPC" if "crpc" in mets else f"mCSPC{' HV' if 'high' in vol else ''}"
+            elif "loc" in mets:
+                stage_key = "localized"
+                stage_label = "Localizado"
+            elif "m0" in mets or "non" in mets:
+                stage_key = "diagnostic"
+                stage_label = "M0 sin estado clínico"
+            else:
+                stage_key = "diagnostic"
+                stage_label = "Sin clasificar"
         stage_counts[stage_key] = stage_counts.get(stage_key, 0) + 1
 
         # Edad
@@ -3287,7 +3533,7 @@ def bundle_to_v2_profile_full(profile_view: Mapping[str, Any],
     return {
         **compact,
         # Tab Vista 360°: psa mini + gates top + timeline horizontal
-        "psa_obs": _psa_observability(profile_view),
+        "psa_obs": _psa_observability(profile_view, patient),
         "timeline_horizontal": _events_horizontal(profile_view),
         "therapy_checkpoints": _therapy_checkpoints(profile_view),
         "clinical_alerts": _clinical_alerts(profile_view),
@@ -3324,7 +3570,7 @@ def bundle_to_v2_profile_full(profile_view: Mapping[str, Any],
         "decision_today_fusion_kernel": pv.get("decision_today_fusion_kernel", {}),
         # ── Faubot LXC — Torre vigilancia: APE+Testosterona+Tx integrados ──
         # psa_obs ya existe pero faltaba exponerlo en bundle_to_v2_profile_full
-        "psa_obs": _psa_observability(profile_view),
+        "psa_obs": _psa_observability(profile_view, patient),
         # testosterone_history para chart secondary axis (LXC fix)
         # EPIC 30.1 (PSA Tower coherence) — aceptar TESTOSTERONA (ES) y
         # TESTOSTERONE (EN). Pre-EPIC30 filtraba solo ES, perdiendo casos
@@ -3373,6 +3619,7 @@ def bundle_to_v2_profile(profile_view: Mapping[str, Any],
         "clinical_memory_os": pv.get("clinical_memory_os", {}),
         "autodrive": pv.get("autodrive", {}),
         "decision_today_fusion_kernel": pv.get("decision_today_fusion_kernel", {}),
+        "treatment_course_summary": pv.get("treatment_course_summary") or pt.get("treatment_course_summary") or {},
         # EPIC 22b.4 — Biopsy summary for pm2BiopsyDiagnostics card
         "biopsy_summary": _biopsy_summary(pv, pt),
         # EPIC 22c — BRCA2 carrier card (highest clinical impact: PARP-first)

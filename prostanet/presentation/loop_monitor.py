@@ -31,8 +31,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from flask import Blueprint, jsonify, render_template
+from flask import Blueprint, jsonify, render_template, request
 
+from prostanet.shared.read_model_cache import (
+    AGGREGATE_TTL_SECONDS,
+    build_cache_key,
+    get_read_model,
+    get_or_build_read_model,
+)
 from prostanet.shared.utc_time import utc_now, utc_today  # EPIC 32.G G78
 
 loop_monitor_bp = Blueprint("loop_monitor", __name__)
@@ -709,9 +715,7 @@ CORE_VECTORS: dict[str, dict[str, Any]] = {
 # ──────────────────────────────────────────────────────────────────────
 
 
-@loop_monitor_bp.route("/api/loop-monitor/snapshot", methods=["GET"])
-def snapshot():
-    """Current loop status snapshot (last 30 days)."""
+def _loop_snapshot_payload() -> dict[str, Any]:
     summary = get_vector_summary(days=30)
     autonomous_improvement = get_autonomous_improvement_snapshot()
     mission_control = dict(autonomous_improvement.get("mission_control") or {})
@@ -739,7 +743,7 @@ def snapshot():
     ai_readiness_dataset_loop = dict(autonomous_improvement.get("ai_readiness_dataset_loop") or {})
     cortana_loop_interface = dict(autonomous_improvement.get("cortana_loop_interface") or {})
     continuous_shadow_operation = dict(autonomous_improvement.get("continuous_shadow_operation") or {})
-    return jsonify({
+    return {
         "vectors": CORE_VECTORS,
         "summary_by_vector": summary,
         "mission_control": mission_control,
@@ -768,7 +772,108 @@ def snapshot():
         "continuous_shadow_operation": continuous_shadow_operation,
         "total_vectors_monitored": len(CORE_VECTORS),
         "total_iterations_30d": sum(s["count"] for s in summary.values()),
-    })
+    }
+
+
+def _loop_snapshot_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(payload or {})
+    mission_control = dict(payload.get("mission_control") or {})
+    development_autodrive = dict(payload.get("development_autodrive") or {})
+    safety_gate_runner = dict(payload.get("safety_gate_runner") or {})
+    return {
+        "scope": "summary",
+        "vectors": payload.get("vectors") or CORE_VECTORS,
+        "summary_by_vector": payload.get("summary_by_vector") or {},
+        "mission_control": {
+            "summary": mission_control.get("summary") or {},
+            "safety": mission_control.get("safety") or {},
+        },
+        "application_telemetry": payload.get("application_telemetry") or {},
+        "development_autodrive": {
+            "summary": development_autodrive.get("summary") or {},
+            "current_candidate": development_autodrive.get("current_candidate") or {},
+        },
+        "safety_gate_runner": {
+            "summary": safety_gate_runner.get("summary") or {},
+            "status": safety_gate_runner.get("status"),
+        },
+        "total_vectors_monitored": payload.get("total_vectors_monitored"),
+        "total_iterations_30d": payload.get("total_iterations_30d"),
+        "audit": {
+            "read_model_only": True,
+            "summary_payload": True,
+        },
+    }
+
+
+def _loop_snapshot_summary_fast() -> dict[str, Any]:
+    summary = get_or_build_read_model(
+        build_cache_key("loop_monitor_vector_summary", "30d"),
+        lambda: get_vector_summary(days=30),
+        ttl_seconds=AGGREGATE_TTL_SECONDS,
+        refresh=False,
+    )
+    cached_autonomous = get_read_model(build_cache_key("loop_monitor_dashboard_autonomous", "30d")) or {}
+    mission_control = dict(cached_autonomous.get("mission_control") or {})
+    gaps = dict(cached_autonomous.get("gaps") or {})
+    development_autodrive = dict(cached_autonomous.get("development_autodrive") or {})
+    safety_gate_runner = dict(cached_autonomous.get("safety_gate_runner") or {})
+    return {
+        "scope": "summary",
+        "vectors": CORE_VECTORS,
+        "summary_by_vector": summary,
+        "mission_control": {
+            "summary": mission_control.get("summary") or {
+                "mode": "shadow",
+                "status": "summary_fast_path",
+                "top_gap_title": "Snapshot completo disponible con scope=full.",
+            },
+            "safety": mission_control.get("safety") or {
+                "source_clinical_facts_mutated": False,
+                "auto_merge_enabled": False,
+                "human_review_required": True,
+            },
+        },
+        "application_telemetry": gaps.get("application_telemetry") or {},
+        "development_autodrive": {
+            "summary": development_autodrive.get("summary") or {},
+            "current_candidate": development_autodrive.get("current_candidate") or {},
+        },
+        "safety_gate_runner": {
+            "summary": safety_gate_runner.get("summary") or {},
+            "status": safety_gate_runner.get("status"),
+        },
+        "total_vectors_monitored": len(CORE_VECTORS),
+        "total_iterations_30d": sum(item.get("count", 0) for item in summary.values()),
+        "audit": {
+            "read_model_only": True,
+            "summary_payload": True,
+            "full_scope_available": True,
+        },
+    }
+
+
+@loop_monitor_bp.route("/api/loop-monitor/snapshot", methods=["GET"])
+def snapshot():
+    """Current loop status snapshot (last 30 days)."""
+    scope = str(request.args.get("scope") or "full").strip().lower()
+    scope = "summary" if scope == "summary" else "full"
+    refresh = str(request.args.get("refresh") or "").strip().lower() in {"1", "true", "yes", "refresh"}
+    if scope == "summary":
+        payload = get_or_build_read_model(
+            build_cache_key("loop_monitor_snapshot", "30d", "summary"),
+            _loop_snapshot_summary_fast,
+            ttl_seconds=AGGREGATE_TTL_SECONDS,
+            refresh=refresh,
+        )
+        return jsonify(payload)
+    payload = get_or_build_read_model(
+        build_cache_key("loop_monitor_snapshot", "30d", scope),
+        _loop_snapshot_payload,
+        ttl_seconds=AGGREGATE_TTL_SECONDS,
+        refresh=refresh,
+    )
+    return jsonify(payload)
 
 
 @loop_monitor_bp.route("/api/loop-monitor/iterations", methods=["GET"])
@@ -783,9 +888,27 @@ def iterations():
 @loop_monitor_bp.route("/loop-monitor", methods=["GET"])
 def dashboard():
     """Loop monitor dashboard UI."""
-    summary = get_vector_summary(days=30)
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    full_scope = scope == "full"
+    refresh = str(request.args.get("refresh") or "").strip().lower() in {"1", "true", "yes", "refresh"}
+    summary = get_or_build_read_model(
+        build_cache_key("loop_monitor_vector_summary", "30d"),
+        lambda: get_vector_summary(days=30),
+        ttl_seconds=AGGREGATE_TTL_SECONDS,
+        refresh=refresh,
+    )
     iterations_list = get_recent_iterations(days=30, limit=50)
-    autonomous_improvement = get_autonomous_improvement_snapshot()
+    if full_scope or refresh:
+        autonomous_improvement = get_or_build_read_model(
+            build_cache_key("loop_monitor_dashboard_autonomous", "30d"),
+            get_autonomous_improvement_snapshot,
+            ttl_seconds=AGGREGATE_TTL_SECONDS,
+            refresh=refresh,
+        )
+    else:
+        autonomous_improvement = get_read_model(
+            build_cache_key("loop_monitor_dashboard_autonomous", "30d")
+        ) or {}
     mission_control = dict(autonomous_improvement.get("mission_control") or {})
     gaps = dict(autonomous_improvement.get("gaps") or {})
     application_telemetry = dict(gaps.get("application_telemetry") or {})
@@ -811,6 +934,35 @@ def dashboard():
     ai_readiness_dataset_loop = dict(autonomous_improvement.get("ai_readiness_dataset_loop") or {})
     cortana_loop_interface = dict(autonomous_improvement.get("cortana_loop_interface") or {})
     continuous_shadow_operation = dict(autonomous_improvement.get("continuous_shadow_operation") or {})
+    if not autonomous_improvement:
+        mission_control = {
+            "summary": {
+                "mode": "shadow",
+                "status": "summary_fast_path",
+                "top_gap_title": "Snapshot completo disponible con ?scope=full.",
+            },
+            "safety": {
+                "source_clinical_facts_mutated": False,
+                "auto_merge_enabled": False,
+                "human_review_required": True,
+            },
+        }
+        development_autodrive = {
+            "summary": {
+                "mode": "shadow",
+                "selected_reason": "Dashboard normal usa snapshot resumido para evitar carga fria.",
+                "one_change_per_iteration": True,
+            },
+            "current_candidate": {},
+        }
+        safety_gate_runner = {
+            "summary": {
+                "mode": "shadow",
+                "release_gate": "summary_fast_path",
+                "commands_executed": False,
+            },
+            "status": "summary_fast_path",
+        }
     # Build minimal page_chrome required by base_clinical.html layout
     page_chrome = {
         "title": "Loop Monitor — Iterative Improvement",

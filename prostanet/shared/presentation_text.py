@@ -7,6 +7,18 @@ from prostanet.shared.field_semantics import CAPTURE_LAYER_METADATA, field_seman
 from prostanet.shared.recommendation_enrichment import normalize_legacy_result
 
 
+WIZARD_CANONICAL_ALIAS_SUPPRESSIONS = {
+    "alp": "alkaline_phosphatase_u_l",
+    "alkaline_phosphatase": "alkaline_phosphatase_u_l",
+    "ldh": "ldh_u_l",
+    "serum_ldh": "ldh_u_l",
+    "hemoglobin": "hemoglobin_g_dl",
+    "hgb": "hemoglobin_g_dl",
+    "hb": "hemoglobin_g_dl",
+    "creatinine": "creatinine_mg_dl",
+}
+
+
 MODULE_TITLE_MAP = {
     "diagnostic_workup": "Estudio diagnóstico antes de confirmar cáncer de próstata",
     "post_negative_biopsy_followup": "Seguimiento después de una biopsia benigna inicial",
@@ -304,6 +316,7 @@ BADGE_LABELS = {
 CLINICAL_ROLE_LABELS = {
     "required": "Mínimo para decidir",
     "decision_refiner": "Afina la recomendación",
+    "derived": "Calculado",
     "monitoring": "Monitoreo",
     "optional": "Opcional",
 }
@@ -773,11 +786,31 @@ def humanize_schema(schema: dict) -> dict:
     translated["title"] = MODULE_TITLE_MAP.get(schema.get("module"), translate_text(schema.get("title", "")))
     translated["description"] = translate_text(schema.get("description", ""))
     translated["fields"] = [_humanize_field(field) for field in translated.get("fields", [])]
+    translated["fields"] = _mark_wizard_alias_suppressions(translated["fields"])
     translated["fields"] = sorted(
         translated.get("fields", []),
         key=lambda item: (item.get("group_order", 0), item.get("label", "")),
     )
     return translated
+
+
+def _mark_wizard_alias_suppressions(fields: list[dict]) -> list[dict]:
+    names = {str(field.get("name") or "") for field in fields}
+    out: list[dict] = []
+    for field in fields:
+        item = dict(field)
+        name = str(item.get("name") or "")
+        canonical = WIZARD_CANONICAL_ALIAS_SUPPRESSIONS.get(name)
+        if canonical and canonical in names:
+            item["suppress_in_wizard"] = True
+            item["canonical_fact_key"] = canonical
+            item["derived_from"] = list(dict.fromkeys([*(item.get("derived_from") or []), canonical]))
+            item["clinical_role"] = item.get("clinical_role") or "derived"
+            item["benchmark_note"] = item.get("benchmark_note") or (
+                f"Alias compatible de {canonical}; el wizard V2 captura el valor canonico una sola vez."
+            )
+        out.append(item)
+    return out
 
 
 def humanize_module_listing(module: dict) -> dict:

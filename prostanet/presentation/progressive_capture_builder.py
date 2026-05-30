@@ -43,6 +43,8 @@ Uso:
 """
 from __future__ import annotations
 
+from copy import deepcopy
+from functools import lru_cache
 from typing import Any, Mapping
 
 
@@ -184,6 +186,21 @@ PER_STATE_NEXT_STEP_HINT: dict[str, str] = {
 
 
 def build_stage_aware_capture(
+    disease_state: str,
+    captured_so_far: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    captured = dict(captured_so_far or {})
+    if not captured:
+        return deepcopy(_build_stage_aware_capture_cached(str(disease_state or "")))
+    return _build_stage_aware_capture_uncached(disease_state, captured)
+
+
+@lru_cache(maxsize=64)
+def _build_stage_aware_capture_cached(disease_state: str) -> dict[str, Any]:
+    return _build_stage_aware_capture_uncached(disease_state, {})
+
+
+def _build_stage_aware_capture_uncached(
     disease_state: str,
     captured_so_far: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:

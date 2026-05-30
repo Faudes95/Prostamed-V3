@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from prostanet.shared.advanced_support_fields import (
     advanced_staging_imaging_fields,
     oncologic_emergency_fields,
@@ -9,6 +11,26 @@ from prostanet.shared.advanced_support_fields import (
 from prostanet.shared.contracts import FieldSpec, module_schema
 from prostanet.shared.epic26 import epic26_widget_config
 from prostanet.shared.pcothercause import pcothercause_widget_config
+
+
+_SYSTEMIC_PIVOTAL_VISIBILITY = {"show_systemic_pivotal_contraindications": ["1"]}
+
+
+def _merge_visibility(existing: dict | None, required: dict) -> dict:
+    if not existing:
+        return dict(required)
+    return {"__all__": [dict(required), dict(existing)]}
+
+
+def _with_visibility(fields: list[FieldSpec], required: dict, *, role: str | None = None) -> list[FieldSpec]:
+    return [
+        replace(
+            field,
+            clinical_role=role if role is not None else field.clinical_role,
+            conditional_visibility=_merge_visibility(field.conditional_visibility, required),
+        )
+        for field in fields
+    ]
 
 
 LOCALIZED_SCHEMA = module_schema(
@@ -40,7 +62,7 @@ LOCALIZED_SCHEMA = module_schema(
         FieldSpec("occam_education", "Escolaridad para OCCAM", "select", options=["not_used", "less_than_9th", "9th_11th", "hs_graduate", "some_college", "college_graduate"], default="not_used", group="Pronóstico de otras causas (OCCAM)", group_order=1, clinical_role="decision_refiner", help_text="Opcional. Si no se usa, el sistema cambia a la variante pública sin escolaridad.", display_options=[{"value": "not_used", "label": "No usar en el modelo"}, {"value": "less_than_9th", "label": "Menos de 9° grado"}, {"value": "9th_11th", "label": "9°-11° grado"}, {"value": "hs_graduate", "label": "Preparatoria / bachillerato"}, {"value": "some_college", "label": "Algo de universidad"}, {"value": "college_graduate", "label": "Título universitario"}]),
         FieldSpec("occam_marital_status", "Estado civil para OCCAM", "select", options=["not_used", "married", "separated", "single"], default="not_used", group="Pronóstico de otras causas (OCCAM)", group_order=1, clinical_role="decision_refiner", help_text="Opcional. Si no se usa, el sistema cambia a la variante pública sin estado civil.", display_options=[{"value": "not_used", "label": "No usar en el modelo"}, {"value": "married", "label": "Casado o en unión libre"}, {"value": "separated", "label": "Antes casado / previamente en unión libre"}, {"value": "single", "label": "Nunca casado / convivencia no matrimonial"}]),
         FieldSpec("psa", "Antígeno prostático específico (PSA)", "number", required=True, default=8.5, group="Estadificación primaria", group_order=2, clinical_role="required", unit="ng/mL"),
-        FieldSpec("psad", "Densidad del antígeno prostático específico (PSAD)", "number", default=0.10, group="Estadificación primaria", group_order=2, clinical_role="decision_refiner", unit="ng/mL/cc", derived_from=["psa", "prostate_volume_ml"], evidence_tags=["psad"], benchmark_note="Se alinea con pathways MRI + PSAD y con benchmarks de producto tipo MSK/EAU."),
+        FieldSpec("psad", "Densidad del antígeno prostático específico (PSAD)", "number", default="", group="Estadificación primaria", group_order=2, clinical_role="derived", unit="ng/mL/cc", derived_from=["psa", "prostate_volume_ml"], evidence_tags=["psad"], benchmark_note="Se calcula desde PSA y volumen prostático; se conserva compatibilidad si llega por API o registros históricos."),
         FieldSpec("clinical_tstage", "Estadio clínico T", "select", required=True, options=["T1c", "T2a", "T2b", "T2c", "T3a", "T3b", "T4"], default="T2a", group="Estadificación primaria", group_order=2, clinical_role="required"),
         FieldSpec("gleason_primary", "Gleason primario", "select", required=True, options=["3", "4", "5"], default="3", group="Patología de biopsia", group_order=3, clinical_role="required"),
         FieldSpec("gleason_secondary", "Gleason secundario", "select", required=True, options=["3", "4", "5"], default="4", group="Patología de biopsia", group_order=3, clinical_role="required"),
@@ -112,7 +134,7 @@ LOCALIZED_SCHEMA = module_schema(
             default="",
             group="Imagen y riesgo",
             group_order=4,
-            clinical_role="decision_refiner",
+            clinical_role="derived",
             unit="ng/mL/cc",
             derived_from=["psa", "prostate_volume_ml"],
             evidence_tags=["mpmri", "psad"],
@@ -186,12 +208,34 @@ LOCALIZED_SCHEMA = module_schema(
         # medular, hidronefrosis, hipercalcemia, fractura patológica antes
         # de cualquier decisión de tratamiento curativo.
         *oncologic_emergency_fields(role="decision_refiner"),
+        FieldSpec(
+            "show_systemic_pivotal_contraindications",
+            "Abrir contraindicaciones sistémicas de ensayos pivote",
+            "select",
+            options=["0", "1"],
+            default="0",
+            group="Captura avanzada por etapa",
+            group_order=79,
+            clinical_role="decision_refiner",
+            help_text=(
+                "Abrir sólo si se planea intensificación sistémica, inclusión en ensayo, "
+                "tratamiento fuera del circuito local estándar o revisión explícita de seguridad."
+            ),
+            evidence_tags=["pivotal_gates", "progressive_disclosure"],
+            display_options=[
+                {"value": "0", "label": "No abrir"},
+                {"value": "1", "label": "Abrir seguridad sistémica"},
+            ],
+        ),
         # ── Contraindicaciones pivotal (Faubot 2026-04-23) ────────────
         # Aplica a la rama VERY HIGH (STAMPEDE arm G — RT+ADT+abiraterona)
         # y a cualquier régimen sistémico empírico desencadenado por gates
         # downstream. Captura HTA descontrolada, ICC NYHA III-IV y demás
         # contraindicaciones documentadas en los protocolos pivote.
-        *pivotal_contraindication_fields(group_order=80),
+        *_with_visibility(
+            pivotal_contraindication_fields(group_order=80),
+            _SYSTEMIC_PIVOTAL_VISIBILITY,
+        ),
         # ── Soportes pivotal gates 56-70 (Faubot LXXV/LXXVI/LXXVII #67A/B/C) ──
         # Captura UI de fields para gates de RP-vs-RT subspecialty (anticoag,
         # IBD, prior_pelvic_RT, TURP, SVI), genomic critical (HRR, AR-V7,

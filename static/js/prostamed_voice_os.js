@@ -281,7 +281,7 @@
       ? '/api/autonomous-improvement/continuous-shadow-operation'
       : `/api/autonomous-improvement/cortana-loop-interface?query=${encodeURIComponent(transcript || '')}`;
     let res = await fetch(endpoint);
-    if (!res.ok) res = await fetch('/api/autonomous-improvement/mission-control');
+    if (!res.ok) res = await fetch('/api/autonomous-improvement/mission-control?scope=summary');
     const body = await res.json().catch(() => ({}));
     if (!res.ok || body.success === false) throw new Error(body.error || `HTTP ${res.status}`);
     renderAutonomousImprovementResult(panel, body);

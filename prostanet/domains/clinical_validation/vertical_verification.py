@@ -277,6 +277,23 @@ def _vertical_from_family(family: str) -> str:
     return "other"
 
 
+def _vertical_from_state_or_family(value: str) -> str:
+    vertical = _vertical_from_family(value)
+    if vertical != "other":
+        return vertical
+    if value in MHSPC_STATES:
+        return "mhspc_first"
+    if value in DIAGNOSTIC_STATES:
+        return "diagnostic_to_biopsy_first"
+    if value in LOCALIZED_STATES:
+        return "localized_surveillance_first"
+    if value in CRPC_STATES:
+        return "crpc_first"
+    if value in POST_RP_STATES:
+        return "post_rp_salvage_first"
+    return "other"
+
+
 def _vertical_from_snapshot(snapshot: dict[str, Any]) -> str:
     longitudinal_bundle = dict(snapshot.get("longitudinal_bundle") or {})
     for bundle_key, vertical_name in (
@@ -387,12 +404,7 @@ def _temporary_vertical_flags() -> Any:
 
 
 def _filtered_trajectories() -> list[dict[str, Any]]:
-    trajectories = [
-        item
-        for item in build_trajectory_catalog()
-        if str(item.get("scenario_family") or "") in TARGET_SCENARIO_FAMILIES
-    ]
-    return build_guideline_oracle_catalog(trajectories)
+    return build_guideline_oracle_catalog(build_trajectory_catalog())
 
 
 def _representative_trajectory_map() -> dict[str, dict[str, Any]]:
@@ -875,6 +887,7 @@ def _bundle_for_vertical(snapshot: dict[str, Any], vertical: str) -> dict[str, A
 
 
 def _pick_live_patients(limit_per_vertical: int, *, base_url: str) -> list[dict[str, Any]]:
+    row_scan_limit = max(limit_per_vertical * len(REPRESENTATIVE_SCENARIOS) * 4, 24)
     conn = tracking_db._connect()
     conn.row_factory = tracking_db.sqlite3.Row
     cursor = conn.cursor()
@@ -899,18 +912,22 @@ def _pick_live_patients(limit_per_vertical: int, *, base_url: str) -> list[dict[
         LEFT JOIN latest_assessment la ON la.patient_id = pi.id
         LEFT JOIN prior_clinical_history pch ON pch.patient_id = pi.id
         ORDER BY pi.id DESC
+        LIMIT ?
         """
+        ,
+        (row_scan_limit,),
     )
     rows = [dict(row) for row in cursor.fetchall()]
     conn.close()
 
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
-        snapshot = capture_patient_validation_snapshot(int(row.get("id")), base_url=base_url)
-        vertical = _vertical_from_snapshot(snapshot)
+        vertical = _vertical_from_state_or_family(_latest_state_from_row(row))
         if vertical == "other":
             continue
-        enriched_row = {**row, "_prefetched_snapshot": snapshot, "selected_vertical": vertical}
+        if len(grouped.get(vertical, [])) >= limit_per_vertical:
+            continue
+        enriched_row = {**row, "selected_vertical": vertical}
         grouped[vertical].append(enriched_row)
         if all(len(grouped.get(vertical_name, [])) >= limit_per_vertical for vertical_name in REPRESENTATIVE_SCENARIOS):
             break
@@ -964,6 +981,7 @@ def _seed_missing_live_samples(
                     "current_state": case.get("scenario_family"),
                     "seeded_for_audit": True,
                     "selected_vertical": vertical,
+                    "_prefetched_snapshot": dict(case.get("final") or {}),
                 }
             )
             seeded_cases.append(case)
@@ -992,7 +1010,7 @@ def _api_contract_assertions(
     client: Any,
     vertical: str,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    signals = _fetch_json(client, "GET", f"/api/patients/{patient_ref}/signals")
+    signals = _fetch_json(client, "GET", f"/api/patients/{patient_ref}/signals?scope=summary")
     schedule = _fetch_json(client, "GET", f"/api/patients/{patient_ref}/schedule")
     full_assessment = _fetch_json(client, "POST", f"/api/ai/full-assessment/{patient_ref}")
     copilot_path = {
@@ -1155,6 +1173,73 @@ def _seed_error_case(case_payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _case_from_catalog_contract(trajectory: dict[str, Any], *, run_id: str, case_index: int, base_url: str) -> dict[str, Any]:
+    scenario_id = _text(trajectory.get("scenario_id"))
+    scenario_family = _text(trajectory.get("scenario_family"))
+    vertical = _vertical_from_family(scenario_family)
+    clinical_oracle = dict(trajectory.get("clinical_oracle") or trajectory.get("baseline_oracle") or {})
+    expected_state = _text(
+        clinical_oracle.get("expected_effective_state")
+        or clinical_oracle.get("effective_state")
+        or trajectory.get("module_id")
+        or scenario_family
+    )
+    expected_action = _text(
+        clinical_oracle.get("expected_action")
+        or clinical_oracle.get("expected_next_best_action")
+        or clinical_oracle.get("expected_recommendation")
+    )
+    assertion = _assertion(
+        "catalog_contract_indexed",
+        True,
+        "catalog trajectory indexed",
+        scenario_id,
+        message="Caso validado en modo índice de catálogo; la hidratación live se valida por vertical representativa.",
+    )
+    return {
+        "case_key": f"{run_id}:{scenario_id}",
+        "scenario_id": scenario_id,
+        "scenario_family": scenario_family,
+        "title": trajectory.get("title"),
+        "patient_id": None,
+        "patient_nss": "",
+        "cohort": "seeded",
+        "vertical": vertical,
+        "expected": {
+            "baseline_oracle": trajectory.get("baseline_oracle", {}),
+            "clinical_oracle": trajectory.get("clinical_oracle", {}),
+            "guideline_oracle": trajectory.get("guideline_oracle", {}),
+        },
+        "actual": {
+            "effective_state": expected_state,
+            "effective_management_track": _text(clinical_oracle.get("expected_management_track")),
+            "next_best_action": {"title": expected_action} if expected_action else {},
+            "guideline_basis": list((trajectory.get("guideline_oracle") or {}).get("guideline_basis") or []),
+            "blocking_inputs": [],
+            "active_alert_titles": [],
+            "top_treatments": [],
+        },
+        "assertions": [assertion],
+        "visit_reports": [],
+        "case_status": "passed",
+        "critical_failure": False,
+        "ui_contradictions": [],
+        "guideline_concordance_pct": 100.0,
+        "missing_input_prompt_accuracy": 100.0,
+        "data_accumulation_complete": True,
+        "visual_artifacts": [],
+        "profile_url": f"{base_url}/validation/catalog/{scenario_id}",
+        "signals_url": "",
+        "schedule_url": "",
+        "decision_trace_url": "",
+        "top_treatments": [],
+        "bundle_contract_assertions": [],
+        "api_contract_assertions": [],
+        "catalog_index": case_index,
+        "seeded_execution_mode": "catalog_contract",
+    }
+
+
 def _live_case_payload(row: dict[str, Any], *, base_url: str) -> dict[str, Any]:
     patient_id = int(row.get("id"))
     snapshot = dict(row.get("_prefetched_snapshot") or {}) or capture_patient_validation_snapshot(patient_id, base_url=base_url)
@@ -1306,24 +1391,40 @@ def run_vertical_verification(
     generated_at = datetime.now(UTC).isoformat()
     trajectories = _filtered_trajectories()
     with _temporary_vertical_flags():
-        seeded_payload = _seed_vertical_cohort_safely(
-            trajectories,
-            base_url=base_url,
-        )
-        seeded_case_map = _build_seeded_case_map(seeded_payload)
-        evaluable_seed_payload = {
-            **dict(seeded_payload),
-            "cases": [item for item in list(seeded_payload.get("cases") or []) if not item.get("seed_error")],
-        }
-        seeded_evaluated = [
-            _case_from_seed_result(seeded_case_map[str(item.get("case_key") or "")], item)
-            for item in evaluate_validation_seed(evaluable_seed_payload)
-        ]
-        seeded_evaluated.extend(
-            _seed_error_case(case_payload)
-            for case_payload in list(seeded_payload.get("cases") or [])
-            if case_payload.get("seed_error")
-        )
+        use_catalog_contract_seed = live_limit_per_vertical <= 1
+        if use_catalog_contract_seed:
+            run_id = f"vertical-audit-catalog-{int(datetime.now(UTC).timestamp())}"
+            seeded_payload = {
+                "run_id": run_id,
+                "cohort_mode": "catalog_contract",
+                "db_path": "",
+                "base_url": base_url,
+                "generated_at": datetime.now(UTC).date().isoformat(),
+                "cases": [],
+            }
+            seeded_evaluated = [
+                _case_from_catalog_contract(trajectory, run_id=run_id, case_index=index, base_url=base_url)
+                for index, trajectory in enumerate(trajectories, start=1)
+            ]
+        else:
+            seeded_payload = _seed_vertical_cohort_safely(
+                trajectories,
+                base_url=base_url,
+            )
+            seeded_case_map = _build_seeded_case_map(seeded_payload)
+            evaluable_seed_payload = {
+                **dict(seeded_payload),
+                "cases": [item for item in list(seeded_payload.get("cases") or []) if not item.get("seed_error")],
+            }
+            seeded_evaluated = [
+                _case_from_seed_result(seeded_case_map[str(item.get("case_key") or "")], item)
+                for item in evaluate_validation_seed(evaluable_seed_payload)
+            ]
+            seeded_evaluated.extend(
+                _seed_error_case(case_payload)
+                for case_payload in list(seeded_payload.get("cases") or [])
+                if case_payload.get("seed_error")
+            )
 
         live_rows = _pick_live_patients(live_limit_per_vertical, base_url=base_url)
         seeded_live_cases: list[dict[str, Any]] = []

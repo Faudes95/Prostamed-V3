@@ -76,6 +76,34 @@ def test_g2968_psa_unified_no_double_seed():
     assert len(timeline) == 2
 
 
+def test_g2968b_psa_unified_no_double_seed_when_pretreatment_history_already_has_baseline_value():
+    """H.G2968b — un APE pretatamiento con el valor basal ya representa el punto Dx aunque no caiga en ±7 días."""
+    from prostanet.shared.psa_unified import unified_psa_timeline
+
+    patient = {
+        "baseline": {"baseline_psa": 8.5},
+        "identity": {"diagnosis_date": "2026-05-27"},
+        "biomarker_longitudinal": [
+            {
+                "biomarker_type": "PSA",
+                "sample_date": "2025-11-01",
+                "value": 7.6,
+                "context": "pretratamiento",
+            },
+            {
+                "biomarker_type": "PSA",
+                "sample_date": "2026-05-01",
+                "value": 8.5,
+                "context": "pretratamiento",
+            },
+        ],
+    }
+
+    timeline = unified_psa_timeline(patient)
+    assert len(timeline) == 2
+    assert [point["value"] for point in timeline] == [7.6, 8.5]
+
+
 def test_g2969_psa_nadir_post_treatment():
     """H.G2969 — psa_nadir filtra puntos post-treatment_start."""
     from prostanet.shared.psa_unified import psa_nadir
@@ -206,8 +234,12 @@ def test_g2979_auto_derive_endpoint_includes_psadt(client):
     assert "psadt" in body.get("derivations", {})
 
 
-# ─── §G — FAUBOT_RELEASE LXC.1 ───────────────────────────────────────────
+# ─── §G — FAUBOT_RELEASE versioned stamp ─────────────────────────────────
 def test_g2980_faubot_release_lxc1():
-    """H.G2980 — FAUBOT_RELEASE bumped to LXC.1."""
+    """H.G2980 — FAUBOT_RELEASE keeps a dated Faubot stamp."""
+    import re
+
     from prostanet.shared.algorithm_version import FAUBOT_RELEASE
-    assert "LXC" in FAUBOT_RELEASE
+
+    assert re.match(r"^20\d{2}-\d{2}-\d{2}\s+[A-Z]+$", FAUBOT_RELEASE)
+    assert "legacy" not in FAUBOT_RELEASE.lower()

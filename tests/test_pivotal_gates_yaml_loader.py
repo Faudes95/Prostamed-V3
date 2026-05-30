@@ -442,9 +442,11 @@ class TestSmokeE2E:
         v = get_algorithm_version()
         # Faubot 2026-04-25 (XIV) — release bumped to XIV after gate 19;
         # accept any 2026-04-25 release.
-        # Faubot LXXXI #audit-pre-cortana — accept 2026-04-2X (date can bump
-        # in subsequent iterations, e.g. LXXX → 2026-04-26).
-        assert v["faubot_release"].startswith("2026-04-")
+        # Faubot LXXXI #audit-pre-cortana — accept 2026-04-2X.
+        # Faubot Iteración C (2026-05-15) — forward-compat para futuros años:
+        # accept 2026-* y posteriores. El formato canónico sigue siendo
+        # "YYYY-MM-DD ROMAN_NUMERAL".
+        assert v["faubot_release"].startswith("2026-")
         assert v["yaml_loaded_gates_count"] >= 4
 
     def test_module_registry_smoke_with_yaml_gates(self):

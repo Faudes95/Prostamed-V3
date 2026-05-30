@@ -1,0 +1,82 @@
+name: GodiBot Concordance Loop (LXC / Iteración C)
+
+# Faubot Iteración C (GodiBot v1) — 9° vector recommendation_concordance
+# Cron Tue 06:00 UTC — sweep últimas 7 días de godibot_reviews
+# y record concordance metrics al loop_monitor.
+
+on:
+  schedule:
+    - cron: "0 6 * * 2"  # Weekly Tuesday 06:00 UTC
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  godibot-concordance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install minimal deps
+        run: |
+          pip install pyyaml pytest flask
+
+      - name: Record GodiBot concordance metrics (9° vector)
+        run: |
+          python -c "
+          from prostanet.presentation.loop_monitor import (
+              record_godibot_concordance_check,
+          )
+          summary = record_godibot_concordance_check(days=7)
+          print('GodiBot concordance 7d:', summary)
+          # Critical: <50% approval rate suggests systemic drift in clinical_decision_agent
+          if summary.get('status') == 'critical':
+              print('::warning::Approval rate critical — possible clinical_decision_agent drift')
+          "
+
+      - name: Sweep top 10 fixtures vs GodiBot baseline
+        run: |
+          python -c "
+          import json, glob, os
+          from prostanet.agents.godibot import run_godibot_review
+
+          fixtures = sorted(glob.glob('tests/fixtures/godibot/*.json'))[:10]
+          if not fixtures:
+              print('No fixtures found, skipping sweep')
+              exit(0)
+
+          regressions = []
+          for f in fixtures:
+              try:
+                  data = json.load(open(f))
+                  expected_status = data.pop('_expected_status', None)
+                  review = run_godibot_review(data, enable_llm=False)
+                  if expected_status and review.get('status') != expected_status:
+                      regressions.append(
+                          f'{os.path.basename(f)}: expected={expected_status} got={review.get(\"status\")}'
+                      )
+              except Exception as exc:
+                  regressions.append(f'{os.path.basename(f)}: error {exc}')
+
+          if regressions:
+              print('::error::Regressions detected:')
+              for r in regressions:
+                  print(f'  - {r}')
+              exit(1)
+          print(f'All {len(fixtures)} fixtures match baseline.')
+          "
+
+      - name: Upload tracking artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: godibot-concordance-${{ github.run_id }}
+          path: |
+            prostanet_loop_monitor.db
+            prostanet_tracking.db
+          retention-days: 30

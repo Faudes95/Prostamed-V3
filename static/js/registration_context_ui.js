@@ -30,6 +30,50 @@
         }
     }
 
+    const LINE_CONTEXT_OPTIONS = [
+        { value: "", label: "Sin línea documentada" },
+        { value: "mHSPC_initial", label: "mHSPC inicial" },
+        { value: "mHSPC_post_docetaxel", label: "mHSPC post-docetaxel" },
+        { value: "m0_CRPC_first_line", label: "m0 CRPC primera línea" },
+        { value: "mCRPC_first_line", label: "mCRPC primera línea" },
+        { value: "mCRPC_post_ARPI_pre_taxane", label: "mCRPC post-ARPI pre-taxano" },
+        { value: "mCRPC_post_taxane", label: "mCRPC post-taxano" },
+        { value: "mCRPC_post_PARP", label: "mCRPC post-PARP" },
+        { value: "mCRPC_post_Lu177", label: "mCRPC post-Lu177" },
+        { value: "later_line", label: "Líneas posteriores" },
+    ];
+
+    function normalizeClinicalState(value) {
+        return String(value || "").trim().toLowerCase();
+    }
+
+    function lineContextOptionsForState(clinicalState, selectedValue = "") {
+        const state = normalizeClinicalState(clinicalState);
+        let allowedValues;
+        if (state.includes("m1_crpc") || state.includes("mcrpc")) {
+            allowedValues = LINE_CONTEXT_OPTIONS.map((option) => option.value);
+        } else if (state.includes("m0_crpc")) {
+            allowedValues = ["", "m0_CRPC_first_line"];
+        } else if (state.includes("mcspc") || state.includes("mhspc")) {
+            allowedValues = ["", "mHSPC_initial", "mHSPC_post_docetaxel"];
+        } else {
+            allowedValues = [""];
+        }
+        const options = LINE_CONTEXT_OPTIONS.filter((option) => allowedValues.includes(option.value));
+        const hasSelected = options.some((option) => option.value === selectedValue);
+        if (selectedValue && !hasSelected) {
+            const legacy = LINE_CONTEXT_OPTIONS.find((option) => option.value === selectedValue);
+            options.push(legacy || { value: selectedValue, label: selectedValue });
+        }
+        return options;
+    }
+
+    function renderLineContextOptions(selectedValue = "", clinicalState = "") {
+        return lineContextOptionsForState(clinicalState, selectedValue)
+            .map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === selectedValue ? "selected" : ""}>${escapeHtml(option.label)}</option>`)
+            .join("");
+    }
+
     function renderScaleContext(field) {
         const parts = [];
         if (field.scale_descriptor) {
@@ -49,6 +93,15 @@
     }
 
     function evaluateConditionalVisibility(root, conditions = {}) {
+        if (!conditions || typeof conditions !== "object") {
+            return true;
+        }
+        if (Array.isArray(conditions.__any__)) {
+            return conditions.__any__.some((branch) => evaluateConditionalVisibility(root, branch));
+        }
+        if (Array.isArray(conditions.__all__)) {
+            return conditions.__all__.every((branch) => evaluateConditionalVisibility(root, branch));
+        }
         return Object.entries(conditions || {}).every(([fieldName, accepted]) => {
             const fieldNodes = Array.from(root.querySelectorAll(`[name="${fieldName}"]`));
             if (!fieldNodes.length) {
@@ -94,10 +147,10 @@
         });
     }
 
-    function renderPsaHistoryRows(rows) {
+    function renderPsaHistoryRows(rows, clinicalState = "") {
         const initialRows = rows.length ? rows : [{}];
         return initialRows.map((row) => `
-            <div data-psa-history-row class="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]">
+            <div data-psa-history-row class="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 md:grid-cols-2 xl:grid-cols-3">
                 <label class="text-sm">
                     <span class="mb-1 block text-slate-300">Fecha de muestra</span>
                     <input type="date" data-history-key="sample_date" value="${escapeHtml(row.sample_date || "")}" class="pn-input w-full px-3 py-2">
@@ -133,16 +186,7 @@
                 <label class="text-sm lg:col-span-2">
                     <span class="mb-1 block text-slate-300">Contexto de línea (opcional)</span>
                     <select data-history-key="line_of_therapy_context" class="pn-input w-full px-3 py-2">
-                        <option value="" ${!row.line_of_therapy_context ? "selected" : ""}>Sin línea documentada</option>
-                        <option value="mHSPC_initial" ${row.line_of_therapy_context === "mHSPC_initial" ? "selected" : ""}>mHSPC inicial</option>
-                        <option value="mHSPC_post_docetaxel" ${row.line_of_therapy_context === "mHSPC_post_docetaxel" ? "selected" : ""}>mHSPC post-docetaxel</option>
-                        <option value="m0_CRPC_first_line" ${row.line_of_therapy_context === "m0_CRPC_first_line" ? "selected" : ""}>m0 CRPC primera línea</option>
-                        <option value="mCRPC_first_line" ${row.line_of_therapy_context === "mCRPC_first_line" ? "selected" : ""}>mCRPC primera línea</option>
-                        <option value="mCRPC_post_ARPI_pre_taxane" ${row.line_of_therapy_context === "mCRPC_post_ARPI_pre_taxane" ? "selected" : ""}>mCRPC post-ARPI pre-taxano</option>
-                        <option value="mCRPC_post_taxane" ${row.line_of_therapy_context === "mCRPC_post_taxane" ? "selected" : ""}>mCRPC post-taxano</option>
-                        <option value="mCRPC_post_PARP" ${row.line_of_therapy_context === "mCRPC_post_PARP" ? "selected" : ""}>mCRPC post-PARP</option>
-                        <option value="mCRPC_post_Lu177" ${row.line_of_therapy_context === "mCRPC_post_Lu177" ? "selected" : ""}>mCRPC post-Lu177</option>
-                        <option value="later_line" ${row.line_of_therapy_context === "later_line" ? "selected" : ""}>Líneas posteriores</option>
+                        ${renderLineContextOptions(row.line_of_therapy_context || "", clinicalState)}
                     </select>
                 </label>
                 <label class="text-sm lg:col-span-3">
@@ -153,10 +197,10 @@
         `).join("");
     }
 
-    function renderTestosteroneHistoryRows(rows) {
+    function renderTestosteroneHistoryRows(rows, clinicalState = "") {
         const initialRows = rows.length ? rows : [{}];
         return initialRows.map((row) => `
-            <div data-testosterone-history-row class="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]">
+            <div data-testosterone-history-row class="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 md:grid-cols-2 xl:grid-cols-3">
                 <label class="text-sm">
                     <span class="mb-1 block text-slate-300">Fecha de muestra</span>
                     <input type="date" data-history-key="sample_date" value="${escapeHtml(row.sample_date || "")}" class="pn-input w-full px-3 py-2">
@@ -191,16 +235,7 @@
                 <label class="text-sm lg:col-span-2">
                     <span class="mb-1 block text-slate-300">Contexto de línea (opcional)</span>
                     <select data-history-key="line_of_therapy_context" class="pn-input w-full px-3 py-2">
-                        <option value="" ${!row.line_of_therapy_context ? "selected" : ""}>Sin línea documentada</option>
-                        <option value="mHSPC_initial" ${row.line_of_therapy_context === "mHSPC_initial" ? "selected" : ""}>mHSPC inicial</option>
-                        <option value="mHSPC_post_docetaxel" ${row.line_of_therapy_context === "mHSPC_post_docetaxel" ? "selected" : ""}>mHSPC post-docetaxel</option>
-                        <option value="m0_CRPC_first_line" ${row.line_of_therapy_context === "m0_CRPC_first_line" ? "selected" : ""}>m0 CRPC primera línea</option>
-                        <option value="mCRPC_first_line" ${row.line_of_therapy_context === "mCRPC_first_line" ? "selected" : ""}>mCRPC primera línea</option>
-                        <option value="mCRPC_post_ARPI_pre_taxane" ${row.line_of_therapy_context === "mCRPC_post_ARPI_pre_taxane" ? "selected" : ""}>mCRPC post-ARPI pre-taxano</option>
-                        <option value="mCRPC_post_taxane" ${row.line_of_therapy_context === "mCRPC_post_taxane" ? "selected" : ""}>mCRPC post-taxano</option>
-                        <option value="mCRPC_post_PARP" ${row.line_of_therapy_context === "mCRPC_post_PARP" ? "selected" : ""}>mCRPC post-PARP</option>
-                        <option value="mCRPC_post_Lu177" ${row.line_of_therapy_context === "mCRPC_post_Lu177" ? "selected" : ""}>mCRPC post-Lu177</option>
-                        <option value="later_line" ${row.line_of_therapy_context === "later_line" ? "selected" : ""}>Líneas posteriores</option>
+                        ${renderLineContextOptions(row.line_of_therapy_context || "", clinicalState)}
                     </select>
                 </label>
                 <label class="text-sm lg:col-span-3">
@@ -273,7 +308,7 @@
                 if (!rowsContainer) {
                     return;
                 }
-                rowsContainer.insertAdjacentHTML("beforeend", renderPsaHistoryRows([{}]));
+                rowsContainer.insertAdjacentHTML("beforeend", renderPsaHistoryRows([{}], scope.dataset.clinicalState || ""));
                 syncPsaHistoryField(scope);
                 window.clinicalSelects?.syncAll(rowsContainer);
                 bindPsaHistory(scope);
@@ -325,7 +360,7 @@
                 if (!rowsContainer) {
                     return;
                 }
-                rowsContainer.insertAdjacentHTML("beforeend", renderTestosteroneHistoryRows([{}]));
+                rowsContainer.insertAdjacentHTML("beforeend", renderTestosteroneHistoryRows([{}], scope.dataset.clinicalState || ""));
                 syncTestosteroneHistoryField(scope);
                 window.clinicalSelects?.syncAll(rowsContainer);
                 bindTestosteroneHistory(scope);
@@ -890,7 +925,7 @@
         });
     }
 
-    function renderRegistrationField(field, providedValue) {
+    function renderRegistrationField(field, providedValue, clinicalState = "") {
         const value = providedValue ?? field.default ?? "";
         const required = field.required ? "required" : "";
         const conditionsAttr = field.conditional_visibility
@@ -913,7 +948,7 @@
                     </div>
                     <input type="hidden" name="${escapeHtml(field.name)}" data-psa-history-input value="${escapeHtml(JSON.stringify(rows))}">
                     <div class="space-y-3" data-psa-history-rows>
-                        ${rows.length ? renderPsaHistoryRows(rows) : renderPsaHistoryRows([{}])}
+                        ${rows.length ? renderPsaHistoryRows(rows, clinicalState) : renderPsaHistoryRows([{}], clinicalState)}
                     </div>
                     <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
                         <button type="button" class="pn-btn pn-btn-secondary" data-add-psa-row>Agregar medición</button>
@@ -938,7 +973,7 @@
                     </div>
                     <input type="hidden" name="${escapeHtml(field.name)}" data-testosterone-history-input value="${escapeHtml(JSON.stringify(rows))}">
                     <div class="space-y-3" data-testosterone-history-rows>
-                        ${rows.length ? renderTestosteroneHistoryRows(rows) : renderTestosteroneHistoryRows([{}])}
+                        ${rows.length ? renderTestosteroneHistoryRows(rows, clinicalState) : renderTestosteroneHistoryRows([{}], clinicalState)}
                     </div>
                     <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
                         <button type="button" class="pn-btn pn-btn-secondary" data-add-testosterone-row>Agregar medición</button>
@@ -1028,7 +1063,7 @@
         `;
     }
 
-    function renderFragmentFields(fields, defaults) {
+    function renderFragmentFields(fields, defaults, clinicalState = "") {
         if (!fields || !fields.length) {
             return '<p class="text-sm text-slate-400">Sin campos adicionales para este bloque.</p>';
         }
@@ -1043,11 +1078,11 @@
                 currentGroup = field.group;
                 html += `
                     <div class="pt-1">
-                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">${escapeHtml(currentGroup || "Datos longitudinales")}</p>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500" style="overflow-wrap:anywhere">${escapeHtml(currentGroup || "Datos longitudinales")}</p>
                         <div class="mt-3 grid gap-4 md:grid-cols-2">
                 `;
             }
-            html += renderRegistrationField(field, defaults[field.name]);
+            html += renderRegistrationField(field, defaults[field.name], clinicalState);
             if (index === fields.length - 1) {
                 html += "</div></div>";
             }
@@ -1055,13 +1090,13 @@
         return html;
     }
 
-    function renderFragment(fragment, defaults) {
+    function renderFragment(fragment, defaults, clinicalState = "") {
         const body = `
             <section class="rounded-3xl border border-slate-800 bg-slate-950/40 p-5">
                 <div class="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500">${escapeHtml(fragment.id)}</p>
-                        <h3 class="mt-1 text-base font-semibold text-white">${escapeHtml(fragment.title)}</h3>
+                    <div class="min-w-0">
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-500" style="overflow-wrap:anywhere">${escapeHtml(fragment.id)}</p>
+                        <h3 class="mt-1 text-base font-semibold text-white" style="overflow-wrap:anywhere">${escapeHtml(fragment.title)}</h3>
                         ${fragment.when_to_ask ? `<p class="mt-2 text-sm text-slate-400">${escapeHtml(fragment.when_to_ask)}</p>` : ""}
                     </div>
                     <div class="flex flex-wrap gap-2">
@@ -1070,13 +1105,13 @@
                     </div>
                 </div>
                 ${fragment.clinical_influence?.length ? `<ul class="mt-4 space-y-2 text-sm text-slate-300">${fragment.clinical_influence.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
-                <div class="mt-4">${renderFragmentFields(fragment.fields || [], defaults)}</div>
+                <div class="mt-4">${renderFragmentFields(fragment.fields || [], defaults, clinicalState)}</div>
             </section>
         `;
         if (fragment.collapsed_by_default || fragment.optional_research) {
             return `
                 <details class="rounded-3xl border border-slate-800 bg-slate-950/20 p-2">
-                    <summary class="cursor-pointer list-none rounded-2xl px-3 py-2 text-sm font-medium text-slate-200">
+                    <summary class="cursor-pointer list-none rounded-2xl px-3 py-2 text-sm font-medium text-slate-200" style="overflow-wrap:anywhere">
                         ${escapeHtml(fragment.title)}
                     </summary>
                     <div class="mt-3">${body}</div>
@@ -1086,10 +1121,70 @@
         return body;
     }
 
-    function renderRegistrationContext({ target, fragments, defaults = {}, captureLayers = [] }) {
+    function renderRegistrationLedgerPanel(ledgerContext) {
+        const context = ledgerContext || {};
+        const summary = context.summary || {};
+        const reused = context.reused_imported_fields || [];
+        const conflicts = context.conflict_imported_fields || context.conflict_fields || [];
+        const activeCount = Number(summary.ledger_mapped_field_count || 0)
+            + Number(summary.reused_imported_field_count || 0)
+            + Number(summary.conflict_imported_field_count || 0)
+            + reused.length
+            + conflicts.length;
+        if (!activeCount) {
+            return "";
+        }
+        const contract = context.ui_contract || {};
+        const dataFlags = `
+            data-source-clinical-facts-mutated="${String(Boolean(contract.source_clinical_facts_mutated || context.source_clinical_facts_mutated))}"
+            data-external-order-created="${String(Boolean(contract.external_order_created || context.external_order_created))}"
+            data-model-trained="${String(Boolean(contract.model_trained || context.model_trained))}"
+        `;
+        const renderFactPill = (item, tone) => `
+            <span class="inline-flex max-w-full items-center gap-1 rounded-full border ${tone === "conflict" ? "border-amber-400/40 bg-amber-400/10 text-amber-100" : "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"} px-3 py-1 text-[11px]">
+                <span class="truncate">${escapeHtml(item.field_label || item.field_name || item.fact_key || "Hecho clínico")}</span>
+                ${item.source_count ? `<span class="text-slate-400">${escapeHtml(String(item.source_count))} fuentes</span>` : ""}
+            </span>
+        `;
+        return `
+            <section data-testid="registration-ledger-prefill-panel" class="rounded-3xl border border-emerald-400/30 bg-emerald-400/10 p-5">
+                <div data-testid="registration-ledger-contract" class="sr-only" ${dataFlags}>Contrato Ledger: solo lectura.</div>
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.22em] text-emerald-200">Clinical Fact Ledger v1</p>
+                        <h3 class="mt-1 text-base font-semibold text-white">Registro sin recaptura innecesaria</h3>
+                        <p class="mt-2 text-sm text-slate-300">Los datos clínicos ya conocidos se reutilizan como contexto importado; las contradicciones se mantienen visibles para resolverlas antes de reutilizar.</p>
+                    </div>
+                    <div class="grid min-w-[13rem] grid-cols-3 gap-2 text-center text-xs">
+                        <div class="rounded-2xl border border-slate-700/70 bg-slate-950/40 p-3">
+                            <p class="text-lg font-semibold text-white">${escapeHtml(String(summary.imported_field_count || 0))}</p>
+                            <p class="text-slate-400">importados</p>
+                        </div>
+                        <div class="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-3">
+                            <p class="text-lg font-semibold text-emerald-100">${escapeHtml(String(summary.reused_imported_field_count || reused.length || 0))}</p>
+                            <p class="text-emerald-200">reusados</p>
+                        </div>
+                        <div class="rounded-2xl border border-amber-400/30 bg-amber-400/10 p-3">
+                            <p class="text-lg font-semibold text-amber-100">${escapeHtml(String(summary.conflict_imported_field_count || conflicts.length || 0))}</p>
+                            <p class="text-amber-200">conflictos</p>
+                        </div>
+                    </div>
+                </div>
+                ${reused.length || conflicts.length ? `
+                    <div class="mt-4 flex flex-wrap gap-2">
+                        ${reused.slice(0, 8).map((item) => renderFactPill(item, "reuse")).join("")}
+                        ${conflicts.slice(0, 6).map((item) => renderFactPill(item, "conflict")).join("")}
+                    </div>
+                ` : ""}
+            </section>
+        `;
+    }
+
+    function renderRegistrationContext({ target, fragments, defaults = {}, captureLayers = [], ledgerContext = null, clinicalState = "" }) {
         if (!target) {
             return;
         }
+        target.dataset.clinicalState = clinicalState || "";
         if (!fragments || !fragments.length) {
             target.innerHTML = '<p class="text-sm text-slate-400">Sin bloques de registro para este estado.</p>';
             return;
@@ -1102,17 +1197,18 @@
             }))
             : [{ id: "all", label: "Captura clínica", description: "", fragments }];
 
-        target.innerHTML = orderedLayers.map((layer) => `
+        const ledgerPanel = renderRegistrationLedgerPanel(ledgerContext);
+        target.innerHTML = `${ledgerPanel}${orderedLayers.map((layer) => `
             <section class="space-y-4">
                 <div class="rounded-3xl border border-slate-800 bg-slate-950/30 p-5">
-                    <p class="text-xs uppercase tracking-[0.24em] text-cyan-300">${escapeHtml(layer.label || "Captura clínica")}</p>
+                    <p class="text-xs uppercase tracking-[0.24em] text-cyan-300" style="overflow-wrap:anywhere">${escapeHtml(layer.label || "Captura clínica")}</p>
                     ${layer.description ? `<p class="mt-2 text-sm text-slate-300">${escapeHtml(layer.description)}</p>` : ""}
                 </div>
                 <div class="space-y-5">
-                    ${(layer.fragments || []).map((fragment) => renderFragment(fragment, defaults)).join("")}
+                    ${(layer.fragments || []).map((fragment) => renderFragment(fragment, defaults, clinicalState)).join("")}
                 </div>
             </section>
-        `).join("");
+        `).join("")}`;
         window.clinicalSelects?.syncAll(target);
         bindPsaHistory(target);
         bindTestosteroneHistory(target);
@@ -1137,18 +1233,26 @@
             return;
         }
         countNode.textContent = `${fields.length} variables importadas`;
-        container.innerHTML = fields.map((field) => `
+        container.innerHTML = fields.map((field) => {
+            const ledgerChip = field.ledger_action === "reuse_prefill_hide"
+                ? '<span class="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-[11px] text-emerald-100">Ledger reutilizado</span>'
+                : field.ledger_action === "resolve_conflict_before_reuse"
+                    ? '<span class="rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-1 text-[11px] text-amber-100">Ledger conflicto</span>'
+                    : "";
+            return `
             <div class="rounded-2xl border border-slate-700/80 bg-slate-900/70 p-4">
                 <div class="flex flex-wrap items-center gap-2">
                     <p class="text-sm font-medium text-white">${escapeHtml(field.label)}</p>
                     <span class="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300">${escapeHtml(field.clinical_role_label || "")}</span>
                     ${field.capture_layer_label ? `<span class="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2.5 py-1 text-[11px] text-cyan-200">${escapeHtml(field.capture_layer_label)}</span>` : ""}
+                    ${ledgerChip}
                 </div>
                 <p class="mt-2 text-sm text-cyan-100">${formatRegistrationValue(field.value_label)}</p>
+                ${field.ledger_fact_key ? `<p class="mt-2 text-xs text-emerald-200">Ledger: ${escapeHtml(field.ledger_fact_key)}${field.ledger_source_count ? ` · ${escapeHtml(String(field.ledger_source_count))} fuentes` : ""}</p>` : ""}
                 ${field.persist_targets?.length ? `<p class="mt-2 text-xs text-slate-500">Persistencia: ${field.persist_targets.map((item) => escapeHtml(item)).join(", ")}</p>` : ""}
                 ${field.when_to_ask ? `<p class="mt-2 text-xs text-slate-400">${escapeHtml(field.when_to_ask)}</p>` : ""}
             </div>
-        `).join("");
+        `; }).join("");
     }
 
     function buildRegistrationPayload(form) {
@@ -1156,6 +1260,7 @@
         bindMetastaticComponents(form);
         syncPsaHistoryField(form);
         syncTestosteroneHistoryField(form);
+        window.ProstaNetRealWorldEnrollment?.syncForm?.(form);
         const payload = {};
         const formData = new FormData(form);
         formData.forEach((value, key) => {
@@ -1171,6 +1276,7 @@
     window.ProstaNetRegistrationContextUI = {
         escapeHtml,
         formatRegistrationValue,
+        renderRegistrationLedgerPanel,
         renderImportedClinicalFields,
         renderRegistrationContext,
         buildRegistrationPayload,

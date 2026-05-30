@@ -2499,6 +2499,38 @@ def pivotal_gate_supporting_fields(
             evidence_tags=["lynparza_akeega_talzenna_rubraca_labels"],
             help_text="Alias para `mds_aml_history` cuando solo aplica LMA.",
         ),
+        FieldSpec(
+            "secondary_hematologic_malignancy",
+            "Neoplasia hematológica secundaria",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["lynparza_akeega_talzenna_rubraca_labels"],
+            help_text=(
+                "Alias capturable para gate 16. Bloquea PARPi cuando existe "
+                "neoplasia hematológica secundaria documentada antes de "
+                "olaparib, niraparib, talazoparib o rucaparib."
+            ),
+        ),
+        FieldSpec(
+            "prolonged_cytopenia_unexplained",
+            "Citopenia prolongada inexplicada",
+            "select",
+            options=["Desconocido", "No", "Sí"],
+            default="Desconocido",
+            group=group,
+            group_order=group_order,
+            clinical_role=role_value,
+            evidence_tags=["lynparza_akeega_talzenna_rubraca_labels"],
+            help_text=(
+                "Alias capturable para gate 16. Úselo como sospecha de SMD/LMA "
+                "no confirmado cuando una citopenia persistente requiere "
+                "workup hematológico antes de considerar PARPi."
+            ),
+        ),
 
         # ── Gates 17/18 — ARPI cardiotox overrides ────────────────────
         # Faubot LXXXVI #LXXXVI.D — qtc_baseline_ms + lvef_baseline_percent

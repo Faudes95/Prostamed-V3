@@ -24,7 +24,9 @@ import sys
 import types
 from pathlib import Path
 
-if "tracking_db" not in sys.modules:
+try:
+    import tracking_db  # noqa: F401
+except Exception:
     class _S(types.ModuleType):
         def __getattr__(self, n):
             def _f(*a, **k):
@@ -171,6 +173,164 @@ def test_g2770_patient_profile_v2_has_combined_timeline_canvas():
     assert 'id="psaCombinedTimelineChart"' in template, (
         "Canvas combined timeline missing en patient_profile_v2.html"
     )
+    assert "function renderCombinedTimeline" in template
+    assert "or pm2_psa_points or pm2_treatment_bands" in template
+    assert "psa_obs.points + psa_obs.treatment_bands" in template
+
+
+def test_g2770b_patient_profile_v2_has_psa_treatment_timeline_canvas():
+    """V2 debe materializar psaTreatmentTimelineChart; legacy no es criterio."""
+    template = (ROOT / "templates/patient_profile_v2.html").read_text()
+    assert 'id="psaTreatmentTimelineChart"' in template
+    assert "function renderTreatmentTimeline" in template
+    assert "psaTreatmentTimelineEmpty" in template
+    assert "patient_profile.html" not in template
+
+
+def test_patient_profile_v2_psa_tower_surfaces_current_treatment_line():
+    """La torre APE V2 debe exponer mediciones y linea terapeutica actual."""
+    template = (ROOT / "templates/patient_profile_v2.html").read_text()
+    assert 'id="psaMini"' in template
+    assert 'id="psaFull"' in template
+    assert 'data-testid="v2-psa-current-treatment-line"' in template
+    assert "pm2_psa_points|length" in template
+    assert "tx_current.regimen_label" in template
+    assert "tx_current.line_of_therapy_number" in template
+    assert "pm2_current_band" in template
+
+
+def test_g2770c_patient_profile_v2_surfaces_treatment_value_costs():
+    """Costos y estadistica ARPI deben estar visibles en V2."""
+    template = (ROOT / "templates/patient_profile_v2.html").read_text()
+    assert 'data-testid="v2-treatment-value-summary"' in template
+    assert 'data-testid="v2-treatment-cost-topline"' in template
+    assert "Valor clinico-economico V2" in template
+    assert "Tratamiento y costo farmacológico V2" in template
+    assert "estimated_total_spend_mxn" in template
+    assert "estimated_cost_per_dose_mxn" in template
+    assert "priced_components" in template
+    assert "priced_doses" in template
+    assert "cost_scope" in template
+    assert "arpi_response_6mo" in template
+
+
+def test_patient_profile_v2_surfaces_clinical_fact_ledger_v1_closure():
+    """Clinical Fact Ledger v1 debe ser visible en V2, no solo API."""
+    template = (ROOT / "templates/patient_profile_v2.html").read_text()
+    assert 'data-testid="clinical-fact-ledger-v1-panel"' in template
+    assert 'data-testid="clinical-fact-ledger-contract"' in template
+    assert 'data-testid="clinical-fact-ledger-priority-facts"' in template
+    assert 'data-testid="clinical-fact-ledger-conflict-queue"' in template
+    assert 'data-testid="clinical-fact-ledger-recapture-watch"' in template
+    assert 'data-testid="decision-today-ledger-quality-banner"' in template
+    assert 'data-testid="autodrive-ledger-quality-gate"' in template
+    assert 'data-testid="ledger-capture-governance-panel"' in template
+    assert 'data-testid="ledger-governed-{{ gate.gate_key }}"' in template
+    assert 'data-testid="ledger-reconciliation-v2-link"' in template
+    assert 'data-testid="ledger-summary-api-link"' in template
+    assert "/clinical-fact-ledger/summary" in template
+    assert "/clinical-fact-reconciliation/" in template
+    assert "prellenar sin volver a preguntar" in template
+    assert "CTAs gobernadas por Ledger" in template
+    assert "sin recaptura" in template
+    assert "Calidad Ledger de DECISION HOY" in template
+
+
+def test_wizard_v2_consumes_clinical_fact_ledger_without_recaputure():
+    """El wizard V2 usa Ledger para prellenar/ocultar, no para mutar hechos fuente."""
+    template = (ROOT / "templates/clinical_wizard.html").read_text()
+    assert 'data-testid="wizard-ledger-prefill-panel"' in template
+    assert 'data-testid="wizard-ledger-contract"' in template
+    assert 'id="wizardClinicalFactLedgerContext"' in template
+    assert "applyClinicalFactLedgerWizardContext" in template
+    assert "reuse_prefill_hide" in template
+    assert "resolve_conflict_before_reuse" in template
+    assert 'data-source-clinical-facts-mutated="false"' in template
+
+
+def test_registration_phase_consumes_clinical_fact_ledger_without_recaputure():
+    """El registro longitudinal recibe el contrato Ledger y muestra chips anti-recaptura."""
+    wizard_template = (ROOT / "templates/clinical_wizard.html").read_text()
+    intake_template = (ROOT / "templates/patient_intake.html").read_text()
+    registration_js = (ROOT / "static/js/registration_context_ui.js").read_text()
+    assert "clinical_fact_ledger_wizard_context" in wizard_template
+    assert "clinical_fact_ledger_registration_context" in wizard_template
+    assert "patient_ref: wizardPatientRef" in wizard_template
+    assert "ledgerContext: data.clinical_fact_ledger_registration_context || null" in intake_template
+    assert 'data-testid="registration-ledger-prefill-panel"' in registration_js
+    assert 'data-testid="registration-ledger-contract"' in registration_js
+    assert 'data-source-clinical-facts-mutated="' in registration_js
+    assert "Ledger reutilizado" in registration_js
+    assert "Ledger conflicto" in registration_js
+
+
+def test_longitudinal_capture_v2_consumes_clinical_fact_ledger_without_recapture():
+    """La captura longitudinal V2 aplica Ledger sin bloquear nuevas series APE."""
+    template = (ROOT / "templates/demos/longitudinal_capture_v2_demo.html").read_text()
+    service = (ROOT / "prostanet/domains/clinical_fact_ledger/service.py").read_text()
+    app_py = (ROOT / "app.py").read_text()
+    assert 'data-testid="longitudinal-ledger-context-panel"' in template
+    assert 'id="longitudinalClinicalFactLedgerContext"' in template
+    assert "PM2_LONGITUDINAL_LEDGER_CONTEXT" in template
+    assert "applyLongitudinalLedgerContext" in template
+    assert "longitudinal-ledger-field-" in template
+    assert "ledgerFieldAction" in template
+    assert "ledger_context" in template
+    assert "ledger_recapture_blocked" in template
+    assert "disabledByLedger" in template
+    assert "field_decisions" in service
+    assert "append_longitudinal_measurement" in service
+    assert "append_new_measurement" in service
+    assert "build_longitudinal_capture_ledger_context" in service
+    assert "build_longitudinal_capture_ledger_context" in app_py
+    assert "ledger_recapture_blocked" in app_py
+
+
+def test_clinical_fact_reconciliation_v2_is_wired_to_ledger_conflicts():
+    """La reconciliacion V2 convierte conflicto Ledger en accion auditable."""
+    template = (ROOT / "templates/clinical_fact_reconciliation_v2.html").read_text()
+    service = (ROOT / "prostanet/domains/clinical_fact_ledger/service.py").read_text()
+    app_py = (ROOT / "app.py").read_text()
+    tracking_db = (ROOT / "tracking_db.py").read_text()
+
+    assert 'data-testid="clinical-fact-reconciliation-panel"' in template
+    assert 'data-testid="ledger-reconciliation-queue"' in template
+    assert 'data-testid="ledger-reconciliation-impact-contract"' in template
+    assert 'data-testid="ledger-reconciliation-impact-live"' in template
+    assert "PM2_RECONCILIATION_IMPACT_KEY" in template
+    assert "Gate DECISION HOY" in template
+    assert "ledger_gate_cleared" in template
+    assert "clinical-fact-ledger/reconcile" in template
+    assert "reconciliation_impact" in template
+    assert "build_patient_clinical_fact_reconciliation_bundle" in service
+    assert "clinical_fact_reconciliation_bundle_v1" in service
+    assert "/clinical-fact-reconciliation/<patient_ref>" in app_py
+    assert "clinical_fact_reconciliation_decision_refresh_v1" in app_py
+    assert "_recompute_after_append" in app_py
+    assert "reconcile_patient_clinical_fact" in tracking_db
+    assert "clinical_fact_reconciled" in tracking_db
+    assert "ledger_reconciliation" in tracking_db
+
+
+def test_clinical_fact_reconciliation_population_v2_is_wired_to_ledger_queue():
+    """La reconciliacion Ledger tiene cola poblacional read-only en V2."""
+    template = (ROOT / "templates/clinical_fact_reconciliation_population_v2.html").read_text()
+    profile_template = (ROOT / "templates/patient_profile_v2.html").read_text()
+    service = (ROOT / "prostanet/domains/clinical_fact_ledger/service.py").read_text()
+    app_py = (ROOT / "app.py").read_text()
+
+    assert 'data-testid="ledger-reconciliation-population-panel"' in template
+    assert 'data-testid="ledger-reconciliation-population-contract"' in template
+    assert "clinical_fact_reconciliation_population_v1" in template
+    assert "ledger-reconciliation-population-row-" in template
+    assert "source_clinical_facts_mutated=false" in template
+    assert "external_order_created=false" in template
+    assert "model_trained=false" in template
+    assert "build_clinical_fact_reconciliation_population" in service
+    assert "clinical_fact_reconciliation_population_v1" in service
+    assert "/clinical-fact-reconciliation" in app_py
+    assert "/api/clinical-fact-ledger/reconciliation/today" in app_py
+    assert 'data-testid="ledger-reconciliation-population-link"' in profile_template
 
 
 def test_g2771_patient_profile_v2_renders_cohort_reference_overlay():
@@ -195,6 +355,6 @@ def test_g2773_patient_profile_v2_uses_jinja_conditional_for_safety():
     """H.G2773 — Las 3 secciones nuevas usan {% if %} para safety si data missing."""
     template = (ROOT / "templates/patient_profile_v2.html").read_text()
     # Verificar que las 3 secciones tienen guards condicionales
-    assert "{% if psa_combined_timeline" in template
+    assert "{% if (psa_combined_timeline" in template
     assert "{% if psa_cohort_reference" in template
     assert "{% if psa_forecast_per_line" in template

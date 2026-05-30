@@ -1,6 +1,6 @@
 document: Retro Validation Results
 faubot_release: 2026-04-27 LXXXVIII
-computed_at: '2026-05-12T23:17:41.963866'
+computed_at: '2026-05-13T15:12:37.363137'
 methodology: Bootstrap placeholder · iteration LXXXIX+ replaces with real SQLite cohort
   joins
 n_cohort: 424

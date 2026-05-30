@@ -109,12 +109,25 @@ class ModelRegistry:
             # missing-file/corrupt-pickle. Pre-EPIC29 the bare except swallowed
             # the type info; clinician saw identical "AI substrate offline"
             # banner for both cases with no signal to retrain.
-            error_type = type(exc).__name__
+            raw_error_type = type(exc).__name__
+            raw_error = str(exc)
+            is_legacy_state_vocab_mismatch = (
+                model_id == "state_transition"
+                and "size mismatch" in raw_error
+                and "next_state_head" in raw_error
+            )
+            error_type = (
+                "IncompatibleCheckpointError"
+                if is_legacy_state_vocab_mismatch
+                else raw_error_type
+            )
             is_vocab_incompatible = error_type == "IncompatibleCheckpointError"
             if is_vocab_incompatible:
-                logger.error(
-                    "Model %s checkpoint vocab incompatible with runtime — "
-                    "RETRAIN REQUIRED. Detail: %s", model_id, exc,
+                logger.warning(
+                    "Model %s checkpoint vocab incompatible with runtime; "
+                    "advisory AI layer will degrade until retrained. Detail: %s",
+                    model_id,
+                    raw_error,
                 )
             else:
                 logger.error("Failed to load model %s: %s", model_id, exc)
@@ -123,9 +136,10 @@ class ModelRegistry:
                 "artifact_path": str(artifact_path),
                 "artifact_exists": True,
                 "loaded": False,
-                "load_error": str(exc),
+                "load_error": raw_error,
                 "load_error_type": error_type,
                 "incompatible_vocab_version": is_vocab_incompatible,
+                "requires_retrain": is_vocab_incompatible,
             }
             return False
 

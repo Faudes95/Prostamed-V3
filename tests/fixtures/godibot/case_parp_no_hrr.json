@@ -1,0 +1,19 @@
+{
+  "_expected_status": "blocked_hard",
+  "_description": "Caso #1 — Recomendación PARP (olaparib) en m1CRPC sin HRR confirmado. Debe disparar gate biomarker_gap:hrr_pre_parp como hard_block.",
+  "reconciled_state": "m1_crpc",
+  "baseline": {
+    "baseline_psa": 120.0,
+    "gleason_score": 9,
+    "gleason_primary": 5,
+    "gleason_secondary": 4
+  },
+  "biomarker_longitudinal": [],
+  "hrr_test_result": null,
+  "ecog_current": 1,
+  "clinical_compass": {
+    "headline": "Iniciar olaparib 300 mg BID en m1CRPC progresivo",
+    "rationale": "PARP inhibitor de primera línea para CRPC con progresión bioquímica.",
+    "evidence_summary": []
+  }
+}

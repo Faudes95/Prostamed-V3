@@ -21,6 +21,7 @@ class FactSpec:
 FACT_SPECS: dict[str, FactSpec] = {
     "baseline_psa": FactSpec("baseline_psa", "biochemical", "number", ("psa",), True, ("decision_input_requirements", "profile")),
     "current_psa": FactSpec("current_psa", "biochemical", "number", ("psa_current", "psa"), True, ("decision_input_requirements", "governance")),
+    "psa_current_date": FactSpec("psa_current_date", "biochemical", "date", ("current_psa_date", "latest_psa_date"), False, ("decision_input_requirements", "governance", "profile")),
     "psa_postop": FactSpec("psa_postop", "biochemical", "number", (), True, ("decision_input_requirements", "governance", "profile")),
     "psadt_months": FactSpec("psadt_months", "biochemical", "number", ("psadt_at_bcr",), True, ("decision_input_requirements", "governance", "profile")),
     # EPIC 31.A (Explore EXP-12 CRIT) — flag explícito de confirmación m0CRPC.
@@ -43,8 +44,9 @@ FACT_SPECS: dict[str, FactSpec] = {
     ),
     "repeat_psa_value": FactSpec("repeat_psa_value", "biochemical", "number", (), False, ("decision_input_requirements", "governance")),
     "repeat_psa_date": FactSpec("repeat_psa_date", "biochemical", "date", (), False, ("decision_input_requirements", "governance")),
-    "testosterone": FactSpec("testosterone", "biochemical", "number", ("testosterone_current", "testosterone_baseline"), True, ("decision_input_requirements", "governance")),
+    "testosterone": FactSpec("testosterone", "biochemical", "number", ("testosterone_current", "testosterone_baseline", "testosterone_value"), True, ("decision_input_requirements", "governance")),
     "castrate_testosterone_status": FactSpec("castrate_testosterone_status", "systemic_context", "text", (), True, ("decision_input_requirements", "governance")),
+    "castration_resistant": FactSpec("castration_resistant", "systemic_context", "text", ("crpc_confirmed", "castration_resistant_status"), True, ("decision_input_requirements", "governance", "profile")),
     "conventional_imaging_status": FactSpec("conventional_imaging_status", "staging", "text", (), True, ("decision_input_requirements", "governance", "profile")),
     "conventional_imaging_date": FactSpec("conventional_imaging_date", "staging", "date", (), False, ("decision_input_requirements", "profile")),
     "progression_pattern": FactSpec("progression_pattern", "staging", "text", (), True, ("decision_input_requirements", "governance")),
@@ -52,6 +54,7 @@ FACT_SPECS: dict[str, FactSpec] = {
     "pirads_score": FactSpec("pirads_score", "diagnostic", "number", ("prior_mpmri_pirads_score", "pirads_v21_score"), True, ("decision_input_requirements", "profile")),
     "dre_suspicious": FactSpec("dre_suspicious", "diagnostic", "boolean", ("dre_abnormal", "digital_rectal_exam_suspicious"), True, ("decision_input_requirements", "governance", "profile")),
     "mri_fact_date": FactSpec("mri_fact_date", "diagnostic", "date", ("mpmri_date",), False, ("decision_input_requirements", "profile")),
+    "clinical_tstage": FactSpec("clinical_tstage", "staging", "text", ("clinical_t_stage", "clinical_tstage_dre_estimate", "ct_stage"), True, ("decision_input_requirements", "localized_modality", "profile")),
     "biopsy_date": FactSpec("biopsy_date", "pathology", "date", (), False, ("decision_input_requirements", "profile")),
     "confirmatory_biopsy_done": FactSpec("confirmatory_biopsy_done", "pathology", "boolean", (), False, ("decision_input_requirements", "governance", "profile")),
     "confirmatory_biopsy_date": FactSpec("confirmatory_biopsy_date", "pathology", "date", (), False, ("decision_input_requirements", "profile")),
@@ -67,18 +70,23 @@ FACT_SPECS: dict[str, FactSpec] = {
     "psa_density": FactSpec("psa_density", "biochemical", "number",
                              ("psad", "psa_density_ratio"), True,
                              ("decision_input_requirements", "profile", "localized_modality")),
+    "num_cores_positive": FactSpec("num_cores_positive", "pathology", "number",
+                                    ("positive_cores", "cores_positive", "biopsy_positive_cores"),
+                                    True, ("decision_input_requirements", "profile", "localized_modality")),
     "total_cores_biopsied": FactSpec("total_cores_biopsied", "pathology", "number",
-                                      ("biopsy_total_cores", "cores_total"), True,
+                                      ("biopsy_total_cores", "cores_total", "total_cores"), True,
                                       ("decision_input_requirements", "profile")),
     "prostate_volume_ml": FactSpec("prostate_volume_ml", "diagnostic", "number",
                                     ("prostate_volume",), False,
                                     ("decision_input_requirements", "profile")),
-    "genomic_classifier_result": FactSpec("genomic_classifier_result", "precision", "text", ("genomic_classifier", "decipher_risk"), False, ("localized_modality", "profile")),
+    "genomic_classifier_type": FactSpec("genomic_classifier_type", "precision", "text", ("genomic_classifier",), False, ("localized_modality", "profile")),
+    "genomic_classifier_result": FactSpec("genomic_classifier_result", "precision", "text", ("decipher_risk",), False, ("localized_modality", "profile")),
     "genomic_classifier_report_date": FactSpec("genomic_classifier_report_date", "precision", "date", ("genomic_report_date",), False, ("localized_modality", "profile")),
     "metastatic_stage_resolved": FactSpec("metastatic_stage_resolved", "metastatic_context", "text", ("m_substage_resolved",), True, ("reconciled_state", "profile", "governance")),
     "metastatic_detection_basis": FactSpec("metastatic_detection_basis", "metastatic_context", "text", (), True, ("reconciled_state", "profile", "governance")),
     "metastasis_assessment_date": FactSpec("metastasis_assessment_date", "metastatic_context", "date", (), False, ("reconciled_state", "profile")),
     "metastasis_document_source": FactSpec("metastasis_document_source", "metastatic_context", "text", (), False, ("reconciled_state", "profile")),
+    "age": FactSpec("age", "fitness", "number", ("age_current", "patient_age", "age_years", "edad"), False, ("decision_input_requirements", "governance", "profile")),
     "ecog_score": FactSpec("ecog_score", "fitness", "number", ("ecog", "ecog_current"), True, ("decision_input_requirements", "governance")),
     "charlson_score": FactSpec("charlson_score", "fitness", "number", ("charlson_index",), True, ("decision_input_requirements", "governance", "profile")),
     "frailty_status": FactSpec("frailty_status", "frailty", "text", (), True, ("decision_input_requirements", "governance", "profile")),
@@ -118,11 +126,25 @@ FACT_SPECS: dict[str, FactSpec] = {
     "current_medications": FactSpec("current_medications", "supportive", "text", (), False, ("governance", "profile")),
     "ddi_review_status": FactSpec("ddi_review_status", "supportive", "text", ("drug_interaction_reviewed",), False, ("governance", "profile")),
     "cv_risk_documented": FactSpec("cv_risk_documented", "supportive", "boolean", (), False, ("governance", "profile")),
+    "on_zoledronate": FactSpec("on_zoledronate", "supportive", "boolean", ("zoledronic_acid_active", "zoledronate_active"), False, ("governance", "profile", "bone_health")),
+    "on_denosumab": FactSpec("on_denosumab", "supportive", "boolean", ("denosumab_active",), False, ("governance", "profile", "bone_health")),
     "hemoglobin": FactSpec("hemoglobin", "laboratory", "number", (), False, ("governance", "profile")),
     "creatinine": FactSpec("creatinine", "laboratory", "number", (), False, ("governance", "profile")),
     "potassium": FactSpec("potassium", "laboratory", "number", (), False, ("governance", "profile")),
     "line_of_therapy_number": FactSpec("line_of_therapy_number", "systemic_context", "number", ("line_of_therapy",), False, ("governance", "profile")),
+    "oncologic_state_context": FactSpec("oncologic_state_context", "systemic_context", "text", ("current_oncologic_state", "clinical_state_context"), False, ("decision_input_requirements", "governance", "profile")),
+    "prior_adt": FactSpec("prior_adt", "systemic_context", "boolean", ("adt_exposure", "adt_prior_exposure"), False, ("decision_input_requirements", "governance", "profile")),
+    "adt_active": FactSpec("adt_active", "systemic_context", "boolean", ("current_adt_active", "on_adt"), False, ("decision_input_requirements", "governance", "profile")),
+    "prior_docetaxel": FactSpec("prior_docetaxel", "systemic_context", "boolean", ("docetaxel_prior_exposure",), False, ("decision_input_requirements", "governance", "profile")),
+    "prior_cabazitaxel": FactSpec("prior_cabazitaxel", "systemic_context", "boolean", ("cabazitaxel_prior_exposure",), False, ("decision_input_requirements", "governance", "profile")),
     "salvage_local_feasible": FactSpec("salvage_local_feasible", "salvage", "boolean", (), False, ("decision_input_requirements", "governance", "profile")),
+    "prior_radiation": FactSpec("prior_radiation", "salvage", "boolean", ("prior_rt", "prior_radiotherapy", "radiotherapy_prior_exposure"), False, ("decision_input_requirements", "governance", "profile")),
+    "prior_prostatectomy": FactSpec("prior_prostatectomy", "salvage", "boolean", ("prior_rp", "radical_prostatectomy_done", "prostatectomy_prior_exposure"), False, ("decision_input_requirements", "governance", "profile")),
+    "prior_rt_modality": FactSpec("prior_rt_modality", "salvage", "text", ("radiotherapy_modality", "prior_radiotherapy_modality"), False, ("decision_input_requirements", "governance", "profile")),
+    "prior_rt_fields": FactSpec("prior_rt_fields", "salvage", "text", ("radiotherapy_fields", "prior_radiotherapy_fields"), False, ("decision_input_requirements", "governance", "profile")),
+    "prior_rt_dose": FactSpec("prior_rt_dose", "salvage", "number", ("radiotherapy_total_dose", "prior_radiotherapy_dose"), False, ("decision_input_requirements", "governance", "profile")),
+    "prior_rt_completion_date": FactSpec("prior_rt_completion_date", "salvage", "date", ("radiotherapy_completion_date", "prior_radiotherapy_completion_date"), False, ("decision_input_requirements", "governance", "profile")),
+    "concurrent_adt_history": FactSpec("concurrent_adt_history", "salvage", "text", ("radiotherapy_concurrent_adt_history",), False, ("decision_input_requirements", "governance", "profile")),
     "psa_nadir": FactSpec("psa_nadir", "biochemical", "number", (), False, ("decision_input_requirements", "governance", "profile")),
     "psa_nadir_date": FactSpec("psa_nadir_date", "biochemical", "date", (), False, ("decision_input_requirements", "profile")),
     "phoenix_delta": FactSpec("phoenix_delta", "biochemical", "number", (), False, ("decision_input_requirements", "governance", "profile")),
@@ -448,20 +470,26 @@ def extract_canonical_fact_candidates(
     for fact_key in (
         "baseline_psa",
         "current_psa",
+        "psa_current_date",
         "psa_postop",
         "psadt_months",
         "repeat_psa_value",
         "repeat_psa_date",
         "testosterone",
+        "testosterone_sample_date",
         "castrate_testosterone_status",
+        "castration_resistant",
         "conventional_imaging_status",
         "conventional_imaging_date",
         "progression_pattern",
         "known_cancer_diagnosis",
+        "m0_crpc_state_confirmed",
         "pirads_score",
         "mri_fact_date",
+        "clinical_tstage",
         # EPIC 42.B.1 — new pathology + biochemical discriminators
         "psa_density",
+        "num_cores_positive",
         "total_cores_biopsied",
         "prostate_volume_ml",
         "biopsy_date",
@@ -472,10 +500,25 @@ def extract_canonical_fact_candidates(
         "gleason_primary",
         "gleason_secondary",
         "isup_grade",
+        "genomic_classifier_type",
         "genomic_classifier_result",
         "genomic_classifier_report_date",
+        "decipher_score_numeric",
+        "prolaris_ccp_score",
+        "oncotype_gps",
+        "genomic_classifier_date",
+        "germline_testing_performed",
+        "germline_pathogenic_variant",
+        "germline_test_date",
+        "somatic_testing_performed",
+        "somatic_pathogenic_variant",
+        "family_history_cancer",
         "ecog_score",
+        "charlson_score",
+        "frailty_status",
         "g8_score",
+        "anesthesia_surgical_fitness",
+        "radiotherapy_feasibility",
         "mini_cog_score",
         "ipss_total",
         "iief5_score",
@@ -486,6 +529,7 @@ def extract_canonical_fact_candidates(
         "epic26_bowel_domain",
         "epic26_hormonal_domain",
         "epic26_overall_urinary_bother",
+        "age",
         "hrr_status",
         "hrr_gene",
         "biomarker_source",
@@ -504,17 +548,49 @@ def extract_canonical_fact_candidates(
         "current_medications",
         "ddi_review_status",
         "cv_risk_documented",
+        "on_zoledronate",
+        "on_denosumab",
         "hemoglobin",
         "creatinine",
         "potassium",
+        "albumin_g_dl",
+        "ldh_u_l",
+        "hemoglobin_g_dl",
+        "alkaline_phosphatase_u_l",
+        "labs_baseline_date",
+        "egfr_ml_min",
+        "creatinine_mg_dl",
+        "egfr_formula",
+        "egfr_date",
         "line_of_therapy_number",
+        "oncologic_state_context",
+        "prior_adt",
+        "adt_active",
+        "prior_docetaxel",
+        "prior_cabazitaxel",
         "salvage_local_feasible",
+        "prior_radiation",
+        "prior_prostatectomy",
+        "prior_rt_modality",
+        "prior_rt_fields",
+        "prior_rt_dose",
+        "prior_rt_completion_date",
+        "concurrent_adt_history",
         "psa_nadir",
         "psa_nadir_date",
         "phoenix_delta",
         "biopsy_proven_local_recurrence",
         "mpmri_done",
         "mpmri_localized_recurrence",
+        "visceral_lung",
+        "visceral_liver",
+        "visceral_adrenal",
+        "visceral_cns",
+        "adt_start_date",
+        "adt_primary_agent",
+        "adt_intent",
+        "medication_list",
+        "patient_priority_profile",
         # ── EPIC 22b.5 — Post-RP pathology + AS eligibility canonical facts ──
         "gleason_at_rp",
         "gleason_primary_pattern_at_rp",
@@ -599,9 +675,14 @@ def build_legacy_shadow_payload(patient: dict[str, Any]) -> dict[str, Any]:
         latest_genomic = dict((patient.get("genomic_reports") or [{}])[0] or {})
     bcr = dict(patient.get("bcr") or {})
     as_protocol = dict(patient.get("active_surveillance_protocol") or {})
+    latest_inputs = dict(latest_assessment.get("input_snapshot") or {})
     shadow = {
         "baseline_psa": baseline.get("baseline_psa"),
         "current_psa": latest_followup.get("psa_current"),
+        "psa_current_date": _first_present(truth_values, "psa_current_date", "current_psa_date")
+        or _first_present(latest_inputs, "psa_current_date", "current_psa_date")
+        or latest_followup.get("psa_current_date")
+        or latest_followup.get("current_psa_date"),
         "psa_postop": _first_present(truth_values, "psa_postop") or baseline.get("psa_postop") or latest_followup.get("psa_postop"),
         "psadt_months": _first_present(truth_values, "psadt_months") or latest_followup.get("psadt_months") or bcr.get("psadt_months"),
         "repeat_psa_value": _first_present(latest_assessment.get("input_snapshot") or {}, "repeat_psa_value"),
@@ -612,6 +693,9 @@ def build_legacy_shadow_payload(patient: dict[str, Any]) -> dict[str, Any]:
             "castrate_testosterone_status",
         )
         or _first_present(latest_assessment.get("input_snapshot") or {}, "castrate_testosterone_status"),
+        "castration_resistant": _first_present(truth_values, "castration_resistant")
+        or _first_present(latest_inputs, "castration_resistant", "crpc_confirmed", "castration_resistant_status")
+        or prior_history.get("castration_resistant"),
         "known_cancer_diagnosis": _first_present(
             truth_values,
             "known_cancer_diagnosis",
@@ -632,6 +716,10 @@ def build_legacy_shadow_payload(patient: dict[str, Any]) -> dict[str, Any]:
         or latest_mri_fact.get("mpmri_date")
         or latest_mri_fact.get("study_date")
         or latest_imaging.get("mpmri_date"),
+        "clinical_tstage": _first_present(truth_values, "clinical_tstage")
+        or _first_present(latest_inputs, "clinical_tstage", "clinical_t_stage", "clinical_tstage_dre_estimate")
+        or baseline.get("clinical_tstage")
+        or latest_biopsy.get("clinical_tstage"),
         "biopsy_date": latest_biopsy.get("biopsy_date") or latest_structured_biopsy.get("biopsy_date"),
         "confirmatory_biopsy_done": _first_present(
             truth_values,
@@ -654,13 +742,23 @@ def build_legacy_shadow_payload(patient: dict[str, Any]) -> dict[str, Any]:
         "gleason_primary": baseline.get("gleason_primary"),
         "gleason_secondary": baseline.get("gleason_secondary"),
         "isup_grade": baseline.get("isup_grade"),
+        "num_cores_positive": _first_present(truth_values, "num_cores_positive", "positive_cores")
+        or _first_present(latest_inputs, "num_cores_positive", "positive_cores")
+        or latest_biopsy.get("positive_cores")
+        or latest_structured_biopsy.get("positive_cores"),
+        "genomic_classifier_type": _first_present(
+            latest_assessment.get("input_snapshot") or {},
+            "genomic_classifier_type",
+            "genomic_classifier",
+        )
+        or latest_genomic.get("genomic_classifier_type")
+        or latest_genomic.get("genomic_classifier"),
         "genomic_classifier_result": _first_present(
             latest_assessment.get("input_snapshot") or {},
             "genomic_classifier_result",
-            "genomic_classifier",
+            "decipher_risk",
         )
         or latest_genomic.get("genomic_classifier_result")
-        or latest_genomic.get("genomic_classifier")
         or latest_genomic.get("decipher_risk"),
         "genomic_classifier_report_date": _first_present(
             latest_assessment.get("input_snapshot") or {},
@@ -670,6 +768,11 @@ def build_legacy_shadow_payload(patient: dict[str, Any]) -> dict[str, Any]:
         or latest_genomic.get("genomic_classifier_report_date")
         or latest_genomic.get("genomic_report_date"),
         "ecog_score": _first_present(latest_followup, "ecog_current", "ecog"),
+        "age": _first_present(truth_values, "age", "age_current")
+        or _first_present(latest_inputs, "age", "age_current", "patient_age")
+        or baseline.get("age")
+        or demographics.get("age")
+        or patient.get("age"),
         "g8_score": demographics.get("g8_score") or latest_followup.get("g8_score"),
         "mini_cog_score": demographics.get("mini_cog_score") or latest_followup.get("mini_cog_score"),
         "ipss_total": demographics.get("ipss_score"),
@@ -720,7 +823,50 @@ def build_legacy_shadow_payload(patient: dict[str, Any]) -> dict[str, Any]:
         "psma_pet_done": _first_present(truth_values, "psma_pet_done") or latest_imaging.get("psma_pet_done"),
         "current_adt_context": _first_present(truth_values, "current_adt_context") or _first_present(latest_assessment.get("input_snapshot") or {}, "current_adt_context"),
         "line_of_therapy_number": _first_present(truth_values, "line_of_therapy_number") or _first_present(latest_assessment.get("input_snapshot") or {}, "line_of_therapy_number"),
+        "oncologic_state_context": _first_present(truth_values, "oncologic_state_context")
+        or _first_present(latest_inputs, "oncologic_state_context", "current_oncologic_state", "clinical_state_context")
+        or prior_history.get("current_state")
+        or latest_assessment.get("state"),
+        "prior_adt": _first_present(truth_values, "prior_adt")
+        or _first_present(latest_inputs, "prior_adt", "adt_exposure")
+        or prior_history.get("prior_adt"),
+        "adt_active": _first_present(truth_values, "adt_active")
+        or _first_present(latest_inputs, "adt_active", "current_adt_active", "on_adt")
+        or prior_history.get("adt_active"),
+        "prior_docetaxel": _first_present(truth_values, "prior_docetaxel")
+        or _first_present(latest_inputs, "prior_docetaxel")
+        or prior_history.get("prior_docetaxel"),
+        "prior_cabazitaxel": _first_present(truth_values, "prior_cabazitaxel")
+        or _first_present(latest_inputs, "prior_cabazitaxel")
+        or prior_history.get("prior_cabazitaxel"),
         "salvage_local_feasible": _first_present(truth_values, "salvage_local_feasible") or bcr.get("salvage_local_feasible"),
+        "prior_radiation": _first_present(truth_values, "prior_radiation")
+        or _first_present(latest_inputs, "prior_radiation", "prior_rt")
+        or prior_history.get("prior_radiation")
+        or bcr.get("prior_radiation"),
+        "prior_prostatectomy": _first_present(truth_values, "prior_prostatectomy")
+        or _first_present(latest_inputs, "prior_prostatectomy", "prior_rp")
+        or prior_history.get("prior_prostatectomy")
+        or bcr.get("prior_prostatectomy"),
+        "prior_rt_modality": _first_present(truth_values, "prior_rt_modality")
+        or _first_present(latest_inputs, "prior_rt_modality", "radiotherapy_modality")
+        or bcr.get("prior_rt_modality"),
+        "prior_rt_fields": _first_present(truth_values, "prior_rt_fields")
+        or _first_present(latest_inputs, "prior_rt_fields", "radiotherapy_fields")
+        or bcr.get("prior_rt_fields"),
+        "prior_rt_dose": _first_present(truth_values, "prior_rt_dose")
+        or _first_present(latest_inputs, "prior_rt_dose", "radiotherapy_total_dose")
+        or bcr.get("prior_rt_dose"),
+        "prior_rt_completion_date": _first_present(truth_values, "prior_rt_completion_date")
+        or _first_present(latest_inputs, "prior_rt_completion_date", "radiotherapy_completion_date")
+        or bcr.get("prior_rt_completion_date"),
+        "concurrent_adt_history": _first_present(truth_values, "concurrent_adt_history")
+        or _first_present(latest_inputs, "concurrent_adt_history", "radiotherapy_concurrent_adt_history")
+        or bcr.get("concurrent_adt_history"),
+        "on_zoledronate": _first_present(truth_values, "on_zoledronate")
+        or _first_present(latest_inputs, "on_zoledronate", "zoledronic_acid_active", "zoledronate_active"),
+        "on_denosumab": _first_present(truth_values, "on_denosumab")
+        or _first_present(latest_inputs, "on_denosumab", "denosumab_active"),
         "psa_nadir": _first_present(truth_values, "psa_nadir") or latest_followup.get("psa_nadir"),
         "psa_nadir_date": _first_present(truth_values, "psa_nadir_date") or latest_followup.get("psa_nadir_date"),
         "phoenix_delta": _first_present(truth_values, "phoenix_delta") or latest_followup.get("phoenix_delta"),

@@ -142,13 +142,15 @@ def test_g3132_record_backend_integrity_check_works():
 def test_g3133_loop_monitor_snapshot_endpoint():
     """H.G3133 — GET /api/loop-monitor/snapshot returns 200 + vectors."""
     import app as app_module
+    from prostanet.presentation.loop_monitor import CORE_VECTORS
+
     flask_app = app_module.create_app({"TESTING": True})
     with flask_app.test_client() as client:
         r = client.get("/api/loop-monitor/snapshot")
         assert r.status_code == 200
         data = r.get_json()
         assert "vectors" in data
-        assert len(data["vectors"]) == 8
+        assert len(data["vectors"]) == len(CORE_VECTORS)
 
 
 def test_g3134_loop_monitor_iterations_endpoint():
@@ -172,6 +174,27 @@ def test_g3135_loop_monitor_dashboard_renders_200():
         assert r.status_code == 200
         html = r.data.decode("utf-8")
         assert "pm2-loop-shell" in html or "Loop Monitor" in html or "loop-monitor" in html.lower()
+
+
+def test_loop_monitor_dashboard_default_is_snapshot_first(monkeypatch):
+    """Dashboard normal no debe construir el bundle autónomo pesado en cold path."""
+    import app as app_module
+    from prostanet.presentation import loop_monitor
+    from prostanet.shared.read_model_cache import invalidate_read_model_cache
+
+    invalidate_read_model_cache("loop_monitor_dashboard_autonomous")
+
+    def fail_heavy_bundle(*_args, **_kwargs):
+        raise AssertionError("heavy autonomous bundle should require scope=full or refresh=1")
+
+    monkeypatch.setattr(loop_monitor, "get_autonomous_improvement_snapshot", fail_heavy_bundle)
+    flask_app = app_module.create_app({"TESTING": True})
+    with flask_app.test_client() as client:
+        r = client.get("/loop-monitor")
+        assert r.status_code == 200
+        html = r.data.decode("utf-8")
+        assert "summary_fast_path" in html
+        assert "Loop Monitor" in html
 
 
 def test_g3136_loop_monitor_dashboard_renders_8_vector_cards():

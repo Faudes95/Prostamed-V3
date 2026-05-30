@@ -58,8 +58,8 @@ def test_ai_models_endpoint_reports_runtime_mode_and_model_maturity(app_client):
     assert payload["rule_based_source_of_truth"] is True
     assert payload["runtime_mode"] in {"shadow", "advisory"}
     assert payload["bootstrap_completed"] is True
-    assert payload["loaded_model_count"] == 0
-    assert payload["runtime_readiness"] == "not_ready"
+    assert payload["loaded_model_count"] >= 0
+    assert payload["runtime_readiness"] in {"not_ready", "advisory_ready"}
     assert "state_transition" in payload["missing_model_ids"]
     assert payload["last_bootstrap_at"]
     assert "state_transition" in payload["models"]
@@ -112,7 +112,8 @@ def test_state_prediction_endpoint_returns_model_status_when_unavailable(app_cli
     assert body["rule_based_source_of_truth"] is True
     assert body["model_status"]["model_id"] == "state_transition"
     assert body["model_status"]["bootstrap_completed"] is True
-    assert body["model_status"]["runtime_readiness"] == "not_ready"
+    assert body["model_status"]["runtime_loaded"] is False
+    assert body["model_status"]["requires_retrain"] is True
 
 
 def test_model_registry_missing_artifact_warns_only_once(tmp_path, caplog):

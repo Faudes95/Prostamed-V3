@@ -6900,6 +6900,7 @@ def build_patient_profile_view_model(
         "evidence_applicability": evidence_applicability,
         "advanced_panel_context": advanced_panel_context,
         "therapy_catalog_options": therapy_select_options(state=state, management_track=management_track, include_empty=True),
+        "treatment_course_summary": patient.get("treatment_course_summary", {}),
         "missing_inputs_by_panel": missing_inputs_by_panel,
         "missing_input_actions": missing_input_actions,
         "missing_input_capture_tasks": capture_bundle.get("tasks", []),
@@ -7287,58 +7288,53 @@ def _build_trajectory_snapshot_view_model(
     sin levantar excepción (no bloquea render del perfil).
     """
     try:
-        from prostanet.domains.patient_tracking.trajectory_engine import (
-            build_trajectory_bundle,
-        )
-        from prostanet.domains.patient_tracking.trajectory_alert_engine import (
-            evaluate_trajectory_alerts,
-        )
-
-        # include_cohort_overlay=False en render del perfil porque
-        # build_psa_cohort_reference_overlay() puede iterar toda la cohorte
-        # y agregar 60+s de overhead. Cohort overlay queda disponible vía
-        # GET /api/trajectory/<nss> (REST endpoint lo activa explícitamente).
-        bundle = build_trajectory_bundle(patient, include_cohort_overlay=False)
-
-        # Patient context para alert engine
-        baseline = patient.get("baseline") or {}
-        latest_treatment = (patient.get("treatments") or [{}])[-1] if patient.get("treatments") else {}
-        treatment_class = str(latest_treatment.get("class") or latest_treatment.get("regimen_class") or "").lower()
-        treatment_scheme = str(latest_treatment.get("scheme") or latest_treatment.get("drug_scheme") or "").lower()
-        on_arsi = any(
-            arsi in treatment_class or arsi in treatment_scheme
-            for arsi in ("abi", "enza", "apa", "daro", "arsi", "arpi")
-        )
-        on_adt = any(
-            adt in treatment_class or adt in treatment_scheme
-            for adt in ("adt", "lhrh", "agonist", "antagonist", "leupr", "goser", "trip", "degar", "relug")
-        )
-
-        last_imaging = ""
-        imaging_records = patient.get("imaging_studies") or []
-        if isinstance(imaging_records, list) and imaging_records:
-            last_imaging_record = imaging_records[-1] if isinstance(imaging_records[-1], dict) else {}
-            last_imaging = str(
-                last_imaging_record.get("conventional_imaging_status")
-                or last_imaging_record.get("status")
-                or ""
-            ).upper()
-
-        ctx = {
-            "state_resolved": str(state or "").lower(),
-            "on_arsi": on_arsi,
-            "on_adt": on_adt,
-            "last_imaging_status": last_imaging,
+        identity = patient.get("identity") if isinstance(patient.get("identity"), dict) else {}
+        nss = identity.get("nss") or patient.get("nss") or ""
+        psa_rows = patient.get("biomarker_longitudinal") or patient.get("biomarkers") or []
+        treatments = patient.get("treatments") or []
+        dates: list[str] = []
+        for row in psa_rows:
+            if isinstance(row, dict):
+                d = str(row.get("sample_date") or row.get("date") or "")[:10]
+                if d:
+                    dates.append(d)
+        for row in treatments:
+            if isinstance(row, dict):
+                for key in ("start_date", "end_date"):
+                    d = str(row.get(key) or "")[:10]
+                    if d:
+                        dates.append(d)
+        return {
+            "available": True,
+            "lazy": True,
+            "endpoint": f"/api/trajectory/{nss}" if nss else "",
+            "summary": {
+                "n_visits": len(psa_rows) if isinstance(psa_rows, list) else 0,
+                "n_treatment_lines": len(treatments) if isinstance(treatments, list) else 0,
+                "earliest_date": min(dates) if dates else "",
+                "latest_date": max(dates) if dates else "",
+            },
+            "series": {"psa": [], "ecog": [], "alp": [], "ldh": []},
+            "treatment_lanes": [],
+            "event_markers": [],
+            "cohort_overlay": {},
+            "kinetics": {
+                "psa_doubling_time_months": None,
+                "psa_velocity_ng_per_year": None,
+                "psa_nadir": None,
+                "alp_trend_pct_3m": None,
+                "ecog_decline_detected": False,
+            },
+            "alerts": [],
+            "engine_version": "epic47_lazy_v1.1",
+            "reason": "lazy_loaded_via_api",
         }
-
-        bundle["alerts"] = evaluate_trajectory_alerts(bundle, ctx) if bundle.get("available") else []
-        return bundle
     except Exception as exc:
         return {
             "available": False,
-            "reason": f"trajectory_engine_error: {type(exc).__name__}",
+            "reason": f"trajectory_lazy_summary_error: {type(exc).__name__}",
             "alerts": [],
-            "engine_version": "epic47_v1.0",
+            "engine_version": "epic47_lazy_v1.1",
         }
 
 

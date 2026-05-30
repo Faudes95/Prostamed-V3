@@ -35,6 +35,11 @@ from prostanet.shared.module_support import apply_support_bundle, support_bundle
 from prostanet.shared.validated_algorithms import build_validated_algorithms
 
 
+MODULE_ID_ALIASES = {
+    "screening": "diagnostic_workup",
+}
+
+
 class ModuleRegistry:
     def __init__(self) -> None:
         self.evidence_registry = EvidenceRegistryService()
@@ -60,16 +65,22 @@ class ModuleRegistry:
             "survivorship_and_toxicity_followup": SurvivorshipAndToxicityFollowupService(),
         }
 
+    def canonical_module_id(self, module_id: str) -> str:
+        raw = str(module_id or "").strip()
+        return MODULE_ID_ALIASES.get(raw, raw)
+
     def list_modules(self) -> list[dict]:
         return [module for module in self.evidence_registry.list_modules() if module.get("module") != "mcspc_high_volume"]
 
     def get_module_schema(self, module_id: str) -> dict:
+        module_id = self.canonical_module_id(module_id)
         return deepcopy(self.services[module_id].schema())
 
     def get_state_classifier_schema(self) -> dict:
         return deepcopy(STATE_CLASSIFIER_SCHEMA)
 
     def evaluate_module(self, module_id: str, payload: dict) -> dict:
+        module_id = self.canonical_module_id(module_id)
         normalized_payload = normalize_advanced_support_payload(
             apply_gleason_profile(normalize_epic26_payload(payload)),
             state=module_id,
@@ -107,9 +118,11 @@ class ModuleRegistry:
         )
 
     def get_module_evidence(self, module_id: str) -> dict:
+        module_id = self.canonical_module_id(module_id)
         return self.evidence_registry.get_module_evidence(module_id)
 
     def get_module_sources(self, module_id: str) -> list[dict]:
+        module_id = self.canonical_module_id(module_id)
         return self.evidence_registry.get_module_sources(module_id)
 
     def get_guidelines_metadata(self) -> dict[str, dict]:

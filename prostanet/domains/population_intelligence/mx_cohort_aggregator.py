@@ -381,6 +381,18 @@ KPI_REGISTRY: dict[str, dict[str, Any]] = {
         "builder": lambda: aggregate_psa_response_by_regimen(weeks=24),
         "args": {"weeks": 24},
     },
+    "arpi_value_24wk": {
+        "label": "Valor clinico-economico ARPI @ 6 meses",
+        "category": "real_world_value",
+        "builder": lambda: _aggregate_arpi_value_24wk(),
+        "args": {"weeks": 24},
+    },
+    "treatment_value_registry_12_24wk": {
+        "label": "Registro comparativo tratamiento-valor @ 12/24 semanas",
+        "category": "real_world_value_registry",
+        "builder": lambda: _aggregate_treatment_value_registry_12_24wk(),
+        "args": {"weeks_list": [12, 24]},
+    },
     "ecog_change_24wk": {
         "label": "Cambio ECOG @ 6 meses por ARPI",
         "category": "qol",
@@ -437,6 +449,27 @@ KPI_REGISTRY: dict[str, dict[str, Any]] = {
         "args": {},
     },
 }
+
+
+def _aggregate_arpi_value_24wk() -> dict[str, Any]:
+    from prostanet.domains.population_intelligence.arpi_value_analytics import (
+        aggregate_arpi_value_by_response,
+    )
+
+    bundle = aggregate_arpi_value_by_response(weeks=24)
+    bundle.pop("patient_rows", None)
+    return bundle
+
+
+def _aggregate_treatment_value_registry_12_24wk() -> dict[str, Any]:
+    from prostanet.domains.population_intelligence.arpi_value_analytics import (
+        build_treatment_value_registry,
+    )
+
+    return build_treatment_value_registry(
+        weeks_list=(12, 24),
+        include_patient_rows=False,
+    )
 
 
 def aggregate_castration_capture_coverage() -> dict[str, Any]:
@@ -1002,7 +1035,7 @@ def aggregate_ecog_capture_coverage() -> dict[str, Any]:
 
 def populate_arpi_response_windows_for_cohort(
     *,
-    weeks_list: tuple[int, ...] = (8, 24),
+    weeks_list: tuple[int, ...] = (8, 12, 24),
     force_recompute: bool = False,
 ) -> dict[str, Any]:
     """EPIC 34.A — Pre-compute arpi_response_windows snapshots para toda la
@@ -1070,6 +1103,65 @@ def populate_arpi_response_windows_for_cohort(
     return stats
 
 
+def refresh_arpi_response_windows_for_patient(
+    patient_ref: str | int,
+    *,
+    weeks_list: tuple[int, ...] = (8, 12, 24),
+    reason: str = "",
+) -> dict[str, Any]:
+    """Recompute ARPI response windows for one patient after a clinical write.
+
+    This is the online counterpart of ``populate_arpi_response_windows_for_cohort``.
+    It is intentionally defensive: callers should never roll back a clinical
+    write just because the analytics cache failed to refresh.
+    """
+    from prostanet.domains.patient_tracking.arpi_response_window import (
+        compute_arpi_response_at_window,
+    )
+    import tracking_db
+
+    stats: dict[str, Any] = {
+        "success": True,
+        "patient_ref": str(patient_ref),
+        "patient_id": None,
+        "reason": reason,
+        "windows_computed": 0,
+        "windows_with_data": 0,
+        "windows_upserted": 0,
+        "errors": 0,
+        "per_evidence_quality": {},
+        "computed_at": utc_now_iso(),
+    }
+    try:
+        patient_data = tracking_db.get_patient_full_record(patient_ref)
+        if not patient_data:
+            return {**stats, "success": False, "error": "patient_not_found"}
+        identity_id = (patient_data.get("identity") or {}).get("id")
+        if not identity_id:
+            return {**stats, "success": False, "error": "patient_identity_missing"}
+        stats["patient_id"] = identity_id
+        patient_data["clinical_facts"] = tracking_db.get_patient_clinical_facts(
+            identity_id,
+            active_only=False,
+        )
+        for weeks in weeks_list:
+            result = compute_arpi_response_at_window(patient_data, weeks=weeks)
+            stats["windows_computed"] += 1
+            quality = result.get("evidence_quality", "unknown")
+            stats["per_evidence_quality"][quality] = (
+                stats["per_evidence_quality"].get(quality, 0) + 1
+            )
+            if result.get("available"):
+                stats["windows_with_data"] += 1
+                _upsert_arpi_response_window(identity_id, weeks, result)
+                stats["windows_upserted"] += 1
+    except Exception as exc:
+        logger.debug("refresh_arpi_response_windows_for_patient failed: %s", exc)
+        return {**stats, "success": False, "errors": stats["errors"] + 1, "error": str(exc)}
+    stats["completed_at"] = utc_now_iso()
+    return stats
+
+
 def _upsert_arpi_response_window(patient_id: int, weeks: int, result: dict) -> None:
     """Upsert one snapshot into arpi_response_windows."""
     conn = sqlite3.connect(_db_path())
@@ -1080,9 +1172,10 @@ def _upsert_arpi_response_window(patient_id: int, weeks: int, result: dict) -> N
                 patient_id, regimen_code, target_weeks, target_date,
                 line_start_date, baseline_psa, actual_psa, actual_psa_date,
                 psa_decline_pct, psa50_response, psa90_response,
-                actual_ecog, baseline_ecog, ecog_change_from_baseline,
+                actual_ecog, actual_ecog_date, baseline_ecog, baseline_ecog_date,
+                ecog_change_from_baseline, ecog_offset_days, ecog_evidence_quality,
                 window_offset_days, evidence_quality, computed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(patient_id, regimen_code, target_weeks) DO UPDATE SET
                 target_date = excluded.target_date,
                 baseline_psa = excluded.baseline_psa,
@@ -1092,8 +1185,12 @@ def _upsert_arpi_response_window(patient_id: int, weeks: int, result: dict) -> N
                 psa50_response = excluded.psa50_response,
                 psa90_response = excluded.psa90_response,
                 actual_ecog = excluded.actual_ecog,
+                actual_ecog_date = excluded.actual_ecog_date,
                 baseline_ecog = excluded.baseline_ecog,
+                baseline_ecog_date = excluded.baseline_ecog_date,
                 ecog_change_from_baseline = excluded.ecog_change_from_baseline,
+                ecog_offset_days = excluded.ecog_offset_days,
+                ecog_evidence_quality = excluded.ecog_evidence_quality,
                 window_offset_days = excluded.window_offset_days,
                 evidence_quality = excluded.evidence_quality,
                 computed_at = excluded.computed_at
@@ -1111,8 +1208,12 @@ def _upsert_arpi_response_window(patient_id: int, weeks: int, result: dict) -> N
                 1 if result.get("psa50_response") else 0,
                 1 if result.get("psa90_response") else 0,
                 result.get("actual_ecog"),
+                str(result.get("actual_ecog_date") or "") if result.get("actual_ecog_date") else None,
                 result.get("baseline_ecog"),
+                str(result.get("baseline_ecog_date") or "") if result.get("baseline_ecog_date") else None,
                 result.get("ecog_change_from_baseline"),
+                result.get("ecog_offset_days"),
+                str(result.get("ecog_evidence_quality") or ""),
                 result.get("window_offset_days"),
                 str(result.get("evidence_quality") or ""),
                 str(result.get("computed_at") or utc_now_iso()),
@@ -1160,6 +1261,7 @@ __all__ = [
     "KPI_REGISTRY",
     "compute_kpi",
     "compute_all_kpis",
+    "refresh_arpi_response_windows_for_patient",
     "aggregate_patients_by_regimen",
     "aggregate_psa_response_by_regimen",
     "aggregate_ecog_change_by_regimen",

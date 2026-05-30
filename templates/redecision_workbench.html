@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Re-decisión clínica · ProstaMed v2</title>
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='redecision_closure_v1') }}">
+    <style>
+    .rd-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .rd-filter {
+        height:38px; border:1px solid var(--border-strong); border-radius:8px;
+        background:var(--surface-1); color:#f8fbff; padding:0 12px;
+        font-size:.84rem; min-width:180px;
+    }
+    .rd-table-wrap {
+        margin-top:var(--space-4); border:1px solid var(--border-default);
+        border-radius:8px; overflow:auto; background:rgba(15,23,42,.78);
+    }
+    .rd-table { width:100%; border-collapse:collapse; min-width:920px; font-size:.84rem; }
+    .rd-table th {
+        text-align:left; padding:12px 14px; color:var(--pn-text-muted);
+        font-size:.68rem; letter-spacing:.12em; text-transform:uppercase;
+        border-bottom:1px solid var(--border-default); background:rgba(2,6,23,.42);
+    }
+    .rd-table td { padding:12px 14px; border-bottom:1px solid var(--border-subtle); color:#e2e8f0; vertical-align:middle; }
+    .rd-table tr:hover td { background:rgba(6,182,212,.06); }
+    .rd-patient-name { color:#f8fbff; font-weight:700; }
+    .rd-patient-ref { color:var(--pn-text-soft); font-family:ui-monospace,monospace; font-size:.72rem; margin-top:2px; }
+    .rd-priority { font-family:ui-monospace,monospace; color:#fef3c7; font-weight:700; }
+    .rd-empty {
+        border:1px dashed var(--border-strong); border-radius:8px; padding:34px 18px;
+        color:var(--pn-text-muted); text-align:center; background:rgba(15,23,42,.42);
+    }
+    @media (max-width: 760px) {
+        .rd-toolbar { align-items:stretch; }
+        .rd-filter, .rd-toolbar .pm2-btn { width:100%; justify-content:center; }
+        .rd-table-wrap { border-radius:8px; }
+    }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+{% from "components/pm2_sidebar.html" import pm2_sidebar %}
+
+<div class="pm2-app-shell">
+    {{ pm2_sidebar(active='patients') }}
+
+    <header class="pm2-app-header">
+        <div>
+            <div class="pm2-kicker">PROSTAMED · CIERRE CLINICO</div>
+            <div style="font-family:var(--pm-font-display);font-size:1.05rem;color:#f8fbff;font-weight:700;">Clinical Re-Decision Closure Loop</div>
+        </div>
+        <div class="pm2-header-tools">
+            <a class="pm2-btn pm2-btn--ghost" href="/patients">Pacientes</a>
+            <a class="pm2-btn pm2-btn--primary" href="/api/redecision/today?scope=full&limit={{ limit }}">JSON auditable</a>
+        </div>
+    </header>
+
+    <main id="main-content" class="pm2-app-main" tabindex="-1">
+        <section style="padding:var(--space-6) var(--space-6) 0">
+            <div class="pm2-kicker">DECISION HOY · REDECISION_REQUIRED</div>
+            <h1 style="font-family:var(--pm-font-display);font-size:2rem;font-weight:700;letter-spacing:-.03em;color:#f8fbff;margin:6px 0 4px">Cola de re-decisión clínica</h1>
+            <p style="color:var(--pn-text-muted);font-size:.92rem;max-width:82ch;line-height:1.5;margin:0">
+                Pacientes con decisión bloqueada por datos faltantes o revisión clínica pendiente. El cierre registra sólo eventos auditables.
+            </p>
+        </section>
+
+        <section style="padding:var(--space-5) var(--space-6) 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:var(--space-3)">
+            <article class="pm2-kpi-card" data-variant="critical">
+                <div class="pm2-kpi-label">Re-decisiones activas</div>
+                <div class="pm2-kpi-value">{{ summary.queue_count or queue|length }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">hoy</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="info">
+                <div class="pm2-kpi-label">Estados v1</div>
+                <div class="pm2-kpi-value">{{ (summary.supported_states or [])|length }}</div>
+                <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">diagnóstico · localizado · m1CRPC</span></div>
+            </article>
+            <article class="pm2-kpi-card" data-variant="success">
+                <div class="pm2-kpi-label">Acción dominante</div>
+                <div style="font-size:.92rem;color:#f8fbff;font-weight:700;line-height:1.35;margin-top:8px">{{ summary.top_action_title or 'Sin re-decisiones activas' }}</div>
+            </article>
+        </section>
+
+        <section style="padding:var(--space-5) var(--space-6)">
+            <form class="rd-toolbar" method="get" action="/redecision-workbench">
+                <select class="rd-filter" name="stage" aria-label="Filtrar por estado">
+                    <option value="" {% if not stage %}selected{% endif %}>Todos los estados v1</option>
+                    <option value="diagnostic_workup" {% if stage == 'diagnostic_workup' %}selected{% endif %}>diagnostic_workup</option>
+                    <option value="localized_initial" {% if stage == 'localized_initial' %}selected{% endif %}>localized_initial</option>
+                    <option value="m1_crpc" {% if stage == 'm1_crpc' %}selected{% endif %}>m1_crpc</option>
+                </select>
+                <select class="rd-filter" name="limit" aria-label="Limite de pacientes">
+                    {% for opt in [25, 50, 100, 250] %}
+                    <option value="{{ opt }}" {% if limit == opt %}selected{% endif %}>{{ opt }} pacientes</option>
+                    {% endfor %}
+                </select>
+                <button class="pm2-btn pm2-btn--primary" type="submit">Actualizar</button>
+                <a class="pm2-btn pm2-btn--ghost" href="/redecision-workbench?refresh=1">Recalcular</a>
+            </form>
+
+            {% if queue %}
+            <div class="rd-table-wrap" data-testid="redecision-workbench">
+                <table class="rd-table">
+                    <thead>
+                        <tr>
+                            <th>Paciente</th>
+                            <th>Estado</th>
+                            <th>Dato faltante dominante</th>
+                            <th>Prioridad</th>
+                            <th>Cierre</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in queue %}
+                        <tr data-testid="redecision-row">
+                            <td>
+                                <div class="rd-patient-name">{{ item.patient_name or 'Paciente' }}</div>
+                                <div class="rd-patient-ref">{{ item.patient_ref }}</div>
+                            </td>
+                            <td>
+                                <span class="pm2-state-chip pm2-state-chip--warn">{{ item.decision_state }}</span>
+                                <div style="color:var(--pn-text-soft);font-size:.74rem;margin-top:4px">{{ item.state_label or item.state }}</div>
+                            </td>
+                            <td>
+                                <div style="font-weight:700;color:#f8fbff">{{ item.missing_label or item.missing_field or 'Revisión clínica' }}</div>
+                                <div style="color:var(--pn-text-soft);font-size:.74rem;margin-top:4px">{{ item.readiness_lane or 'clinical_data_completion' }} · {{ item.missing_count or 0 }} campos</div>
+                            </td>
+                            <td>
+                                <div class="rd-priority">{{ item.priority_score }}</div>
+                                <div style="color:var(--pn-text-soft);font-size:.74rem">{{ item.priority_status }}</div>
+                            </td>
+                            <td>
+                                {% set closure = item.closure_state or {} %}
+                                <span class="pm2-state-chip {% if closure.closure_status == 'open' %}pm2-state-chip--warn{% else %}pm2-state-chip--primary{% endif %}">{{ closure.closure_label or closure.closure_status or 'Abierta' }}</span>
+                            </td>
+                            <td>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                                    <a class="pm2-btn pm2-btn--primary" href="{{ item.workbench_href }}">Workbench</a>
+                                    {% if item.cta and item.cta.href %}
+                                    <a class="pm2-btn pm2-btn--ghost" href="{{ item.cta.href }}" data-query-param="decision_lane">{{ item.cta.label or 'Capturar dato' }}</a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="rd-empty" data-testid="redecision-empty">
+                No hay pacientes v1 en re-decisión activa con los filtros actuales.
+            </div>
+            {% endif %}
+        </section>
+    </main>
+</div>
+</body>
+</html>

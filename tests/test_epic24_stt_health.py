@@ -50,9 +50,9 @@ def test_stt_disable_env_blocks_availability(monkeypatch):
 def test_stt_health_endpoint_returns_json():
     """/api/voice/stt/health returns JSON with the diagnose contract."""
     import flask
-    from prostanet.voice.epic21_endpoints import epic21_bp
+    from prostanet.voice.api import voice_bp
     app = flask.Flask("test_app")
-    app.register_blueprint(epic21_bp)
+    app.register_blueprint(voice_bp)
     client = app.test_client()
     resp = client.get("/api/voice/stt/health")
     assert resp.status_code == 200

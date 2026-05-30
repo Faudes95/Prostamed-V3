@@ -77,16 +77,16 @@ STATE_SCOPE_MAP = {
 SCOPE_CONFIG = {
     "diagnostic": {
         "label": "Ruta diagnóstica / biopsia benigna previa",
-        "description": "El wizard ya captura la sospecha clínica central. Aquí se agregan identidad, línea basal y longitudinal para persistir sin inventar tratamiento sistémico.",
+        "description": "El wizard ya captura la sospecha clínica central. Aquí se agregan identidad, APE longitudinal y línea basal mínima para persistir sin inventar tratamiento sistémico.",
         "bullets": [
             "Los datos clínicos del asistente se importan y persisten desde la evaluación modular.",
             "No se solicita línea terapéutica ni esquema sistémico.",
-            "Se agregan identidad, laboratorios basales, síntomas y cohorte opcional.",
+            "Se agregan identidad, APE longitudinal, síntomas y cohorte opcional.",
         ],
     },
     "localized": {
         "label": "Ruta localizada inicial",
-        "description": "La evaluación modular ya resolvió riesgo, vigilancia activa y refinadores locales. Esta fase completa el longitudinal y los PROs basales.",
+        "description": "La evaluación modular ya resolvió riesgo, vigilancia activa y refinadores locales. Esta fase completa identidad, APE longitudinal y PROs basales sin abrir laboratorios sistémicos por defecto.",
         "bullets": [
             "Se preservan los datos clínicos del asistente para seguimiento y benchmarking.",
             "Se suman identidad, PROs funcionales y cohorte opcional.",
@@ -143,6 +143,98 @@ CANONICAL_VALUE_MAPS = {
         "MSI-H": "inestable",
     },
 }
+
+REGISTRATION_CONCEPT_KEY_ALIASES = {
+    "psa": "ape_single_entry",
+    "baseline_psa": "ape_single_entry",
+    "psa_baseline_ng_ml": "ape_single_entry",
+    "ape": "ape_single_entry",
+    "num_cores_positive": "biopsy_positive_cores",
+    "positive_cores": "biopsy_positive_cores",
+    "psad": "psa_density",
+    "psa_density": "psa_density",
+    "prostate_volume": "prostate_volume_ml",
+    "prostate_volume_ml": "prostate_volume_ml",
+}
+
+
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if _is_present(value):
+            return value
+    return ""
+
+
+def _safe_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def _registration_concept_key(field_name: str, reuse_key: str | None = None) -> str:
+    """Return the intake-level clinical concept used to avoid recapture.
+
+    This is intentionally narrower than the global FactSpec alias map: it only
+    collapses concepts that would be unsafe or annoying to ask twice during the
+    initial registration step. Longitudinal series such as ``psa_history`` stay
+    separate from the scalar APE value.
+    """
+    normalized_name = str(field_name or "").strip()
+    normalized_reuse = str(reuse_key or "").strip()
+    return (
+        REGISTRATION_CONCEPT_KEY_ALIASES.get(normalized_name)
+        or REGISTRATION_CONCEPT_KEY_ALIASES.get(normalized_reuse)
+        or field_reuse_key(normalized_reuse or normalized_name)
+    )
+
+
+def _intake_psa_history_default(assessment_input: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build the single visible APE intake widget default.
+
+    The scalar fields (``psa``, ``baseline_psa`` and ``psa_baseline_ng_ml``)
+    remain compatible API inputs, but the clinician should see one APE surface:
+    a longitudinal widget that can hold the ingreso value plus prior history.
+    """
+    existing_history = assessment_input.get("psa_history")
+    if existing_history in (None, "", []):
+        existing_history = assessment_input.get("ape_history")
+    if isinstance(existing_history, list) and existing_history:
+        return deepcopy(existing_history)
+
+    scalar_value = _safe_float(
+        _first_present(
+            assessment_input.get("baseline_psa"),
+            assessment_input.get("psa"),
+            assessment_input.get("psa_baseline_ng_ml"),
+            assessment_input.get("psa_current"),
+        )
+    )
+    if scalar_value is None:
+        return []
+
+    sample_date = str(
+        _first_present(
+            assessment_input.get("psa_sample_date"),
+            assessment_input.get("psa_date"),
+            assessment_input.get("psa_baseline_date"),
+            assessment_input.get("sample_date"),
+            assessment_input.get("diagnosis_date"),
+            assessment_input.get("date_of_diagnosis"),
+        )
+        or ""
+    )[:10]
+    return [
+        {
+            "sample_date": sample_date,
+            "psa_value": scalar_value,
+            "assay_type": str(assessment_input.get("assay_type") or "desconocido"),
+            "context": str(assessment_input.get("psa_context") or "pretratamiento"),
+            "source": "wizard_imported_psa",
+        }
+    ]
 
 
 def _field(name: str, label: str, field_type: str, **kwargs) -> FieldSpec:
@@ -235,7 +327,10 @@ def _dedupe_registration_fragments(
     fragments: list[RegistrationFragment],
     imported_fields: list[dict[str, Any]],
 ) -> tuple[list[RegistrationFragment], list[dict[str, Any]]]:
-    seen_keys = {field_reuse_key(item.get("reuse_key") or item.get("name", "")) for item in imported_fields}
+    seen_keys = {
+        _registration_concept_key(item.get("name", ""), item.get("reuse_key"))
+        for item in imported_fields
+    }
     deduped_fragments: list[RegistrationFragment] = []
     visible_fields: list[dict[str, Any]] = []
 
@@ -243,15 +338,17 @@ def _dedupe_registration_fragments(
         kept_fields: list[FieldSpec] = []
         for field in fragment.fields:
             reuse_key = field.reuse_key or field.name
-            if reuse_key in seen_keys:
+            concept_key = _registration_concept_key(field.name, reuse_key)
+            if concept_key in seen_keys:
                 continue
-            seen_keys.add(reuse_key)
+            seen_keys.add(concept_key)
             kept_fields.append(field)
             visible_fields.append(
                 {
                     "name": field.name,
                     "label": field.label,
                     "reuse_key": reuse_key,
+                    "concept_key": concept_key,
                     "capture_layer": field.capture_layer,
                     "capture_layer_label": _layer_label(field.capture_layer),
                     "clinical_role": field.clinical_role,
@@ -270,14 +367,24 @@ def _filter_score_requirements_for_visible_fields(
 ) -> dict[str, Any]:
     visible_names = {field.get("name") for field in visible_fields}
     visible_reuse_keys = {field.get("reuse_key") for field in visible_fields}
+    visible_concept_keys = {field.get("concept_key") for field in visible_fields}
     imported_names = {field.get("name") for field in imported_fields}
     imported_reuse_keys = {field.get("reuse_key") for field in imported_fields}
+    imported_concept_keys = {
+        _registration_concept_key(field.get("name", ""), field.get("reuse_key"))
+        for field in imported_fields
+    }
     filtered_missing: list[dict[str, Any]] = []
     for item in score_requirements.get("score_missing_inputs", []):
         reuse_key = field_reuse_key(item.get("name", ""))
+        concept_key = _registration_concept_key(item.get("name", ""), reuse_key)
         if item.get("name") in visible_names or item.get("name") in imported_names:
             continue
         if reuse_key in visible_reuse_keys or reuse_key in imported_reuse_keys:
+            continue
+        if concept_key in visible_concept_keys or concept_key in imported_concept_keys:
+            continue
+        if concept_key == "ape_single_entry" and "psa_history" in visible_names:
             continue
         filtered_missing.append(item)
     filtered = deepcopy(score_requirements)
@@ -297,6 +404,75 @@ def _field_semantics_registry(
     for item in imported_fields:
         semantics[item["name"]] = field_semantics_for(item["name"])
     return semantics
+
+
+def _registration_ledger_context(
+    *,
+    imported_fields: list[dict[str, Any]],
+    visible_fields: list[dict[str, Any]],
+    clinical_fact_ledger_context: dict[str, Any] | None,
+) -> dict[str, Any]:
+    context = dict(clinical_fact_ledger_context or {})
+    field_prefills = context.get("field_prefills") or {}
+    imported_by_name = {item.get("name"): item for item in imported_fields}
+    visible_names = {item.get("name") for item in visible_fields}
+    reused: list[dict[str, Any]] = []
+    conflicts: list[dict[str, Any]] = []
+    for field_name, raw_item in field_prefills.items():
+        if field_name not in imported_by_name:
+            continue
+        item = dict(raw_item or {})
+        imported = imported_by_name[field_name]
+        ledger_action = str(item.get("action") or "")
+        imported["ledger_action"] = ledger_action
+        imported["ledger_fact_key"] = item.get("fact_key")
+        imported["ledger_status"] = item.get("status")
+        imported["ledger_source_count"] = item.get("source_count")
+        imported["ledger_current_source"] = item.get("current_source")
+        imported["ledger_recapture_risk"] = item.get("recapture_risk")
+        imported["ledger_visible_in_registration"] = field_name in visible_names
+        display_item = {
+            "field_name": field_name,
+            "field_label": item.get("field_label") or imported.get("label") or field_name,
+            "fact_key": item.get("fact_key"),
+            "current_value": item.get("current_value"),
+            "current_source": item.get("current_source"),
+            "source_count": item.get("source_count"),
+            "status": item.get("status"),
+            "action": ledger_action,
+            "visible_in_registration": field_name in visible_names,
+        }
+        if ledger_action == "reuse_prefill_hide":
+            reused.append(display_item)
+        elif ledger_action == "resolve_conflict_before_reuse":
+            conflicts.append(display_item)
+
+    return {
+        "version": "clinical_fact_ledger_registration_context_v1",
+        "source_version": context.get("version") or "",
+        "summary": {
+            "imported_field_count": len(imported_fields),
+            "visible_field_count": len(visible_fields),
+            "ledger_mapped_field_count": len(field_prefills),
+            "reused_imported_field_count": len(reused),
+            "conflict_imported_field_count": len(conflicts),
+        },
+        "reused_imported_fields": reused,
+        "conflict_fields": conflicts,
+        "conflict_imported_fields": conflicts,
+        "ui_contract": {
+            "read_only": True,
+            "pre_fill_known_facts": True,
+            "hide_known_non_conflicting_fields": True,
+            "show_conflicts_before_reuse": True,
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        },
+        "source_clinical_facts_mutated": False,
+        "external_order_created": False,
+        "model_trained": False,
+    }
 
 
 def _metastatic_intake_fields() -> list[FieldSpec]:
@@ -346,10 +522,71 @@ def _metastatic_intake_fields() -> list[FieldSpec]:
     ]
 
 
-def _common_fragment() -> RegistrationFragment:
+def _common_fragment(scope: str = "advanced") -> RegistrationFragment:
+    minimal_fields = [
+        _field("full_name", "Nombre completo", "text", required=True, group="Identidad", group_order=1, clinical_role="required"),
+        _field("nss", "Número de seguridad social", "text", required=True, group="Identidad", group_order=1, clinical_role="required"),
+        _field("dob", "Fecha de nacimiento", "date", required=True, group="Identidad", group_order=1, clinical_role="required"),
+        _field("ecog_score", "ECOG basal", "select", options=["", "0", "1", "2", "3", "4"], group="Línea basal clínica", group_order=2, clinical_role="decision_refiner"),
+        _field("frailty_status", "Fragilidad basal", "select", options=["", "Fit", "Vulnerable", "Frail"], group="Línea basal clínica", group_order=2, clinical_role="decision_refiner"),
+        _field(
+            "psa_history",
+            "APE/PSA de ingreso e historial disponible",
+            "psa_history",
+            group="Laboratorio basal",
+            group_order=2,
+            clinical_role="required",
+            help_text="Use este único bloque para la medición de ingreso y cualquier APE histórico. Si el wizard ya capturó APE, aparecerá precargado y se guardará como punto longitudinal.",
+        ),
+    ]
+    advanced_fields = [
+        _field("tobacco_use", "Tabaquismo", "select", options=["", "Nunca", "Exfumador", "Activo"], group="Línea basal clínica", group_order=2, clinical_role="decision_refiner"),
+        _field("exercise_status", "Actividad física basal", "select", options=["", "No realiza", "Ligera", "Moderada", "Intensa"], group="Línea basal clínica", group_order=2, clinical_role="decision_refiner"),
+        _field("testosterone_baseline", "Testosterona basal", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="ng/dL"),
+        _field(
+            "testosterone_history",
+            "Serie longitudinal de testosterona disponible",
+            "testosterone_history",
+            group="Laboratorio basal",
+            group_order=2,
+            clinical_role="decision_refiner",
+            help_text="Agregue cero o más mediciones históricas de testosterona si ya existen; el sistema conservará el basal canónico y usará la serie para resolver castración y lógica CRPC.",
+        ),
+        _field("hemoglobin", "Hemoglobina", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="g/dL"),
+        _field("alp", "Fosfatasa alcalina", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="UI/L"),
+        _field("ldh", "Lactato deshidrogenasa", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="UI/L"),
+        _field("albumin", "Albúmina", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="g/dL"),
+        _field("dxa_baseline_done", "DXA basal realizada", "select", options=["0", "1"], default="0", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner"),
+        _field("weight_kg", "Peso actual", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner", unit="kg"),
+        _field("height_cm", "Estatura actual", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner", unit="cm"),
+        _field("bmi_current", "Índice de masa corporal actual", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner", unit="kg/m²"),
+        _field("weight_loss_6m_kg", "Pérdida de peso en 6 meses", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner", unit="kg"),
+        _field("mini_cog_score", "Mini-Cog basal", "select", options=MINI_COG_OPTIONS, group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
+        _field("fatigue_score", "Fatiga basal", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
+        _field("g8_food_intake", "G8: ingesta de alimentos", "select", options=["", "0", "1", "2"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
+        _field("g8_weight_loss", "G8: pérdida de peso", "select", options=["", "0", "1", "2", "3"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
+        _field("g8_mobility", "G8: movilidad", "select", options=["", "0", "1", "2"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
+        _field("g8_neuropsych", "G8: estado neuropsicológico", "select", options=["", "0", "1", "2"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
+        _field("g8_bmi", "G8: categoría BMI", "select", options=["", "0", "1", "2", "3"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
+        _field("g8_medications", "G8: medicamentos diarios", "select", options=["", "0", "1"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
+        _field("g8_self_health", "G8: percepción de salud", "select", options=["", "0", "0.5", "1", "2"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
+        _field("low_activity", "Actividad física reducida", "select", options=["", "0", "1"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
+        _field("slow_gait", "Marcha lenta", "select", options=["", "0", "1"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
+        _field(
+            "weak_grip",
+            "Fuerza de prensión baja",
+            "select",
+            options=["", "0", "1"],
+            group="Fragilidad y fitness",
+            group_order=3,
+            clinical_role="decision_refiner",
+            help_text="Alimenta el índice de fragilidad de Fried y la lectura de fitness terapéutico.",
+        ),
+    ]
+    fields = minimal_fields + (advanced_fields if scope == "advanced" else [])
     return _fragment(
         id="fragment_common_identity_baseline",
-        title="Identidad, laboratorios y línea basal",
+        title="Identidad, APE y línea basal mínima" if scope != "advanced" else "Identidad, laboratorios y línea basal",
         capture_layer="core_minimum",
         when_to_ask="Siempre que falten identidad, basal clínico o una serie inicial de APE que cambie la lectura longitudinal.",
         applies_to_states=list(STATE_SCOPE_MAP.keys()),
@@ -358,65 +595,7 @@ def _common_fragment() -> RegistrationFragment:
             "Sostiene el longitudinal basal y evita gaps al abrir el perfil del paciente.",
             "La línea basal viaja a analítica, alertas y seguimiento.",
         ],
-        fields=[
-            _field("full_name", "Nombre completo", "text", required=True, group="Identidad", group_order=1, clinical_role="required"),
-            _field("nss", "Número de seguridad social", "text", required=True, group="Identidad", group_order=1, clinical_role="required"),
-            _field("dob", "Fecha de nacimiento", "date", required=True, group="Identidad", group_order=1, clinical_role="required"),
-            _field("ecog_score", "ECOG basal", "select", options=["", "0", "1", "2", "3", "4"], group="Línea basal clínica", group_order=2, clinical_role="decision_refiner"),
-            _field("frailty_status", "Fragilidad basal", "select", options=["", "Fit", "Vulnerable", "Frail"], group="Línea basal clínica", group_order=2, clinical_role="decision_refiner"),
-            _field("tobacco_use", "Tabaquismo", "select", options=["", "Nunca", "Exfumador", "Activo"], group="Línea basal clínica", group_order=2, clinical_role="decision_refiner"),
-            _field("exercise_status", "Actividad física basal", "select", options=["", "No realiza", "Ligera", "Moderada", "Intensa"], group="Línea basal clínica", group_order=2, clinical_role="decision_refiner"),
-            _field("baseline_psa", "Antígeno prostático específico basal (PSA)", "number", group="Laboratorio basal", group_order=2, clinical_role="required", unit="ng/mL"),
-            _field(
-                "psa_history",
-                "Serie longitudinal de APE disponible",
-                "psa_history",
-                group="Laboratorio basal",
-                group_order=2,
-                clinical_role="decision_refiner",
-                help_text="Agregue cero o más mediciones históricas de APE/PSA si ya existen; el sistema conservará el basal canónico y guardará la serie longitudinal.",
-            ),
-            _field("testosterone_baseline", "Testosterona basal", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="ng/dL"),
-            _field(
-                "testosterone_history",
-                "Serie longitudinal de testosterona disponible",
-                "testosterone_history",
-                group="Laboratorio basal",
-                group_order=2,
-                clinical_role="decision_refiner",
-                help_text="Agregue cero o más mediciones históricas de testosterona si ya existen; el sistema conservará el basal canónico y usará la serie para resolver castración y lógica CRPC.",
-            ),
-            _field("hemoglobin", "Hemoglobina", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="g/dL"),
-            _field("alp", "Fosfatasa alcalina", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="UI/L"),
-            _field("ldh", "Lactato deshidrogenasa", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="UI/L"),
-            _field("albumin", "Albúmina", "number", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner", unit="g/dL"),
-            _field("dxa_baseline_done", "DXA basal realizada", "select", options=["0", "1"], default="0", group="Laboratorio basal", group_order=2, clinical_role="decision_refiner"),
-            _field("weight_kg", "Peso actual", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner", unit="kg"),
-            _field("height_cm", "Estatura actual", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner", unit="cm"),
-            _field("bmi_current", "Índice de masa corporal actual", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner", unit="kg/m²"),
-            _field("weight_loss_6m_kg", "Pérdida de peso en 6 meses", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner", unit="kg"),
-            _field("mini_cog_score", "Mini-Cog basal", "select", options=MINI_COG_OPTIONS, group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
-            _field("fatigue_score", "Fatiga basal", "number", group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
-            _field("g8_food_intake", "G8: ingesta de alimentos", "select", options=["", "0", "1", "2"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
-            _field("g8_weight_loss", "G8: pérdida de peso", "select", options=["", "0", "1", "2", "3"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
-            _field("g8_mobility", "G8: movilidad", "select", options=["", "0", "1", "2"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
-            _field("g8_neuropsych", "G8: estado neuropsicológico", "select", options=["", "0", "1", "2"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
-            _field("g8_bmi", "G8: categoría BMI", "select", options=["", "0", "1", "2", "3"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
-            _field("g8_medications", "G8: medicamentos diarios", "select", options=["", "0", "1"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
-            _field("g8_self_health", "G8: percepción de salud", "select", options=["", "0", "0.5", "1", "2"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
-            _field("low_activity", "Actividad física reducida", "select", options=["", "0", "1"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
-            _field("slow_gait", "Marcha lenta", "select", options=["", "0", "1"], group="Fragilidad y fitness", group_order=3, clinical_role="decision_refiner"),
-            _field(
-                "weak_grip",
-                "Fuerza de prensión baja",
-                "select",
-                options=["", "0", "1"],
-                group="Fragilidad y fitness",
-                group_order=3,
-                clinical_role="decision_refiner",
-                help_text="Alimenta el índice de fragilidad de Fried y la lectura de fitness terapéutico.",
-            ),
-        ],
+        fields=fields,
     )
 
 
@@ -681,6 +860,11 @@ def _advanced_current_treatment_fragment() -> RegistrationFragment:
                 clinical_role="decision_refiner",
                 help_text="Seleccione el esquema canónico activo para que la línea terapéutica y la torre de APE queden alineadas.",
             ),
+            _field("current_treatment_start_date", "Fecha de inicio del tratamiento actual", "date", group="Tratamiento actual", group_order=1, clinical_role="decision_refiner", help_text="Permite calcular ventanas de respuesta APE/ECOG y costos por ciclo."),
+            _field("doses_received_before_unit", "Dosis recibidas antes de llegar a esta unidad", "number", default=0, group="Tratamiento actual", group_order=1, clinical_role="decision_refiner", unit="dosis", help_text="No cuenta como dosis otorgada localmente; se suma al número global."),
+            _field("local_doses_administered", "Dosis otorgadas en esta unidad al ingreso", "number", default=0, group="Tratamiento actual", group_order=1, clinical_role="decision_refiner", unit="dosis", help_text="A la cuarta dosis dispara alerta temprana HGZ/HGR; a la sexta, alerta de máximo local."),
+            _field("unit_name", "Unidad donde se otorgan dosis", "text", default="", group="Tratamiento actual", group_order=1, clinical_role="monitoring", help_text="Ej. UMF, HGZ, HGR, hospital o unidad actual."),
+            _field("referral_target", "Destino de referencia planeado", "select", options=["", "HGZ", "HGR", "UMAE", "Otra unidad"], default="", group="Tratamiento actual", group_order=1, clinical_role="monitoring"),
             _field("current_adt_context", "Contexto actual de ADT", "select", options=["", "none", "medical_adt_continuous", "medical_adt_interrupted", "orchiectomy"], default="", group="Tratamiento actual", group_order=1, clinical_role="required"),
             _field("castrate_testosterone_status", "Estado de castración", "select", options=["", "unknown", "confirmed_castrate", "not_castrate"], default="unknown", group="Tratamiento actual", group_order=1, clinical_role="required"),
             _field("conventional_imaging_status", "Imagen convencional", "select", options=["", "NOT_RESTAGED", "M0", "M1"], default="", group="Tratamiento actual", group_order=1, clinical_role="decision_refiner"),
@@ -953,6 +1137,7 @@ def _mexico_fragment() -> RegistrationFragment:
 def _persist_targets_for_field(field_name: str, scope: str) -> list[str]:
     mapping = {
         "baseline_psa": ["clinical_baseline"],
+        "psa_history": ["biomarker_longitudinal", "clinical_baseline"],
         "mpmri_date": ["mri_facts", "imaging_studies"],
         "mpmri_quality": ["mri_facts"],
         "pirads_score": ["mri_facts", "imaging_studies"],
@@ -1087,6 +1272,29 @@ def _radiotherapy_truth_positive(data: dict[str, Any]) -> bool:
     )
 
 
+def _active_surveillance_truth_positive(data: dict[str, Any], result: dict[str, Any] | None = None) -> bool:
+    if any(
+        _is_present(data.get(field))
+        for field in (
+            "as_protocol",
+            "confirmatory_biopsy_planned",
+            "confirmatory_biopsy_done",
+            "confirmatory_biopsy_date",
+            "as_exit_reason",
+            "as_exit_treatment",
+        )
+    ):
+        return True
+    for item in (result or {}).get("eligible_treatments") or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").lower()
+        priority = str(item.get("priority") or "").lower()
+        if "vigilancia activa" in name and priority not in {"no_recomendada", "not_recommended"}:
+            return True
+    return False
+
+
 def _known_cancer_diagnosis(state: str, data: dict[str, Any]) -> bool:
     if _truthy(data.get("known_cancer_diagnosis")):
         return True
@@ -1128,6 +1336,7 @@ class PatientTrackingService:
         state: str,
         assessment_input: dict[str, Any],
         assessment_result: dict[str, Any] | None = None,
+        clinical_fact_ledger_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         scope = self.scope_for_state(state or module_id)
         config = deepcopy(SCOPE_CONFIG[scope])
@@ -1135,14 +1344,16 @@ class PatientTrackingService:
         needs_biopsy_capture = known_cancer and not _has_pathology_detail(assessment_input)
         death_toggle_default = "1" if _death_documented(assessment_input) else str(assessment_input.get("registrar_defuncion_en_esta_visita") or "0" or "0")
         rt_toggle_default = "1" if _radiotherapy_truth_positive(assessment_input) else str(assessment_input.get("received_radiotherapy_this_visit") or "0" or "0")
-        fragments = [_common_fragment(), _official_diagnosis_fragment()]
+        fragments = [_common_fragment(scope), _official_diagnosis_fragment()]
         if scope == "diagnostic":
             fragments.append(_diagnostic_fragment())
         elif scope == "localized":
             fragments.append(_localized_fragment())
             fragments.append(_structured_biopsy_fragment())
-            fragments.append(_active_surveillance_operational_fragment())
-            fragments.append(_radiotherapy_detail_fragment())
+            if _active_surveillance_truth_positive(assessment_input, assessment_result):
+                fragments.append(_active_surveillance_operational_fragment())
+            if _radiotherapy_truth_positive(assessment_input):
+                fragments.append(_radiotherapy_detail_fragment())
         elif scope == "postlocal":
             fragments.append(_postlocal_fragment())
             fragments.append(_survival_fragment())
@@ -1164,11 +1375,16 @@ class PatientTrackingService:
         fragments = [_apply_fragment_semantics(fragment) for fragment in fragments]
 
         imported_fields = []
+        imported_concept_keys: set[str] = set()
         for field in module_schema.get("fields", []):
             value = assessment_input.get(field["name"])
             if not _is_present(value):
                 continue
             semantics = field_semantics_for(field["name"])
+            concept_key = _registration_concept_key(field["name"], semantics["reuse_key"])
+            if concept_key in imported_concept_keys:
+                continue
+            imported_concept_keys.add(concept_key)
             value_label = ""
             if field.get("field_type") == "gleason_profile":
                 value_label = normalize_gleason_profile(assessment_input).get("summary") or ""
@@ -1188,6 +1404,7 @@ class PatientTrackingService:
                     "capture_layer": semantics["capture_layer"],
                     "capture_layer_label": semantics["capture_layer_label"],
                     "when_to_ask": semantics["when_to_ask"],
+                    "concept_key": concept_key,
                 }
             )
         fragments, deduped_visible_fields = _dedupe_registration_fragments(fragments, imported_fields)
@@ -1204,7 +1421,13 @@ class PatientTrackingService:
             "volume_disease": assessment_input.get("volume_disease", "Low" if scope != "advanced" else ""),
             "line_of_therapy_number": assessment_input.get("line_of_therapy_number", assessment_input.get("line_of_therapy", "")),
             "line_of_therapy_context": assessment_input.get("line_of_therapy_context", ""),
-            "psa_history": assessment_input.get("psa_history", assessment_input.get("ape_history", [])),
+            "drug_scheme": assessment_input.get("drug_scheme", ""),
+            "current_treatment_start_date": assessment_input.get("current_treatment_start_date", ""),
+            "doses_received_before_unit": assessment_input.get("doses_received_before_unit", 0),
+            "local_doses_administered": assessment_input.get("local_doses_administered", 0),
+            "unit_name": assessment_input.get("unit_name", ""),
+            "referral_target": assessment_input.get("referral_target", ""),
+            "psa_history": _intake_psa_history_default(assessment_input),
             "testosterone_history": assessment_input.get("testosterone_history", []),
             "registrar_defuncion_en_esta_visita": death_toggle_default,
             "received_radiotherapy_this_visit": rt_toggle_default,
@@ -1244,6 +1467,11 @@ class PatientTrackingService:
         )
         field_semantics = _field_semantics_registry(fragments=fragments, imported_fields=imported_fields)
         score_semantics = build_score_semantics([field["name"] for field in deduped_visible_fields])
+        ledger_registration_context = _registration_ledger_context(
+            imported_fields=imported_fields,
+            visible_fields=deduped_visible_fields,
+            clinical_fact_ledger_context=clinical_fact_ledger_context,
+        )
 
         return {
             "scope": scope,
@@ -1258,6 +1486,7 @@ class PatientTrackingService:
             "canonicalization_map": self.canonicalization_map(),
             "imported_clinical_fields": imported_fields,
             "deduped_visible_fields": deduped_visible_fields,
+            "clinical_fact_ledger_registration_context": ledger_registration_context,
             "field_semantics": field_semantics,
             "score_semantics": score_semantics,
             "applicable_scores": score_requirements.get("applicable_scores", []),

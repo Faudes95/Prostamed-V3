@@ -241,6 +241,29 @@ SEQUENCE_LIBRARY: dict[str, list[dict[str, Any]]] = {
          "contra": ["ECOG ≥3"],
          "trial": "Múltiples RCTs", "preferred": False},
     ],
+
+    "m1_crpc_nepc_transformation": [
+        {"drug": "carboplatin_etoposide_nepc", "label": "Carboplatino + Etopósido (NEPC)",
+         "evidence": "category_2A", "guideline": "both", "OS": 16.0, "PFS": 5.3,
+         "eligibility": ["NEPC confirmado histológicamente o sospechado score ≥5",
+                         "CBC apta para mielotoxicidad"],
+         "contra": ["Reserva medular inadecuada"],
+         "trial": "Aparicio CCR 2013 / Aggarwal JCO 2018", "preferred": True,
+         "biomarker": "nepc"},
+        {"drug": "cisplatin_docetaxel_nepc", "label": "Cisplatino + Docetaxel (NEPC)",
+         "evidence": "category_2A", "guideline": "both", "OS": 15.2, "PFS": 5.0,
+         "eligibility": ["NEPC confirmado", "eGFR ≥60", "Sin hipoacusia",
+                         "Neuropatía <grado 2", "ECOG ≤2"],
+         "contra": ["eGFR <60", "Hipoacusia documentada", "Neuropatía ≥grado 2"],
+         "trial": "Aparicio CCR 2013", "preferred": False,
+         "biomarker": "nepc"},
+        {"drug": "nepc_clinical_trial", "label": "Ensayo clínico NEPC dirigido (AURKA/MYCN/DLL3)",
+         "evidence": "category_2B", "guideline": "NCCN", "OS": None, "PFS": None,
+         "eligibility": ["NEPC confirmado", "Ensayo activo"],
+         "contra": [],
+         "trial": "NCCN PROS-J v5.2026", "preferred": False,
+         "biomarker": "nepc"},
+    ],
 }
 
 # Formulary map (which drugs are available in each system)
@@ -260,6 +283,9 @@ FORMULARY: dict[str, list[str]] = {
     "adt_enzalutamide": ["IMSS", "ISSSTE", "privado"],
     "adt_darolutamide_docetaxel": ["privado"],
     "adt_rt": ["IMSS", "ISSSTE", "privado"],
+    "carboplatin_etoposide_nepc": ["IMSS", "ISSSTE", "privado"],
+    "cisplatin_docetaxel_nepc": ["IMSS", "ISSSTE", "privado"],
+    "nepc_clinical_trial": ["privado"],
 }
 
 
@@ -338,6 +364,10 @@ class TreatmentSequencer:
     ) -> dict[str, Any]:
         follow_ups = patient.get("follow_ups", []) or []
         latest_fu = follow_ups[-1] if follow_ups else {}
+        latest_assessment = patient.get("latest_assessment") or {}
+        latest_result = dict(latest_assessment.get("result_snapshot") or {})
+        nepc_bundle = dict(latest_result.get("nepc_pathway_bundle") or {})
+        vision_bundle = dict(latest_result.get("vision_eligibility_bundle") or {})
 
         return {
             "hrr_positive": bool(
@@ -347,19 +377,27 @@ class TreatmentSequencer:
             ),
             "brca2_positive": bool(genomic.get("brca2_mutation")),
             "brca1_positive": bool(genomic.get("brca1_mutation")),
-            "msi_high": genomic.get("msi_status") == "MSI-H",
+            "msi_high": genomic.get("msi_status") == "MSI-H"
+            or bool((latest_result.get("nccn_primary") or {}).get("dmmr_high_confidence")),
             "arv7_positive": bool(
                 genomic.get("arv7_positive")
                 or baseline.get("arv7_positive")
+                or str(baseline.get("ar_v7_status") or "").lower().startswith("pos")
             ),
             "psma_positive": bool(
                 genomic.get("psma_positive")
                 or baseline.get("psma_positive")
+                or vision_bundle.get("eligible")
             ),
             "nepc": bool(
                 genomic.get("nepc_transformation")
                 or baseline.get("nepc")
+                or nepc_bundle.get("nepc_confirmed")
+                or nepc_bundle.get("nepc_suspected")
             ),
+            "nepc_confirmed": bool(nepc_bundle.get("nepc_confirmed")),
+            "nepc_biopsy_trigger": bool(nepc_bundle.get("biopsy_trigger")),
+            "vision_eligibility_label": vision_bundle.get("eligibility_label"),
             "tmb_high": genomic.get("tmb_high", False),
             "psadt_months": self._get_psadt(follow_ups),
         }
@@ -421,8 +459,7 @@ class TreatmentSequencer:
     ) -> list[TreatmentLine]:
         lines: list[TreatmentLine] = []
 
-        # Determine which libraries to draw from
-        library_keys = self._library_keys_for_state(state, prior_drugs)
+        library_keys = self._library_keys_for_state(state, prior_drugs, biomarkers)
 
         line_num = len(prior_drugs) + 1
         for lib_key in library_keys:
@@ -447,6 +484,8 @@ class TreatmentSequencer:
                     if biomarker_required == "brca_positive" and not (
                         biomarkers.get("brca1_positive") or biomarkers.get("brca2_positive")
                     ):
+                        continue
+                    if biomarker_required == "nepc" and not biomarkers.get("nepc"):
                         continue
 
                 # Check AR-V7 constraint
@@ -502,8 +541,13 @@ class TreatmentSequencer:
         return lines
 
     @staticmethod
-    def _library_keys_for_state(state: str, prior_drugs: set[str]) -> list[str]:
+    def _library_keys_for_state(
+        state: str,
+        prior_drugs: set[str],
+        biomarkers: dict | None = None,
+    ) -> list[str]:
         """Determine which sequence library sections apply."""
+        biomarkers = biomarkers or {}
         keys = []
         if state in ("mcspc_high_volume_sync", "mcspc_high_volume_metachronous", "mcspc_high_volume"):
             keys.append("mcspc_high_volume_sync")
@@ -512,6 +556,10 @@ class TreatmentSequencer:
         elif state == "m0_crpc":
             keys.append("m0_crpc")
         elif state == "m1_crpc":
+            if biomarkers.get("nepc"):
+                keys.append("m1_crpc_nepc_transformation")
+                keys.append("m1_crpc_line_2_post_arsi")
+                return keys
             # Has prior ARSI? → line 2 library
             arsis = {"enzalutamide", "abiraterone", "apalutamide", "darolutamide"}
             if arsis & prior_drugs:

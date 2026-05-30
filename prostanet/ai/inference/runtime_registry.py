@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
@@ -38,10 +39,13 @@ def _resolve_models_dir(models_dir: str | Path | None = None) -> Path:
 def _build_registry_signature(registry: ModelRegistry) -> dict[str, Any]:
     signature: dict[str, Any] = {}
     for model_id, metadata in registry.list_models().items():
+        artifact_path = Path(str(metadata.get("artifact_path") or ""))
+        artifact_exists = artifact_path.exists()
         signature[model_id] = {
             "loaded": bool(metadata.get("loaded")),
-            "artifact_path": str(metadata.get("artifact_path") or ""),
-            "artifact_exists": bool(metadata.get("artifact_exists")),
+            "artifact_path": str(artifact_path),
+            "artifact_exists": artifact_exists,
+            "artifact_mtime": artifact_path.stat().st_mtime if artifact_exists else None,
             "model_version": str(metadata.get("model_version") or ""),
             "load_error": str(metadata.get("load_error") or ""),
         }
@@ -50,16 +54,28 @@ def _build_registry_signature(registry: ModelRegistry) -> dict[str, Any]:
 
 def _runtime_readiness(registry: ModelRegistry) -> dict[str, Any]:
     models = registry.list_models()
-    loaded_count = sum(1 for item in models.values() if item.get("loaded"))
+    loaded_model_ids = [
+        model_id for model_id, item in models.items() if item.get("loaded")
+    ]
+    missing_model_ids = [
+        model_id for model_id, item in models.items() if not item.get("loaded")
+    ]
+    loaded_count = len(loaded_model_ids)
     return {
         "ready": loaded_count > 0,
         "loaded_count": loaded_count,
+        "loaded_model_count": loaded_count,
+        "loaded_model_ids": loaded_model_ids,
+        "missing_model_ids": missing_model_ids,
         "known_count": len(models),
+        "runtime_readiness": "advisory_ready" if loaded_count > 0 else "not_ready",
         "models": models,
     }
 
 
 def _bootstrap_registry(registry: ModelRegistry) -> dict[str, bool]:
+    if str(os.environ.get("PROSTANET_LOAD_MODEL") or "").lower() in {"0", "false", "no", "off"}:
+        return {}
     try:
         return registry.load_all_available()
     except Exception:
@@ -81,6 +97,13 @@ def get_runtime_model_registry(
             ModelRegistry.reset_process_log_state()
             _RUNTIME_REGISTRY = ModelRegistry(resolved_models_dir)
             _RUNTIME_MODELS_DIR = resolved_models_dir
+            _bootstrap_registry(_RUNTIME_REGISTRY)
+            _LAST_BOOTSTRAP_SIGNATURE = _build_registry_signature(_RUNTIME_REGISTRY)
+            _LAST_BOOTSTRAP_AT = _utc_timestamp()
+            _BOOTSTRAP_COMPLETED = True
+            _BOOTSTRAP_GENERATION += 1
+        elif _build_registry_signature(_RUNTIME_REGISTRY) != _LAST_BOOTSTRAP_SIGNATURE:
+            ModelRegistry.reset_process_log_state()
             _bootstrap_registry(_RUNTIME_REGISTRY)
             _LAST_BOOTSTRAP_SIGNATURE = _build_registry_signature(_RUNTIME_REGISTRY)
             _LAST_BOOTSTRAP_AT = _utc_timestamp()
@@ -114,11 +137,13 @@ def get_runtime_model_status(
 ) -> dict[str, Any]:
     resolved_registry = registry or get_runtime_model_registry(models_dir=models_dir)
     metadata = resolved_registry.get_metadata(model_id)
+    health = get_runtime_registry_health(registry=resolved_registry)
     return {
         **metadata,
+        **health,
         "model_id": model_id,
         "runtime_loaded": bool(resolved_registry.is_loaded(model_id)),
-        "runtime_health": get_runtime_registry_health(registry=resolved_registry),
+        "runtime_health": health,
     }
 
 

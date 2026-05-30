@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reconciliacion Ledger · {{ patient.full_name or patient.name or patient_ref }} · ProstaMed V2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='ledger_reconciliation_v1') }}">
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+
+<div class="pm2-profile-shell">
+    {% from "components/pm2_sidebar.html" import pm2_sidebar %}
+    {{ pm2_sidebar(active='patients', identity_nss=patient_ref, faubot_release='Clinical Fact Ledger Reconciliation v1') }}
+
+    <main id="main-content" class="pm2-profile-main" tabindex="-1">
+        <header class="pm2-profile-header" style="margin:var(--space-4) var(--space-6)">
+            <div>
+                <p class="pm2-kicker">Clinical Fact Ledger V2</p>
+                <h1 style="font-family:var(--pm-font-display);font-size:1.8rem;font-weight:800;color:#f8fbff;margin:4px 0 0">
+                    Reconciliacion de hechos clinicos
+                </h1>
+                <p style="color:var(--pn-text-muted);font-size:.84rem;margin-top:6px;max-width:86ch">
+                    Resolver contradicciones sin recaptura: se firma una fuente ganadora, se crea un fact canónico verificado y las fuentes originales permanecen intactas.
+                </p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+                <a href="/patient_profile/{{ patient_ref }}?v=2&refresh=1" class="pm2-btn pm2-btn--ghost" style="text-decoration:none">Volver al Perfil V2</a>
+                <a href="/api/patients/{{ patient_ref }}/clinical-fact-ledger/reconciliation" class="pm2-btn pm2-btn--primary" style="text-decoration:none" data-testid="ledger-reconciliation-api-link">API bundle</a>
+            </div>
+        </header>
+
+        {% set summary = bundle.summary or {} %}
+        <section class="pm2-tab-card" style="margin:var(--space-4) var(--space-6);border-left:4px solid {% if summary.conflict_count %}#fb7185{% else %}#34d399{% endif %}"
+                 data-testid="clinical-fact-reconciliation-panel">
+            <div class="pm2-tab-card-head">
+                <h3>{{ patient.full_name or patient.name or patient_ref }}</h3>
+                <span class="pm2-head-meta">{{ patient_ref }} · {{ bundle.version }}</span>
+            </div>
+            <div class="pm2-tab-card-body">
+                <div class="pm2-grid-4" style="gap:14px">
+                    <div>
+                        <div class="pm2-kicker">Conflictos abiertos</div>
+                        <strong data-testid="ledger-reconciliation-conflict-count" style="display:block;color:#f8fbff">{{ summary.conflict_count or 0 }}</strong>
+                        <span style="color:var(--pn-text-muted);font-size:.72rem">requieren firma clinica</span>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Criticos</div>
+                        <strong style="display:block;color:{% if summary.critical_conflict_count %}#fecaca{% else %}#bbf7d0{% endif %}">{{ summary.critical_conflict_count or 0 }}</strong>
+                        <span style="color:var(--pn-text-muted);font-size:.72rem">facts bloqueantes</span>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Ya reconciliados</div>
+                        <strong style="display:block;color:#bbf7d0">{{ summary.resolved_watch_count or 0 }}</strong>
+                        <span style="color:var(--pn-text-muted);font-size:.72rem">vigilan discordancia historica</span>
+                    </div>
+                    <div>
+                        <div class="pm2-kicker">Siguiente accion</div>
+                        <strong style="display:block;color:#f8fbff;font-size:.82rem">{{ bundle.next_action }}</strong>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="pm2-tab-card" style="margin:var(--space-4) var(--space-6);border-left:4px solid #38bdf8"
+                 data-testid="ledger-reconciliation-impact-contract">
+            <div class="pm2-tab-card-head">
+                <h3>Impacto sobre DECISION HOY</h3>
+                <span class="pm2-head-meta">recompute auditable · sin orden externa · sin entrenamiento</span>
+            </div>
+            <div class="pm2-tab-card-body">
+                <p style="color:var(--pn-text-muted);font-size:.78rem;line-height:1.5;margin:0 0 12px">
+                    Al firmar una fuente ganadora, ProstaMed crea un fact canónico verificado, invalida los read-models V2 y recalcula las superficies clínicas que dependen del Ledger.
+                </p>
+                <div id="ledgerReconciliationImpactLive"
+                     data-testid="ledger-reconciliation-impact-live"
+                     style="border:1px solid rgba(148,163,184,.22);border-radius:10px;padding:12px;background:rgba(15,23,42,.54)">
+                    <span data-testid="ledger-reconciliation-impact-empty" style="color:var(--pn-text-muted);font-size:.78rem">
+                        Sin reconciliacion firmada en esta sesion.
+                    </span>
+                </div>
+            </div>
+        </section>
+
+        <section style="margin:var(--space-4) var(--space-6)" data-testid="ledger-reconciliation-queue">
+            {% if bundle.queue %}
+                {% for conflict in bundle.queue %}
+                <article class="pm2-tab-card" style="margin-bottom:14px;border-left:4px solid {% if conflict.severity == 'critical' %}#fb7185{% else %}#fbbf24{% endif %}"
+                         data-testid="ledger-reconciliation-conflict-{{ conflict.fact_key }}"
+                         data-fact-key="{{ conflict.fact_key }}">
+                    <div class="pm2-tab-card-head">
+                        <h3>{{ conflict.fact_key }}</h3>
+                        <span class="pm2-head-meta">{{ conflict.domain }} · {{ conflict.severity }} · {{ conflict.source_count }} fuentes</span>
+                    </div>
+                    <div class="pm2-tab-card-body">
+                        <p style="color:var(--pn-text-muted);font-size:.78rem;line-height:1.5;margin:0 0 12px">
+                            {{ conflict.recommended_action }} Valor activo actual: <strong style="color:#f8fbff">{{ conflict.current_value }}</strong>
+                            desde {{ conflict.current_source or 'fuente no documentada' }}.
+                        </p>
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px">
+                            {% for source in conflict.source_options %}
+                            <form data-reconcile-form
+                                  data-fact-key="{{ conflict.fact_key }}"
+                                  data-source-index="{{ source.source_index }}"
+                                  style="padding:12px;border-radius:10px;background:rgba(15,23,42,.62);border:1px solid {% if source.is_current %}rgba(94,234,212,.34){% elif source.clinician_verified %}rgba(52,211,153,.30){% else %}rgba(148,163,184,.20){% endif %}">
+                                <div class="pm2-kicker">Fuente {{ source.source_index + 1 }}</div>
+                                <div style="font-weight:850;color:#f8fbff;font-size:1rem;overflow-wrap:anywhere">{{ source.value }}</div>
+                                <div style="color:var(--pn-text-muted);font-size:.72rem;line-height:1.45;margin-top:5px">
+                                    {{ source.source_type }} · {{ source.source_record_type or 'sin tipo' }} · {{ source.freshness_status }}
+                                </div>
+                                <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
+                                    {% if source.is_current %}<span class="pm2-state-chip pm2-state-chip--primary">actual</span>{% endif %}
+                                    {% if source.clinician_verified %}<span class="pm2-state-chip pm2-state-chip--success">verificado</span>{% endif %}
+                                    <span class="pm2-state-chip">{{ source.observed_key or source.fact_key }}</span>
+                                </div>
+                                <label style="display:flex;flex-direction:column;gap:5px;color:var(--pn-text-muted);font-size:.72rem;margin-top:10px">
+                                    Nota clinica obligatoria
+                                    <textarea name="clinical_note" rows="3" required
+                                              class="pm2-append-form-input"
+                                              placeholder="Ej. Se valida contra nota clinica y exploracion actual; usar este valor como canonico."></textarea>
+                                </label>
+                                <input type="hidden" name="reviewed_by" value="clinician">
+                                <button type="submit" class="pm2-btn pm2-btn--primary" style="margin-top:9px;width:100%;justify-content:center">
+                                    Firmar fuente ganadora
+                                </button>
+                            </form>
+                            {% endfor %}
+                        </div>
+                        <div data-reconcile-feedback="{{ conflict.fact_key }}" style="margin-top:10px;color:var(--pn-text-muted);font-size:.78rem;min-height:18px"></div>
+                    </div>
+                </article>
+                {% endfor %}
+            {% else %}
+                <div class="pm2-tab-card" data-testid="ledger-reconciliation-empty">
+                    <div class="pm2-tab-card-body">
+                        <strong style="color:#bbf7d0">Sin conflictos abiertos.</strong>
+                        <p style="color:var(--pn-text-muted);font-size:.82rem;margin-top:6px">
+                            El Ledger puede seguir mostrando discordancias historicas reconciliadas, pero no bloquean DECISION HOY ni captura longitudinal.
+                        </p>
+                    </div>
+                </div>
+            {% endif %}
+        </section>
+    </main>
+</div>
+
+<script>
+const PM2_RECONCILIATION_PATIENT_REF = "{{ patient_ref }}";
+const PM2_RECONCILIATION_IMPACT_KEY = `pm2-ledger-reconciliation-impact:${PM2_RECONCILIATION_PATIENT_REF}`;
+
+function pm2EscapeHTML(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    }[char]));
+}
+
+function renderLedgerReconciliationImpact(impact) {
+    const target = document.getElementById('ledgerReconciliationImpactLive');
+    if (!target || !impact) return;
+    const before = impact.before || {};
+    const after = impact.after || {};
+    const delta = impact.delta || {};
+    const recompute = impact.recompute || {};
+    const surfaces = impact.refreshed_surfaces || {};
+    const beforeLedger = before.ledger || {};
+    const afterLedger = after.ledger || {};
+    const decisionAfter = delta.decision_after || {};
+    const decisionBefore = delta.decision_before || {};
+    const actionBefore = delta.next_action_before || {};
+    const actionAfter = delta.next_action_after || {};
+    const decisionTitle = decisionAfter.title || (after.decision_today || {}).title || 'DECISION HOY recalculada';
+    target.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+            <div>
+                <div class="pm2-kicker">Conflictos</div>
+                <strong style="display:block;color:#f8fbff">${pm2EscapeHTML(beforeLedger.conflict_count ?? 0)} → ${pm2EscapeHTML(afterLedger.conflict_count ?? 0)}</strong>
+                <span style="color:var(--pn-text-muted);font-size:.72rem">${pm2EscapeHTML(delta.conflict_count_delta ?? 0)} delta</span>
+            </div>
+            <div>
+                <div class="pm2-kicker">Fact cerrado</div>
+                <strong style="display:block;color:${delta.closed_fact_key ? '#bbf7d0' : '#fecaca'}">${pm2EscapeHTML(impact.fact_key || '')}</strong>
+                <span style="color:var(--pn-text-muted);font-size:.72rem">valor ${pm2EscapeHTML(impact.selected_value ?? '')}</span>
+            </div>
+            <div>
+                <div class="pm2-kicker">Recompute</div>
+                <strong style="display:block;color:${recompute.success ? '#bbf7d0' : '#fecaca'}">${recompute.success ? 'completo' : 'pendiente'}</strong>
+                <span style="color:var(--pn-text-muted);font-size:.72rem">${pm2EscapeHTML(recompute.error || 'read-models invalidados')}</span>
+            </div>
+            <div>
+                <div class="pm2-kicker">Gate DECISION HOY</div>
+                <strong style="display:block;color:${delta.ledger_gate_cleared ? '#bbf7d0' : (delta.ledger_gate_is_active ? '#fecaca' : '#f8fbff')};font-size:.86rem">${delta.ledger_gate_cleared ? 'limpio' : (delta.ledger_gate_is_active ? 'activo' : 'sin gate')}</strong>
+                <span style="color:var(--pn-text-muted);font-size:.72rem">${pm2EscapeHTML(actionBefore.action_mode || decisionBefore.ledger_quality_status || '—')} → ${pm2EscapeHTML(actionAfter.action_mode || decisionAfter.ledger_quality_status || '—')}</span>
+            </div>
+            <div>
+                <div class="pm2-kicker">DECISION HOY</div>
+                <strong style="display:block;color:#f8fbff;font-size:.82rem">${pm2EscapeHTML(decisionTitle)}</strong>
+                <span style="color:var(--pn-text-muted);font-size:.72rem">${delta.decision_changed ? 'cambio detectado' : 'sin cambio estructural'}</span>
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+            <a class="pm2-btn pm2-btn--primary" style="text-decoration:none" href="${pm2EscapeHTML(surfaces.profile_v2 || `/patient_profile/${PM2_RECONCILIATION_PATIENT_REF}?v=2&refresh=1`)}">Abrir Perfil V2 refrescado</a>
+            <a class="pm2-btn pm2-btn--ghost" style="text-decoration:none" href="${pm2EscapeHTML(surfaces.decision_today_api || `/api/patients/${PM2_RECONCILIATION_PATIENT_REF}/decision-today?refresh=1`)}">Ver DECISION HOY API</a>
+        </div>
+    `;
+}
+
+try {
+    const storedImpact = sessionStorage.getItem(PM2_RECONCILIATION_IMPACT_KEY);
+    if (storedImpact) {
+        renderLedgerReconciliationImpact(JSON.parse(storedImpact));
+        sessionStorage.removeItem(PM2_RECONCILIATION_IMPACT_KEY);
+    }
+} catch (error) {
+    console.warn('No se pudo restaurar impacto Ledger', error);
+}
+
+document.querySelectorAll('[data-reconcile-form]').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const factKey = form.dataset.factKey || '';
+        const feedback = document.querySelector(`[data-reconcile-feedback="${factKey}"]`);
+        const button = form.querySelector('button[type="submit"]');
+        const originalLabel = button ? button.textContent : '';
+        if (button) {
+            button.disabled = true;
+            button.textContent = 'Firmando...';
+        }
+        try {
+            const payload = {
+                fact_key: factKey,
+                selected_source_index: Number(form.dataset.sourceIndex || 0),
+                reviewed_by: form.querySelector('[name="reviewed_by"]')?.value || 'clinician',
+                clinical_note: form.querySelector('[name="clinical_note"]')?.value || '',
+            };
+            const res = await fetch(`/api/patients/${encodeURIComponent(PM2_RECONCILIATION_PATIENT_REF)}/clinical-fact-ledger/reconcile`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok || body.success === false) {
+                if (feedback) {
+                    feedback.style.color = '#fecaca';
+                    feedback.textContent = body.error || `Error ${res.status}`;
+                }
+                return;
+            }
+            if (feedback) {
+                feedback.style.color = '#bbf7d0';
+                feedback.textContent = 'Fact reconciliado. Recalculando DECISION HOY y recargando cola...';
+            }
+            if (body.reconciliation_impact) {
+                renderLedgerReconciliationImpact(body.reconciliation_impact);
+                try {
+                    sessionStorage.setItem(PM2_RECONCILIATION_IMPACT_KEY, JSON.stringify(body.reconciliation_impact));
+                } catch (error) {
+                    console.warn('No se pudo persistir impacto Ledger', error);
+                }
+            }
+            setTimeout(() => window.location.reload(), 900);
+        } catch (error) {
+            if (feedback) {
+                feedback.style.color = '#fecaca';
+                feedback.textContent = error && error.message ? error.message : String(error);
+            }
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.textContent = originalLabel;
+            }
+        }
+    });
+});
+</script>
+</body>
+</html>

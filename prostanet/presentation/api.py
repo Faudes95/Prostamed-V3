@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 import tracking_db
 
 from prostanet.application.module_registry import ModuleRegistry
@@ -20,6 +20,87 @@ from prostanet.domains.clinical_validation.repository import (
     save_validation_run_report,
 )
 from prostanet.domains.patient_tracking.service import PatientTrackingService
+from prostanet.domains.population_intelligence.arpi_value_analytics import (
+    build_epidemiology_command_center,
+)
+from prostanet.domains.platform_readiness.audit import build_platform_readiness_audit
+from prostanet.domains.platform_readiness.ape_longitudinal_completion_sprint import (
+    build_ape_longitudinal_completion_csv_bytes,
+    build_ape_longitudinal_completion_sprint,
+)
+from prostanet.domains.platform_readiness.capture_integrity import (
+    build_capture_integrity_readiness,
+)
+from prostanet.domains.platform_readiness.v2_persistence_closure import (
+    build_v2_initial_staging_persistence_closure,
+)
+from prostanet.domains.platform_readiness.v2_treatment_value_closure import (
+    build_v2_treatment_value_closure,
+)
+from prostanet.domains.platform_readiness.deidentified_export_contract import (
+    build_deidentified_export_contract,
+)
+from prostanet.domains.platform_readiness.external_validation_worklist import (
+    build_external_validation_worklist,
+    build_external_validation_worklist_csv_bytes,
+)
+from prostanet.domains.platform_readiness.interoperability_map import build_interoperability_map
+from prostanet.domains.platform_readiness.ledger_release_gate import build_ledger_release_gate
+from prostanet.domains.platform_readiness.ledger_persistence_matrix import (
+    build_ledger_persistence_matrix,
+)
+from prostanet.domains.platform_readiness.nas_pilot_evidence_vault import (
+    attest_nas_pilot_evidence,
+    build_nas_pilot_evidence_vault,
+    build_nas_pilot_evidence_vault_zip_bytes,
+)
+from prostanet.domains.platform_readiness.pilot_adoption_command_center import (
+    build_pilot_adoption_command_center,
+)
+from prostanet.domains.platform_readiness.prospective_gap_closure_huddle import (
+    build_prospective_gap_closure_huddle,
+    build_prospective_gap_huddle_csv_bytes,
+    close_prospective_gap_huddle_item,
+)
+from prostanet.domains.platform_readiness.prospective_pilot_governance import (
+    build_prospective_pilot_governance_pack,
+)
+from prostanet.domains.platform_readiness.prospective_real_world_completion_queue import (
+    build_prospective_real_world_completion_csv_bytes,
+    build_prospective_real_world_completion_queue,
+)
+from prostanet.domains.platform_readiness.real_world_first_patient_launch_mode import (
+    build_real_world_first_patient_launch_mode,
+    build_real_world_first_patient_launch_mode_markdown_bytes,
+)
+from prostanet.domains.platform_readiness.real_world_launch_flow_verifier import (
+    build_real_world_launch_flow_verifier,
+    build_real_world_launch_flow_verifier_markdown_bytes,
+)
+from prostanet.domains.platform_readiness.real_world_pilot_execution_log import (
+    build_real_world_pilot_execution_log,
+    build_real_world_pilot_execution_log_markdown_bytes,
+)
+from prostanet.domains.platform_readiness.real_world_pilot_packet import (
+    build_real_world_pilot_packet,
+    build_real_world_pilot_packet_markdown_bytes,
+)
+from prostanet.domains.platform_readiness.real_world_sample_maturity import (
+    build_real_world_sample_maturity_csv_bytes,
+    build_real_world_sample_maturity_gate,
+)
+from prostanet.domains.platform_readiness.research_pack_governance import (
+    build_research_pack_freeze_library,
+    summarize_research_pack_freeze,
+)
+from prostanet.domains.platform_readiness.research_pack_materializer import (
+    build_research_pack_materializer,
+    build_research_pack_zip_bytes,
+    freeze_research_pack_materializer,
+)
+from prostanet.domains.platform_readiness.world_class_benchmark import (
+    build_world_class_benchmark_radar,
+)
 from prostanet.shared.converters import safe_bool, safe_float, safe_int
 from prostanet.shared.presentation_text import (
     humanize_assessment,
@@ -33,6 +114,7 @@ from prostanet.shared.presentation_text import (
     humanize_sources,
     humanize_state_timeline,
 )
+from prostanet.shared.pivotal_gate_disclosure import filter_schema_for_wizard
 from prostanet.domains.research_intelligence.comparative_effectiveness import (
     run_propensity_analysis,
 )
@@ -77,6 +159,88 @@ assessment_service = ClinicalAssessmentService()
 tracking_service = PatientTrackingService()
 
 
+_UNAVAILABLE_TEXT_VALUES = {
+    "no disponible",
+    "no documentado",
+    "no documentada",
+    "desconocido",
+    "desconocida",
+    "unknown",
+    "pendiente",
+    "no aplica",
+    "n/a",
+    "na",
+    "none",
+    "null",
+    "-",
+    "—",
+}
+
+_NUMERIC_FIELD_ALIASES = {
+    "assessment_id",
+    "age",
+    "baseline_psa",
+    "psa",
+    "psa_baseline_ng_ml",
+    "testosterone_baseline",
+    "hemoglobin",
+    "alp",
+    "ldh",
+    "albumin",
+    "rt_primary_dose_gy",
+    "prior_docetaxel_cycles",
+    "prior_arpi_duration",
+    "line_of_therapy",
+    "line_of_therapy_number",
+    "metastasis_count",
+    "metastatic_total_lesion_count",
+    "nonregional_nodal_count",
+    "visceral_lesion_count",
+    "bone_axial_count",
+    "bone_appendicular_count",
+    "ecog_score",
+    "gleason_score",
+    "gleason_primary",
+    "gleason_secondary",
+    "gleason_tertiary",
+    "isup_grade",
+    "num_cores_positive",
+    "total_cores",
+    "positive_cores",
+    "total_cores_biopsied",
+    "percent_positive_cores",
+    "max_core_involvement",
+    "percent_pattern_4",
+    "psad",
+    "psa_density",
+    "mri_psa_density",
+    "prostate_volume_ml",
+    "pirads_score",
+    "prior_mpmri_pirads_score",
+    "mri_pirads_score",
+    "ipss_score",
+    "ipss_total",
+    "iief5_score",
+    "iief_5",
+    "iief5",
+    "charlson_score",
+    "g8_score",
+    "karnofsky_performance_status",
+    "life_expectancy_years",
+    "life_expectancy_months",
+    "paquetes_anio",
+    "weight_kg",
+    "current_weight_kg",
+    "baseline_weight_kg",
+    "bmi",
+    "bmi_current",
+    "weight_loss_6m_pct",
+    "weight_loss_percent_6mo",
+    "mini_cog_score",
+    "fatigue_score",
+}
+
+
 def _parse_json() -> dict:
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -84,23 +248,55 @@ def _parse_json() -> dict:
     return data
 
 
+def _is_unavailable_value(value) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        text = value.strip().lower()
+        return text == "" or text in _UNAVAILABLE_TEXT_VALUES
+    return False
+
+
+def _coerce_numeric_value(value, field_name: str):
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+    text = str(value).strip().replace(",", ".")
+    numeric = safe_float(text, default=None)
+    if numeric is None:
+        raise ValueError(f"'{field_name}' debe ser numérico.")
+    return int(numeric) if numeric.is_integer() and "." not in text else numeric
+
+
 def _coerce_payload(payload: dict, schema: dict) -> dict:
     coerced = dict(payload)
+    numeric_fields = set(_NUMERIC_FIELD_ALIASES)
     for field in schema.get("fields", []):
         name = field["name"]
-        value = coerced.get(name)
-        if value in (None, ""):
-            continue
-        text = str(value)
         if field.get("field_type") == "number":
-            coerced[name] = float(text) if "." in text else int(float(text))
+            numeric_fields.add(name)
+        value = coerced.get(name)
+        if _is_unavailable_value(value):
+            coerced.pop(name, None)
+            continue
+        if field.get("field_type") == "number":
+            coerced[name] = _coerce_numeric_value(value, name)
             continue
         if field.get("field_type") == "select":
+            text = str(value).strip().replace(",", ".")
             try:
                 numeric = float(text)
             except (TypeError, ValueError):
                 continue
             coerced[name] = numeric if "." in text else int(numeric)
+
+    for name in list(coerced):
+        if name not in numeric_fields:
+            continue
+        value = coerced.get(name)
+        if _is_unavailable_value(value):
+            coerced.pop(name, None)
+            continue
+        coerced[name] = _coerce_numeric_value(value, name)
     return coerced
 
 
@@ -133,25 +329,949 @@ def _resolve_patient_api_ref(patient_ref: str):
     return resolved, None
 
 
-@modular_api.route("/api/state-classifier", methods=["POST"])
-def state_classifier() -> tuple:
+def _build_draft_ledger_context(
+    *,
+    patient_ref: str,
+    module_schema: dict,
+    module_id: str,
+) -> dict | None:
+    if not patient_ref:
+        return None
     try:
-        payload = _coerce_payload(_parse_json(), registry.get_state_classifier_schema())
-        result = registry.classify_state(payload)
-        result["state_label"] = humanize_module_listing({"module": result["state"], "title": result["state"], "core_questions": []})["title"]
-        return jsonify({"success": True, **result})
-    except ValueError as exc:
-        return jsonify({"success": False, "error": str(exc)}), 400
-    except KeyError:
-        return jsonify({"success": False, "error": "Modulo no soportado."}), 404
-    except Exception as exc:
-        return jsonify({"success": False, "error": str(exc)}), 500
+        from prostanet.domains.clinical_fact_ledger import (
+            build_patient_clinical_fact_ledger,
+            build_patient_clinical_fact_ledger_wizard_context,
+        )
+
+        core_record = tracking_db.load_patient_record_core(patient_ref)
+        if not core_record:
+            return None
+        patient_record = tracking_db.build_patient_record_derivatives(core_record)
+        ledger = build_patient_clinical_fact_ledger(patient_record)
+        return build_patient_clinical_fact_ledger_wizard_context(
+            patient_record,
+            ledger=ledger,
+            module_schema=module_schema,
+            module_id=module_id,
+        )
+    except Exception:
+        return {
+            "available": False,
+            "version": "clinical_fact_ledger_wizard_context_v1",
+            "field_prefills": {},
+            "source_clinical_facts_mutated": False,
+            "external_order_created": False,
+            "model_trained": False,
+        }
+
+
+def _build_assessment_context_snapshot(
+    *,
+    patient_ref: str,
+    clinical_fact_ledger_context: dict | None,
+) -> dict:
+    return {
+        "version": "clinical_assessment_context_snapshot_v1",
+        "patient_ref": patient_ref or "",
+        "clinical_fact_ledger_wizard_context": clinical_fact_ledger_context or {},
+        "source_clinical_facts_mutated": False,
+        "external_order_created": False,
+        "model_trained": False,
+    }
+
+
+def _ledger_context_from_assessment(
+    assessment: dict,
+    *,
+    module_schema: dict,
+    module_id: str,
+) -> dict | None:
+    context_snapshot = assessment.get("context_snapshot") or {}
+    patient_ref = str(context_snapshot.get("patient_ref") or "").strip()
+    live_context = _build_draft_ledger_context(
+        patient_ref=patient_ref,
+        module_schema=module_schema,
+        module_id=module_id,
+    )
+    if isinstance(live_context, dict):
+        return live_context
+    stored_context = context_snapshot.get("clinical_fact_ledger_wizard_context")
+    return stored_context if isinstance(stored_context, dict) else None
 
 
 @modular_api.route("/api/modules", methods=["GET"])
 def list_modules() -> tuple:
     modules = [humanize_module_listing(module) for module in registry.list_modules()]
     return jsonify({"success": True, "modules": modules})
+
+
+@modular_api.route("/api/platform-readiness/audit", methods=["GET"])
+def platform_readiness_audit() -> tuple:
+    """Read-only clinical platform readiness audit."""
+    scope = str(request.args.get("scope") or "full").strip().lower()
+    field_limit = safe_int(request.args.get("field_limit"), default=300) or 300
+    audit = build_platform_readiness_audit(
+        registry,
+        registered_rules=current_app.url_map.iter_rules(),
+        scope=scope,
+        field_limit=max(25, min(int(field_limit), 1000)),
+    )
+    return jsonify({"success": True, **audit})
+
+
+@modular_api.route("/api/platform-readiness/capture-integrity", methods=["GET"])
+def platform_readiness_capture_integrity() -> tuple:
+    """Read-only gate for APE reuse, PSAD derivation and stage-aware capture."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    payload = build_capture_integrity_readiness(registry, scope=scope)
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/v2-persistence-closure", methods=["GET"])
+def platform_readiness_v2_persistence_closure() -> tuple:
+    """No-mutation gate proving V2 initial-staging persistence closure."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    capture = build_capture_integrity_readiness(registry, scope="summary")
+    payload = build_v2_initial_staging_persistence_closure(
+        registered_rules=current_app.url_map.iter_rules(),
+        capture_integrity=capture,
+        scope=scope,
+    )
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/v2-treatment-value-closure", methods=["GET"])
+def platform_readiness_v2_treatment_value_closure() -> tuple:
+    """No-mutation gate proving Profile V2 treatment-value closure."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    payload = build_v2_treatment_value_closure(
+        registered_rules=current_app.url_map.iter_rules(),
+        scope=scope,
+    )
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/ledger-release-gate", methods=["GET"])
+def platform_readiness_ledger_release_gate() -> tuple:
+    """Read-only release gate for the Clinical Fact Ledger."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    field_limit = safe_int(request.args.get("field_limit"), default=300) or 300
+    gate = build_ledger_release_gate(
+        registry,
+        registered_rules=current_app.url_map.iter_rules(),
+        scope=scope,
+        field_limit=max(25, min(int(field_limit), 2000)),
+    )
+    return jsonify({"success": True, **gate})
+
+
+@modular_api.route("/api/platform-readiness/ledger-persistence-matrix", methods=["GET"])
+def platform_readiness_ledger_persistence_matrix() -> tuple:
+    """Read-only V2 flow QA matrix for Ledger persistence."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    row_limit = safe_int(request.args.get("row_limit"), default=500) or 500
+    matrix = build_ledger_persistence_matrix(
+        registry,
+        registered_rules=current_app.url_map.iter_rules(),
+        scope=scope,
+        row_limit=max(50, min(int(row_limit), 3000)),
+    )
+    return jsonify({"success": True, **matrix})
+
+
+@modular_api.route("/api/platform-readiness/interoperability-map", methods=["GET"])
+def platform_readiness_interoperability_map() -> tuple:
+    """Read-only canonical fact map toward mCODE/FHIR and OMOP."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    field_limit = safe_int(request.args.get("field_limit"), default=300) or 300
+    interop = build_interoperability_map(
+        scope=scope,
+        field_limit=max(25, min(int(field_limit), 2000)),
+    )
+    return jsonify({"success": True, **interop})
+
+
+@modular_api.route("/api/platform-readiness/deidentified-export-contract", methods=["GET"])
+def platform_readiness_deidentified_export_contract() -> tuple:
+    """Read-only de-identified cohort export contract."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=50) or 50
+    real_only = safe_bool(request.args.get("real_only"), default=False)
+    payload = build_deidentified_export_contract(
+        scope=scope,
+        limit=max(1, min(int(limit), 500)),
+        real_only=bool(real_only),
+    )
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/research-pack-materializer", methods=["GET"])
+def platform_readiness_research_pack_materializer() -> tuple:
+    """Preview a reproducible de-identified CSV/JSON research pack."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=50) or 50
+    real_only = safe_bool(request.args.get("real_only"), default=False)
+    payload = build_research_pack_materializer(
+        scope=scope,
+        limit=max(1, min(int(limit), 500)),
+        real_only=bool(real_only),
+    )
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/research-pack-materializer/freeze", methods=["POST"])
+def platform_readiness_research_pack_materializer_freeze() -> tuple:
+    """Freeze a de-identified research pack if the export gates pass."""
+    data = request.get_json(silent=True) or {}
+    limit = safe_int(data.get("limit") or request.args.get("limit"), default=50) or 50
+    real_only = safe_bool(data.get("real_only", request.args.get("real_only")), default=False)
+    result = freeze_research_pack_materializer(
+        limit=max(1, min(int(limit), 500)),
+        real_only=bool(real_only),
+        title=data.get("title") or request.args.get("title"),
+        created_by=data.get("created_by") or request.args.get("created_by") or "clinician",
+        audit_note=data.get("audit_note") or request.args.get("audit_note"),
+        governance_status=data.get("governance_status") or request.args.get("governance_status"),
+        clinical_objective=data.get("clinical_objective") or request.args.get("clinical_objective"),
+        research_question=data.get("research_question") or request.args.get("research_question"),
+        methodology_note=data.get("methodology_note") or request.args.get("methodology_note"),
+        responsible=data.get("responsible") or request.args.get("responsible"),
+    )
+    status = 200 if result.get("success") else 400
+    return jsonify(result), status
+
+
+@modular_api.route("/api/platform-readiness/research-pack-materializer/freezes", methods=["GET"])
+def platform_readiness_research_pack_materializer_freeze_library() -> tuple:
+    """List governed frozen de-identified research packs."""
+    limit = safe_int(request.args.get("limit"), default=25) or 25
+    include_payload = safe_bool(request.args.get("include_payload"), default=False)
+    library = build_research_pack_freeze_library(
+        limit=max(1, min(int(limit), 100)),
+        include_payload=bool(include_payload),
+        include_current_preview=True,
+    )
+    return jsonify({"success": True, **library})
+
+
+@modular_api.route("/api/platform-readiness/research-pack-materializer/freezes/<freeze_key>", methods=["GET"])
+def platform_readiness_research_pack_materializer_freeze_detail(freeze_key: str) -> tuple:
+    """Return a frozen de-identified research pack detail."""
+    import tracking_db
+
+    freeze = tracking_db.get_research_cohort_freeze(freeze_key)
+    if not freeze or freeze.get("registry_type") != "deidentified_research_pack_v1":
+        return jsonify({"success": False, "error": "freeze_not_found"}), 404
+    return jsonify(
+        {
+            "success": True,
+            "version": "deidentified_research_pack_freeze_v1",
+            "freeze": freeze,
+            "governance_summary": summarize_research_pack_freeze(freeze, include_payload=False),
+        }
+    )
+
+
+@modular_api.route("/api/platform-readiness/research-pack-materializer/freezes/<freeze_key>/download", methods=["GET"])
+def platform_readiness_research_pack_materializer_download(freeze_key: str):
+    """Download a frozen de-identified research pack as an in-memory ZIP."""
+    import tracking_db
+
+    freeze = tracking_db.get_research_cohort_freeze(freeze_key)
+    if not freeze or freeze.get("registry_type") != "deidentified_research_pack_v1":
+        return jsonify({"success": False, "error": "freeze_not_found"}), 404
+    zip_bytes = build_research_pack_zip_bytes(freeze.get("payload") or {})
+    return Response(
+        zip_bytes,
+        mimetype="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={freeze_key}.zip"},
+    )
+
+
+@modular_api.route("/api/platform-readiness/prospective-pilot-governance", methods=["GET"])
+def platform_readiness_prospective_pilot_governance() -> tuple:
+    """Read-only governance packet for a local prospective pilot."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=80) or 80
+    payload = build_prospective_pilot_governance_pack(
+        registry,
+        registered_rules=current_app.url_map.iter_rules(),
+        scope=scope,
+        limit=max(1, min(int(limit), 500)),
+    )
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/nas-pilot-evidence-vault", methods=["GET"])
+def platform_readiness_nas_pilot_evidence_vault() -> tuple:
+    """Read-only operational evidence vault for the local NAS pilot."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    payload = build_nas_pilot_evidence_vault(
+        scope=scope,
+        gate_key=request.args.get("gate_key"),
+        limit=max(1, min(int(limit), 500)),
+    )
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/nas-pilot-evidence-vault/attest", methods=["POST"])
+def platform_readiness_nas_pilot_evidence_vault_attest() -> tuple:
+    """Create or update a non-PHI operational evidence attestation."""
+    data = request.get_json(silent=True) or {}
+    result = attest_nas_pilot_evidence(data)
+    status = 200 if result.get("success") else 400
+    return jsonify(result), status
+
+
+@modular_api.route("/api/platform-readiness/nas-pilot-evidence-vault/download", methods=["GET"])
+def platform_readiness_nas_pilot_evidence_vault_download():
+    """Download the operational pilot evidence vault as a no-PHI ZIP."""
+    vault = build_nas_pilot_evidence_vault(scope="full", limit=500)
+    zip_bytes = build_nas_pilot_evidence_vault_zip_bytes(vault)
+    return Response(
+        zip_bytes,
+        mimetype="application/zip",
+        headers={"Content-Disposition": "attachment; filename=nas_pilot_evidence_vault.zip"},
+    )
+
+
+@modular_api.route("/api/platform-readiness/pilot-adoption-command-center", methods=["GET"])
+def platform_readiness_pilot_adoption_command_center() -> tuple:
+    """Read-only V2 pilot adoption and completeness dashboard."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    real_only = safe_bool(request.args.get("real_only"), default=False)
+    payload = build_pilot_adoption_command_center(
+        scope=scope,
+        limit=max(1, min(int(limit), 500)),
+        real_only=bool(real_only),
+    )
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/prospective-gap-closure-huddle", methods=["GET"])
+def platform_readiness_prospective_gap_closure_huddle() -> tuple:
+    """Read-only weekly huddle queue for prospective pilot capture gaps."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    payload = build_prospective_gap_closure_huddle(
+        scope=scope,
+        limit=max(1, min(int(limit), 500)),
+        status=request.args.get("status"),
+        family=request.args.get("family"),
+    )
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/prospective-gap-closure-huddle/close", methods=["POST"])
+def platform_readiness_prospective_gap_closure_huddle_close() -> tuple:
+    """Record a human huddle review without mutating source clinical facts."""
+    data = request.get_json(silent=True) or {}
+    result = close_prospective_gap_huddle_item(data)
+    status_code = 200 if result.get("success") else 400
+    return jsonify(result), status_code
+
+
+@modular_api.route("/api/platform-readiness/prospective-gap-closure-huddle/export", methods=["GET"])
+def platform_readiness_prospective_gap_closure_huddle_export():
+    """Download a no-PHI CSV summary of the current weekly huddle queue."""
+    limit = safe_int(request.args.get("limit"), default=500) or 500
+    huddle = build_prospective_gap_closure_huddle(
+        scope="full",
+        limit=max(1, min(int(limit), 500)),
+        status=request.args.get("status"),
+        family=request.args.get("family"),
+    )
+    csv_bytes = build_prospective_gap_huddle_csv_bytes(huddle)
+    return Response(
+        csv_bytes,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=prospective_gap_huddle.csv"},
+    )
+
+
+@modular_api.route("/api/platform-readiness/ape-longitudinal-completion-sprint", methods=["GET"])
+def platform_readiness_ape_longitudinal_completion_sprint() -> tuple:
+    """Read-only APE completion sprint queue for the prospective pilot."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    real_only = safe_bool(request.args.get("real_only"), default=False)
+    payload = build_ape_longitudinal_completion_sprint(
+        scope=scope,
+        limit=max(1, min(int(limit), 500)),
+        real_only=bool(real_only),
+    )
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/ape-longitudinal-completion-sprint/export", methods=["GET"])
+def platform_readiness_ape_longitudinal_completion_sprint_export():
+    """Download a no-PHI CSV for the current APE completion sprint."""
+    limit = safe_int(request.args.get("limit"), default=500) or 500
+    real_only = safe_bool(request.args.get("real_only"), default=False)
+    sprint = build_ape_longitudinal_completion_sprint(
+        scope="full",
+        limit=max(1, min(int(limit), 500)),
+        real_only=bool(real_only),
+    )
+    csv_bytes = build_ape_longitudinal_completion_csv_bytes(sprint)
+    return Response(
+        csv_bytes,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=ape_longitudinal_completion_sprint.csv"},
+    )
+
+
+@modular_api.route("/api/platform-readiness/world-class-benchmark", methods=["GET"])
+def platform_readiness_world_class_benchmark() -> tuple:
+    """Read-only benchmark radar for the world-class prostate platform roadmap."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    evidence_mode = str(request.args.get("evidence") or "fast").strip().lower()
+    audit = None
+    v2_treatment_value = None
+    epidemiology_command = None
+    if evidence_mode == "audit":
+        audit = build_platform_readiness_audit(
+            registry,
+            registered_rules=current_app.url_map.iter_rules(),
+            scope="summary",
+            field_limit=180,
+        )
+        v2_treatment_value = build_v2_treatment_value_closure(
+            registered_rules=current_app.url_map.iter_rules(),
+            scope="summary",
+        )
+        try:
+            epidemiology_command = build_epidemiology_command_center(
+                weeks_list=(12, 24, 36, 52),
+                trace_limit=25,
+                freeze_limit=6,
+            )
+        except Exception as exc:
+            epidemiology_command = {
+                "available": False,
+                "version": "epidemiology_command_center_v2",
+                "error": str(exc),
+                "source_clinical_facts_mutated": False,
+                "external_order_created": False,
+                "model_trained": False,
+            }
+    radar = build_world_class_benchmark_radar(
+        readiness_audit=audit,
+        v2_treatment_value_closure=v2_treatment_value,
+        epidemiology_command_center=epidemiology_command,
+        scope=scope,
+    )
+    registered_rules = {rule.rule for rule in current_app.url_map.iter_rules()}
+    radar["evidence_mode"] = "lightweight_route_snapshot" if not audit else "lightweight_route_schema_snapshot"
+    radar["route_snapshot"] = {
+        "registered_route_count": len(registered_rules),
+        "platform_readiness_present": "/platform-readiness" in registered_rules,
+        "benchmark_api_present": "/api/platform-readiness/world-class-benchmark" in registered_rules,
+    }
+    radar["full_evidence_surface"] = "/platform-readiness"
+    return jsonify({"success": True, **radar})
+
+
+@modular_api.route("/api/platform-readiness/real-world-sample-maturity", methods=["GET"])
+def platform_readiness_real_world_sample_maturity() -> tuple:
+    """Read-only gate separating synthetic QA records from real evidence."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    safe_limit = max(1, min(int(limit), 500))
+    evidence_mode = str(request.args.get("evidence") or "fast").strip().lower()
+    nas_vault = build_nas_pilot_evidence_vault(scope="summary", limit=safe_limit)
+    adoption = build_pilot_adoption_command_center(
+        scope="summary",
+        limit=safe_limit,
+        nas_pilot_evidence_vault=nas_vault,
+    )
+    pilot = None
+    if evidence_mode == "audit":
+        pilot = build_prospective_pilot_governance_pack(
+            registry,
+            registered_rules=current_app.url_map.iter_rules(),
+            scope="summary",
+            limit=safe_limit,
+            nas_pilot_evidence_vault=nas_vault,
+        )
+    payload = build_real_world_sample_maturity_gate(
+        scope=scope,
+        limit=safe_limit,
+        registry=registry,
+        registered_rules=current_app.url_map.iter_rules(),
+        pilot_adoption_command_center=adoption,
+        nas_pilot_evidence_vault=nas_vault,
+        prospective_pilot_governance=pilot,
+    )
+    payload["evidence_mode"] = "full_readiness_audit" if pilot else "lightweight_sample_snapshot"
+    payload["full_evidence_surface"] = "/platform-readiness"
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/real-world-sample-maturity/export", methods=["GET"])
+def platform_readiness_real_world_sample_maturity_export():
+    """Download a no-PHI CSV of the QA-vs-real sample maturity rows."""
+    limit = safe_int(request.args.get("limit"), default=500) or 500
+    gate = build_real_world_sample_maturity_gate(
+        scope="full",
+        limit=max(1, min(int(limit), 500)),
+        registry=registry,
+        registered_rules=current_app.url_map.iter_rules(),
+    )
+    csv_bytes = build_real_world_sample_maturity_csv_bytes(gate)
+    return Response(
+        csv_bytes,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=real_world_sample_maturity.csv"},
+    )
+
+
+@modular_api.route("/api/platform-readiness/prospective-real-world-completion-queue", methods=["GET"])
+def platform_readiness_prospective_real_world_completion_queue() -> tuple:
+    """Read-only queue for real patients that can or cannot feed evidence yet."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    safe_limit = max(1, min(int(limit), 500))
+    nas_vault = build_nas_pilot_evidence_vault(scope="summary", limit=safe_limit)
+    real_adoption = build_pilot_adoption_command_center(
+        scope="full",
+        limit=safe_limit,
+        real_only=True,
+        nas_pilot_evidence_vault=nas_vault,
+    )
+    real_ape_sprint = build_ape_longitudinal_completion_sprint(
+        scope="full",
+        limit=safe_limit,
+        real_only=True,
+        adoption_command_center=real_adoption,
+    )
+    sample = build_real_world_sample_maturity_gate(
+        scope="summary",
+        limit=safe_limit,
+        registry=registry,
+        registered_rules=current_app.url_map.iter_rules(),
+        nas_pilot_evidence_vault=nas_vault,
+    )
+    payload = build_prospective_real_world_completion_queue(
+        scope=scope,
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        pilot_adoption_command_center=real_adoption,
+        ape_longitudinal_completion_sprint=real_ape_sprint,
+    )
+    payload["full_evidence_surface"] = "/platform-readiness"
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/prospective-real-world-completion-queue/export", methods=["GET"])
+def platform_readiness_prospective_real_world_completion_queue_export():
+    """Download a no-PHI CSV of the real-only completion queue."""
+    limit = safe_int(request.args.get("limit"), default=500) or 500
+    safe_limit = max(1, min(int(limit), 500))
+    nas_vault = build_nas_pilot_evidence_vault(scope="summary", limit=safe_limit)
+    real_adoption = build_pilot_adoption_command_center(
+        scope="full",
+        limit=safe_limit,
+        real_only=True,
+        nas_pilot_evidence_vault=nas_vault,
+    )
+    real_ape_sprint = build_ape_longitudinal_completion_sprint(
+        scope="full",
+        limit=safe_limit,
+        real_only=True,
+        adoption_command_center=real_adoption,
+    )
+    sample = build_real_world_sample_maturity_gate(
+        scope="summary",
+        limit=safe_limit,
+        registry=registry,
+        registered_rules=current_app.url_map.iter_rules(),
+        nas_pilot_evidence_vault=nas_vault,
+    )
+    queue = build_prospective_real_world_completion_queue(
+        scope="full",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        pilot_adoption_command_center=real_adoption,
+        ape_longitudinal_completion_sprint=real_ape_sprint,
+    )
+    csv_bytes = build_prospective_real_world_completion_csv_bytes(queue)
+    return Response(
+        csv_bytes,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=prospective_real_world_completion_queue.csv"},
+    )
+
+
+@modular_api.route("/api/platform-readiness/real-world-pilot-packet", methods=["GET"])
+def platform_readiness_real_world_pilot_packet() -> tuple:
+    """No-PHI operational packet for the first prospective real patient."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    safe_limit = max(1, min(int(limit), 500))
+    sample = build_real_world_sample_maturity_gate(
+        scope="summary",
+        limit=safe_limit,
+        registry=registry,
+        registered_rules=current_app.url_map.iter_rules(),
+    )
+    queue = build_prospective_real_world_completion_queue(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+    )
+    payload = build_real_world_pilot_packet(
+        scope=scope,
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+    )
+    payload["full_evidence_surface"] = "/platform-readiness"
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/real-world-pilot-packet/download", methods=["GET"])
+def platform_readiness_real_world_pilot_packet_download():
+    """Download the no-PHI first real-patient operational runbook."""
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    safe_limit = max(1, min(int(limit), 500))
+    sample = build_real_world_sample_maturity_gate(
+        scope="summary",
+        limit=safe_limit,
+        registry=registry,
+        registered_rules=current_app.url_map.iter_rules(),
+    )
+    queue = build_prospective_real_world_completion_queue(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+    )
+    packet = build_real_world_pilot_packet(
+        scope="full",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+    )
+    markdown_bytes = build_real_world_pilot_packet_markdown_bytes(packet)
+    return Response(
+        markdown_bytes,
+        mimetype="text/markdown",
+        headers={"Content-Disposition": "attachment; filename=real_world_pilot_packet.md"},
+    )
+
+
+@modular_api.route("/api/platform-readiness/real-world-pilot-execution-log", methods=["GET"])
+def platform_readiness_real_world_pilot_execution_log() -> tuple:
+    """No-PHI execution log for the prospective real-world pilot."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    safe_limit = max(1, min(int(limit), 500))
+    sample = build_real_world_sample_maturity_gate(
+        scope="summary",
+        limit=safe_limit,
+        registry=registry,
+        registered_rules=current_app.url_map.iter_rules(),
+    )
+    queue = build_prospective_real_world_completion_queue(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+    )
+    packet = build_real_world_pilot_packet(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+    )
+    payload = build_real_world_pilot_execution_log(
+        scope=scope,
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+        real_world_pilot_packet=packet,
+    )
+    payload["full_evidence_surface"] = "/platform-readiness"
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/real-world-pilot-execution-log/download", methods=["GET"])
+def platform_readiness_real_world_pilot_execution_log_download():
+    """Download the no-PHI real-world pilot execution log."""
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    safe_limit = max(1, min(int(limit), 500))
+    sample = build_real_world_sample_maturity_gate(
+        scope="summary",
+        limit=safe_limit,
+        registry=registry,
+        registered_rules=current_app.url_map.iter_rules(),
+    )
+    queue = build_prospective_real_world_completion_queue(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+    )
+    packet = build_real_world_pilot_packet(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+    )
+    execution_log = build_real_world_pilot_execution_log(
+        scope="full",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+        real_world_pilot_packet=packet,
+    )
+    markdown_bytes = build_real_world_pilot_execution_log_markdown_bytes(execution_log)
+    return Response(
+        markdown_bytes,
+        mimetype="text/markdown",
+        headers={"Content-Disposition": "attachment; filename=real_world_pilot_execution_log.md"},
+    )
+
+
+@modular_api.route("/api/platform-readiness/real-world-first-patient-launch-mode", methods=["GET"])
+def platform_readiness_real_world_first_patient_launch_mode() -> tuple:
+    """No-PHI guided launch mode for first institutional real capture."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    safe_limit = max(1, min(int(limit), 500))
+    sample = build_real_world_sample_maturity_gate(
+        scope="summary",
+        limit=safe_limit,
+        registry=registry,
+        registered_rules=current_app.url_map.iter_rules(),
+    )
+    queue = build_prospective_real_world_completion_queue(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+    )
+    packet = build_real_world_pilot_packet(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+    )
+    execution_log = build_real_world_pilot_execution_log(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+        real_world_pilot_packet=packet,
+    )
+    payload = build_real_world_first_patient_launch_mode(
+        scope=scope,
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+        real_world_pilot_packet=packet,
+        real_world_pilot_execution_log=execution_log,
+    )
+    payload["full_evidence_surface"] = "/platform-readiness"
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/real-world-first-patient-launch-mode/download", methods=["GET"])
+def platform_readiness_real_world_first_patient_launch_mode_download():
+    """Download the no-PHI first-real guided launch mode."""
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    safe_limit = max(1, min(int(limit), 500))
+    sample = build_real_world_sample_maturity_gate(
+        scope="summary",
+        limit=safe_limit,
+        registry=registry,
+        registered_rules=current_app.url_map.iter_rules(),
+    )
+    queue = build_prospective_real_world_completion_queue(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+    )
+    packet = build_real_world_pilot_packet(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+    )
+    execution_log = build_real_world_pilot_execution_log(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+        real_world_pilot_packet=packet,
+    )
+    launch_mode = build_real_world_first_patient_launch_mode(
+        scope="full",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+        real_world_pilot_packet=packet,
+        real_world_pilot_execution_log=execution_log,
+    )
+    markdown_bytes = build_real_world_first_patient_launch_mode_markdown_bytes(launch_mode)
+    return Response(
+        markdown_bytes,
+        mimetype="text/markdown",
+        headers={"Content-Disposition": "attachment; filename=real_world_first_patient_launch_mode.md"},
+    )
+
+
+@modular_api.route("/api/platform-readiness/real-world-launch-flow-verifier", methods=["GET"])
+def platform_readiness_real_world_launch_flow_verifier() -> tuple:
+    """No-PHI verifier for the first-real V2 launch handoff."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    safe_limit = max(1, min(int(limit), 500))
+    sample = build_real_world_sample_maturity_gate(
+        scope="summary",
+        limit=safe_limit,
+        registry=registry,
+        registered_rules=current_app.url_map.iter_rules(),
+    )
+    queue = build_prospective_real_world_completion_queue(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+    )
+    launch_mode = build_real_world_first_patient_launch_mode(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+    )
+    payload = build_real_world_launch_flow_verifier(
+        scope=scope,
+        limit=safe_limit,
+        registered_rules=current_app.url_map.iter_rules(),
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+        real_world_first_patient_launch_mode=launch_mode,
+    )
+    payload["full_evidence_surface"] = "/platform-readiness"
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/real-world-launch-flow-verifier/download", methods=["GET"])
+def platform_readiness_real_world_launch_flow_verifier_download():
+    """Download the no-PHI first-real V2 launch flow verifier."""
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    safe_limit = max(1, min(int(limit), 500))
+    sample = build_real_world_sample_maturity_gate(
+        scope="summary",
+        limit=safe_limit,
+        registry=registry,
+        registered_rules=current_app.url_map.iter_rules(),
+    )
+    queue = build_prospective_real_world_completion_queue(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+    )
+    launch_mode = build_real_world_first_patient_launch_mode(
+        scope="summary",
+        limit=safe_limit,
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+    )
+    verifier = build_real_world_launch_flow_verifier(
+        scope="full",
+        limit=safe_limit,
+        registered_rules=current_app.url_map.iter_rules(),
+        real_world_sample_maturity=sample,
+        prospective_real_world_completion_queue=queue,
+        real_world_first_patient_launch_mode=launch_mode,
+    )
+    markdown_bytes = build_real_world_launch_flow_verifier_markdown_bytes(verifier)
+    return Response(
+        markdown_bytes,
+        mimetype="text/markdown",
+        headers={"Content-Disposition": "attachment; filename=real_world_launch_flow_verifier.md"},
+    )
+
+
+@modular_api.route("/api/platform-readiness/external-validation-worklist", methods=["GET"])
+def platform_readiness_external_validation_worklist() -> tuple:
+    """Read-only preflight queue for external/multicenter validation."""
+    scope = str(request.args.get("scope") or "summary").strip().lower()
+    limit = safe_int(request.args.get("limit"), default=100) or 100
+    safe_limit = max(1, min(int(limit), 500))
+    evidence_mode = str(request.args.get("evidence") or "fast").strip().lower()
+    if evidence_mode == "audit":
+        payload = build_external_validation_worklist(
+            registry=registry,
+            registered_rules=current_app.url_map.iter_rules(),
+            scope=scope,
+            limit=safe_limit,
+        )
+        payload["evidence_mode"] = "full_readiness_audit"
+    else:
+        nas_vault = build_nas_pilot_evidence_vault(scope="summary", limit=safe_limit)
+        adoption = build_pilot_adoption_command_center(
+            scope="summary",
+            limit=safe_limit,
+            nas_pilot_evidence_vault=nas_vault,
+        )
+        fast_pilot = {
+            "summary": {
+                "pilot_status": "fast_snapshot_requires_platform_readiness_for_gate_detail",
+                "pilot_gate_score": 0,
+                "pilot_block_count": 0,
+                "ready_for_external_deployment": False,
+            },
+            "gate_matrix": [],
+            "pilot_packet_manifest": [{"component": "Platform Readiness", "kind": "readiness_dashboard", "url": "/platform-readiness", "required": True}],
+        }
+        real_sample = build_real_world_sample_maturity_gate(
+            scope="summary",
+            limit=safe_limit,
+            registry=registry,
+            registered_rules=current_app.url_map.iter_rules(),
+            pilot_adoption_command_center=adoption,
+            nas_pilot_evidence_vault=nas_vault,
+            prospective_pilot_governance=fast_pilot,
+        )
+        payload = build_external_validation_worklist(
+            scope=scope,
+            limit=safe_limit,
+            world_class_benchmark=build_world_class_benchmark_radar(scope="summary"),
+            prospective_pilot_governance=fast_pilot,
+            nas_pilot_evidence_vault=nas_vault,
+            pilot_adoption_command_center=adoption,
+            real_world_sample_maturity=real_sample,
+            deidentified_export_contract=build_deidentified_export_contract(scope="summary", limit=safe_limit),
+            research_pack_materializer=build_research_pack_materializer(scope="summary", limit=safe_limit),
+            research_pack_freeze_library=build_research_pack_freeze_library(
+                limit=25,
+                include_payload=False,
+                include_current_preview=False,
+            ),
+            interoperability_map=build_interoperability_map(scope="summary", field_limit=240),
+        )
+        payload["evidence_mode"] = "lightweight_route_snapshot"
+        payload["full_evidence_surface"] = "/platform-readiness"
+    return jsonify({"success": True, **payload})
+
+
+@modular_api.route("/api/platform-readiness/external-validation-worklist/export", methods=["GET"])
+def platform_readiness_external_validation_worklist_export():
+    """Download a no-PHI CSV for external validation preflight work."""
+    limit = safe_int(request.args.get("limit"), default=500) or 500
+    worklist = build_external_validation_worklist(
+        registry=registry,
+        registered_rules=current_app.url_map.iter_rules(),
+        scope="full",
+        limit=max(1, min(int(limit), 500)),
+    )
+    csv_bytes = build_external_validation_worklist_csv_bytes(worklist)
+    return Response(
+        csv_bytes,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=external_validation_worklist.csv"},
+    )
 
 
 @modular_api.route("/api/modules/state-classifier/schema", methods=["GET"])
@@ -162,7 +1282,15 @@ def state_classifier_schema() -> tuple:
 @modular_api.route("/api/modules/<module_id>/schema", methods=["GET"])
 def module_schema(module_id: str) -> tuple:
     try:
-        return jsonify({"success": True, "schema": humanize_schema(registry.get_module_schema(module_id))})
+        module_id = registry.canonical_module_id(module_id)
+        schema = registry.get_module_schema(module_id)
+        if str(request.args.get("surface") or "").strip().lower() == "wizard":
+            schema = filter_schema_for_wizard(
+                schema,
+                module_id,
+                gate_families=request.args.getlist("gate_family"),
+            )
+        return jsonify({"success": True, "schema": humanize_schema(schema)})
     except KeyError:
         return jsonify({"success": False, "error": "Modulo no soportado."}), 404
 
@@ -170,6 +1298,7 @@ def module_schema(module_id: str) -> tuple:
 @modular_api.route("/api/modules/<module_id>/evaluate", methods=["POST"])
 def evaluate_module(module_id: str) -> tuple:
     try:
+        module_id = registry.canonical_module_id(module_id)
         schema = registry.get_module_schema(module_id)
         payload = _coerce_payload(_parse_json(), schema)
         return jsonify({"success": True, "result": humanize_result(registry.evaluate_module(module_id, payload))})
@@ -188,9 +1317,23 @@ def create_clinical_assessment_draft() -> tuple:
         module_id = str(data.get("module_id", "")).strip()
         if not module_id:
             raise ValueError("Se requiere el identificador del módulo clínico.")
+        module_id = registry.canonical_module_id(module_id)
 
         schema = registry.get_module_schema(module_id)
         payload = _coerce_payload(data.get("payload", {}), schema)
+        patient_ref = str(
+            data.get("patient_ref")
+            or data.get("nss")
+            or data.get("patient")
+            or ""
+        ).strip()
+        clinical_fact_ledger_context = data.get("clinical_fact_ledger_wizard_context")
+        if not isinstance(clinical_fact_ledger_context, dict):
+            clinical_fact_ledger_context = _build_draft_ledger_context(
+                patient_ref=patient_ref,
+                module_schema=schema,
+                module_id=module_id,
+            )
         result = registry.evaluate_module(module_id, payload)
         assessment_id = assessment_service.create_draft(
             module_id=module_id,
@@ -198,6 +1341,10 @@ def create_clinical_assessment_draft() -> tuple:
             input_snapshot=payload,
             result_snapshot=result,
             guideline_versions=registry.get_guidelines_metadata(),
+            context_snapshot=_build_assessment_context_snapshot(
+                patient_ref=patient_ref,
+                clinical_fact_ledger_context=clinical_fact_ledger_context,
+            ),
         )
         if assessment_id is None:
             raise RuntimeError("No se pudo crear el borrador de evaluación clínica.")
@@ -208,6 +1355,8 @@ def create_clinical_assessment_draft() -> tuple:
             module_id=module_id,
             state=result["state"],
             assessment_input=payload,
+            assessment_result=result,
+            clinical_fact_ledger_context=clinical_fact_ledger_context,
         )
 
         return jsonify(
@@ -234,12 +1383,18 @@ def get_clinical_assessment_draft(assessment_id: int) -> tuple:
         return jsonify({"success": False, "error": "Evaluación clínica no encontrada."}), 404
     module_id = assessment.get("module_id", "")
     schema = registry.get_module_schema(module_id) if module_id else {"fields": []}
+    clinical_fact_ledger_context = _ledger_context_from_assessment(
+        assessment,
+        module_schema=schema,
+        module_id=module_id,
+    )
     registration_context = tracking_service.build_registration_context(
         module_schema=schema,
         module_id=module_id,
         state=assessment.get("state", ""),
         assessment_input=assessment.get("input_snapshot", {}) or {},
         assessment_result=assessment.get("result_snapshot", {}) or {},
+        clinical_fact_ledger_context=clinical_fact_ledger_context,
     )
     return jsonify(
         {
@@ -253,6 +1408,7 @@ def get_clinical_assessment_draft(assessment_id: int) -> tuple:
 @modular_api.route("/api/modules/<module_id>/evidence", methods=["GET"])
 def module_evidence(module_id: str) -> tuple:
     try:
+        module_id = registry.canonical_module_id(module_id)
         return jsonify({"success": True, "evidence": humanize_evidence(registry.get_module_evidence(module_id))})
     except KeyError:
         return jsonify({"success": False, "error": "Modulo no soportado."}), 404
@@ -261,6 +1417,7 @@ def module_evidence(module_id: str) -> tuple:
 @modular_api.route("/api/modules/<module_id>/sources", methods=["GET"])
 def module_sources(module_id: str) -> tuple:
     try:
+        module_id = registry.canonical_module_id(module_id)
         return jsonify({"success": True, "sources": humanize_sources(registry.get_module_sources(module_id))})
     except KeyError:
         return jsonify({"success": False, "error": "Modulo no soportado."}), 404
@@ -1756,11 +2913,9 @@ def response_visualization(patient_id: int) -> tuple:
 
 
 def _build_ai_registry():
-    from prostanet.ai.inference.model_registry import ModelRegistry
+    from prostanet.ai.inference.runtime_registry import get_runtime_model_registry
 
-    reg = ModelRegistry()
-    reg.load_all_available()
-    return reg
+    return get_runtime_model_registry()
 
 
 def _build_rule_based_recommendation(record: dict[str, Any]) -> dict[str, Any]:
@@ -1893,7 +3048,9 @@ def ai_predict_state_transition(patient_id):
         if not record:
             return jsonify({"success": False, "error": "Paciente no encontrado"}), 404
 
-        model_status = reg.get_metadata("state_transition")
+        from prostanet.ai.inference.runtime_registry import get_runtime_model_status
+
+        model_status = get_runtime_model_status("state_transition", registry=reg)
         result = service.predict_state_transition(patient_id, record)
         if result is None:
             return jsonify({
@@ -2373,12 +3530,15 @@ def ai_models_list():
     try:
         from prostanet.ai.config import get_ai_config
         from prostanet.domains.patient_tracking.reconciled_state import build_reconciled_state
+        from prostanet.ai.inference.runtime_registry import get_runtime_registry_health
 
         reg = _build_ai_registry()
+        health = get_runtime_registry_health(registry=reg)
         return jsonify({
             "success": True,
             "runtime_mode": get_ai_config().runtime_mode,
             "rule_based_source_of_truth": True,
+            **health,
             "models": reg.list_models(),
         })
     except Exception as exc:

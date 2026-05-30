@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gran tablero epidemiologico · ProstaMed v2</title>
+    <link rel="icon" href="{{ ui_assets.prostamed_favicon.src }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='ui_theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prostamed_v2.css', v='epidemiology_command_center_v2') }}">
+    <style>
+    .epi-band { padding: var(--space-5) var(--space-6); }
+    .epi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; }
+    .epi-controls { display:grid; grid-template-columns:repeat(6,minmax(130px,1fr)); gap:10px; align-items:end; }
+    .epi-control label { display:block; font-size:.66rem; color:var(--pn-text-muted); text-transform:uppercase; letter-spacing:.08em; margin-bottom:5px; }
+    .epi-control select, .epi-control input, .epi-control textarea {
+        width:100%; min-height:38px; border:1px solid var(--border-default); border-radius:8px;
+        background:rgba(15,23,42,.86); color:#e2e8f0; padding:7px 9px; font-size:.8rem;
+    }
+    .epi-control textarea { min-height:76px; resize:vertical; }
+    .epi-control--wide { grid-column:span 2; }
+    .epi-table-wrap { border:1px solid var(--border-default); border-radius:8px; overflow:auto; background:rgba(15,23,42,.78); }
+    .epi-table { width:100%; min-width:980px; border-collapse:collapse; font-size:.76rem; }
+    .epi-table th {
+        position:sticky; top:0; z-index:1; background:rgba(2,6,23,.94); color:var(--pn-text-muted);
+        text-align:left; padding:10px 12px; border-bottom:1px solid var(--border-default);
+        font-size:.62rem; text-transform:uppercase; letter-spacing:.08em;
+    }
+    .epi-table td { padding:10px 12px; border-bottom:1px solid var(--border-subtle); color:#e2e8f0; vertical-align:top; }
+    .epi-code { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.7rem; color:#cffafe; }
+    .epi-muted { color:var(--pn-text-muted); font-size:.72rem; line-height:1.45; }
+    .epi-pill { display:inline-flex; align-items:center; min-height:22px; padding:2px 7px; border-radius:999px; border:1px solid var(--border-default); background:rgba(15,23,42,.8); color:#dbeafe; font-size:.66rem; margin:2px 4px 2px 0; }
+    .epi-pill--good { color:#bbf7d0; border-color:rgba(52,211,153,.45); }
+    .epi-pill--warn { color:#fde68a; border-color:rgba(251,191,36,.45); }
+    .epi-pill--bad { color:#fecaca; border-color:rgba(248,113,113,.45); }
+    .epi-split { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(320px,.9fr); gap:14px; }
+    @media (max-width: 1100px) {
+        .epi-controls { grid-template-columns:1fr 1fr 1fr; }
+        .epi-split { grid-template-columns:1fr; }
+    }
+    @media (max-width: 640px) {
+        .epi-band { padding:var(--space-4); }
+        .epi-controls { grid-template-columns:1fr; }
+        .epi-control--wide { grid-column:auto; }
+        .pm2-header-tools { width:100%; justify-content:stretch; }
+        .pm2-header-tools .pm2-btn { flex:1; justify-content:center; }
+    }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+<a href="#main-content" class="skip-to-content">Saltar al contenido principal</a>
+{% from "components/pm2_sidebar.html" import pm2_sidebar %}
+
+<div class="pm2-app-shell">
+    {{ pm2_sidebar(active='epidemiology_command') }}
+
+    <header class="pm2-app-header">
+        <div>
+            <div class="pm2-kicker">PROSTAMED · EPIDEMIOLOGIA FINAL V2</div>
+            <div style="font-family:var(--pm-font-display);font-size:1.05rem;color:#f8fbff;font-weight:700;">Gran tablero epidemiologico</div>
+        </div>
+        <div class="pm2-header-tools">
+            <a class="pm2-btn pm2-btn--ghost" href="/population/treatment-value-registry">Registro valor</a>
+            <a id="epiExportJsonTop" class="pm2-btn pm2-btn--primary" data-testid="epi-export-json" href="/api/analytics/epidemiology-command-center">JSON</a>
+            <a id="epiExportCsvTop" class="pm2-btn pm2-btn--ghost" data-testid="epi-export-csv" href="/api/analytics/epidemiology-command-center?format=csv">CSV</a>
+            <a id="epiSnapshotJsonTop" class="pm2-btn pm2-btn--ghost" data-testid="epi-snapshot-json" href="/api/analytics/epidemiology-command-center/snapshot-pack">Snapshot</a>
+        </div>
+    </header>
+
+    <main id="main-content" class="pm2-app-main" tabindex="-1" data-testid="epidemiology-command-center-v2">
+        <section class="epi-band" style="padding-bottom:0">
+            <div class="pm2-kicker">COHORTES · VALOR · INVESTIGACION</div>
+            <h1 style="font-family:var(--pm-font-display);font-size:2rem;font-weight:700;color:#f8fbff;margin:6px 0 4px">Gran tablero epidemiologico final</h1>
+            <div id="epiStatus" class="epi-muted">Cargando tablero...</div>
+        </section>
+
+        <section class="epi-band">
+            <article class="pm2-tab-card" data-testid="epi-global-filters">
+                <div class="pm2-tab-card-head">
+                    <h3>Filtros globales</h3>
+                    <span class="pm2-head-meta" id="epiPrimaryWindow">ventana principal</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <form id="epiFilters" class="epi-controls">
+                        <div class="epi-control">
+                            <label for="epiMolecule">Molecula</label>
+                            <select id="epiMolecule"><option value="">Todas</option></select>
+                        </div>
+                        <div class="epi-control">
+                            <label for="epiRegimen">Regimen</label>
+                            <select id="epiRegimen"><option value="">Todos</option></select>
+                        </div>
+                        <div class="epi-control">
+                            <label for="epiClinicalState">Estado</label>
+                            <select id="epiClinicalState"><option value="">Todos</option></select>
+                        </div>
+                        <div class="epi-control">
+                            <label for="epiLineContext">Linea</label>
+                            <select id="epiLineContext"><option value="">Todas</option></select>
+                        </div>
+                        <div class="epi-control">
+                            <label for="epiPsaBand">APE basal</label>
+                            <select id="epiPsaBand"><option value="">Todos</option></select>
+                        </div>
+                        <div class="epi-control">
+                            <label for="epiEcogBand">ECOG basal</label>
+                            <select id="epiEcogBand"><option value="">Todos</option></select>
+                        </div>
+                        <div class="epi-control">
+                            <label for="epiAgeBand">Edad</label>
+                            <select id="epiAgeBand"><option value="">Todas</option></select>
+                        </div>
+                        <div class="epi-control">
+                            <label for="epiMetastaticVolume">Volumen M1</label>
+                            <select id="epiMetastaticVolume"><option value="">Todos</option></select>
+                        </div>
+                        <div class="epi-control">
+                            <label for="epiMetric">Metrica</label>
+                            <select id="epiMetric"><option value="">Todas</option></select>
+                        </div>
+                        <div class="epi-control">
+                            <label for="epiPatientRef">Paciente</label>
+                            <input id="epiPatientRef" placeholder="NSS opcional">
+                        </div>
+                        <div class="epi-control">
+                            <label for="epiSourceFreezeKey">Freeze</label>
+                            <select id="epiSourceFreezeKey"><option value="">Cohorte viva</option></select>
+                        </div>
+                        <button type="submit" class="pm2-btn pm2-btn--primary" style="min-height:38px">Aplicar</button>
+                    </form>
+                    <div id="epiBuilderSummary" class="epi-muted" style="margin-top:10px"></div>
+                </div>
+            </article>
+        </section>
+
+        <section class="epi-band" style="padding-top:0">
+            <div id="epiKpis" class="epi-grid" data-testid="epi-kpi-grid"></div>
+        </section>
+
+        <section class="epi-band" style="padding-top:0">
+            <article class="pm2-tab-card" data-testid="epi-capture-impact-bridge">
+                <div class="pm2-tab-card-head">
+                    <h3>Impacto post-captura paciente-a-tablero</h3>
+                    <span class="pm2-head-meta" id="epiCaptureImpactMeta">seleccione paciente</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <div id="epiCaptureImpactBody" class="epi-grid"></div>
+                    <div id="epiCaptureImpactTrace" class="epi-muted" style="margin-top:12px"></div>
+                </div>
+            </article>
+        </section>
+
+        <section class="epi-band" style="padding-top:0">
+            <article class="pm2-tab-card" data-testid="epi-operational-latency">
+                <div class="pm2-tab-card-head">
+                    <h3>Latencia operativa de brechas</h3>
+                    <span class="pm2-head-meta" id="epiOperationalLatencyMeta">dato util</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <div id="epiOperationalLatencyGrid" class="epi-grid"></div>
+                    <div id="epiOperationalLatencyDomains" class="epi-muted" style="margin-top:12px"></div>
+                </div>
+            </article>
+        </section>
+
+        <section class="epi-band" style="padding-top:0">
+            <article class="pm2-tab-card" data-testid="epi-metric-provenance">
+                <div class="pm2-tab-card-head">
+                    <h3>Procedencia auditable de metricas</h3>
+                    <span class="pm2-head-meta" id="epiProvenanceMeta">live/freeze</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <div id="epiProvenanceSummary" class="epi-muted"></div>
+                    <div class="epi-table-wrap" style="margin-top:10px">
+                        <table class="epi-table">
+                            <thead>
+                                <tr>
+                                    <th>Metrica</th>
+                                    <th>Fuente</th>
+                                    <th>n / supresion</th>
+                                    <th>Diccionario</th>
+                                    <th>Lineage</th>
+                                </tr>
+                            </thead>
+                            <tbody id="epiProvenanceRows"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </article>
+        </section>
+
+        <section class="epi-band epi-split" style="padding-top:0">
+            <article class="pm2-tab-card" data-testid="epi-outcome-matrix">
+                <div class="pm2-tab-card-head">
+                    <h3>Matriz 12/24/36/52 semanas</h3>
+                    <span class="pm2-head-meta">respuesta · toxicidad · costo</span>
+                </div>
+                <div class="epi-table-wrap">
+                    <table class="epi-table">
+                        <thead>
+                            <tr>
+                                <th>Semana</th>
+                                <th>n</th>
+                                <th>PSA50</th>
+                                <th>PSA90</th>
+                                <th>ECOG</th>
+                                <th>Tox G3+</th>
+                                <th>Referencia</th>
+                                <th>Gasto</th>
+                                <th>Costo/PSA50</th>
+                            </tr>
+                        </thead>
+                        <tbody id="epiMatrixRows"></tbody>
+                    </table>
+                </div>
+            </article>
+
+            <article class="pm2-tab-card" data-testid="epi-bias-readiness">
+                <div class="pm2-tab-card-head">
+                    <h3>Sesgo y readiness causal</h3>
+                    <span class="pm2-head-meta" id="epiCausalStatus">causal readiness</span>
+                </div>
+                <div class="pm2-tab-card-body" id="epiBiasReadiness"></div>
+            </article>
+        </section>
+
+        <section class="epi-band epi-split" style="padding-top:0">
+            <article class="pm2-tab-card" data-testid="epi-comparison-panel">
+                <div class="pm2-tab-card-head">
+                    <h3>Comparacion molecula/regimen</h3>
+                    <span class="pm2-head-meta">ventana principal</span>
+                </div>
+                <div class="epi-table-wrap">
+                    <table class="epi-table">
+                        <thead>
+                            <tr>
+                                <th>Grupo</th>
+                                <th>n</th>
+                                <th>PSA50</th>
+                                <th>PSA90</th>
+                                <th>ECOG</th>
+                                <th>Tox G3+</th>
+                                <th>Costo/PSA50</th>
+                                <th>Ajustado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="epiComparisonRows"></tbody>
+                    </table>
+                </div>
+            </article>
+
+            <article class="pm2-tab-card" data-testid="epi-completeness-tower">
+                <div class="pm2-tab-card-head">
+                    <h3>Torre de completitud</h3>
+                    <span class="pm2-head-meta" id="epiCompletenessMeta">completitud</span>
+                </div>
+                <div class="pm2-tab-card-body">
+                    <div id="epiCompletenessGrid" class="epi-grid"></div>
+                    <div id="epiCompletenessGaps" class="epi-muted" style="margin-top:10px"></div>
+                </div>
+            </article>
+        </section>
+
+        <section class="epi-band epi-split" style="padding-top:0">
+            <article class="pm2-tab-card" data-testid="epi-economic-layer">
+                <div class="pm2-tab-card-head">
+                    <h3>Capa economica institucional</h3>
+                    <span class="pm2-head-meta">dosis · costo · respuesta</span>
+                </div>
+                <div id="epiEconomicGrid" class="pm2-tab-card-body epi-grid"></div>
+            </article>
+
+            <article class="pm2-tab-card" data-testid="epi-research-workspace">
+                <div class="pm2-tab-card-head">
+                    <h3>Gobernanza de investigacion</h3>
+                    <span class="pm2-head-meta" id="epiFreezeMeta">freezes</span>
+                </div>
+                <div id="epiResearchWorkspace" class="pm2-tab-card-body"></div>
+            </article>
+        </section>
+
+        <section class="epi-band" style="padding-top:0">
+            <article class="pm2-tab-card" data-testid="epi-snapshot-pack-workspace" data-reproduction-pack-endpoint="/api/analytics/epidemiology-command-center/snapshot-pack/freezes/<freeze_key>/reproduction-pack/download">
+                <div class="pm2-tab-card-head">
+                    <h3>Snapshot reproducible del tablero</h3>
+                    <span class="pm2-head-meta" id="epiSnapshotMeta">no-PHI</span>
+                </div>
+                    <div class="pm2-tab-card-body">
+                    <div class="epi-muted" id="epiSnapshotSummary">Fotografia no-PHI del tablero V2 para auditoria, sesion metodologica y reproduccion interna.</div>
+                    <div class="epi-controls" style="margin-top:12px" data-testid="epi-snapshot-governance-controls">
+                        <div class="epi-control">
+                            <label for="epiSnapshotGovernanceStatus">Gobernanza</label>
+                            <select id="epiSnapshotGovernanceStatus">
+                                <option value="exploratory">Exploratorio</option>
+                                <option value="audit_ready" selected>Auditable</option>
+                                <option value="poster_ready">Poster</option>
+                                <option value="publication_ready">Articulo</option>
+                                <option value="insufficient_quality">Insuficiente</option>
+                            </select>
+                        </div>
+                        <div class="epi-control">
+                            <label for="epiSnapshotApprovalStatus">Aprobacion</label>
+                            <select id="epiSnapshotApprovalStatus">
+                                <option value="draft">Draft</option>
+                                <option value="human_reviewed" selected>Revisado</option>
+                                <option value="approved_internal_audit">Auditoria interna</option>
+                                <option value="approved_research_use">Investigacion</option>
+                                <option value="blocked_quality">Bloqueado</option>
+                            </select>
+                        </div>
+                        <div class="epi-control">
+                            <label for="epiSnapshotApprovedBy">Responsable</label>
+                            <input id="epiSnapshotApprovedBy" value="clinician">
+                        </div>
+                        <div class="epi-control">
+                            <label for="epiSnapshotMethodologyVersion">Metodo</label>
+                            <input id="epiSnapshotMethodologyVersion" value="epi_snapshot_methods_v1.0">
+                        </div>
+                        <div class="epi-control epi-control--wide">
+                            <label for="epiSnapshotApprovalNote">Nota</label>
+                            <textarea id="epiSnapshotApprovalNote">Revision humana local para auditoria interna; no usar externamente sin protocolo institucional.</textarea>
+                        </div>
+                    </div>
+                    <div class="pm2-header-tools" style="margin-top:10px;justify-content:flex-start">
+                        <a id="epiSnapshotJson" class="pm2-btn pm2-btn--ghost" href="/api/analytics/epidemiology-command-center/snapshot-pack">Ver snapshot JSON</a>
+                        <button id="epiFreezeSnapshot" type="button" class="pm2-btn pm2-btn--primary" data-testid="epi-freeze-snapshot">Congelar snapshot</button>
+                    </div>
+                    <div id="epiSnapshotStatus" class="epi-muted" style="margin-top:10px"></div>
+                    <div id="epiSnapshotLibrary" style="margin-top:10px"></div>
+                </div>
+            </article>
+        </section>
+
+        <section class="epi-band" style="padding-top:0">
+            <article class="pm2-tab-card" data-testid="epi-patient-trace">
+                <div class="pm2-tab-card-head">
+                    <h3>Trazabilidad paciente-a-metrica</h3>
+                    <span class="pm2-head-meta" id="epiTraceMeta">perfil V2</span>
+                </div>
+                <div class="epi-table-wrap">
+                    <table class="epi-table">
+                        <thead>
+                            <tr>
+                                <th>Paciente</th>
+                                <th>Semana</th>
+                                <th>Regimen</th>
+                                <th>Basal</th>
+                                <th>APE</th>
+                                <th>Respuesta</th>
+                                <th>Costo</th>
+                                <th>Outcomes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="epiTraceRows"></tbody>
+                    </table>
+                </div>
+            </article>
+        </section>
+    </main>
+</div>
+
+<script>
+(() => {
+    const state = { payload: null, params: new URLSearchParams() };
+    const $ = (id) => document.getElementById(id);
+    const esc = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    const pct = (value) => value === null || value === undefined || value === '' ? '—' : `${Number(value).toFixed(1)}%`;
+    const money = (value) => {
+        const n = Number(value || 0);
+        return Number.isFinite(n) && n > 0 ? `$ ${n.toLocaleString('es-MX', {maximumFractionDigits: 0})} MXN` : 'No calculable';
+    };
+    function setOptions(select, items, getValue, getLabel, current) {
+        const first = select.querySelector('option[value=""]')?.outerHTML || '<option value="">Todos</option>';
+        select.innerHTML = first + items.map(item => {
+            const value = getValue(item);
+            const label = getLabel(item);
+            return `<option value="${esc(value)}"${value === current ? ' selected' : ''}>${esc(label)}</option>`;
+        }).join('');
+    }
+    function selectedFilters() {
+        return {
+            molecule: $('epiMolecule').value,
+            regimen: $('epiRegimen').value,
+            clinical_state: $('epiClinicalState').value,
+            line_context: $('epiLineContext').value,
+            psa_band: $('epiPsaBand').value,
+            ecog_band: $('epiEcogBand').value,
+            age_band: $('epiAgeBand').value,
+            metastatic_volume: $('epiMetastaticVolume').value,
+            metric: $('epiMetric').value,
+            patient_ref: $('epiPatientRef').value.trim(),
+            source_freeze_key: $('epiSourceFreezeKey').value,
+        };
+    }
+    function initFiltersFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const patientRef = params.get('patient_ref') || params.get('nss') || '';
+        const sourceFreeze = params.get('source_freeze_key') || params.get('freeze_key') || '';
+        if (patientRef && $('epiPatientRef')) $('epiPatientRef').value = patientRef;
+        if (sourceFreeze && $('epiSourceFreezeKey')) {
+            const option = document.createElement('option');
+            option.value = sourceFreeze;
+            option.textContent = sourceFreeze;
+            option.selected = true;
+            $('epiSourceFreezeKey').appendChild(option);
+        }
+    }
+    async function loadDashboard() {
+        $('epiStatus').textContent = 'Cargando tablero...';
+        const filters = selectedFilters();
+        const params = new URLSearchParams({ weeks: '12,24,36,52', trace_limit: '250', real_only: '0' });
+        Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); });
+        state.params = new URLSearchParams(params);
+        $('epiExportJsonTop').href = `/api/analytics/epidemiology-command-center?${params.toString()}`;
+        const csvParams = new URLSearchParams(params);
+        csvParams.set('format', 'csv');
+        $('epiExportCsvTop').href = `/api/analytics/epidemiology-command-center?${csvParams.toString()}`;
+        $('epiSnapshotJsonTop').href = `/api/analytics/epidemiology-command-center/snapshot-pack?${params.toString()}`;
+        $('epiSnapshotJson').href = `/api/analytics/epidemiology-command-center/snapshot-pack?${params.toString()}`;
+        const res = await fetch(`/api/analytics/epidemiology-command-center?${params.toString()}`);
+        const body = await res.json();
+        if (!res.ok || body.success === false) throw new Error(body.error || res.status);
+        state.payload = body;
+        render(body);
+        loadSnapshotLibrary().catch(err => { $('epiSnapshotStatus').textContent = `No se pudo cargar biblioteca de snapshots: ${err.message || err}`; });
+    }
+    function render(body) {
+        const options = body.filter_options || {};
+        const active = body.active_filters || {};
+        setOptions($('epiMolecule'), options.molecules || [], item => item, item => item, active.molecule || '');
+        setOptions($('epiRegimen'), options.regimens || [], item => item.code, item => item.label || item.code, active.regimen || '');
+        setOptions($('epiClinicalState'), options.clinical_states || [], item => item.code, item => `${item.label} (${item.n})`, active.clinical_state || '');
+        setOptions($('epiLineContext'), options.line_contexts || [], item => item.code, item => `${item.label} (${item.n})`, active.line_context || '');
+        setOptions($('epiPsaBand'), options.psa_bands || [], item => item.code, item => `${item.label} (${item.n})`, active.psa_band || '');
+        setOptions($('epiEcogBand'), options.ecog_bands || [], item => item.code, item => `${item.label} (${item.n})`, active.ecog_band || '');
+        setOptions($('epiAgeBand'), options.age_bands || [], item => item.code, item => `${item.label} (${item.n})`, active.age_band || '');
+        setOptions($('epiMetastaticVolume'), options.metastatic_volumes || [], item => item.code, item => `${item.label} (${item.n})`, active.metastatic_volume || '');
+        setOptions($('epiMetric'), options.metrics || [], item => item.code, item => item.label, active.metric || '');
+        $('epiStatus').textContent = body.title || 'Tablero cargado';
+        $('epiPrimaryWindow').textContent = `${body.primary_window_weeks || '—'} semanas`;
+        renderBuilder(body);
+        renderProvenance(body);
+        renderKpis(body);
+        renderCaptureImpact(body);
+        renderOperationalLatency(body);
+        renderMatrix(body);
+        renderBias(body);
+        renderComparison(body);
+        renderCompleteness(body);
+        renderEconomic(body);
+        renderWorkspace(body);
+        renderSnapshotWorkspace(body);
+        renderTrace(body);
+    }
+    function renderBuilder(body) {
+        const builder = body.cohort_builder || {};
+        const active = Object.entries(builder.active_filters || {}).filter(([, value]) => value);
+        $('epiBuilderSummary').innerHTML = `
+            <span class="epi-pill epi-pill--good">${esc(builder.version || 'cohort_builder_v2')}</span>
+            <span class="epi-pill">${esc(builder.source_patient_count || 0)} pacientes fuente</span>
+            <span class="epi-pill">${esc(builder.source_row_count || 0)} filas</span>
+            <span class="epi-pill">${esc((builder.source_windows || []).join('/'))} sem</span>
+            ${active.length ? active.map(([key, value]) => `<span class="epi-pill epi-pill--warn">${esc(key)}=${esc(value)}</span>`).join('') : '<span class="epi-pill">sin filtros restrictivos</span>'}
+        `;
+    }
+    function renderKpis(body) {
+        $('epiKpis').innerHTML = (body.executive_kpis || []).map(item => {
+            const value = item.unit === 'MXN' ? money(item.value) : item.unit === '%' ? `${esc(item.value ?? '—')}%` : esc(item.value ?? '—');
+            return `
+                <article class="pm2-kpi-card" data-variant="info">
+                    <div class="pm2-kpi-label">${esc(item.label)}</div>
+                    <div class="pm2-kpi-value" style="font-size:1.18rem">${value}</div>
+                    <div class="pm2-kpi-foot"><span class="pm2-kpi-trend pm2-metric-trend--flat">${esc(item.subvalue || item.status || '')}</span></div>
+                </article>
+            `;
+        }).join('');
+    }
+    function renderCaptureImpact(body) {
+        const impact = body.capture_impact_bridge || {};
+        const after = impact.after || {};
+        const delta = impact.delta_since_before || {};
+        const rows = impact.patient_metric_trace || [];
+        const available = impact.available && after.patient_contributes_to_registry;
+        $('epiCaptureImpactMeta').textContent = impact.patient_ref
+            ? `${esc(impact.patient_ref)} · ${esc(impact.source_mode || 'live_capture_delta')}`
+            : esc(impact.source_mode || 'patient_filter_required');
+        $('epiCaptureImpactBody').innerHTML = [
+            ['Contribuye al tablero', available ? 'Si' : 'No', `${after.active_window_count || 0} ventanas activas`],
+            ['Filas trazables', after.row_count || 0, `${after.response_evaluable_count || 0} evaluables respuesta`],
+            ['Respuesta', `${after.psa50_responder_count || 0} PSA50 · ${after.psa90_responder_count || 0} PSA90`, `${after.ecog_improved_count || 0} ECOG mejoro`],
+            ['Gasto atribuible', money(after.estimated_spend_mxn), `${after.local_dose_count || 0} dosis locales`],
+            ['Delta vs antes', money(delta.estimated_spend_mxn_delta), `${delta.row_count_delta || 0} filas · ${delta.local_dose_count_delta || 0} dosis`],
+            ['Brechas abiertas', (impact.capture_worklist || {}).open_gap_count || 0, impact.clinical_message || 'Sin mensaje'],
+        ].map(([label, value, sub]) => `
+            <div>
+                <div class="pm2-kicker">${esc(label)}</div>
+                <div style="font-weight:800;color:#f0fbff">${typeof value === 'string' && value.startsWith('$ ') ? value : esc(value)}</div>
+                <div class="epi-muted">${esc(sub)}</div>
+            </div>
+        `).join('');
+        $('epiCaptureImpactTrace').innerHTML = rows.length
+            ? rows.map(row => `<span class="epi-pill">${esc(row.week)} sem · ${esc(row.regimen_label || row.regimen_code || '')} · ${esc((row.metric_flags || []).join('/') || row.evidence_quality || 'sin flags')}</span>`).join('')
+            : `<span class="epi-pill epi-pill--warn">${esc(impact.clinical_message || 'Seleccione paciente o capture APE/ECOG/dosis para ver delta.')}</span>`;
+    }
+    function renderOperationalLatency(body) {
+        const latency = body.operational_gap_latency || {};
+        const summary = latency.summary || {};
+        const domains = latency.domains || [];
+        $('epiOperationalLatencyMeta').textContent = `${esc(latency.status || 'no_data')} · ${summary.patient_count || 0} pacientes`;
+        $('epiOperationalLatencyGrid').innerHTML = [
+            ['Mediana cierre', summary.median_days_to_close ?? '—', 'dias hasta dato util'],
+            ['p90 cierre', summary.p90_days_to_close ?? '—', 'dias en cola operativa'],
+            ['Dominios cerrados', `${summary.closed_domain_count || 0}/${summary.eligible_domain_count || 0}`, `${summary.open_domain_count || 0} abiertos`],
+            ['Brechas abiertas', summary.open_gap_count || 0, `${summary.open_unreviewed_gap_count || 0} sin revisar`],
+            ['Más antigua', summary.oldest_open_gap_days ?? '—', `${summary.reviewed_still_missing_gap_count || 0} revisadas aun faltantes`],
+            ['SLA vencidas', summary.sla_overdue_gap_count || 0, `${summary.sla_due_soon_gap_count || 0} por vencer · ${summary.sla_owner_count || 0} responsables`],
+        ].map(([label, value, sub]) => `
+            <div>
+                <div class="pm2-kicker">${esc(label)}</div>
+                <div style="font-weight:800;color:#f0fbff">${esc(value)}</div>
+                <div class="epi-muted">${esc(sub)}</div>
+            </div>
+        `).join('');
+        $('epiOperationalLatencyDomains').innerHTML = domains.map(item => {
+            const variant = item.status === 'operational_ready' ? 'epi-pill--good' : item.status === 'open_gaps' ? 'epi-pill--warn' : 'epi-pill';
+            return `<span class="epi-pill ${variant}">${esc(item.label)} · ${pct(item.coverage_pct)} · med ${esc(item.median_days_to_close ?? '—')} d</span>`;
+        }).join('') || '<span class="epi-pill epi-pill--warn">Sin dominios medibles</span>';
+    }
+    function renderProvenance(body) {
+        const provenance = body.metric_provenance || {};
+        const selected = provenance.source_freeze_key || '';
+        const freezes = provenance.available_freezes || [];
+        const first = '<option value="">Cohorte viva exploratoria</option>';
+        $('epiSourceFreezeKey').innerHTML = first + freezes.map(item => {
+            const key = item.freeze_key || '';
+            const label = `${item.governance?.governance_status || item.registry_type || 'freeze'} · ${key}`;
+            return `<option value="${esc(key)}"${key === selected ? ' selected' : ''}>${esc(label)}</option>`;
+        }).join('');
+        $('epiProvenanceMeta').textContent = provenance.source_mode || 'live_cohort_exploratory';
+        const binding = provenance.cohort_binding_status || {};
+        $('epiProvenanceSummary').innerHTML = `
+            <span class="epi-pill ${provenance.source_freeze_key ? 'epi-pill--good' : 'epi-pill--warn'}">${esc(provenance.source_mode || 'live_cohort_exploratory')}</span>
+            ${provenance.source_freeze_key ? `<span class="epi-pill">${esc(provenance.source_freeze_key)}</span>` : ''}
+            ${provenance.payload_sha256 ? `<span class="epi-pill">SHA ${esc(String(provenance.payload_sha256).slice(0, 12))}</span>` : ''}
+            <span class="epi-pill">${esc((provenance.summary || {}).metric_count || 0)} metricas</span>
+            <span class="epi-pill">${esc(binding.status || '')}</span>
+            <div class="epi-muted" style="margin-top:8px">${esc(provenance.suppression_policy || '')}</div>
+        `;
+        $('epiProvenanceRows').innerHTML = (provenance.metrics || []).slice(0, 40).map(item => {
+            const dictRefs = (item.data_dictionary_refs || []).slice(0, 4).map(ref => `<span class="epi-pill">${esc(ref.field || '')}</span>`).join('');
+            const lineageRefs = (item.lineage_refs || []).slice(0, 3).map(ref => `<span class="epi-pill">${esc(ref.fact_key || ref.source_type || '')}</span>`).join('');
+            const families = (item.row_family_refs || []).map(ref => `<span class="epi-pill">${esc(ref.family)} ${esc(ref.row_count)}</span>`).join('');
+            return `
+                <tr>
+                    <td><span class="epi-code">${esc(item.metric_id)}</span><div class="epi-muted">${esc(item.label || '')}</div></td>
+                    <td>${item.source_freeze_key ? `<span class="epi-code">${esc(item.source_freeze_key)}</span>` : '<span class="epi-pill epi-pill--warn">live</span>'}<div class="epi-muted">${esc(item.reconstruction?.status || '')}</div></td>
+                    <td>${esc(item.n ?? '—')}<div class="epi-muted">${esc(item.suppression_policy || '')}</div></td>
+                    <td>${dictRefs || '<span class="epi-muted">sin refs</span>'}</td>
+                    <td>${lineageRefs || families || '<span class="epi-muted">sin lineage</span>'}</td>
+                </tr>
+            `;
+        }).join('') || '<tr><td colspan="5" class="epi-muted">Sin procedencia disponible.</td></tr>';
+    }
+    function renderMatrix(body) {
+        $('epiMatrixRows').innerHTML = (body.outcome_matrix || []).map(row => `
+            <tr>
+                <td>${esc(row.week)} sem</td>
+                <td>${esc(row.n_patients)}</td>
+                <td>${pct(row.psa50_rate_pct)}</td>
+                <td>${pct(row.psa90_rate_pct)}</td>
+                <td>${pct(row.ecog_improvement_rate_pct)}</td>
+                <td>${pct(row.high_grade_toxicity_rate_pct)}</td>
+                <td>${pct(row.referral_delay_rate_pct)}</td>
+                <td>${money(row.estimated_spend_to_window_mxn)}</td>
+                <td>${money(row.cost_per_psa50_responder_mxn)}</td>
+            </tr>
+        `).join('');
+    }
+    function renderBias(body) {
+        const readiness = ((body.bias_and_readiness || {}).causal_readiness || {});
+        const gov = ((body.bias_and_readiness || {}).research_governance || {});
+        const warnings = gov.bias_warnings || [];
+        $('epiCausalStatus').textContent = readiness.status || 'descriptive_only';
+        $('epiBiasReadiness').innerHTML = `
+            <div style="font-weight:800;color:#f0fbff">${esc(readiness.status || '')}</div>
+            <div class="epi-muted" style="margin-top:6px">${esc(readiness.next_step || '')}</div>
+            <div style="margin-top:10px">${warnings.map(w => `<span class="epi-pill epi-pill--warn">${esc(w)}</span>`).join('') || '<span class="epi-pill epi-pill--good">Sin alertas principales</span>'}</div>
+            <div class="epi-muted" style="margin-top:10px">${esc(gov.methods_summary || '')}</div>
+        `;
+    }
+    function renderComparison(body) {
+        const rows = (body.comparison_panel || {}).cohort_matrix || [];
+        const primary = String(body.primary_window_weeks || '');
+        $('epiComparisonRows').innerHTML = rows.map(item => {
+            const win = (item.windows || {})[primary] || {};
+            if (!win.n) return '';
+            return `
+                <tr>
+                    <td><span class="epi-pill">${esc(item.group_type)}</span><div style="font-weight:750;color:#f0fbff">${esc(item.label)}</div><div class="epi-code">${esc(item.key)}</div></td>
+                    <td>${esc(win.n)}</td>
+                    <td>${esc(win.psa50_rate || '—')}</td>
+                    <td>${esc(win.psa90_rate || '—')}</td>
+                    <td>${esc(win.ecog_improvement_rate || '—')}</td>
+                    <td>${esc(win.high_grade_toxicity_rate || '—')}</td>
+                    <td>${money(win.cost_per_psa50_responder_mxn)}</td>
+                    <td>${esc(win.adjusted_psa50_rate || '—')}${win.suppressed ? '<div class="epi-muted">n pequeno</div>' : ''}</td>
+                </tr>
+            `;
+        }).join('') || '<tr><td colspan="8" class="epi-muted">Sin cohortes para filtros actuales.</td></tr>';
+    }
+    function renderCompleteness(body) {
+        const tower = body.completeness_tower || {};
+        $('epiCompletenessMeta').textContent = `${tower.overall_completeness_pct ?? '—'}% · ${tower.status || ''}`;
+        $('epiCompletenessGrid').innerHTML = (tower.domains || []).map(item => `
+            <div>
+                <div class="pm2-kicker">${esc(item.label)}</div>
+                <div style="font-weight:800;color:#f0fbff">${pct(item.coverage_pct)}</div>
+                <div class="epi-muted">${esc(item.present)}/${esc(item.total)} · ${esc(item.status)}</div>
+            </div>
+        `).join('');
+        $('epiCompletenessGaps').innerHTML = (tower.critical_gaps || []).map(g => `<span class="epi-pill epi-pill--warn">${esc(g.label)} ${pct(g.coverage_pct)}</span>`).join('') || '<span class="epi-pill epi-pill--good">Sin brechas criticas visibles</span>';
+    }
+    function renderEconomic(body) {
+        const eco = body.economic_layer || {};
+        const items = [
+            ['Gasto estimado', money(eco.estimated_spend_mxn), `${eco.priced_doses || 0} dosis costeadas`],
+            ['Dosis locales', esc(eco.local_doses || 0), `${eco.partial_cost_patient_count || 0} costo parcial`],
+            ['Costo / PSA50', money(eco.cost_per_psa50_responder_mxn), 'respuesta bioquimica'],
+            ['Costo / ECOG mejorado', money(eco.cost_per_ecog_improved_patient_mxn), 'beneficio funcional'],
+            ['Costo / no respuesta', money(eco.cost_per_non_responder_mxn), 'sin PSA50'],
+            ['Costo / retraso referencia', money(eco.cost_per_referral_delay_patient_mxn), 'paciente con retraso'],
+        ];
+        $('epiEconomicGrid').innerHTML = items.map(([label, value, sub]) => `
+            <div><div class="pm2-kicker">${esc(label)}</div><div style="font-weight:800;color:#f0fbff">${value}</div><div class="epi-muted">${esc(sub)}</div></div>
+        `).join('');
+    }
+    function renderWorkspace(body) {
+        const workspace = body.research_workspace || {};
+        const freezes = workspace.recent_freezes || [];
+        $('epiFreezeMeta').textContent = `${freezes.length} freezes visibles`;
+        $('epiResearchWorkspace').innerHTML = `
+            <div class="epi-muted">${esc(workspace.next_action || '')}</div>
+            <div style="margin-top:10px">${freezes.map(item => `
+                <div style="border-top:1px solid var(--border-subtle);padding-top:8px;margin-top:8px">
+                    <div style="font-weight:800;color:#f0fbff">${esc(item.title || item.freeze_key)}</div>
+                    <div class="epi-code">${esc(item.freeze_key || '')}</div>
+                    <span class="epi-pill">${esc(item.patient_count_primary_window || 0)} pacientes</span>
+                    <span class="epi-pill">${esc(item.trace_row_count || 0)} filas</span>
+                    <a class="pm2-btn pm2-btn--ghost" style="font-size:.72rem;margin-top:6px" href="${esc(item.registry_type === 'deidentified_research_pack_v1' ? `/api/platform-readiness/research-pack-materializer/freezes/${item.freeze_key}` : `/api/analytics/treatment-value-registry/research-pack/freezes/${item.freeze_key}`)}">Abrir</a>
+                </div>
+            `).join('') || '<div class="epi-muted" style="margin-top:10px">Sin cohortes congeladas.</div>'}</div>
+        `;
+    }
+    function renderSnapshotWorkspace(body) {
+        const provenance = body.metric_provenance || {};
+        const summary = provenance.summary || {};
+        $('epiSnapshotMeta').textContent = provenance.source_freeze_key ? `ligado a ${provenance.source_freeze_key}` : 'cohorte viva';
+        $('epiSnapshotSummary').innerHTML = `
+            <span class="epi-pill epi-pill--good">${esc(summary.metric_count || 0)} metricas</span>
+            <span class="epi-pill">${esc(summary.reconstructable_metric_count || 0)} reconstruibles</span>
+            <span class="epi-pill ${provenance.source_freeze_key ? 'epi-pill--good' : 'epi-pill--warn'}">${esc(provenance.source_mode || 'live_cohort_exploratory')}</span>
+            <span class="epi-pill">metodo ${esc($('epiSnapshotMethodologyVersion')?.value || 'epi_snapshot_methods_v1.0')}</span>
+            <div class="epi-muted" style="margin-top:8px">El snapshot omite filas paciente-a-metrica con NSS/nombre y conserva agregados, hashes, metodo y procedencia.</div>
+        `;
+    }
+    async function loadSnapshotLibrary() {
+        const res = await fetch('/api/analytics/epidemiology-command-center/snapshot-pack/freezes?limit=6');
+        const body = await res.json();
+        if (!res.ok || body.success === false) throw new Error(body.error || res.status);
+        const freezes = body.freezes || [];
+        $('epiSnapshotLibrary').innerHTML = freezes.map(item => `
+            <div style="border-top:1px solid var(--border-subtle);padding-top:8px;margin-top:8px">
+                <div style="font-weight:800;color:#f0fbff">${esc(item.title || item.freeze_key)}</div>
+                <div class="epi-code">${esc(item.freeze_key || '')}</div>
+                <span class="epi-pill">${esc(item.patient_count_primary_window || 0)} pacientes agregados</span>
+                <span class="epi-pill">${esc(item.trace_row_count || 0)} metricas</span>
+                <span class="epi-pill ${item.download_allowed ? 'epi-pill--good' : 'epi-pill--bad'}">no-PHI ${item.download_allowed ? 'pass' : 'block'}</span>
+                <span class="epi-pill">${esc(item.human_approval?.governance_status || 'exploratory')}</span>
+                <span class="epi-pill">${esc(item.human_approval?.approval_status || 'draft')}</span>
+                <span class="epi-pill">metodo ${esc(item.methodology_version || 'v1.0')}</span>
+                <div class="pm2-header-tools" style="margin-top:6px;justify-content:flex-start">
+                    <a class="pm2-btn pm2-btn--ghost" style="font-size:.72rem" href="${esc(item.detail_url || '#')}">Detalle</a>
+                    <a class="pm2-btn pm2-btn--ghost" style="font-size:.72rem" href="${esc(item.download_url || '#')}">ZIP</a>
+                    <a class="pm2-btn pm2-btn--ghost" style="font-size:.72rem" data-testid="epi-reproduction-pack-download" href="${esc(item.reproduction_pack_download_url || '#')}">Reproducir</a>
+                </div>
+            </div>
+        `).join('') || '<div class="epi-muted">Sin snapshots congelados aun.</div>';
+    }
+    async function freezeSnapshot() {
+        const status = $('epiSnapshotStatus');
+        status.textContent = 'Congelando snapshot reproducible...';
+        const payload = Object.fromEntries(state.params.entries());
+        payload.title = `Snapshot epidemiologico V2 ${new Date().toISOString().slice(0, 10)}`;
+        payload.created_by = 'clinician';
+        payload.governance_status = $('epiSnapshotGovernanceStatus').value;
+        payload.approval_status = $('epiSnapshotApprovalStatus').value;
+        payload.approved_by = $('epiSnapshotApprovedBy').value.trim();
+        payload.reviewer_role = 'uro_oncology_clinician';
+        payload.approval_note = $('epiSnapshotApprovalNote').value.trim();
+        payload.methodology_version = $('epiSnapshotMethodologyVersion').value.trim() || 'epi_snapshot_methods_v1.0';
+        const res = await fetch('/api/analytics/epidemiology-command-center/snapshot-pack/freeze', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+        });
+        const body = await res.json();
+        if (!res.ok || body.success === false) throw new Error(body.error || res.status);
+        status.innerHTML = `Snapshot listo: <a class="epi-code" href="/api/analytics/epidemiology-command-center/snapshot-pack/freezes/${esc(body.freeze_key)}">${esc(body.freeze_key)}</a> · SHA ${esc(String(body.payload_sha256 || '').slice(0, 12))}`;
+        await loadSnapshotLibrary();
+    }
+    function renderTrace(body) {
+        const trace = body.patient_metric_trace || [];
+        $('epiTraceMeta').textContent = `${trace.length} filas`;
+        $('epiTraceRows').innerHTML = trace.map(row => `
+            <tr>
+                <td><a href="${esc(row.profile_url)}" style="color:#67e8f9;font-weight:750">${esc(row.patient_ref)}</a><div class="epi-muted">${esc(row.patient_name || '')}</div></td>
+                <td>${esc(row.week)} sem</td>
+                <td>${esc(row.regimen_label || row.regimen_code || '')}<div class="epi-code">${esc(row.molecule || '')}</div></td>
+                <td><span class="epi-code">${esc(row.baseline_state_bucket || '')}</span></td>
+                <td>${esc(row.baseline_psa)} -> ${esc(row.actual_psa)}<div class="epi-muted">${pct(row.psa_decline_pct)} descenso</div></td>
+                <td>${(row.metric_flags || []).map(flag => `<span class="epi-pill epi-pill--warn">${esc(flag)}</span>`).join('') || '<span class="epi-pill">sin flag</span>'}</td>
+                <td>${money(row.spend_to_window_mxn)}</td>
+                <td><span class="epi-pill">${esc(row.evidence_quality || '')}</span><div class="epi-muted">${row.referral_delay_days ? `${esc(row.referral_delay_days)} dias referencia` : esc(row.referral_status || '')}</div></td>
+            </tr>
+        `).join('') || '<tr><td colspan="8" class="epi-muted">Sin trazabilidad para filtros actuales.</td></tr>';
+    }
+    $('epiFilters').addEventListener('submit', (event) => {
+        event.preventDefault();
+        loadDashboard().catch(err => { $('epiStatus').textContent = `Error al cargar tablero: ${err.message || err}`; });
+    });
+    $('epiFreezeSnapshot').addEventListener('click', () => {
+        freezeSnapshot().catch(err => { $('epiSnapshotStatus').textContent = `Error al congelar snapshot: ${err.message || err}`; });
+    });
+    initFiltersFromUrl();
+    loadDashboard().catch(err => { $('epiStatus').textContent = `Error al cargar tablero: ${err.message || err}`; });
+})();
+</script>
+</body>
+</html>
